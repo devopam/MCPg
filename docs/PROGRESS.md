@@ -6,24 +6,25 @@
 
 ## Current state
 
-- **Phase:** 0 — Spike & foundation
+- **Phase:** 1 — Core server skeleton
 - **Last updated:** 2026-05-20
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 0, Task 0.6 — add `CONTRIBUTING.md`, pre-commit hooks, and issue/PR
-> templates.
+> Phase 1, Task 1.1 — TDD a typed, env-driven configuration/settings loader
+> (`MCPG_DATABASE_URL`, `MCPG_ACCESS_MODE`, `MCPG_TRANSPORT`, ...). Failing
+> test first.
 
-## Phase 0 — Spike & foundation
+## Phase 0 — Spike & foundation  ✅ COMPLETE
 
 - [x] 0.1 Evaluate `crystaldba/postgres-mcp` (code, tests, license, activity) → ADR-0001 (hard-fork)
 - [x] 0.2 Confirm/record stack → ADR-0002 (Python 3.12 + psycopg3 + mcp SDK)
 - [x] 0.3 Vendor `sql/` subpackage (MIT, `NOTICE` + `_vendor/README.md`); scaffold `uv` project
 - [x] 0.4 Configure `ruff`, `mypy --strict`, `pytest`, `pytest-cov`, coverage gate (in `pyproject.toml`)
 - [x] 0.5 GitHub Actions CI (`.github/workflows/ci.yml`: ruff + mypy + pytest)
-- [ ] 0.6 `CONTRIBUTING.md`, pre-commit hooks, issue/PR templates
-- [ ] 0.7 First green CI run on a placeholder test
+- [x] 0.6 `CONTRIBUTING.md`, pre-commit hooks (local hooks), issue/PR templates
+- [x] 0.7 First green CI run — run #1 on commit `a20a757`, conclusion: success
 
 ### Phase 0 notes
 
@@ -38,7 +39,14 @@
   wired in during Phase 1 (authored code exists) and Phase 2 (integration tests
   exist) respectively, to avoid dead/failing config now.
 
-## Phase 1 — Core server skeleton (not started)
+## Phase 1 — Core server skeleton
+
+- [ ] 1.1 Typed env-driven config/settings loader (TDD)
+- [ ] 1.2 Connection-pool lifecycle wrapper around the vendored `DbConnPool` (TDD)
+- [ ] 1.3 MCP server bootstrap (`FastMCP`) + stdio transport; no global state
+- [ ] 1.4 `get_server_info` tool — first end-to-end TDD vertical slice
+- [ ] 1.5 Streamable HTTP transport + `mcpg` CLI entry point
+- [ ] 1.6 Wire the coverage gate (`--cov`, `fail_under = 90`) into CI
 ## Phase 2 — Schema introspection & safe reads (not started)
 ## Phase 3 — Security hardening & access control (not started)
 ## Phase 4 — Write & DDL tools (not started)
@@ -74,3 +82,6 @@
   `CHANGELOG.md`). All tests/lint/types green locally.
 - 2026-05-20 — Task 0.5: added GitHub Actions CI (`ci.yml`) running ruff,
   ruff-format, mypy, and pytest. Coverage gate + PG matrix deferred (see notes).
+- 2026-05-20 — Task 0.6/0.7: added `CONTRIBUTING.md`, local pre-commit hooks,
+  issue/PR templates. Set `force-exclude` so ruff skips vendored code under
+  pre-commit. CI run #1 green. **Phase 0 complete.**

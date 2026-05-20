@@ -32,6 +32,7 @@ dev = [
     "docker>=7.1.0",
     "ruff>=0.14.0",
     "mypy>=1.15.0",
+    "pre-commit>=4.0.0",
 ]
 
 [tool.pytest.ini_options]
@@ -54,6 +55,8 @@ line-length = 120
 target-version = "py312"
 # Vendored code is kept verbatim and is not linted/formatted to our standard.
 extend-exclude = ["src/mcpg/_vendor", "tests/vendor"]
+# Honour the exclusions even when files are passed explicitly (e.g. pre-commit).
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "W", "N", "UP", "RUF"]

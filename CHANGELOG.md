@@ -18,3 +18,4 @@ adheres to [Semantic Versioning](https://semver.org/).
   coverage configuration, `NOTICE`.
 - GitHub Actions CI (`.github/workflows/ci.yml`): lint, format, type-check,
   and test jobs.
+- `CONTRIBUTING.md`, local `pre-commit` hooks, and GitHub issue/PR templates.
