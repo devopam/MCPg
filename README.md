@@ -1,0 +1,2 @@
+# MCPg
+Postgres MCP Server
