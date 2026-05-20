@@ -20,13 +20,37 @@ async def test_run_select_returns_rows_columns_and_count() -> None:
         columns=["id", "name"],
         rows=[{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
         row_count=2,
+        truncated=False,
     )
 
 
 async def test_run_select_on_empty_result_has_no_columns() -> None:
     result = await run_select(FakeDriver([]), "SELECT id FROM widget")
 
-    assert result == QueryResult(columns=[], rows=[], row_count=0)
+    assert result == QueryResult(columns=[], rows=[], row_count=0, truncated=False)
+
+
+async def test_run_select_caps_rows_and_flags_truncation() -> None:
+    driver = FakeDriver([{"id": n} for n in range(5)])
+
+    result = await run_select(driver, "SELECT id FROM widget", max_rows=3)
+
+    assert result.row_count == 3
+    assert result.rows == [{"id": 0}, {"id": 1}, {"id": 2}]
+    assert result.truncated is True
+
+
+async def test_run_select_not_truncated_when_under_the_cap() -> None:
+    driver = FakeDriver([{"id": n} for n in range(3)])
+
+    result = await run_select(driver, "SELECT id FROM widget", max_rows=3)
+
+    assert result.truncated is False
+
+
+async def test_run_select_rejects_non_positive_max_rows() -> None:
+    with pytest.raises(QueryError, match="max_rows"):
+        await run_select(FakeDriver(), "SELECT 1", max_rows=0)
 
 
 @pytest.mark.parametrize(
@@ -53,11 +77,12 @@ async def test_run_select_tool_is_callable_from_a_client() -> None:
     server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
 
     async with create_connected_server_and_client_session(server) as client:
-        result = await client.call_tool("run_select", {"sql": "SELECT 1 AS one"})
+        result = await client.call_tool("run_select", {"sql": "SELECT 1 AS one", "max_rows": 1})
 
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["row_count"] == 1
+    assert result.structuredContent["truncated"] is False
 
 
 async def test_explain_query_returns_the_plan() -> None:

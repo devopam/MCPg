@@ -6,14 +6,14 @@
 
 ## Current state
 
-- **Phase:** 2 — Schema introspection & safe reads
+- **Phase:** 3 — Security hardening & access control
 - **Last updated:** 2026-05-20
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 2, Task 2.5 — TDD result shaping for `run_select`: a configurable row
-> cap with a `truncated` flag (pagination if warranted).
+> Phase 3, Task 3.1 — TDD the access-mode policy engine: gate which tools are
+> registered/exposed based on `Settings.access_mode`.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -47,15 +47,22 @@
 - [x] 1.5 `mcpg` CLI entry point (`mcpg/__main__.py`, TDD)
 - [x] 1.6 Coverage gate (`--cov`, `fail_under = 90`) wired into CI
 
-## Phase 2 — Schema introspection & safe reads
+## Phase 2 — Schema introspection & safe reads  ✅ COMPLETE
 
 - [x] 2.1 Integration-test harness (`tests/integration/`) + PG 14–17 CI service matrix
 - [x] 2.2 Introspection tools: `list_schemas`, `list_tables`, `describe_table`,
       `list_indexes`, `list_extensions` (`mcpg/introspection.py`, TDD)
 - [x] 2.3 `run_select` — read-only-enforced query execution via vendored `SafeSqlDriver` (`mcpg/query.py`, TDD)
 - [x] 2.4 `explain_query` tool (`mcpg/query.py`, TDD)
-- [ ] 2.5 Result shaping — typed result, row caps, pagination (TDD)
-## Phase 3 — Security hardening & access control (not started)
+- [x] 2.5 Result shaping — `max_rows` cap + `truncated` flag on `QueryResult` (TDD)
+
+## Phase 3 — Security hardening & access control
+
+- [ ] 3.1 Access-mode policy engine — gate tool registration by `Settings.access_mode` (TDD)
+- [ ] 3.2 SQL-safety regression suite — adversarial tests for the SQL-injection CVE class (TDD)
+- [ ] 3.3 Audit logging of tool invocations (TDD)
+- [ ] 3.4 Threat model + security documentation (`docs/`)
+
 ## Phase 4 — Write & DDL tools (not started)
 ## Phase 5 — Ops, health & tuning (not started)
 ## Phase 6 — Scalability & multi-tenancy (not started)
@@ -129,3 +136,7 @@
 - 2026-05-20 — Task 2.4: TDD'd `explain_query` (`mcpg/query.py`) — wraps the
   query in `EXPLAIN (FORMAT JSON)`, validated by the same allowlist, returns a
   typed `ExplainResult`. Registered the `explain_query` tool. 142 tests, 100% cov.
+- 2026-05-20 — Task 2.5: TDD'd result shaping for `run_select` — a `max_rows`
+  cap (default 1000) with a `truncated` flag on `QueryResult`, exposed as a
+  tool parameter. Cursor-style pagination is left to caller SQL
+  `LIMIT`/`OFFSET`. 146 tests, 100% coverage. **Phase 2 complete.**

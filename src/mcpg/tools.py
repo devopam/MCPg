@@ -93,8 +93,8 @@ def _register_query(server: FastMCP[AppContext]) -> None:
             "unsafe statements are rejected before execution."
         ),
     )
-    async def run_select(ctx: _Ctx, sql: str) -> dict[str, Any]:
-        result = await query.run_select(_driver(ctx), sql)
+    async def run_select(ctx: _Ctx, sql: str, max_rows: int = query.DEFAULT_MAX_ROWS) -> dict[str, Any]:
+        result = await query.run_select(_driver(ctx), sql, max_rows=max_rows)
         return asdict(result)
 
     @server.tool(

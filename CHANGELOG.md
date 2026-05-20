@@ -43,3 +43,5 @@ adheres to [Semantic Versioning](https://semver.org/).
   typed result; unsafe statements are rejected.
 - The `explain_query` tool returns a query's `EXPLAIN (FORMAT JSON)`
   execution plan without running the query.
+- `run_select` caps results at a configurable `max_rows` (default 1000) and
+  reports whether the result was `truncated`.
