@@ -51,3 +51,5 @@ adheres to [Semantic Versioning](https://semver.org/).
   comment and transaction-control escapes, DDL/DML, `COPY`, and `DO` blocks.
 - Audit logging (`mcpg.audit`): every tool invocation is logged to the
   `mcpg.audit` logger with its outcome and arguments, with secrets masked.
+- Security documentation (`docs/security.md`): threat model, trust
+  boundaries, mitigations, and operator responsibilities.

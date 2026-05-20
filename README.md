@@ -23,7 +23,10 @@ and tune a Postgres database.
 
 - [`PLAN.md`](PLAN.md) — master plan, architecture, technology choices, roadmap
 - [`docs/PROGRESS.md`](docs/PROGRESS.md) — live progress tracker (resume point)
+- [`docs/security.md`](docs/security.md) — threat model and security controls
 - [`docs/adr/`](docs/adr/) — architecture decision records
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — development setup and workflow
+- [`CHANGELOG.md`](CHANGELOG.md) — release notes
 
 ## License
 

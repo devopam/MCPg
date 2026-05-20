@@ -6,15 +6,15 @@
 
 ## Current state
 
-- **Phase:** 3 — Security hardening & access control
+- **Phase:** 4 — Write & DDL tools
 - **Last updated:** 2026-05-20
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 3, Task 3.4 — write the threat model and security documentation
-> (`docs/security.md`): trust boundaries, access modes, the SQL-safety
-> guarantee, audit logging, and secrets handling.
+> Phase 4, Task 4.1 — TDD `run_write`: gated DML execution (INSERT/UPDATE/
+> DELETE) available only in `unrestricted` mode, with explicit transactions
+> and per-write audit entries.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -57,14 +57,19 @@
 - [x] 2.4 `explain_query` tool (`mcpg/query.py`, TDD)
 - [x] 2.5 Result shaping — `max_rows` cap + `truncated` flag on `QueryResult` (TDD)
 
-## Phase 3 — Security hardening & access control
+## Phase 3 — Security hardening & access control  ✅ COMPLETE
 
 - [x] 3.1 Access-mode policy engine — gate tool registration by `Settings.access_mode` (`mcpg/policy.py`, TDD)
 - [x] 3.2 SQL-safety regression suite — adversarial tests for the SQL-injection CVE class (`tests/unit/test_sql_safety.py`)
 - [x] 3.3 Audit logging of tool invocations (`mcpg/audit.py`, TDD)
-- [ ] 3.4 Threat model + security documentation (`docs/`)
+- [x] 3.4 Threat model + security documentation (`docs/security.md`)
 
-## Phase 4 — Write & DDL tools (not started)
+## Phase 4 — Write & DDL tools
+
+- [ ] 4.1 `run_write` — gated DML (INSERT/UPDATE/DELETE), unrestricted mode only (TDD)
+- [ ] 4.2 `run_ddl` — gated DDL (CREATE/ALTER/DROP), unrestricted mode only (TDD)
+- [ ] 4.3 Explicit transaction handling + dry-run/preview for writes (TDD)
+- [ ] 4.4 Per-write audit entries verified end-to-end (TDD)
 ## Phase 5 — Ops, health & tuning (not started)
 ## Phase 6 — Scalability & multi-tenancy (not started)
 ## Phase 7 — Docs, packaging & release (not started)
@@ -154,3 +159,7 @@
   `redact_arguments` (masks secret-named args, obfuscates embedded passwords),
   `record`. `AuditedFastMCP` overrides `call_tool` so every tool invocation —
   success or error — is logged to the `mcpg.audit` logger. 192 tests, 100% cov.
+- 2026-05-20 — Task 3.4: wrote the threat model and security documentation
+  (`docs/security.md`) — trust boundaries, threats T1–T5 with mitigations,
+  operator responsibilities, scope. Linked docs from the README.
+  **Phase 3 complete.**
