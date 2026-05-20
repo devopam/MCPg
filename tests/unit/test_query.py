@@ -5,7 +5,15 @@ from _fakes import FakeDatabase, FakeDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
-from mcpg.query import ExplainResult, QueryError, QueryResult, explain_query, run_select
+from mcpg.query import (
+    ExplainResult,
+    QueryError,
+    QueryPlanAnalysis,
+    QueryResult,
+    analyze_query_plan,
+    explain_query,
+    run_select,
+)
 from mcpg.server import create_server
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
@@ -118,5 +126,54 @@ async def test_explain_query_tool_is_callable_from_a_client() -> None:
 
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("explain_query", {"sql": "SELECT 1"})
+
+    assert result.isError is False
+
+
+_PLAN_TREE = [
+    {
+        "Plan": {
+            "Node Type": "Hash Join",
+            "Total Cost": 250.0,
+            "Plan Rows": 1000,
+            "Plans": [
+                {"Node Type": "Seq Scan", "Relation Name": "orders", "Total Cost": 100.0, "Plan Rows": 5000},
+                {"Node Type": "Index Scan", "Relation Name": "users", "Total Cost": 50.0, "Plan Rows": 1000},
+            ],
+        }
+    }
+]
+
+
+async def test_analyze_query_plan_summarises_the_plan_tree() -> None:
+    result = await analyze_query_plan(FakeDriver([{"QUERY PLAN": _PLAN_TREE}]), "SELECT 1")
+
+    assert result == QueryPlanAnalysis(
+        total_cost=250.0,
+        estimated_rows=1000,
+        node_types=["Hash Join", "Index Scan", "Seq Scan"],
+        sequential_scans=["orders"],
+    )
+
+
+async def test_analyze_query_plan_reports_no_sequential_scans_for_an_index_plan() -> None:
+    plan = [{"Plan": {"Node Type": "Index Scan", "Relation Name": "users", "Total Cost": 8.0, "Plan Rows": 1}}]
+
+    result = await analyze_query_plan(FakeDriver([{"QUERY PLAN": plan}]), "SELECT 1")
+
+    assert result.sequential_scans == []
+
+
+async def test_analyze_query_plan_rejects_unexpected_explain_output() -> None:
+    with pytest.raises(QueryError, match="unexpected EXPLAIN output"):
+        await analyze_query_plan(FakeDriver([{"QUERY PLAN": {"not": "a list"}}]), "SELECT 1")
+
+
+async def test_analyze_query_plan_tool_is_callable_from_a_client() -> None:
+    database = FakeDatabase(FakeDriver([{"QUERY PLAN": _PLAN_TREE}]))
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool("analyze_query_plan", {"sql": "SELECT 1"})
 
     assert result.isError is False

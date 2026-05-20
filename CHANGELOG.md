@@ -66,3 +66,6 @@ adheres to [Semantic Versioning](https://semver.org/).
   the extension is not installed.
 - Index recommendations (`mcpg.indexing`): the `recommend_indexes` tool
   flags large tables read mostly by sequential scan.
+- Query plan analysis (`mcpg.query`): the `analyze_query_plan` tool
+  summarises a query's execution plan — total cost, estimated rows, node
+  types, and sequentially-scanned tables.

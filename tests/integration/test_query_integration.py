@@ -3,7 +3,7 @@
 import pytest
 
 from mcpg.database import Database
-from mcpg.query import QueryError, explain_query, run_select
+from mcpg.query import QueryError, analyze_query_plan, explain_query, run_select
 
 
 async def test_run_select_executes_against_real_postgres(connected_database: Database) -> None:
@@ -36,3 +36,10 @@ async def test_explain_query_returns_a_real_plan(connected_database: Database) -
     # EXPLAIN (FORMAT JSON) yields a single-element list whose item has a Plan.
     assert isinstance(result.plan, list)
     assert "Plan" in result.plan[0]
+
+
+async def test_analyze_query_plan_against_real_postgres(connected_database: Database) -> None:
+    result = await analyze_query_plan(connected_database.driver(), "SELECT 1")
+
+    assert result.node_types
+    assert result.total_cost >= 0

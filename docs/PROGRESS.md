@@ -6,15 +6,16 @@
 
 ## Current state
 
-- **Phase:** 5 — Ops, health & tuning
+- **Phase:** 6 — Scalability & multi-tenancy
 - **Last updated:** 2026-05-20
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 5, Task 5.4 — TDD `analyze_query_plan`: parse a query's
-> `EXPLAIN (FORMAT JSON)` plan into a structured summary (node types, total
-> cost, sequential scans, estimated rows).
+> Phase 6, Task 6.1 — configurable connection-pool sizing. NOTE: the vendored
+> `DbConnPool` hardcodes `min_size=1, max_size=5`; decide whether to add a
+> characterization test + small vendored patch, or wrap our own pool. Resolve
+> this before implementing (consider a brief ADR).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -79,7 +80,7 @@
 - Per-write auditing is already provided by `AuditedFastMCP` (every tool call
   is audited); Task 4.3 verifies it for write tools rather than adding code.
 
-## Phase 5 — Ops, health & tuning
+## Phase 5 — Ops, health & tuning  ✅ COMPLETE
 
 > Authored fresh under TDD — the upstream `database_health/`, `index/`,
 > `top_queries/` modules were not vendored (ADR-0001 narrowed scope to `sql/`).
@@ -88,11 +89,19 @@
       tuples, invalid indexes (`mcpg/health.py`, TDD)
 - [x] 5.2 `analyze_workload` — slow queries via `pg_stat_statements` (`mcpg/workload.py`, TDD)
 - [x] 5.3 `recommend_indexes` — missing-index heuristics (`mcpg/indexing.py`, TDD)
-- [ ] 5.4 `analyze_query_plan` — structured `EXPLAIN` plan analysis (TDD)
+- [x] 5.4 `analyze_query_plan` — structured `EXPLAIN` plan analysis (`mcpg/query.py`, TDD)
 
 ## Phase 6 — Scalability & multi-tenancy (not started)
 ## Phase 7 — Docs, packaging & release (not started)
+
 ## Phase 8 — Index intelligence & extension management (not started)
+
+- Report index access methods (B-tree/GIN/GiST/BRIN/Hash/SP-GiST) in `list_indexes`.
+- `list_available_extensions`; `enable_extension` tool (gated DDL, allowlist).
+- **Revisit `recommend_indexes` (Task 5.3)** — make it index-type aware:
+  trigram GIN for `LIKE`/fuzzy, GIN for `jsonb`/arrays, BRIN for append-only,
+  and (with Phase 10) HNSW/IVFFlat for `vector` columns.
+
 ## Phase 9 — Text search & fuzzy matching, incl. `pg_trgm` (not started)
 ## Phase 10 — Vector search (`pgvector`) (not started)
 ## Phase 11 — Geospatial (PostGIS), optional (not started)
@@ -212,6 +221,10 @@
 - 2026-05-20 — Task 5.3: TDD'd `recommend_indexes` (`mcpg/indexing.py`) — a
   table-level heuristic flagging large tables read mostly by sequential scan
   (column-level recommendations deferred to Phase 8). 244 tests, 100% coverage.
+- 2026-05-20 — Task 5.4: TDD'd `analyze_query_plan` (`mcpg/query.py`) — walks
+  the `EXPLAIN (FORMAT JSON)` tree into a structured summary (total cost,
+  estimated rows, node types, sequential scans). 249 tests, 100% coverage.
+  **Phase 5 complete.**
 - 2026-05-20 — Planning: added PostgreSQL extension support to the roadmap
   (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
   `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority

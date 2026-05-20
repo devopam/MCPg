@@ -9,6 +9,7 @@ and other unsafe statements are rejected.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -110,3 +111,49 @@ async def explain_query(driver: SqlDriver, sql: str, *, timeout: float = DEFAULT
     raw = next(iter(rows[0].cells.values()))
     plan = json.loads(raw) if isinstance(raw, str) else raw
     return ExplainResult(plan=plan)
+
+
+@dataclass(frozen=True, slots=True)
+class QueryPlanAnalysis:
+    """A structured summary of a query's execution plan."""
+
+    total_cost: float
+    estimated_rows: int
+    node_types: list[str]
+    sequential_scans: list[str]
+
+
+def _walk_plan(node: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Yield a plan node and all of its descendants."""
+    yield node
+    for child in node.get("Plans", []):
+        yield from _walk_plan(child)
+
+
+async def analyze_query_plan(
+    driver: SqlDriver, sql: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+) -> QueryPlanAnalysis:
+    """Summarise a query's execution plan into a structured analysis.
+
+    Builds on :func:`explain_query`: walks the plan tree to surface the total
+    estimated cost, estimated rows, the node types used, and any tables read
+    by a sequential scan.
+
+    Raises:
+        QueryError: If the query is rejected, planning fails, or the EXPLAIN
+            output has an unexpected shape.
+    """
+    plan = (await explain_query(driver, sql, timeout=timeout)).plan
+    if not isinstance(plan, list) or not plan:
+        raise QueryError("unexpected EXPLAIN output")
+
+    root = plan[0]["Plan"]
+    nodes = list(_walk_plan(root))
+    node_types = sorted({node["Node Type"] for node in nodes})
+    sequential_scans = sorted({node["Relation Name"] for node in nodes if node["Node Type"] == "Seq Scan"})
+    return QueryPlanAnalysis(
+        total_cost=root["Total Cost"],
+        estimated_rows=root["Plan Rows"],
+        node_types=node_types,
+        sequential_scans=sequential_scans,
+    )

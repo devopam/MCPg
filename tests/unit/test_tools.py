@@ -22,6 +22,7 @@ _READ_TOOLS = {
     "list_extensions",
     "run_select",
     "explain_query",
+    "analyze_query_plan",
     "check_database_health",
     "analyze_workload",
     "recommend_indexes",

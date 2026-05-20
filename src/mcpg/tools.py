@@ -110,6 +110,17 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         result = await query.explain_query(_driver(ctx), sql)
         return asdict(result)
 
+    @server.tool(
+        name="analyze_query_plan",
+        description=(
+            "Summarise a query's execution plan: total estimated cost, "
+            "estimated rows, node types used, and any sequentially-scanned tables."
+        ),
+    )
+    async def analyze_query_plan(ctx: _Ctx, sql: str) -> dict[str, Any]:
+        result = await query.analyze_query_plan(_driver(ctx), sql)
+        return asdict(result)
+
 
 def _register_health(server: FastMCP[AppContext]) -> None:
     @server.tool(
