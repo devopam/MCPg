@@ -97,6 +97,17 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         result = await query.run_select(_driver(ctx), sql)
         return asdict(result)
 
+    @server.tool(
+        name="explain_query",
+        description=(
+            "Return the PostgreSQL execution plan for a query without running "
+            "it. The query is validated by the same safety allowlist as run_select."
+        ),
+    )
+    async def explain_query(ctx: _Ctx, sql: str) -> dict[str, Any]:
+        result = await query.explain_query(_driver(ctx), sql)
+        return asdict(result)
+
 
 def register_tools(server: FastMCP[AppContext]) -> None:
     """Register every MCP tool on the given server."""

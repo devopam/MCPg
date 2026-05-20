@@ -3,7 +3,7 @@
 import pytest
 
 from mcpg.database import Database
-from mcpg.query import QueryError, run_select
+from mcpg.query import QueryError, explain_query, run_select
 
 
 async def test_run_select_executes_against_real_postgres(connected_database: Database) -> None:
@@ -17,3 +17,11 @@ async def test_run_select_executes_against_real_postgres(connected_database: Dat
 async def test_run_select_rejects_a_real_write(connected_database: Database) -> None:
     with pytest.raises(QueryError):
         await run_select(connected_database.driver(), "CREATE TABLE mcpg_should_not_exist (id int)")
+
+
+async def test_explain_query_returns_a_real_plan(connected_database: Database) -> None:
+    result = await explain_query(connected_database.driver(), "SELECT 1")
+
+    # EXPLAIN (FORMAT JSON) yields a single-element list whose item has a Plan.
+    assert isinstance(result.plan, list)
+    assert "Plan" in result.plan[0]

@@ -41,3 +41,5 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Safe query execution (`mcpg.query`): the `run_select` tool validates
   agent-supplied SQL against an allowlist and runs it read-only, returning a
   typed result; unsafe statements are rejected.
+- The `explain_query` tool returns a query's `EXPLAIN (FORMAT JSON)`
+  execution plan without running the query.

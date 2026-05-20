@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 2, Task 2.4 — TDD the `explain_query` tool (run EXPLAIN through the
-> safe driver, return the plan).
+> Phase 2, Task 2.5 — TDD result shaping for `run_select`: a configurable row
+> cap with a `truncated` flag (pagination if warranted).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -53,7 +53,7 @@
 - [x] 2.2 Introspection tools: `list_schemas`, `list_tables`, `describe_table`,
       `list_indexes`, `list_extensions` (`mcpg/introspection.py`, TDD)
 - [x] 2.3 `run_select` — read-only-enforced query execution via vendored `SafeSqlDriver` (`mcpg/query.py`, TDD)
-- [ ] 2.4 `explain_query` tool (TDD)
+- [x] 2.4 `explain_query` tool (`mcpg/query.py`, TDD)
 - [ ] 2.5 Result shaping — typed result, row caps, pagination (TDD)
 ## Phase 3 — Security hardening & access control (not started)
 ## Phase 4 — Write & DDL tools (not started)
@@ -126,3 +126,6 @@
   agent-supplied SQL through the vendored `SafeSqlDriver` (AST allowlist +
   forced read-only), returns a typed `QueryResult`, wraps rejections/failures
   in `QueryError`. Registered the `run_select` tool. 136 tests, 100% coverage.
+- 2026-05-20 — Task 2.4: TDD'd `explain_query` (`mcpg/query.py`) — wraps the
+  query in `EXPLAIN (FORMAT JSON)`, validated by the same allowlist, returns a
+  typed `ExplainResult`. Registered the `explain_query` tool. 142 tests, 100% cov.

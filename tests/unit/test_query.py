@@ -5,7 +5,7 @@ from _fakes import FakeDatabase, FakeDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
-from mcpg.query import QueryError, QueryResult, run_select
+from mcpg.query import ExplainResult, QueryError, QueryResult, explain_query, run_select
 from mcpg.server import create_server
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
@@ -58,3 +58,40 @@ async def test_run_select_tool_is_callable_from_a_client() -> None:
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["row_count"] == 1
+
+
+async def test_explain_query_returns_the_plan() -> None:
+    plan = [{"Plan": {"Node Type": "Result"}}]
+    driver = FakeDriver([{"QUERY PLAN": plan}])
+
+    result = await explain_query(driver, "SELECT 1")
+
+    assert result == ExplainResult(plan=plan)
+
+
+async def test_explain_query_parses_a_json_string_plan() -> None:
+    driver = FakeDriver([{"QUERY PLAN": '[{"Plan": {"Node Type": "Result"}}]'}])
+
+    result = await explain_query(driver, "SELECT 1")
+
+    assert result == ExplainResult(plan=[{"Plan": {"Node Type": "Result"}}])
+
+
+async def test_explain_query_rejects_a_write() -> None:
+    with pytest.raises(QueryError):
+        await explain_query(FakeDriver(), "DROP TABLE widget")
+
+
+async def test_explain_query_raises_when_no_plan_is_returned() -> None:
+    with pytest.raises(QueryError, match="no plan"):
+        await explain_query(FakeDriver([]), "SELECT 1")
+
+
+async def test_explain_query_tool_is_callable_from_a_client() -> None:
+    database = FakeDatabase(FakeDriver([{"QUERY PLAN": [{"Plan": {"Node Type": "Result"}}]}]))
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool("explain_query", {"sql": "SELECT 1"})
+
+    assert result.isError is False

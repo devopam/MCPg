@@ -8,6 +8,7 @@ and other unsafe statements are rejected.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -51,3 +52,33 @@ async def run_select(driver: SqlDriver, sql: str, *, timeout: float = DEFAULT_TI
     result_rows = [dict(row.cells) for row in rows or []]
     columns = list(result_rows[0].keys()) if result_rows else []
     return QueryResult(columns=columns, rows=result_rows, row_count=len(result_rows))
+
+
+@dataclass(frozen=True, slots=True)
+class ExplainResult:
+    """A query's execution plan, as returned by ``EXPLAIN``."""
+
+    plan: Any
+
+
+async def explain_query(driver: SqlDriver, sql: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> ExplainResult:
+    """Return the PostgreSQL execution plan for a query.
+
+    The query is wrapped in ``EXPLAIN (FORMAT JSON)`` and validated by the
+    same safety allowlist as :func:`run_select`. The query itself is not run;
+    only its plan is produced.
+
+    Raises:
+        QueryError: If the query is rejected as unsafe or planning fails.
+    """
+    safe_driver = SafeSqlDriver(sql_driver=driver, timeout=timeout)
+    try:
+        rows = await safe_driver.execute_query(f"EXPLAIN (FORMAT JSON) {sql}")
+    except Exception as exc:
+        raise QueryError(str(exc)) from exc
+
+    if not rows:
+        raise QueryError("EXPLAIN produced no plan")
+    raw = next(iter(rows[0].cells.values()))
+    plan = json.loads(raw) if isinstance(raw, str) else raw
+    return ExplainResult(plan=plan)
