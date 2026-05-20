@@ -15,7 +15,9 @@ from mcp.server.session import ServerSession
 
 from mcpg import __version__, introspection, query
 from mcpg._vendor.sql import SqlDriver
+from mcpg.config import AccessMode
 from mcpg.context import AppContext
+from mcpg.policy import Capability, is_permitted
 
 # The MCP request context FastMCP injects into every tool.
 _Ctx = Context[ServerSession, AppContext, Any]
@@ -109,8 +111,15 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
-def register_tools(server: FastMCP[AppContext]) -> None:
-    """Register every MCP tool on the given server."""
+def register_tools(server: FastMCP[AppContext], access_mode: AccessMode) -> None:
+    """Register the MCP tools permitted by the access mode.
+
+    ``get_server_info`` is always available. Read tools (introspection,
+    queries) are exposed whenever the READ capability is permitted, which is
+    every mode. Write tools (registered here from Phase 4) require the WRITE
+    capability, i.e. unrestricted mode.
+    """
     _register_server_info(server)
-    _register_introspection(server)
-    _register_query(server)
+    if is_permitted(access_mode, Capability.READ):
+        _register_introspection(server)
+        _register_query(server)

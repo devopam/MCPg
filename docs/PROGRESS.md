@@ -12,8 +12,9 @@
 
 ## Next action
 
-> Phase 3, Task 3.1 — TDD the access-mode policy engine: gate which tools are
-> registered/exposed based on `Settings.access_mode`.
+> Phase 3, Task 3.2 — TDD an adversarial SQL-safety regression suite for
+> `run_select`, covering the SQL-injection class that retired the official
+> server (multi-statement, comment escapes, transaction-control escapes, DDL).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -58,7 +59,7 @@
 
 ## Phase 3 — Security hardening & access control
 
-- [ ] 3.1 Access-mode policy engine — gate tool registration by `Settings.access_mode` (TDD)
+- [x] 3.1 Access-mode policy engine — gate tool registration by `Settings.access_mode` (`mcpg/policy.py`, TDD)
 - [ ] 3.2 SQL-safety regression suite — adversarial tests for the SQL-injection CVE class (TDD)
 - [ ] 3.3 Audit logging of tool invocations (TDD)
 - [ ] 3.4 Threat model + security documentation (`docs/`)
@@ -140,3 +141,7 @@
   cap (default 1000) with a `truncated` flag on `QueryResult`, exposed as a
   tool parameter. Cursor-style pagination is left to caller SQL
   `LIMIT`/`OFFSET`. 146 tests, 100% coverage. **Phase 2 complete.**
+- 2026-05-20 — Task 3.1: TDD'd the access-mode policy engine (`mcpg/policy.py`):
+  `Capability` enum + per-mode permission table. `register_tools` now takes the
+  access mode and gates registration by capability (all current tools are
+  reads; write gating bites in Phase 4). 157 tests, 100% coverage.

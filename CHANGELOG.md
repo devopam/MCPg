@@ -45,3 +45,5 @@ adheres to [Semantic Versioning](https://semver.org/).
   execution plan without running the query.
 - `run_select` caps results at a configurable `max_rows` (default 1000) and
   reports whether the result was `truncated`.
+- Access-mode policy engine (`mcpg.policy`): tool registration is gated by
+  capability, so the available tools depend on the configured access mode.
