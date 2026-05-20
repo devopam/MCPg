@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 2, Task 2.3 — TDD `run_select`: read-only-enforced query execution
-> via the vendored `SafeSqlDriver`.
+> Phase 2, Task 2.4 — TDD the `explain_query` tool (run EXPLAIN through the
+> safe driver, return the plan).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -52,7 +52,7 @@
 - [x] 2.1 Integration-test harness (`tests/integration/`) + PG 14–17 CI service matrix
 - [x] 2.2 Introspection tools: `list_schemas`, `list_tables`, `describe_table`,
       `list_indexes`, `list_extensions` (`mcpg/introspection.py`, TDD)
-- [ ] 2.3 `run_select` — read-only-enforced query execution via vendored `SafeSqlDriver` (TDD)
+- [x] 2.3 `run_select` — read-only-enforced query execution via vendored `SafeSqlDriver` (`mcpg/query.py`, TDD)
 - [ ] 2.4 `explain_query` tool (TDD)
 - [ ] 2.5 Result shaping — typed result, row caps, pagination (TDD)
 ## Phase 3 — Security hardening & access control (not started)
@@ -122,3 +122,7 @@
   `list_extensions` — typed results, parameterised catalog queries — plus
   their MCP tools. Added `FakeDriver`/`FakeDatabase` doubles and real-DB
   integration tests. 126 tests, 100% coverage.
+- 2026-05-20 — Task 2.3: TDD'd `run_select` (`mcpg/query.py`) — runs
+  agent-supplied SQL through the vendored `SafeSqlDriver` (AST allowlist +
+  forced read-only), returns a typed `QueryResult`, wraps rejections/failures
+  in `QueryError`. Registered the `run_select` tool. 136 tests, 100% coverage.

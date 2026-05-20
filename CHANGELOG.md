@@ -38,3 +38,6 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Schema-introspection tools (`mcpg.introspection`): `list_schemas`,
   `list_tables`, `describe_table`, `list_indexes`, and `list_extensions`,
   using parameterised read-only catalog queries.
+- Safe query execution (`mcpg.query`): the `run_select` tool validates
+  agent-supplied SQL against an allowlist and runs it read-only, returning a
+  typed result; unsafe statements are rejected.

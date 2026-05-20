@@ -13,7 +13,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 
-from mcpg import __version__, introspection
+from mcpg import __version__, introspection, query
 from mcpg._vendor.sql import SqlDriver
 from mcpg.context import AppContext
 
@@ -85,7 +85,21 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         return [asdict(extension) for extension in extensions]
 
 
+def _register_query(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="run_select",
+        description=(
+            "Validate and run a read-only SQL query. Writes, DDL, and other "
+            "unsafe statements are rejected before execution."
+        ),
+    )
+    async def run_select(ctx: _Ctx, sql: str) -> dict[str, Any]:
+        result = await query.run_select(_driver(ctx), sql)
+        return asdict(result)
+
+
 def register_tools(server: FastMCP[AppContext]) -> None:
     """Register every MCP tool on the given server."""
     _register_server_info(server)
     _register_introspection(server)
+    _register_query(server)
