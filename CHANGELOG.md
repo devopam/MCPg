@@ -22,3 +22,6 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Env-driven configuration (`mcpg.config`): `Settings`, `AccessMode`,
   `Transport`, and `load_settings`. Read-only is the default access mode and
   the settings repr redacts database credentials.
+- Database connection lifecycle (`mcpg.database`): `Database` wraps the pool
+  with connect/close, async-context-manager support, and a typed
+  `DatabaseError`.

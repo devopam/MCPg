@@ -12,8 +12,9 @@
 
 ## Next action
 
-> Phase 1, Task 1.2 — TDD a connection-pool lifecycle wrapper around the
-> vendored `DbConnPool` (open/close, health, used by the server bootstrap).
+> Phase 1, Task 1.3 — TDD the MCP server bootstrap (`FastMCP`) wired to
+> `Settings` + `Database`, with the stdio transport and no module-level
+> global state.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -41,7 +42,7 @@
 ## Phase 1 — Core server skeleton
 
 - [x] 1.1 Typed env-driven config/settings loader (`mcpg/config.py`, TDD, 100% cov)
-- [ ] 1.2 Connection-pool lifecycle wrapper around the vendored `DbConnPool` (TDD)
+- [x] 1.2 Connection-pool lifecycle wrapper (`mcpg/database.py`, TDD, 100% cov)
 - [ ] 1.3 MCP server bootstrap (`FastMCP`) + stdio transport; no global state
 - [ ] 1.4 `get_server_info` tool — first end-to-end TDD vertical slice
 - [ ] 1.5 Streamable HTTP transport + `mcpg` CLI entry point
@@ -87,3 +88,7 @@
 - 2026-05-20 — Task 1.1: TDD'd the env-driven config loader (`mcpg/config.py`):
   `Settings`, `AccessMode`, `Transport`, `load_settings`, `ConfigError`.
   16 tests, 100% coverage of authored code; repr redacts credentials.
+- 2026-05-20 — Task 1.2: TDD'd the `Database` lifecycle wrapper
+  (`mcpg/database.py`) around the vendored `DbConnPool` — connect/close, async
+  context manager, typed `DatabaseError`. Switched pytest to `asyncio_mode =
+  auto`. 99 tests, 100% coverage.
