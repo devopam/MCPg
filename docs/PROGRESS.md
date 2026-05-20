@@ -12,9 +12,8 @@
 
 ## Next action
 
-> Phase 3, Task 3.2 — TDD an adversarial SQL-safety regression suite for
-> `run_select`, covering the SQL-injection class that retired the official
-> server (multi-statement, comment escapes, transaction-control escapes, DDL).
+> Phase 3, Task 3.3 — TDD audit logging of tool invocations (tool name,
+> arguments with secrets redacted, outcome).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -60,7 +59,7 @@
 ## Phase 3 — Security hardening & access control
 
 - [x] 3.1 Access-mode policy engine — gate tool registration by `Settings.access_mode` (`mcpg/policy.py`, TDD)
-- [ ] 3.2 SQL-safety regression suite — adversarial tests for the SQL-injection CVE class (TDD)
+- [x] 3.2 SQL-safety regression suite — adversarial tests for the SQL-injection CVE class (`tests/unit/test_sql_safety.py`)
 - [ ] 3.3 Audit logging of tool invocations (TDD)
 - [ ] 3.4 Threat model + security documentation (`docs/`)
 
@@ -145,3 +144,8 @@
   `Capability` enum + per-mode permission table. `register_tools` now takes the
   access mode and gates registration by capability (all current tools are
   reads; write gating bites in Phase 4). 157 tests, 100% coverage.
+- 2026-05-20 — Task 3.2: added an adversarial SQL-safety regression suite
+  (`tests/unit/test_sql_safety.py`) — 21 hostile queries (statement stacking,
+  comment escapes, transaction-control escapes, DDL/DML, COPY, DO blocks) all
+  rejected before reaching the driver; 5 legitimate reads still accepted.
+  183 tests, 100% coverage.

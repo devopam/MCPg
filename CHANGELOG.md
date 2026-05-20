@@ -47,3 +47,5 @@ adheres to [Semantic Versioning](https://semver.org/).
   reports whether the result was `truncated`.
 - Access-mode policy engine (`mcpg.policy`): tool registration is gated by
   capability, so the available tools depend on the configured access mode.
+- Adversarial SQL-safety regression suite covering statement stacking,
+  comment and transaction-control escapes, DDL/DML, `COPY`, and `DO` blocks.
