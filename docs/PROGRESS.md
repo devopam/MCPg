@@ -6,14 +6,14 @@
 
 ## Current state
 
-- **Phase:** 1 — Core server skeleton
+- **Phase:** 2 — Schema introspection & safe reads
 - **Last updated:** 2026-05-20
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 1, Task 1.5 — add the `mcpg` console-script CLI entry point that loads
-> settings and calls `run`.
+> Phase 2, Task 2.1 — stand up the integration-test harness (real Postgres via
+> Docker) and add the PG 14–17 service matrix to CI.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -38,15 +38,23 @@
   wired in during Phase 1 (authored code exists) and Phase 2 (integration tests
   exist) respectively, to avoid dead/failing config now.
 
-## Phase 1 — Core server skeleton
+## Phase 1 — Core server skeleton  ✅ COMPLETE
 
 - [x] 1.1 Typed env-driven config/settings loader (`mcpg/config.py`, TDD, 100% cov)
 - [x] 1.2 Connection-pool lifecycle wrapper (`mcpg/database.py`, TDD, 100% cov)
 - [x] 1.3 MCP server bootstrap (`mcpg/server.py`, TDD, 100% cov); no global state
 - [x] 1.4 `get_server_info` tool — first end-to-end vertical slice (`mcpg/tools.py`, TDD)
-- [ ] 1.5 `mcpg` CLI entry point (the `run` dispatcher already covers all 3 transports)
-- [ ] 1.6 Wire the coverage gate (`--cov`, `fail_under = 90`) into CI
-## Phase 2 — Schema introspection & safe reads (not started)
+- [x] 1.5 `mcpg` CLI entry point (`mcpg/__main__.py`, TDD)
+- [x] 1.6 Coverage gate (`--cov`, `fail_under = 90`) wired into CI
+
+## Phase 2 — Schema introspection & safe reads
+
+- [ ] 2.1 Integration-test harness (real Postgres via Docker) + PG 14–17 CI matrix
+- [ ] 2.2 Introspection tools: `list_schemas`, `list_tables`, `describe_table`,
+      `list_indexes`, `list_extensions` (TDD)
+- [ ] 2.3 `run_select` — read-only-enforced query execution via vendored `SafeSqlDriver` (TDD)
+- [ ] 2.4 `explain_query` tool (TDD)
+- [ ] 2.5 Result shaping — typed result, row caps, pagination (TDD)
 ## Phase 3 — Security hardening & access control (not started)
 ## Phase 4 — Write & DDL tools (not started)
 ## Phase 5 — Ops, health & tuning (not started)
@@ -100,3 +108,7 @@
   `build_server_info`, `register_tools` + the `get_server_info` tool. Moved
   `AppContext` to `mcpg/context.py` to break a server/tools import cycle.
   Verified the tool end-to-end via an in-memory MCP client. 108 tests, 100% cov.
+- 2026-05-20 — Task 1.5/1.6: TDD'd the `mcpg` CLI entry point
+  (`mcpg/__main__.py`) and restored the `[project.scripts]` entry; wired the
+  coverage gate into CI (`pytest --cov`). 110 tests, 100% coverage.
+  **Phase 1 complete.**

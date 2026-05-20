@@ -15,7 +15,8 @@ dependencies = [
     "typing-extensions>=4.12",
 ]
 
-# [project.scripts] — added in Phase 1 once the server entry point exists.
+[project.scripts]
+mcpg = "mcpg.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

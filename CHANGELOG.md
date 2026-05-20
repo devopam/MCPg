@@ -30,3 +30,6 @@ adheres to [Semantic Versioning](https://semver.org/).
   `run` serves over the stdio, streamable-HTTP, or SSE transport.
 - First MCP tool, `get_server_info` (`mcpg.tools`): reports the server
   version, access mode, transport, and database connection status.
+- Console entry point: `mcpg` (and `python -m mcpg`) loads configuration
+  and runs the server.
+- CI now enforces the test-coverage gate (90% of authored code).
