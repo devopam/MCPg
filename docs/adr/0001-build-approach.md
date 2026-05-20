@@ -66,32 +66,56 @@ rewrite, and their permissive MIT license makes reuse clean. Hard-forking —
 rather than contributing upstream — is chosen because our architecture diverges
 and upstream cadence would gate our progress.
 
+### Vendoring scope — minimise inherited surface
+
+To avoid inheriting tech debt we did **not** take the whole ~7k LOC base.
+Import-graph analysis confirmed the `sql/` subpackage is **fully
+self-contained** — it imports only `pglast`, `psycopg`, `psycopg_pool`,
+`typing_extensions`, the stdlib, and its own siblings. It has **no dependency**
+on the upstream `server.py` (and its global state), the analysis modules
+(`database_health/`, `explain/`, `index/`, `top_queries/`), or the heavy
+`instructor` LLM dependency.
+
+Therefore we vendor **only** `sql/` (6 files, ~2,453 LOC) into
+`src/mcpg/_vendor/sql/`, pinned to upstream commit `07eb329`:
+
+| File | Role |
+|------|------|
+| `safe_sql.py`       | `pglast` AST allowlist SQL validator (the security kernel) |
+| `sql_driver.py`     | `DbConnPool`, `SqlDriver`, `obfuscate_password` |
+| `bind_params.py`    | parameter binding / AST visitors |
+| `extension_utils.py`| extension + PG-version checks |
+| `index.py`          | `IndexDefinition` value type |
+| `__init__.py`       | public exports |
+
+Everything else — server bootstrap, access-mode engine, tool layer, config,
+taxonomy, and the analysis features (health/explain/index) — is **authored
+fresh by us under strict TDD**. Inherited surface drops from ~7.3k to ~2.5k LOC.
+
 ### Reconciling with the TDD mandate
 
-A hard-fork inherits ~7k LOC that cannot be retroactively TDD'd. Strategy:
+- **Vendored kernel** (`src/mcpg/_vendor/`) is a **trusted, pinned foundation**.
+  It keeps the subset of upstream tests that port without touching `server.py`
+  (`test_safe_sql`, `test_obfuscate_password`, `test_sql_driver`). It is
+  excluded from the coverage gate. Before modifying any vendored file we add
+  **characterization tests** to pin behaviour, then change under TDD.
+- **All newly authored code** is **strict TDD** (failing test first).
+- The CI coverage gate applies to authored (non-vendored) code.
 
-- **Inherited kernel** (`sql/safe_sql.py`, `explain/`, `database_health/`,
-  `index/`, `top_queries/`) is treated as a **trusted vendored foundation**. It
-  keeps its existing test suite. Before modifying any inherited module we add
-  **characterization tests** to pin current behavior, then change under TDD.
-- **All newly authored code** — server bootstrap, access-mode policy engine,
-  tool registry/layer, config/settings, taxonomy, audit log — is **strict TDD**
-  (failing test first).
-- The CI coverage gate applies to new/changed code.
-
-This keeps TDD honest for everything we author without discarding proven code.
+This keeps TDD honest for everything we author without discarding the
+hard-won, security-critical SQL validator.
 
 ## Consequences
 
-- **Easier:** immediate access to a working server, real SQL-safety validator,
-  and ops/tuning features; Phases 5+ become integration/refactor rather than
-  greenfield.
-- **Harder:** must absorb and understand inherited code; must refactor out
-  global state early (new Phase 1 task); must maintain attribution and a
-  `NOTICE`/`THIRD_PARTY` record; characterization-test burden when touching the
-  kernel.
-- **Follow-up:** Phase 0 now includes importing the upstream source onto our
-  branch with preserved license attribution; Phase 1 adds an explicit
-  "eliminate global state" task; Phase 3 adds the third access mode.
-- We will track upstream `crystaldba/postgres-mcp` for security fixes to
-  cherry-pick.
+- **Easier:** immediate access to a battle-tested SQL-safety validator and
+  connection layer without owning the upstream global state or LLM dependency.
+- **Harder:** the analysis features (health/explain/index) are now authored by
+  us under TDD rather than inherited — more work in Phases 5+, but clean and
+  fully tested.
+- **Licensing:** the MCPg repo is **AGPL-3.0**; the vendored `sql/` code is
+  **MIT** (permissive, AGPL-compatible). We preserve the upstream MIT licence
+  text and copyright in `src/mcpg/_vendor/LICENSE` and record provenance in
+  `NOTICE` and `src/mcpg/_vendor/README.md`.
+- **Follow-up:** track upstream `crystaldba/postgres-mcp` for security fixes to
+  the `sql/` subpackage and cherry-pick into the vendored copy (re-sync
+  procedure documented in `src/mcpg/_vendor/README.md`).
