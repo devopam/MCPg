@@ -12,9 +12,9 @@
 
 ## Next action
 
-> Phase 4, Task 4.1 — TDD `run_write`: gated DML execution (INSERT/UPDATE/
-> DELETE) available only in `unrestricted` mode, with explicit transactions
-> and per-write audit entries.
+> Phase 4, Task 4.2 — TDD `run_ddl`: gated DDL execution (CREATE/ALTER/DROP/
+> etc.), available only in `unrestricted` mode AND behind a separate
+> `MCPG_ALLOW_DDL` opt-in flag.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -66,10 +66,18 @@
 
 ## Phase 4 — Write & DDL tools
 
-- [ ] 4.1 `run_write` — gated DML (INSERT/UPDATE/DELETE), unrestricted mode only (TDD)
-- [ ] 4.2 `run_ddl` — gated DDL (CREATE/ALTER/DROP), unrestricted mode only (TDD)
-- [ ] 4.3 Explicit transaction handling + dry-run/preview for writes (TDD)
-- [ ] 4.4 Per-write audit entries verified end-to-end (TDD)
+- [x] 4.1 `run_write` — gated DML (INSERT/UPDATE/DELETE), unrestricted mode only (`mcpg/write.py`, TDD)
+- [ ] 4.2 `run_ddl` — gated DDL, unrestricted mode + `MCPG_ALLOW_DDL` opt-in (TDD)
+- [ ] 4.3 Phase 4 verification — write audit + DDL gating end-to-end
+
+### Phase 4 decisions
+
+- DDL requires a second opt-in beyond unrestricted mode (`MCPG_ALLOW_DDL`),
+  per user direction — DDL has the highest blast radius.
+- No dry-run/preview: writes execute directly (user direction — avoid the
+  runtime cost of a rolled-back preview transaction).
+- Per-write auditing is already provided by `AuditedFastMCP` (every tool call
+  is audited); Task 4.3 verifies it for write tools rather than adding code.
 ## Phase 5 — Ops, health & tuning (not started)
 ## Phase 6 — Scalability & multi-tenancy (not started)
 ## Phase 7 — Docs, packaging & release (not started)
@@ -163,3 +171,7 @@
   (`docs/security.md`) — trust boundaries, threats T1–T5 with mitigations,
   operator responsibilities, scope. Linked docs from the README.
   **Phase 3 complete.**
+- 2026-05-20 — Task 4.1: TDD'd `run_write` (`mcpg/write.py`) — parses with
+  `pglast`, requires exactly one INSERT/UPDATE/DELETE (blocks statement
+  stacking), executes read-write. `register_tools` now takes `Settings` and
+  gates the `run_write` tool to unrestricted mode. 209 tests, 100% coverage.

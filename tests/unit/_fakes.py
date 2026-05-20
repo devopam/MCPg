@@ -35,14 +35,17 @@ class FakePool:
 class FakeDriver:
     """Stand-in for SqlDriver that returns canned rows and records calls."""
 
-    def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
+    def __init__(self, rows: list[dict[str, Any]] | None = None, *, fail: bool = False) -> None:
         self._rows = rows or []
+        self.fail = fail
         self.calls: list[tuple[str, Any, bool]] = []
 
     async def execute_query(
         self, query: str, params: list[Any] | None = None, force_readonly: bool = False
     ) -> list[SqlDriver.RowResult]:
         self.calls.append((query, params, force_readonly))
+        if self.fail:
+            raise RuntimeError("execution failed")
         return [SqlDriver.RowResult(cells=dict(row)) for row in self._rows]
 
 

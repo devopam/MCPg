@@ -72,19 +72,27 @@ async def test_get_server_info_is_callable_from_an_mcp_client() -> None:
     assert result.structuredContent["database_connected"] is True
 
 
-@pytest.mark.parametrize("access_mode", list(AccessMode))
-async def test_read_tools_are_exposed_in_every_access_mode(access_mode: AccessMode) -> None:
+def _server_for(access_mode: AccessMode) -> object:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_ACCESS_MODE": access_mode.value,
         }
     )
-    server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    return create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
 
-    async with create_connected_server_and_client_session(server) as client:
+
+@pytest.mark.parametrize("access_mode", list(AccessMode))
+async def test_read_tools_are_exposed_in_every_access_mode(access_mode: AccessMode) -> None:
+    async with create_connected_server_and_client_session(_server_for(access_mode)) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
 
-    # Every current tool is a read tool, so all modes expose the same set.
-    # Phase 4 adds write tools, gated to unrestricted mode.
-    assert names == _READ_TOOLS
+    assert _READ_TOOLS <= names
+
+
+@pytest.mark.parametrize("access_mode", list(AccessMode))
+async def test_write_tools_are_exposed_only_in_unrestricted_mode(access_mode: AccessMode) -> None:
+    async with create_connected_server_and_client_session(_server_for(access_mode)) as client:
+        names = {tool.name for tool in (await client.list_tools()).tools}
+
+    assert ("run_write" in names) is (access_mode is AccessMode.UNRESTRICTED)

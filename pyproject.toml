@@ -77,3 +77,8 @@ exclude = ["src/mcpg/_vendor/", "tests/vendor/"]
 [[tool.mypy.overrides]]
 module = ["mcpg._vendor.*"]
 ignore_errors = true
+
+[[tool.mypy.overrides]]
+# pglast ships no type stubs.
+module = ["pglast", "pglast.*"]
+ignore_missing_imports = true

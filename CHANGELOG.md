@@ -53,3 +53,6 @@ adheres to [Semantic Versioning](https://semver.org/).
   `mcpg.audit` logger with its outcome and arguments, with secrets masked.
 - Security documentation (`docs/security.md`): threat model, trust
   boundaries, mitigations, and operator responsibilities.
+- Write execution (`mcpg.write`): the `run_write` tool executes a single
+  validated INSERT/UPDATE/DELETE statement, available only in unrestricted
+  access mode; statement stacking is rejected.

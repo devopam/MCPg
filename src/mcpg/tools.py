@@ -13,9 +13,9 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 
-from mcpg import __version__, introspection, query
+from mcpg import __version__, introspection, query, write
 from mcpg._vendor.sql import SqlDriver
-from mcpg.config import AccessMode
+from mcpg.config import Settings
 from mcpg.context import AppContext
 from mcpg.policy import Capability, is_permitted
 
@@ -111,15 +111,30 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
-def register_tools(server: FastMCP[AppContext], access_mode: AccessMode) -> None:
-    """Register the MCP tools permitted by the access mode.
+def _register_write(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="run_write",
+        description=(
+            "Execute a single INSERT, UPDATE, or DELETE statement in a "
+            "read-write transaction. Add a RETURNING clause to receive "
+            "affected rows. Available only in unrestricted access mode."
+        ),
+    )
+    async def run_write(ctx: _Ctx, sql: str) -> dict[str, Any]:
+        result = await write.run_write(_driver(ctx), sql)
+        return asdict(result)
+
+
+def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
+    """Register the MCP tools permitted by the configured access mode.
 
     ``get_server_info`` is always available. Read tools (introspection,
     queries) are exposed whenever the READ capability is permitted, which is
-    every mode. Write tools (registered here from Phase 4) require the WRITE
-    capability, i.e. unrestricted mode.
+    every mode. Write tools require the WRITE capability — unrestricted mode.
     """
     _register_server_info(server)
-    if is_permitted(access_mode, Capability.READ):
+    if is_permitted(settings.access_mode, Capability.READ):
         _register_introspection(server)
         _register_query(server)
+    if is_permitted(settings.access_mode, Capability.WRITE):
+        _register_write(server)

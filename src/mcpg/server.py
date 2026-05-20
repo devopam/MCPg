@@ -71,7 +71,7 @@ def create_server(settings: Settings, *, database: Database | None = None) -> Fa
         host=settings.http_host,
         port=settings.http_port,
     )
-    register_tools(server, settings.access_mode)
+    register_tools(server, settings)
     return server
 
 
