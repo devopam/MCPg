@@ -49,3 +49,5 @@ adheres to [Semantic Versioning](https://semver.org/).
   capability, so the available tools depend on the configured access mode.
 - Adversarial SQL-safety regression suite covering statement stacking,
   comment and transaction-control escapes, DDL/DML, `COPY`, and `DO` blocks.
+- Audit logging (`mcpg.audit`): every tool invocation is logged to the
+  `mcpg.audit` logger with its outcome and arguments, with secrets masked.

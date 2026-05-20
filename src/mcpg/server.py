@@ -8,11 +8,14 @@ mutable global state.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ContentBlock
 
+from mcpg import audit
 from mcpg.config import Settings, Transport
 from mcpg.context import AppContext
 from mcpg.database import Database
@@ -23,7 +26,20 @@ SERVER_INSTRUCTIONS = (
     "MCPg: a PostgreSQL MCP server for inspecting, querying, operating, and tuning a Postgres database."
 )
 
-__all__ = ["SERVER_NAME", "AppContext", "create_server", "make_lifespan", "run"]
+__all__ = ["SERVER_NAME", "AppContext", "AuditedFastMCP", "create_server", "make_lifespan", "run"]
+
+
+class AuditedFastMCP(FastMCP[AppContext]):
+    """A FastMCP server that records an audit event for every tool call."""
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[ContentBlock] | dict[str, Any]:
+        try:
+            result = await super().call_tool(name, arguments)
+        except Exception as exc:
+            audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(exc)))
+            raise
+        audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="ok"))
+        return result
 
 
 def make_lifespan(
@@ -48,7 +64,7 @@ def create_server(settings: Settings, *, database: Database | None = None) -> Fa
             is created from ``settings``.
     """
     db = database if database is not None else Database(settings)
-    server: FastMCP[AppContext] = FastMCP(
+    server: FastMCP[AppContext] = AuditedFastMCP(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
         lifespan=make_lifespan(settings, db),

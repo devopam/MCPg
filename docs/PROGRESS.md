@@ -12,8 +12,9 @@
 
 ## Next action
 
-> Phase 3, Task 3.3 — TDD audit logging of tool invocations (tool name,
-> arguments with secrets redacted, outcome).
+> Phase 3, Task 3.4 — write the threat model and security documentation
+> (`docs/security.md`): trust boundaries, access modes, the SQL-safety
+> guarantee, audit logging, and secrets handling.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -60,7 +61,7 @@
 
 - [x] 3.1 Access-mode policy engine — gate tool registration by `Settings.access_mode` (`mcpg/policy.py`, TDD)
 - [x] 3.2 SQL-safety regression suite — adversarial tests for the SQL-injection CVE class (`tests/unit/test_sql_safety.py`)
-- [ ] 3.3 Audit logging of tool invocations (TDD)
+- [x] 3.3 Audit logging of tool invocations (`mcpg/audit.py`, TDD)
 - [ ] 3.4 Threat model + security documentation (`docs/`)
 
 ## Phase 4 — Write & DDL tools (not started)
@@ -149,3 +150,7 @@
   comment escapes, transaction-control escapes, DDL/DML, COPY, DO blocks) all
   rejected before reaching the driver; 5 legitimate reads still accepted.
   183 tests, 100% coverage.
+- 2026-05-20 — Task 3.3: TDD'd audit logging (`mcpg/audit.py`): `AuditEvent`,
+  `redact_arguments` (masks secret-named args, obfuscates embedded passwords),
+  `record`. `AuditedFastMCP` overrides `call_tool` so every tool invocation —
+  success or error — is logged to the `mcpg.audit` logger. 192 tests, 100% cov.
