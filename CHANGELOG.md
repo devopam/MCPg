@@ -16,3 +16,5 @@ adheres to [Semantic Versioning](https://semver.org/).
   with the upstream unit tests that port cleanly.
 - Project scaffold: `pyproject.toml`, packaging, `ruff`/`mypy`/`pytest`/
   coverage configuration, `NOTICE`.
+- GitHub Actions CI (`.github/workflows/ci.yml`): lint, format, type-check,
+  and test jobs.

@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 0, Task 0.5 — add GitHub Actions CI (ruff + mypy + pytest, with a
-> Postgres version matrix) and confirm a first green run.
+> Phase 0, Task 0.6 — add `CONTRIBUTING.md`, pre-commit hooks, and issue/PR
+> templates.
 
 ## Phase 0 — Spike & foundation
 
@@ -21,7 +21,7 @@
 - [x] 0.2 Confirm/record stack → ADR-0002 (Python 3.12 + psycopg3 + mcp SDK)
 - [x] 0.3 Vendor `sql/` subpackage (MIT, `NOTICE` + `_vendor/README.md`); scaffold `uv` project
 - [x] 0.4 Configure `ruff`, `mypy --strict`, `pytest`, `pytest-cov`, coverage gate (in `pyproject.toml`)
-- [ ] 0.5 GitHub Actions CI (lint + types + tests, PG 14–17 matrix)
+- [x] 0.5 GitHub Actions CI (`.github/workflows/ci.yml`: ruff + mypy + pytest)
 - [ ] 0.6 `CONTRIBUTING.md`, pre-commit hooks, issue/PR templates
 - [ ] 0.7 First green CI run on a placeholder test
 
@@ -33,6 +33,10 @@
   Phase 1/3.
 - `uv sync` + `uv run pytest tests/vendor` + `ruff` + `mypy src/mcpg` all green
   locally.
+- CI runs ruff + mypy + pytest. The **coverage gate** (`fail_under = 90`) and
+  the **PG 14–17 service-container matrix** are intentionally deferred: they are
+  wired in during Phase 1 (authored code exists) and Phase 2 (integration tests
+  exist) respectively, to avoid dead/failing config now.
 
 ## Phase 1 — Core server skeleton (not started)
 ## Phase 2 — Schema introspection & safe reads (not started)
@@ -68,3 +72,5 @@
   `sql/` subpackage only (import-graph verified). Vendored 6 files + 75 tests,
   scaffolded the `uv` project (`pyproject.toml`, tooling config, `NOTICE`,
   `CHANGELOG.md`). All tests/lint/types green locally.
+- 2026-05-20 — Task 0.5: added GitHub Actions CI (`ci.yml`) running ruff,
+  ruff-format, mypy, and pytest. Coverage gate + PG matrix deferred (see notes).
