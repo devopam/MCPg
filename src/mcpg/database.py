@@ -41,9 +41,7 @@ class Database:
         except Exception as exc:
             self._connected = False
             # The vendored pool already obfuscates; re-apply defensively.
-            raise DatabaseError(
-                f"could not connect to the database: {obfuscate_password(str(exc))}"
-            ) from exc
+            raise DatabaseError(f"could not connect to the database: {obfuscate_password(str(exc))}") from exc
         self._connected = True
 
     async def close(self) -> None:
