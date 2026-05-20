@@ -6,14 +6,15 @@
 
 ## Current state
 
-- **Phase:** 4 — Write & DDL tools
+- **Phase:** 5 — Ops, health & tuning
 - **Last updated:** 2026-05-20
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 4, Task 4.3 — verify write tooling end-to-end: confirm write/DDL tool
-> calls are audited (`tool=run_write`/`run_ddl` in the audit log).
+> Phase 5, Task 5.1 — TDD `check_database_health`: connection-pool
+> utilisation, cache hit ratio, dead-tuple/vacuum health, invalid indexes.
+> Authored fresh (the upstream health module was not vendored — see ADR-0001).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -63,11 +64,11 @@
 - [x] 3.3 Audit logging of tool invocations (`mcpg/audit.py`, TDD)
 - [x] 3.4 Threat model + security documentation (`docs/security.md`)
 
-## Phase 4 — Write & DDL tools
+## Phase 4 — Write & DDL tools  ✅ COMPLETE
 
 - [x] 4.1 `run_write` — gated DML (INSERT/UPDATE/DELETE), unrestricted mode only (`mcpg/write.py`, TDD)
 - [x] 4.2 `run_ddl` — gated DDL, unrestricted mode + `MCPG_ALLOW_DDL` opt-in (`mcpg/write.py`, TDD)
-- [ ] 4.3 Phase 4 verification — write audit + DDL gating end-to-end
+- [x] 4.3 Phase 4 verification — write tool calls audited end-to-end
 
 ### Phase 4 decisions
 
@@ -77,7 +78,18 @@
   runtime cost of a rolled-back preview transaction).
 - Per-write auditing is already provided by `AuditedFastMCP` (every tool call
   is audited); Task 4.3 verifies it for write tools rather than adding code.
-## Phase 5 — Ops, health & tuning (not started)
+
+## Phase 5 — Ops, health & tuning
+
+> Authored fresh under TDD — the upstream `database_health/`, `index/`,
+> `top_queries/` modules were not vendored (ADR-0001 narrowed scope to `sql/`).
+
+- [ ] 5.1 `check_database_health` — connections, cache hit ratio, vacuum/dead
+      tuples, invalid indexes (TDD)
+- [ ] 5.2 `analyze_workload` — slow queries via `pg_stat_statements` (TDD)
+- [ ] 5.3 `recommend_indexes` — missing-index heuristics (TDD)
+- [ ] 5.4 `analyze_query_plan` — structured `EXPLAIN` plan analysis (TDD)
+
 ## Phase 6 — Scalability & multi-tenancy (not started)
 ## Phase 7 — Docs, packaging & release (not started)
 
@@ -178,3 +190,5 @@
   DDL allowlist. Added the `MCPG_ALLOW_DDL` config flag (`Capability.DDL`);
   the `run_ddl` tool is registered only in unrestricted mode with the opt-in
   enabled. 224 tests, 100% coverage.
+- 2026-05-20 — Task 4.3: verified write tool calls are audited end-to-end
+  (`tests/unit/test_audit.py`). 225 tests, 100% coverage. **Phase 4 complete.**

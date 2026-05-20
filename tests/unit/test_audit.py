@@ -11,6 +11,9 @@ from mcpg.config import load_settings
 from mcpg.server import create_server
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+_UNRESTRICTED = load_settings(
+    {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
+)
 
 
 # --- argument redaction ----------------------------------------------------
@@ -88,3 +91,14 @@ async def test_failing_tool_call_emits_an_error_audit_event(caplog: pytest.LogCa
 
     assert "tool=run_select" in caplog.text
     assert "status=error" in caplog.text
+
+
+async def test_write_tool_calls_are_audited(caplog: pytest.LogCaptureFixture) -> None:
+    server = create_server(_UNRESTRICTED, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    with caplog.at_level(logging.INFO, logger="mcpg.audit"):
+        async with create_connected_server_and_client_session(server) as client:
+            await client.call_tool("run_write", {"sql": "INSERT INTO widget (id) VALUES (1)"})
+
+    assert "tool=run_write" in caplog.text
+    assert "status=ok" in caplog.text
