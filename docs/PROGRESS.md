@@ -91,6 +91,13 @@
 
 ## Phase 6 — Scalability & multi-tenancy (not started)
 ## Phase 7 — Docs, packaging & release (not started)
+## Phase 8 — Index intelligence & extension management (not started)
+## Phase 9 — Text search & fuzzy matching, incl. `pg_trgm` (not started)
+## Phase 10 — Vector search (`pgvector`) (not started)
+## Phase 11 — Geospatial (PostGIS), optional (not started)
+
+> Phases 8–11 cover PostgreSQL extension and advanced-feature support; see
+> `PLAN.md` §7a for the capability inventory and per-extension priorities.
 
 ## Decisions log
 
@@ -198,3 +205,7 @@
 - 2026-05-20 — Task 5.2: TDD'd `analyze_workload` (`mcpg/workload.py`) —
   slowest queries via `pg_stat_statements`, degrading gracefully to
   `available=False` when the extension is absent. 239 tests, 100% coverage.
+- 2026-05-20 — Planning: added PostgreSQL extension support to the roadmap
+  (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
+  `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority
+  table recorded; ordering revisited before Phase 8 starts.

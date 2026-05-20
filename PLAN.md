@@ -174,6 +174,75 @@ sized to fit comfortably within a single session. Checklists live in
 - PyPI publish, Docker image, install instructions (`uvx`, Docker, source).
 - `v0.1.0` release with `CHANGELOG.md`; if forking, upstream contribution.
 
+### Phases 8–11 — Extension & feature support (post-1.0)
+
+A phased build-out of PostgreSQL extension and advanced-feature awareness.
+See §7a for the full capability inventory and rationale.
+
+- **Phase 8 — Index intelligence & extension management.** Report index
+  access methods (B-tree/GIN/GiST/BRIN/Hash/SP-GiST) in introspection;
+  `list_available_extensions`; `enable_extension` (gated DDL, known-extension
+  allowlist); make `recommend_indexes` index-type aware (GIN for
+  `jsonb`/arrays, trigram GIN for `LIKE`, BRIN for append-only).
+- **Phase 9 — Text search & fuzzy matching.** `pg_trgm` similarity/fuzzy
+  search tool; built-in full-text search (`tsvector`/`tsquery`) helper;
+  `unaccent` / `fuzzystrmatch` awareness.
+- **Phase 10 — Vector search (pgvector).** `vector` column awareness in
+  introspection; k-NN similarity-search tool (`<->`, `<=>`, `<#>`);
+  HNSW / IVFFlat index awareness in `list_indexes` and `recommend_indexes`.
+- **Phase 11 — Geospatial (PostGIS) [optional].** `geometry`/`geography`
+  awareness, spatial-index reporting, bounding-box / distance query helpers.
+
+Deliverable per phase: new tools + introspection upgrades, fully TDD'd, with
+graceful degradation when an extension is absent (as `analyze_workload`
+already does for `pg_stat_statements`).
+
+## 7a. Extension & feature capability inventory
+
+What "support" means here: MCPg should (a) **detect** which extensions are
+installed vs available, (b) make introspection **extension-aware** (index
+types, special column types), (c) offer **gated management** to enable known
+extensions, and (d) expose **feature tools** that use them. Every feature
+degrades gracefully when its extension is absent.
+
+### Index access methods (built-in — awareness only)
+
+| Method   | Best for                                   | Phase |
+|----------|--------------------------------------------|-------|
+| B-tree   | equality / range on scalars (default)      | done  |
+| GIN      | `jsonb`, arrays, full-text, trigram        | 8     |
+| GiST     | ranges, geometry, full-text, nearest-neighbour | 8 |
+| BRIN     | very large naturally-ordered tables        | 8     |
+| Hash     | equality only                              | 8     |
+| SP-GiST  | non-balanced / partitioned data            | 8     |
+
+### Extensions by category
+
+| Extension            | Capability                                  | Priority | Phase |
+|----------------------|---------------------------------------------|----------|-------|
+| `pg_stat_statements` | query workload stats                        | —        | done (5.2) |
+| `hypopg`             | hypothetical indexes for tuning             | high     | 5.4   |
+| `pg_trgm`            | trigram similarity, fuzzy `LIKE`            | high     | 9     |
+| `pgvector`           | `vector` type, similarity search, HNSW/IVF  | high     | 10    |
+| built-in FTS         | `tsvector`/`tsquery` full-text search       | high     | 9     |
+| `unaccent`           | accent-insensitive search                   | medium   | 9     |
+| `fuzzystrmatch`      | soundex, levenshtein                        | medium   | 9     |
+| `citext`             | case-insensitive text type                  | medium   | 8 (awareness) |
+| `hstore`             | key-value type                              | low      | 8 (awareness) |
+| `pgcrypto`/`uuid-ossp` | crypto / UUID generation                  | low      | 8 (awareness) |
+| `ltree`              | hierarchical data                           | low      | later |
+| PostGIS              | geospatial types & indexes                  | medium   | 11    |
+| `pgstattuple`        | table/index bloat estimation                | medium   | 8 (health) |
+| `pg_partman`/`postgres_fdw` | partitioning / federation             | low      | later |
+
+> **Operator note:** some extensions (`pg_stat_statements`, parts of PostGIS,
+> `hypopg`) need `shared_preload_libraries` or superuser to install. MCPg
+> detects and uses them but cannot always enable them itself.
+
+> **Priority ordering** (per user direction emphasising pgvector, GIN,
+> trigram): Phase 8 (index intelligence) → 9 (text/trigram) → 10 (pgvector)
+> → 11 (PostGIS). Re-orderable; revisit before starting Phase 8.
+
 ## 8. Resume protocol (work across session limits)
 
 To resume at any time, a new session must:
