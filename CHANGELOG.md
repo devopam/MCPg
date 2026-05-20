@@ -61,3 +61,6 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Database health checks (`mcpg.health`): the `check_database_health` tool
   reports connection utilisation, buffer cache hit ratio, tables needing
   vacuum, and invalid indexes.
+- Workload analysis (`mcpg.workload`): the `analyze_workload` tool reports
+  the slowest queries via `pg_stat_statements`, degrading gracefully when
+  the extension is not installed.

@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 5, Task 5.2 — TDD `analyze_workload`: surface the slowest queries via
-> the `pg_stat_statements` extension (degrade gracefully if not installed).
+> Phase 5, Task 5.3 — TDD `recommend_indexes`: heuristics for missing indexes
+> (e.g. sequential scans on large tables via `pg_stat_user_tables`).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -85,7 +85,7 @@
 
 - [x] 5.1 `check_database_health` — connections, cache hit ratio, vacuum/dead
       tuples, invalid indexes (`mcpg/health.py`, TDD)
-- [ ] 5.2 `analyze_workload` — slow queries via `pg_stat_statements` (TDD)
+- [x] 5.2 `analyze_workload` — slow queries via `pg_stat_statements` (`mcpg/workload.py`, TDD)
 - [ ] 5.3 `recommend_indexes` — missing-index heuristics (TDD)
 - [ ] 5.4 `analyze_query_plan` — structured `EXPLAIN` plan analysis (TDD)
 
@@ -195,3 +195,6 @@
   `check_connections`, `check_cache_hit_ratio`, `check_dead_tuples`,
   `check_invalid_indexes`, aggregated by `check_database_health` and exposed
   as a tool. Added the `FakeRoutingDriver` test double. 234 tests, 100% cov.
+- 2026-05-20 — Task 5.2: TDD'd `analyze_workload` (`mcpg/workload.py`) —
+  slowest queries via `pg_stat_statements`, degrading gracefully to
+  `available=False` when the extension is absent. 239 tests, 100% coverage.

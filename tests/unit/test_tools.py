@@ -23,6 +23,7 @@ _READ_TOOLS = {
     "run_select",
     "explain_query",
     "check_database_health",
+    "analyze_workload",
 }
 
 

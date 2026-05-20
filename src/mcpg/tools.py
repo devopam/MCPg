@@ -13,7 +13,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 
-from mcpg import __version__, health, introspection, query, write
+from mcpg import __version__, health, introspection, query, workload, write
 from mcpg._vendor.sql import SqlDriver
 from mcpg.config import Settings
 from mcpg.context import AppContext
@@ -121,6 +121,18 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     )
     async def check_database_health(ctx: _Ctx) -> dict[str, Any]:
         report = await health.check_database_health(_driver(ctx))
+        return asdict(report)
+
+    @server.tool(
+        name="analyze_workload",
+        description=(
+            "Return the slowest queries by mean execution time, via the "
+            "pg_stat_statements extension. Reports availability=false if the "
+            "extension is not installed."
+        ),
+    )
+    async def analyze_workload(ctx: _Ctx, limit: int = workload.DEFAULT_LIMIT) -> dict[str, Any]:
+        report = await workload.analyze_workload(_driver(ctx), limit=limit)
         return asdict(report)
 
 
