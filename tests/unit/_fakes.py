@@ -49,6 +49,23 @@ class FakeDriver:
         return [SqlDriver.RowResult(cells=dict(row)) for row in self._rows]
 
 
+class FakeRoutingDriver:
+    """SqlDriver double that returns rows based on a query-substring match."""
+
+    def __init__(self, routes: dict[str, list[dict[str, Any]]]) -> None:
+        self._routes = routes
+        self.calls: list[tuple[str, Any, bool]] = []
+
+    async def execute_query(
+        self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+    ) -> list[SqlDriver.RowResult]:
+        self.calls.append((query, params, force_readonly))
+        for substring, rows in self._routes.items():
+            if substring in query:
+                return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
+        return []
+
+
 class FakeDatabase:
     """Stand-in for Database whose driver() returns a supplied FakeDriver."""
 

@@ -58,3 +58,6 @@ adheres to [Semantic Versioning](https://semver.org/).
   access mode; statement stacking is rejected.
 - The `run_ddl` tool executes a single validated DDL statement; it requires
   unrestricted access mode and the `MCPG_ALLOW_DDL` opt-in.
+- Database health checks (`mcpg.health`): the `check_database_health` tool
+  reports connection utilisation, buffer cache hit ratio, tables needing
+  vacuum, and invalid indexes.

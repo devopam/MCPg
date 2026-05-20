@@ -12,9 +12,8 @@
 
 ## Next action
 
-> Phase 5, Task 5.1 — TDD `check_database_health`: connection-pool
-> utilisation, cache hit ratio, dead-tuple/vacuum health, invalid indexes.
-> Authored fresh (the upstream health module was not vendored — see ADR-0001).
+> Phase 5, Task 5.2 — TDD `analyze_workload`: surface the slowest queries via
+> the `pg_stat_statements` extension (degrade gracefully if not installed).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -84,8 +83,8 @@
 > Authored fresh under TDD — the upstream `database_health/`, `index/`,
 > `top_queries/` modules were not vendored (ADR-0001 narrowed scope to `sql/`).
 
-- [ ] 5.1 `check_database_health` — connections, cache hit ratio, vacuum/dead
-      tuples, invalid indexes (TDD)
+- [x] 5.1 `check_database_health` — connections, cache hit ratio, vacuum/dead
+      tuples, invalid indexes (`mcpg/health.py`, TDD)
 - [ ] 5.2 `analyze_workload` — slow queries via `pg_stat_statements` (TDD)
 - [ ] 5.3 `recommend_indexes` — missing-index heuristics (TDD)
 - [ ] 5.4 `analyze_query_plan` — structured `EXPLAIN` plan analysis (TDD)
@@ -192,3 +191,7 @@
   enabled. 224 tests, 100% coverage.
 - 2026-05-20 — Task 4.3: verified write tool calls are audited end-to-end
   (`tests/unit/test_audit.py`). 225 tests, 100% coverage. **Phase 4 complete.**
+- 2026-05-20 — Task 5.1: TDD'd database health checks (`mcpg/health.py`):
+  `check_connections`, `check_cache_hit_ratio`, `check_dead_tuples`,
+  `check_invalid_indexes`, aggregated by `check_database_health` and exposed
+  as a tool. Added the `FakeRoutingDriver` test double. 234 tests, 100% cov.

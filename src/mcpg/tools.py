@@ -13,7 +13,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 
-from mcpg import __version__, introspection, query, write
+from mcpg import __version__, health, introspection, query, write
 from mcpg._vendor.sql import SqlDriver
 from mcpg.config import Settings
 from mcpg.context import AppContext
@@ -111,6 +111,19 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_health(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="check_database_health",
+        description=(
+            "Run database health checks: connection utilisation, buffer cache "
+            "hit ratio, tables needing vacuum, and invalid indexes."
+        ),
+    )
+    async def check_database_health(ctx: _Ctx) -> dict[str, Any]:
+        report = await health.check_database_health(_driver(ctx))
+        return asdict(report)
+
+
 def _register_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="run_write",
@@ -150,6 +163,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     if is_permitted(settings.access_mode, Capability.READ):
         _register_introspection(server)
         _register_query(server)
+        _register_health(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
