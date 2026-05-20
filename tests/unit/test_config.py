@@ -81,6 +81,20 @@ def test_settings_is_immutable() -> None:
         settings.http_port = 1234  # type: ignore[misc]
 
 
+def test_allow_ddl_defaults_to_false() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).allow_ddl is False
+
+
+def test_allow_ddl_is_parsed_from_common_boolean_spellings() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_DDL": "true"}).allow_ddl is True
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_DDL": "OFF"}).allow_ddl is False
+
+
+def test_invalid_allow_ddl_raises() -> None:
+    with pytest.raises(ConfigError, match="MCPG_ALLOW_DDL"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_DDL": "maybe"})
+
+
 def test_repr_does_not_leak_the_password() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
     rendered = repr(settings)

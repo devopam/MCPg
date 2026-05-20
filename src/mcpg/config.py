@@ -15,6 +15,8 @@ from os import environ
 from mcpg._vendor.sql import obfuscate_password
 
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+_TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
+_FALSE_VALUES = frozenset({"false", "0", "no", "off"})
 
 
 class ConfigError(Exception):
@@ -47,6 +49,7 @@ class Settings:
     http_host: str = "127.0.0.1"
     http_port: int = 8000
     log_level: str = "INFO"
+    allow_ddl: bool = False
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -55,7 +58,7 @@ class Settings:
             f"access_mode={self.access_mode.value!r}, "
             f"transport={self.transport.value!r}, "
             f"http_host={self.http_host!r}, http_port={self.http_port}, "
-            f"log_level={self.log_level!r})"
+            f"log_level={self.log_level!r}, allow_ddl={self.allow_ddl})"
         )
 
 
@@ -65,6 +68,15 @@ def _parse_enum[E: StrEnum](var: str, raw: str, enum: type[E]) -> E:
     except ValueError:
         valid = ", ".join(member.value for member in enum)
         raise ConfigError(f"{var} must be one of: {valid} (got {raw!r})") from None
+
+
+def _parse_bool(var: str, raw: str) -> bool:
+    value = raw.strip().lower()
+    if value in _TRUE_VALUES:
+        return True
+    if value in _FALSE_VALUES:
+        return False
+    raise ConfigError(f"{var} must be a boolean (got {raw!r})")
 
 
 def _parse_port(var: str, raw: str) -> int:
@@ -109,6 +121,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         valid = ", ".join(sorted(_LOG_LEVELS))
         raise ConfigError(f"MCPG_LOG_LEVEL must be one of: {valid} (got {log_level!r})")
 
+    allow_ddl = False
+    if (raw := env.get("MCPG_ALLOW_DDL")) is not None:
+        allow_ddl = _parse_bool("MCPG_ALLOW_DDL", raw)
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -116,4 +132,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_host=env.get("MCPG_HTTP_HOST", "127.0.0.1"),
         http_port=http_port,
         log_level=log_level,
+        allow_ddl=allow_ddl,
     )

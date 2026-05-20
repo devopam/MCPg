@@ -96,3 +96,26 @@ async def test_write_tools_are_exposed_only_in_unrestricted_mode(access_mode: Ac
         names = {tool.name for tool in (await client.list_tools()).tools}
 
     assert ("run_write" in names) is (access_mode is AccessMode.UNRESTRICTED)
+
+
+@pytest.mark.parametrize(
+    ("access_mode", "allow_ddl", "expected"),
+    [
+        ("read-only", True, False),
+        ("restricted", True, False),
+        ("unrestricted", False, False),
+        ("unrestricted", True, True),
+    ],
+)
+async def test_run_ddl_requires_unrestricted_mode_and_the_allow_ddl_opt_in(
+    access_mode: str, allow_ddl: bool, expected: bool
+) -> None:
+    env = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": access_mode}
+    if allow_ddl:
+        env["MCPG_ALLOW_DDL"] = "true"
+    server = create_server(load_settings(env), database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        names = {tool.name for tool in (await client.list_tools()).tools}
+
+    assert ("run_ddl" in names) is expected

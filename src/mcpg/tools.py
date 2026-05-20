@@ -125,12 +125,26 @@ def _register_write(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_ddl(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="run_ddl",
+        description=(
+            "Execute a single DDL statement (CREATE/ALTER/DROP and related). "
+            "Available only in unrestricted access mode with MCPG_ALLOW_DDL enabled."
+        ),
+    )
+    async def run_ddl(ctx: _Ctx, sql: str) -> dict[str, Any]:
+        result = await write.run_ddl(_driver(ctx), sql)
+        return asdict(result)
+
+
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     """Register the MCP tools permitted by the configured access mode.
 
     ``get_server_info`` is always available. Read tools (introspection,
     queries) are exposed whenever the READ capability is permitted, which is
     every mode. Write tools require the WRITE capability — unrestricted mode.
+    The DDL tool additionally requires the ``MCPG_ALLOW_DDL`` opt-in.
     """
     _register_server_info(server)
     if is_permitted(settings.access_mode, Capability.READ):
@@ -138,3 +152,5 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_query(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
+    if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
+        _register_ddl(server)

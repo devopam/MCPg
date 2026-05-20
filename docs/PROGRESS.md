@@ -12,9 +12,8 @@
 
 ## Next action
 
-> Phase 4, Task 4.2 — TDD `run_ddl`: gated DDL execution (CREATE/ALTER/DROP/
-> etc.), available only in `unrestricted` mode AND behind a separate
-> `MCPG_ALLOW_DDL` opt-in flag.
+> Phase 4, Task 4.3 — verify write tooling end-to-end: confirm write/DDL tool
+> calls are audited (`tool=run_write`/`run_ddl` in the audit log).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -67,7 +66,7 @@
 ## Phase 4 — Write & DDL tools
 
 - [x] 4.1 `run_write` — gated DML (INSERT/UPDATE/DELETE), unrestricted mode only (`mcpg/write.py`, TDD)
-- [ ] 4.2 `run_ddl` — gated DDL, unrestricted mode + `MCPG_ALLOW_DDL` opt-in (TDD)
+- [x] 4.2 `run_ddl` — gated DDL, unrestricted mode + `MCPG_ALLOW_DDL` opt-in (`mcpg/write.py`, TDD)
 - [ ] 4.3 Phase 4 verification — write audit + DDL gating end-to-end
 
 ### Phase 4 decisions
@@ -175,3 +174,7 @@
   `pglast`, requires exactly one INSERT/UPDATE/DELETE (blocks statement
   stacking), executes read-write. `register_tools` now takes `Settings` and
   gates the `run_write` tool to unrestricted mode. 209 tests, 100% coverage.
+- 2026-05-20 — Task 4.2: TDD'd `run_ddl` (`mcpg/write.py`) — single-statement
+  DDL allowlist. Added the `MCPG_ALLOW_DDL` config flag (`Capability.DDL`);
+  the `run_ddl` tool is registered only in unrestricted mode with the opt-in
+  enabled. 224 tests, 100% coverage.

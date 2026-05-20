@@ -6,10 +6,17 @@ from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.server import create_server
-from mcpg.write import WriteError, WriteResult, run_write
+from mcpg.write import WriteError, WriteResult, run_ddl, run_write
 
 _UNRESTRICTED = load_settings(
     {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
+)
+_UNRESTRICTED_DDL = load_settings(
+    {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_ACCESS_MODE": "unrestricted",
+        "MCPG_ALLOW_DDL": "true",
+    }
 )
 
 
@@ -77,3 +84,38 @@ async def test_run_write_tool_is_callable_in_unrestricted_mode() -> None:
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["row_count"] == 1
+
+
+async def test_run_ddl_executes_a_ddl_statement() -> None:
+    driver = FakeDriver()
+
+    result = await run_ddl(driver, "CREATE TABLE widget (id int)")
+
+    assert result == WriteResult(rows=[], row_count=0)
+    assert driver.calls[0][2] is False
+
+
+@pytest.mark.parametrize(
+    "sql",
+    ["SELECT 1", "INSERT INTO widget (id) VALUES (1)", "DELETE FROM widget"],
+)
+async def test_run_ddl_rejects_non_ddl_statements(sql: str) -> None:
+    driver = FakeDriver()
+
+    with pytest.raises(WriteError):
+        await run_ddl(driver, sql)
+    assert driver.calls == []
+
+
+async def test_run_ddl_rejects_statement_stacking() -> None:
+    with pytest.raises(WriteError, match="exactly one"):
+        await run_ddl(FakeDriver(), "CREATE TABLE a (id int); DROP TABLE b")
+
+
+async def test_run_ddl_tool_is_callable_when_ddl_is_allowed() -> None:
+    server = create_server(_UNRESTRICTED_DDL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool("run_ddl", {"sql": "CREATE TABLE widget (id int)"})
+
+    assert result.isError is False

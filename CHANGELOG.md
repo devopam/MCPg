@@ -56,3 +56,5 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Write execution (`mcpg.write`): the `run_write` tool executes a single
   validated INSERT/UPDATE/DELETE statement, available only in unrestricted
   access mode; statement stacking is rejected.
+- The `run_ddl` tool executes a single validated DDL statement; it requires
+  unrestricted access mode and the `MCPG_ALLOW_DDL` opt-in.

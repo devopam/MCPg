@@ -17,15 +17,17 @@ class Capability(StrEnum):
 
     READ = "read"
     WRITE = "write"
+    DDL = "ddl"
 
 
 # Capabilities permitted in each access mode. read-only and restricted both
 # allow reads only; restricted additionally constrains execution (timeouts,
-# row caps) at the tool level. Unrestricted adds writes.
+# row caps) at the tool level. Unrestricted adds writes and DDL. DDL also
+# requires the separate MCPG_ALLOW_DDL opt-in, enforced where tools register.
 _PERMITTED: dict[AccessMode, frozenset[Capability]] = {
     AccessMode.READ_ONLY: frozenset({Capability.READ}),
     AccessMode.RESTRICTED: frozenset({Capability.READ}),
-    AccessMode.UNRESTRICTED: frozenset({Capability.READ, Capability.WRITE}),
+    AccessMode.UNRESTRICTED: frozenset({Capability.READ, Capability.WRITE, Capability.DDL}),
 }
 
 

@@ -23,5 +23,13 @@ def test_write_capability_is_permitted_only_in_unrestricted_mode() -> None:
     assert is_permitted(AccessMode.READ_ONLY, Capability.WRITE) is False
 
 
-def test_unrestricted_mode_permits_both_capabilities() -> None:
-    assert permitted_capabilities(AccessMode.UNRESTRICTED) == frozenset({Capability.READ, Capability.WRITE})
+def test_ddl_capability_is_permitted_only_in_unrestricted_mode() -> None:
+    assert is_permitted(AccessMode.UNRESTRICTED, Capability.DDL) is True
+    assert is_permitted(AccessMode.RESTRICTED, Capability.DDL) is False
+    assert is_permitted(AccessMode.READ_ONLY, Capability.DDL) is False
+
+
+def test_unrestricted_mode_permits_all_capabilities() -> None:
+    assert permitted_capabilities(AccessMode.UNRESTRICTED) == frozenset(
+        {Capability.READ, Capability.WRITE, Capability.DDL}
+    )
