@@ -12,14 +12,15 @@
 
 ## Next action
 
-> Phase 0, Task 0.1 — hands-on evaluation of `crystaldba/postgres-mcp` and
-> write ADR-0001 (fork vs hard-fork vs greenfield).
+> Phase 0, Task 0.3 — import the `crystaldba/postgres-mcp` source onto our
+> branch with preserved MIT attribution (`NOTICE`/`THIRD_PARTY` record), then
+> scaffold the `uv` project around it.
 
 ## Phase 0 — Spike & foundation
 
-- [ ] 0.1 Evaluate `crystaldba/postgres-mcp` (code, tests, license, activity) → ADR-0001
-- [ ] 0.2 Confirm/record stack → ADR-0002
-- [ ] 0.3 Scaffold `uv` project (`pyproject.toml`, src layout, package skeleton)
+- [x] 0.1 Evaluate `crystaldba/postgres-mcp` (code, tests, license, activity) → ADR-0001 (hard-fork)
+- [x] 0.2 Confirm/record stack → ADR-0002 (Python 3.12 + psycopg3 + mcp SDK)
+- [ ] 0.3 Import upstream source w/ MIT attribution; scaffold `uv` project
 - [ ] 0.4 Configure `ruff`, `mypy --strict`, `pytest`, `pytest-cov`, coverage gate
 - [ ] 0.5 GitHub Actions CI (lint + types + tests, PG 14–17 matrix)
 - [ ] 0.6 `CONTRIBUTING.md`, pre-commit hooks, issue/PR templates
@@ -38,8 +39,8 @@
 | ID  | Decision | Status | Date |
 |-----|----------|--------|------|
 | —   | Scope: broad (ops + data access, gated by access mode) | accepted | 2026-05-20 |
-| —   | Approach: decide fork vs greenfield after Phase 0 spike | accepted | 2026-05-20 |
-| —   | Stack: Python 3.12 + psycopg3 + mcp SDK (provisional, see ADR-0002) | provisional | 2026-05-20 |
+| ADR-0001 | Approach: hard-fork `crystaldba/postgres-mcp` (MIT); TDD-hybrid (strict TDD for new code, characterization tests for inherited kernel) | accepted | 2026-05-20 |
+| ADR-0002 | Stack: Python 3.12 + psycopg3 + `mcp` SDK + pglast; `mypy --strict` + coverage gate for new code | accepted | 2026-05-20 |
 
 ## Open questions
 
@@ -52,3 +53,6 @@
 - 2026-05-20 — Researched ecosystem, created `PLAN.md` + this tracker.
   Official MCP Postgres server confirmed deprecated/archived; `crystaldba/postgres-mcp`
   identified as strongest base. Plan committed; Phase 0 ready to start.
+- 2026-05-20 — Task 0.1/0.2: hands-on eval of `crystaldba/postgres-mcp`
+  (commit `07eb329`, MIT, ~7.3k src / ~6.4k test LOC, real-Postgres tests).
+  Decided hard-fork with TDD-hybrid strategy. Wrote ADR-0001 + ADR-0002.
