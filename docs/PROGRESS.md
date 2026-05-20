@@ -12,9 +12,8 @@
 
 ## Next action
 
-> Phase 1, Task 1.1 — TDD a typed, env-driven configuration/settings loader
-> (`MCPG_DATABASE_URL`, `MCPG_ACCESS_MODE`, `MCPG_TRANSPORT`, ...). Failing
-> test first.
+> Phase 1, Task 1.2 — TDD a connection-pool lifecycle wrapper around the
+> vendored `DbConnPool` (open/close, health, used by the server bootstrap).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -41,7 +40,7 @@
 
 ## Phase 1 — Core server skeleton
 
-- [ ] 1.1 Typed env-driven config/settings loader (TDD)
+- [x] 1.1 Typed env-driven config/settings loader (`mcpg/config.py`, TDD, 100% cov)
 - [ ] 1.2 Connection-pool lifecycle wrapper around the vendored `DbConnPool` (TDD)
 - [ ] 1.3 MCP server bootstrap (`FastMCP`) + stdio transport; no global state
 - [ ] 1.4 `get_server_info` tool — first end-to-end TDD vertical slice
@@ -85,3 +84,6 @@
 - 2026-05-20 — Task 0.6/0.7: added `CONTRIBUTING.md`, local pre-commit hooks,
   issue/PR templates. Set `force-exclude` so ruff skips vendored code under
   pre-commit. CI run #1 green. **Phase 0 complete.**
+- 2026-05-20 — Task 1.1: TDD'd the env-driven config loader (`mcpg/config.py`):
+  `Settings`, `AccessMode`, `Transport`, `load_settings`, `ConfigError`.
+  16 tests, 100% coverage of authored code; repr redacts credentials.
