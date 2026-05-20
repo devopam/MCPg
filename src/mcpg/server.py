@@ -10,25 +10,20 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass
 
 from mcp.server.fastmcp import FastMCP
 
 from mcpg.config import Settings, Transport
+from mcpg.context import AppContext
 from mcpg.database import Database
+from mcpg.tools import register_tools
 
 SERVER_NAME = "mcpg"
 SERVER_INSTRUCTIONS = (
     "MCPg: a PostgreSQL MCP server for inspecting, querying, operating, and tuning a Postgres database."
 )
 
-
-@dataclass(frozen=True, slots=True)
-class AppContext:
-    """State shared with every tool invocation for the server's lifetime."""
-
-    settings: Settings
-    database: Database
+__all__ = ["SERVER_NAME", "AppContext", "create_server", "make_lifespan", "run"]
 
 
 def make_lifespan(
@@ -60,6 +55,7 @@ def create_server(settings: Settings, *, database: Database | None = None) -> Fa
         host=settings.http_host,
         port=settings.http_port,
     )
+    register_tools(server)
     return server
 
 

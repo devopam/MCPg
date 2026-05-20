@@ -28,3 +28,5 @@ adheres to [Semantic Versioning](https://semver.org/).
 - MCP server bootstrap (`mcpg.server`): `create_server` builds a configured
   `FastMCP` whose lifespan owns the settings and database (no global state);
   `run` serves over the stdio, streamable-HTTP, or SSE transport.
+- First MCP tool, `get_server_info` (`mcpg.tools`): reports the server
+  version, access mode, transport, and database connection status.
