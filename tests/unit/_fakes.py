@@ -1,5 +1,11 @@
 """Shared test doubles for unit tests."""
 
+from __future__ import annotations
+
+from typing import Any
+
+from mcpg._vendor.sql import SqlDriver
+
 
 class FakePool:
     """Stand-in for the vendored DbConnPool that records lifecycle calls."""
@@ -24,3 +30,41 @@ class FakePool:
     @property
     def is_valid(self) -> bool:
         return self._is_valid
+
+
+class FakeDriver:
+    """Stand-in for SqlDriver that returns canned rows and records calls."""
+
+    def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
+        self._rows = rows or []
+        self.calls: list[tuple[str, Any, bool]] = []
+
+    async def execute_query(
+        self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+    ) -> list[SqlDriver.RowResult]:
+        self.calls.append((query, params, force_readonly))
+        return [SqlDriver.RowResult(cells=dict(row)) for row in self._rows]
+
+
+class FakeDatabase:
+    """Stand-in for Database whose driver() returns a supplied FakeDriver."""
+
+    def __init__(self, driver: FakeDriver) -> None:
+        self._driver = driver
+        self.is_connected = False
+
+    async def connect(self) -> None:
+        self.is_connected = True
+
+    async def close(self) -> None:
+        self.is_connected = False
+
+    def driver(self) -> FakeDriver:
+        return self._driver
+
+    async def __aenter__(self) -> FakeDatabase:
+        await self.connect()
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.close()

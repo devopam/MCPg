@@ -1,7 +1,8 @@
 """MCP tool definitions for MCPg.
 
-Each tool has a small, directly testable logic function plus a thin wrapper
-registered on the server. ``register_tools`` is called by ``create_server``.
+Tool *logic* lives in dedicated modules (e.g. ``mcpg.introspection``) and is
+unit-tested directly. This module holds the thin MCP wrappers and
+``register_tools``, which ``create_server`` calls.
 """
 
 from __future__ import annotations
@@ -12,8 +13,12 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 
-from mcpg import __version__
+from mcpg import __version__, introspection
+from mcpg._vendor.sql import SqlDriver
 from mcpg.context import AppContext
+
+# The MCP request context FastMCP injects into every tool.
+_Ctx = Context[ServerSession, AppContext, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,12 +41,51 @@ def build_server_info(app: AppContext) -> ServerInfo:
     )
 
 
-def register_tools(server: FastMCP[AppContext]) -> None:
-    """Register every MCP tool on the given server."""
+def _driver(ctx: _Ctx) -> SqlDriver:
+    """Return the SQL driver for the current request."""
+    return ctx.request_context.lifespan_context.database.driver()
 
+
+def _register_server_info(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="get_server_info",
         description=("Return the MCPg server version, access mode, transport, and database connection status."),
     )
-    async def get_server_info(ctx: Context[ServerSession, AppContext, Any]) -> dict[str, Any]:
+    async def get_server_info(ctx: _Ctx) -> dict[str, Any]:
         return asdict(build_server_info(ctx.request_context.lifespan_context))
+
+
+def _register_introspection(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="list_schemas",
+        description="List database schemas, excluding PostgreSQL's own schemas unless include_system is true.",
+    )
+    async def list_schemas(ctx: _Ctx, include_system: bool = False) -> list[dict[str, Any]]:
+        schemas = await introspection.list_schemas(_driver(ctx), include_system=include_system)
+        return [asdict(schema) for schema in schemas]
+
+    @server.tool(name="list_tables", description="List the tables and views in a schema.")
+    async def list_tables(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        tables = await introspection.list_tables(_driver(ctx), schema)
+        return [asdict(table) for table in tables]
+
+    @server.tool(name="describe_table", description="Describe the columns of a table, in ordinal order.")
+    async def describe_table(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
+        columns = await introspection.describe_table(_driver(ctx), schema, table)
+        return [asdict(column) for column in columns]
+
+    @server.tool(name="list_indexes", description="List the indexes defined on a table.")
+    async def list_indexes(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
+        indexes = await introspection.list_indexes(_driver(ctx), schema, table)
+        return [asdict(index) for index in indexes]
+
+    @server.tool(name="list_extensions", description="List the extensions installed in the database.")
+    async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
+        extensions = await introspection.list_extensions(_driver(ctx))
+        return [asdict(extension) for extension in extensions]
+
+
+def register_tools(server: FastMCP[AppContext]) -> None:
+    """Register every MCP tool on the given server."""
+    _register_server_info(server)
+    _register_introspection(server)

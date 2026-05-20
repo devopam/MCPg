@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 2, Task 2.2 — TDD the introspection tools (`list_schemas`,
-> `list_tables`, `describe_table`, `list_indexes`, `list_extensions`).
+> Phase 2, Task 2.3 — TDD `run_select`: read-only-enforced query execution
+> via the vendored `SafeSqlDriver`.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -50,8 +50,8 @@
 ## Phase 2 — Schema introspection & safe reads
 
 - [x] 2.1 Integration-test harness (`tests/integration/`) + PG 14–17 CI service matrix
-- [ ] 2.2 Introspection tools: `list_schemas`, `list_tables`, `describe_table`,
-      `list_indexes`, `list_extensions` (TDD)
+- [x] 2.2 Introspection tools: `list_schemas`, `list_tables`, `describe_table`,
+      `list_indexes`, `list_extensions` (`mcpg/introspection.py`, TDD)
 - [ ] 2.3 `run_select` — read-only-enforced query execution via vendored `SafeSqlDriver` (TDD)
 - [ ] 2.4 `explain_query` tool (TDD)
 - [ ] 2.5 Result shaping — typed result, row caps, pagination (TDD)
@@ -117,3 +117,8 @@
   `MCPG_TEST_DATABASE_URL`, auto-`integration` marker, 3 real-DB tests for the
   `Database` lifecycle. CI `test` job is now a PG 14–17 service-container
   matrix. Verified locally against PostgreSQL 16. 113 tests, 100% coverage.
+- 2026-05-20 — Task 2.2: TDD'd schema introspection (`mcpg/introspection.py`):
+  `list_schemas`, `list_tables`, `describe_table`, `list_indexes`,
+  `list_extensions` — typed results, parameterised catalog queries — plus
+  their MCP tools. Added `FakeDriver`/`FakeDatabase` doubles and real-DB
+  integration tests. 126 tests, 100% coverage.
