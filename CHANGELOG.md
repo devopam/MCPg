@@ -33,3 +33,5 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Console entry point: `mcpg` (and `python -m mcpg`) loads configuration
   and runs the server.
 - CI now enforces the test-coverage gate (90% of authored code).
+- Integration-test harness (`tests/integration/`) running against a live
+  PostgreSQL; CI exercises the suite against PostgreSQL 14, 15, 16, and 17.

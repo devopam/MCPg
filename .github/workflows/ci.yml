@@ -30,8 +30,26 @@ jobs:
         run: uv run mypy src/mcpg
 
   test:
-    name: Tests
+    name: Tests (PG ${{ matrix.postgres }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ["14", "15", "16", "17"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mcpg_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - name: Set up uv
@@ -40,8 +58,9 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - run: uv sync --frozen
-      # Runs the unit and vendored-kernel suites with the coverage gate
-      # (fail_under = 90, authored code only). The PostgreSQL service-container
-      # matrix (PG 14-17) is added in Phase 2 with the first integration tests.
+      # Runs unit, vendored-kernel, and integration suites with the coverage
+      # gate (fail_under = 90, authored code only) against each PG version.
       - name: pytest
+        env:
+          MCPG_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mcpg_test
         run: uv run pytest -q --cov

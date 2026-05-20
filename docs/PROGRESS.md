@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 2, Task 2.1 — stand up the integration-test harness (real Postgres via
-> Docker) and add the PG 14–17 service matrix to CI.
+> Phase 2, Task 2.2 — TDD the introspection tools (`list_schemas`,
+> `list_tables`, `describe_table`, `list_indexes`, `list_extensions`).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -49,7 +49,7 @@
 
 ## Phase 2 — Schema introspection & safe reads
 
-- [ ] 2.1 Integration-test harness (real Postgres via Docker) + PG 14–17 CI matrix
+- [x] 2.1 Integration-test harness (`tests/integration/`) + PG 14–17 CI service matrix
 - [ ] 2.2 Introspection tools: `list_schemas`, `list_tables`, `describe_table`,
       `list_indexes`, `list_extensions` (TDD)
 - [ ] 2.3 `run_select` — read-only-enforced query execution via vendored `SafeSqlDriver` (TDD)
@@ -112,3 +112,8 @@
   (`mcpg/__main__.py`) and restored the `[project.scripts]` entry; wired the
   coverage gate into CI (`pytest --cov`). 110 tests, 100% coverage.
   **Phase 1 complete.**
+- 2026-05-20 — Task 2.1: integration-test harness (`tests/integration/`):
+  `database_url` / `connected_database` fixtures gated on
+  `MCPG_TEST_DATABASE_URL`, auto-`integration` marker, 3 real-DB tests for the
+  `Database` lifecycle. CI `test` job is now a PG 14–17 service-container
+  matrix. Verified locally against PostgreSQL 16. 113 tests, 100% coverage.

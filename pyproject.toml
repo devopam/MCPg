@@ -41,6 +41,9 @@ pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: requires a live PostgreSQL (set MCPG_TEST_DATABASE_URL)",
+]
 
 [tool.coverage.run]
 source = ["src/mcpg"]
