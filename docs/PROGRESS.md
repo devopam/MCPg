@@ -106,6 +106,9 @@
 | —   | Scope: broad (ops + data access, gated by access mode) | accepted | 2026-05-20 |
 | ADR-0001 | Approach: hard-fork `crystaldba/postgres-mcp` (MIT); TDD-hybrid (strict TDD for new code, characterization tests for inherited kernel) | accepted | 2026-05-20 |
 | ADR-0002 | Stack: Python 3.12 + psycopg3 + `mcp` SDK + pglast; `mypy --strict` + coverage gate for new code | accepted | 2026-05-20 |
+| —   | Phase 4: DDL gated behind a second opt-in (`MCPG_ALLOW_DDL`); no dry-run (direct execution) | accepted | 2026-05-20 |
+| —   | Extension support (Phases 8–11) lands **after** the v0.1.0 release (Phase 7) | accepted | 2026-05-20 |
+| —   | Index intelligence (Phase 8) is the first extension area implemented | accepted | 2026-05-20 |
 
 ## Open questions
 
