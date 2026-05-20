@@ -64,3 +64,5 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Workload analysis (`mcpg.workload`): the `analyze_workload` tool reports
   the slowest queries via `pg_stat_statements`, degrading gracefully when
   the extension is not installed.
+- Index recommendations (`mcpg.indexing`): the `recommend_indexes` tool
+  flags large tables read mostly by sequential scan.

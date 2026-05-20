@@ -13,7 +13,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 
-from mcpg import __version__, health, introspection, query, workload, write
+from mcpg import __version__, health, indexing, introspection, query, workload, write
 from mcpg._vendor.sql import SqlDriver
 from mcpg.config import Settings
 from mcpg.context import AppContext
@@ -134,6 +134,16 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     async def analyze_workload(ctx: _Ctx, limit: int = workload.DEFAULT_LIMIT) -> dict[str, Any]:
         report = await workload.analyze_workload(_driver(ctx), limit=limit)
         return asdict(report)
+
+    @server.tool(
+        name="recommend_indexes",
+        description=("Recommend tables that may benefit from indexing — large tables read mostly by sequential scan."),
+    )
+    async def recommend_indexes(
+        ctx: _Ctx, min_live_tuples: int = indexing.DEFAULT_MIN_LIVE_TUPLES
+    ) -> list[dict[str, Any]]:
+        recommendations = await indexing.recommend_indexes(_driver(ctx), min_live_tuples=min_live_tuples)
+        return [asdict(recommendation) for recommendation in recommendations]
 
 
 def _register_write(server: FastMCP[AppContext]) -> None:

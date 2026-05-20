@@ -12,8 +12,9 @@
 
 ## Next action
 
-> Phase 5, Task 5.3 — TDD `recommend_indexes`: heuristics for missing indexes
-> (e.g. sequential scans on large tables via `pg_stat_user_tables`).
+> Phase 5, Task 5.4 — TDD `analyze_query_plan`: parse a query's
+> `EXPLAIN (FORMAT JSON)` plan into a structured summary (node types, total
+> cost, sequential scans, estimated rows).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -86,7 +87,7 @@
 - [x] 5.1 `check_database_health` — connections, cache hit ratio, vacuum/dead
       tuples, invalid indexes (`mcpg/health.py`, TDD)
 - [x] 5.2 `analyze_workload` — slow queries via `pg_stat_statements` (`mcpg/workload.py`, TDD)
-- [ ] 5.3 `recommend_indexes` — missing-index heuristics (TDD)
+- [x] 5.3 `recommend_indexes` — missing-index heuristics (`mcpg/indexing.py`, TDD)
 - [ ] 5.4 `analyze_query_plan` — structured `EXPLAIN` plan analysis (TDD)
 
 ## Phase 6 — Scalability & multi-tenancy (not started)
@@ -208,6 +209,9 @@
 - 2026-05-20 — Task 5.2: TDD'd `analyze_workload` (`mcpg/workload.py`) —
   slowest queries via `pg_stat_statements`, degrading gracefully to
   `available=False` when the extension is absent. 239 tests, 100% coverage.
+- 2026-05-20 — Task 5.3: TDD'd `recommend_indexes` (`mcpg/indexing.py`) — a
+  table-level heuristic flagging large tables read mostly by sequential scan
+  (column-level recommendations deferred to Phase 8). 244 tests, 100% coverage.
 - 2026-05-20 — Planning: added PostgreSQL extension support to the roadmap
   (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
   `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority

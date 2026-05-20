@@ -24,6 +24,7 @@ _READ_TOOLS = {
     "explain_query",
     "check_database_health",
     "analyze_workload",
+    "recommend_indexes",
 }
 
 
