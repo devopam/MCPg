@@ -12,9 +12,8 @@
 
 ## Next action
 
-> Phase 1, Task 1.3 — TDD the MCP server bootstrap (`FastMCP`) wired to
-> `Settings` + `Database`, with the stdio transport and no module-level
-> global state.
+> Phase 1, Task 1.4 — TDD the `get_server_info` tool: the first end-to-end
+> vertical slice (tool registered on the server, reads from `AppContext`).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -43,9 +42,9 @@
 
 - [x] 1.1 Typed env-driven config/settings loader (`mcpg/config.py`, TDD, 100% cov)
 - [x] 1.2 Connection-pool lifecycle wrapper (`mcpg/database.py`, TDD, 100% cov)
-- [ ] 1.3 MCP server bootstrap (`FastMCP`) + stdio transport; no global state
+- [x] 1.3 MCP server bootstrap (`mcpg/server.py`, TDD, 100% cov); no global state
 - [ ] 1.4 `get_server_info` tool — first end-to-end TDD vertical slice
-- [ ] 1.5 Streamable HTTP transport + `mcpg` CLI entry point
+- [ ] 1.5 `mcpg` CLI entry point (the `run` dispatcher already covers all 3 transports)
 - [ ] 1.6 Wire the coverage gate (`--cov`, `fail_under = 90`) into CI
 ## Phase 2 — Schema introspection & safe reads (not started)
 ## Phase 3 — Security hardening & access control (not started)
@@ -92,3 +91,8 @@
   (`mcpg/database.py`) around the vendored `DbConnPool` — connect/close, async
   context manager, typed `DatabaseError`. Switched pytest to `asyncio_mode =
   auto`. 99 tests, 100% coverage.
+- 2026-05-20 — Task 1.3: TDD'd the server bootstrap (`mcpg/server.py`):
+  `create_server`, `make_lifespan`, `AppContext`, `run`. No global state —
+  shared state lives in the lifespan. `run` dispatches all three transports,
+  so Task 1.5 is reduced to the CLI entry point. 104 tests, 100% coverage.
+  Installed the `pre-commit` git hook locally.

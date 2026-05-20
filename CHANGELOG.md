@@ -25,3 +25,6 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Database connection lifecycle (`mcpg.database`): `Database` wraps the pool
   with connect/close, async-context-manager support, and a typed
   `DatabaseError`.
+- MCP server bootstrap (`mcpg.server`): `create_server` builds a configured
+  `FastMCP` whose lifespan owns the settings and database (no global state);
+  `run` serves over the stdio, streamable-HTTP, or SSE transport.
