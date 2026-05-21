@@ -14,6 +14,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   requires unrestricted mode and `MCPG_ALLOW_DDL`.
 - `fuzzy_search` tool — ranks a text column by `pg_trgm` trigram similarity
   to a search term.
+- `full_text_search` tool — ranks documents with PostgreSQL's built-in
+  `tsvector`/`tsquery` full-text search.
 
 ### Changed
 

@@ -1,12 +1,12 @@
 """Tests for fuzzy text search and the fuzzy_search tool."""
 
 import pytest
-from _fakes import FakeDatabase, FakeRoutingDriver
+from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.server import create_server
-from mcpg.textsearch import FuzzyMatch, SearchError, fuzzy_search
+from mcpg.textsearch import FullTextMatch, FuzzyMatch, SearchError, full_text_search, fuzzy_search
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
@@ -64,3 +64,46 @@ async def test_fuzzy_search_tool_is_callable_from_a_client() -> None:
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["available"] is False
+
+
+# --- full-text search ------------------------------------------------------
+
+
+async def test_full_text_search_ranks_documents() -> None:
+    driver = FakeDriver([{"value": "the cat sat", "rank": 0.8}, {"value": "a cat", "rank": 0.2}])
+
+    result = await full_text_search(driver, "app", "posts", "body", "cat")
+
+    assert result == [FullTextMatch("the cat sat", 0.8), FullTextMatch("a cat", 0.2)]
+
+
+async def test_full_text_search_binds_the_query_and_limit_as_parameters() -> None:
+    driver = FakeDriver([])
+
+    await full_text_search(driver, "app", "posts", "body", "cat or dog", limit=5)
+
+    assert driver.calls[0][1] == ["cat or dog", "cat or dog", 5]
+
+
+@pytest.mark.parametrize("bad", ["posts; DROP TABLE x", 'a"b', "1bad"])
+async def test_full_text_search_rejects_invalid_identifiers(bad: str) -> None:
+    with pytest.raises(SearchError, match="invalid"):
+        await full_text_search(FakeDriver(), bad, "posts", "body", "cat")
+
+
+async def test_full_text_search_rejects_an_invalid_text_config() -> None:
+    with pytest.raises(SearchError, match="text-search config"):
+        await full_text_search(FakeDriver(), "app", "posts", "body", "cat", config="en'; DROP")
+
+
+async def test_full_text_search_tool_is_callable_from_a_client() -> None:
+    database = FakeDatabase(FakeDriver([{"value": "the cat sat", "rank": 0.8}]))
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool(
+            "full_text_search",
+            {"schema": "app", "table": "posts", "column": "body", "search_query": "cat"},
+        )
+
+    assert result.isError is False

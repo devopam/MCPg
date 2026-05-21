@@ -6,14 +6,14 @@
 
 ## Current state
 
-- **Phase:** 9 — Text search & fuzzy matching (post-1.0)
+- **Phase:** 10 — Vector search, `pgvector` (post-1.0)
 - **Last updated:** 2026-05-21
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 9, Task 9.2 — TDD a full-text search tool over built-in
-> `tsvector`/`tsquery` (`websearch_to_tsquery`, `ts_rank`).
+> Phase 10, Task 10.1 — TDD `vector` column awareness: `describe_table`
+> reports `vector` columns and their dimension.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -115,11 +115,17 @@
 - [x] 8.4 Index-type-aware `recommend_indexes` — GIN for `jsonb`/arrays,
       trigram GIN for text columns
 
-## Phase 9 — Text search & fuzzy matching, incl. `pg_trgm`
+## Phase 9 — Text search & fuzzy matching  ✅ COMPLETE
 
 - [x] 9.1 Trigram fuzzy/similarity search tool over `pg_trgm` (`mcpg/textsearch.py`, TDD)
-- [ ] 9.2 Full-text search tool over `tsvector`/`tsquery` (TDD)
-## Phase 10 — Vector search (`pgvector`) (not started)
+- [x] 9.2 Full-text search tool over `tsvector`/`tsquery` (`mcpg/textsearch.py`, TDD)
+
+## Phase 10 — Vector search (`pgvector`)
+
+- [ ] 10.1 `vector` column awareness — `describe_table` reports vector dimension (TDD)
+- [ ] 10.2 k-NN vector similarity search tool (`<->`/`<=>`/`<#>`) (TDD)
+- [ ] 10.3 HNSW/IVFFlat index awareness in `list_indexes` / `recommend_indexes`
+
 ## Phase 11 — Geospatial (PostGIS), optional (not started)
 
 > Phases 8–11 cover PostgreSQL extension and advanced-feature support; see
@@ -290,3 +296,7 @@
   when the extension is absent. Identifiers are validated + quoted (the term
   is bound). Shared `extension_installed` helper moved to `mcpg/extensions.py`.
   277 tests, 100% coverage.
+- 2026-05-21 — Task 9.2: added `full_text_search` (`mcpg/textsearch.py`) —
+  ranks documents via built-in `tsvector`/`websearch_to_tsquery`/`ts_rank`
+  (no extension needed); text-search config is identifier-validated.
+  285 tests, 100% coverage. **Phase 9 complete.**

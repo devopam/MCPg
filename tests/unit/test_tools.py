@@ -28,6 +28,7 @@ _READ_TOOLS = {
     "analyze_workload",
     "recommend_indexes",
     "fuzzy_search",
+    "full_text_search",
 }
 
 

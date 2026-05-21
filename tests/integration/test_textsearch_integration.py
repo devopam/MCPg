@@ -7,7 +7,7 @@ import pytest
 from mcpg.database import Database
 from mcpg.extensions import enable_extension
 from mcpg.introspection import list_available_extensions
-from mcpg.textsearch import fuzzy_search
+from mcpg.textsearch import full_text_search, fuzzy_search
 
 _TABLE = "mcpg_trgm_it"
 
@@ -41,3 +41,21 @@ async def test_fuzzy_search_ranks_real_rows_by_similarity(connected_database: Da
     assert "bob" not in values
     # Matches are ordered by descending similarity.
     assert result.matches == sorted(result.matches, key=lambda m: m.score, reverse=True)
+
+
+async def test_full_text_search_against_real_postgres(connected_database: Database) -> None:
+    driver = connected_database.driver()
+    await driver.execute_query("DROP TABLE IF EXISTS mcpg_fts_it", force_readonly=False)
+    await driver.execute_query("CREATE TABLE mcpg_fts_it (body text)", force_readonly=False)
+    await driver.execute_query(
+        "INSERT INTO mcpg_fts_it (body) VALUES ('the quick brown fox'), ('a lazy dog sleeps'), ('foxes are clever')",
+        force_readonly=False,
+    )
+    try:
+        matches = await full_text_search(driver, "public", "mcpg_fts_it", "body", "fox")
+
+        values = [match.value for match in matches]
+        assert "the quick brown fox" in values
+        assert "a lazy dog sleeps" not in values
+    finally:
+        await driver.execute_query("DROP TABLE IF EXISTS mcpg_fts_it", force_readonly=False)

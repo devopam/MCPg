@@ -73,6 +73,13 @@ Ranks a text column's values by trigram similarity to a search term, via the
 (strings), `limit` (int, default 10), `threshold` (float, default 0.3).
 Reports `available: false` if `pg_trgm` is not installed.
 
+### `full_text_search`
+Ranks a text column's documents against a full-text query using PostgreSQL's
+built-in `tsvector`/`tsquery` (no extension required). The query accepts
+web-search syntax (quoted phrases, `or`, `-` exclusion). Parameters:
+`schema`, `table`, `column`, `search_query` (strings), `config` (string,
+default `english`), `limit` (int, default 10).
+
 ## Write (unrestricted mode only)
 
 ### `run_write`

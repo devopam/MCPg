@@ -196,6 +196,28 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         )
         return asdict(result)
 
+    @server.tool(
+        name="full_text_search",
+        description=(
+            "Rank a text column's documents against a full-text query using "
+            "PostgreSQL's built-in tsvector/tsquery. The query accepts "
+            "web-search syntax (quoted phrases, or, - exclusion)."
+        ),
+    )
+    async def full_text_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        search_query: str,
+        config: str = textsearch.DEFAULT_TEXT_CONFIG,
+        limit: int = textsearch.DEFAULT_LIMIT,
+    ) -> list[dict[str, Any]]:
+        matches = await textsearch.full_text_search(
+            _driver(ctx), schema, table, column, search_query, config=config, limit=limit
+        )
+        return [asdict(match) for match in matches]
+
 
 def _register_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
