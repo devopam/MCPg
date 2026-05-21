@@ -81,6 +81,25 @@ async def test_describe_table_reports_pgvector_dimension(connected_database: Dat
         await driver.execute_query("DROP TABLE IF EXISTS mcpg_vector_it", force_readonly=False)
 
 
+async def test_list_indexes_reports_pgvector_hnsw_method(connected_database: Database) -> None:
+    driver = connected_database.driver()
+    available = {extension.name for extension in await list_available_extensions(driver)}
+    if "vector" not in available:
+        pytest.skip("pgvector is not available on this PostgreSQL server")
+    await enable_extension(driver, "vector")
+    await driver.execute_query("DROP TABLE IF EXISTS mcpg_hnsw_it", force_readonly=False)
+    await driver.execute_query("CREATE TABLE mcpg_hnsw_it (id integer, embedding vector(3))", force_readonly=False)
+    await driver.execute_query(
+        "CREATE INDEX mcpg_hnsw_idx ON mcpg_hnsw_it USING hnsw (embedding vector_l2_ops)",
+        force_readonly=False,
+    )
+    try:
+        indexes = {idx.name: idx for idx in await list_indexes(driver, "public", "mcpg_hnsw_it")}
+        assert indexes["mcpg_hnsw_idx"].method == "hnsw"
+    finally:
+        await driver.execute_query("DROP TABLE IF EXISTS mcpg_hnsw_it", force_readonly=False)
+
+
 async def test_list_extensions_includes_plpgsql(connected_database: Database) -> None:
     names = {extension.name for extension in await list_extensions(connected_database.driver())}
 

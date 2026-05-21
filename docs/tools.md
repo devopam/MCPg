@@ -24,8 +24,9 @@ default, and (for `pgvector` `vector(N)` columns) the vector dimension.
 Parameters: `schema`, `table` (strings).
 
 ### `list_indexes`
-Lists the indexes on a table, each with its access method (`btree`, `gin`,
-`gist`, `brin`, `hash`, `spgist`). Parameters: `schema`, `table` (strings).
+Lists the indexes on a table, each with its access method — a built-in one
+(`btree`, `gin`, `gist`, `brin`, `hash`, `spgist`) or an extension's (e.g.
+`hnsw`/`ivfflat` from `pgvector`). Parameters: `schema`, `table` (strings).
 
 ### `list_extensions`
 Lists the extensions installed in the database.

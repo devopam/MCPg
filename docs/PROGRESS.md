@@ -6,14 +6,18 @@
 
 ## Current state
 
-- **Phase:** 10 — Vector search, `pgvector` (post-1.0)
+- **Phase:** 10 complete — Phase 11 (PostGIS) pending a decision
 - **Last updated:** 2026-05-21
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 10, Task 10.3 — confirm + document HNSW/IVFFlat index awareness
-> (`list_indexes` already reports the access method via Task 8.1).
+> Phase 11 (PostGIS) is optional and needs a decision: no stock CI image has
+> both pgvector and PostGIS, so PostGIS integration tests can't run in the
+> current CI. Note that `describe_table` already surfaces geometry types and
+> `list_indexes` already reports GiST spatial indexes. Decide: build a
+> PostGIS spatial-search tool (unit-tested only), or close the roadmap at
+> Phase 10.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -121,13 +125,12 @@
 - [x] 9.1 Trigram fuzzy/similarity search tool over `pg_trgm` (`mcpg/textsearch.py`, TDD)
 - [x] 9.2 Full-text search tool over `tsvector`/`tsquery` (`mcpg/textsearch.py`, TDD)
 
-## Phase 10 — Vector search (`pgvector`)
+## Phase 10 — Vector search (`pgvector`)  ✅ COMPLETE
 
 - [x] 10.1 `vector` column awareness — `describe_table` reports vector dimension (TDD)
 - [x] 10.2 k-NN vector similarity search tool (`<->`/`<=>`/`<#>`) (`mcpg/textsearch.py`, TDD)
-- [ ] 10.3 HNSW/IVFFlat index awareness — already covered: `list_indexes`
-      reports the access method (Task 8.1), so HNSW/IVFFlat indexes surface
-      automatically. Confirm + add a note.
+- [x] 10.3 HNSW/IVFFlat index awareness — `list_indexes` reports the access
+      method; confirmed by an integration test (`method == "hnsw"`).
 
 ## Phase 11 — Geospatial (PostGIS), optional (not started)
 
@@ -312,3 +315,7 @@
   (Installation Guide) and `docs/user-guide.md` (User Guide), and added
   `docs/architecture.md` (Architecture Document). These are maintained
   alongside feature work (see `CONTRIBUTING.md`).
+- 2026-05-21 — Task 10.2/10.3: added `vector_search` (pgvector k-NN, `mcpg/
+  textsearch.py`); confirmed HNSW index awareness via `list_indexes`.
+  291 tests (3 pgvector integration tests run in CI), 100% coverage.
+  **Phase 10 complete.** Phases 0–10 done; 19 MCP tools.

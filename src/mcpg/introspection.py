@@ -49,8 +49,9 @@ class ColumnInfo:
 class IndexInfo:
     """An index on a table.
 
-    ``method`` is the access method — ``btree``, ``gin``, ``gist``, ``brin``,
-    ``hash``, or ``spgist``.
+    ``method`` is the access method — a built-in one (``btree``, ``gin``,
+    ``gist``, ``brin``, ``hash``, ``spgist``) or an extension's (e.g.
+    ``hnsw`` / ``ivfflat`` from ``pgvector``).
     """
 
     name: str
