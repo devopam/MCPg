@@ -17,6 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 - `list_indexes` now reports each index's access method (`btree`, `gin`,
   `gist`, `brin`, `hash`, `spgist`).
+- `recommend_indexes` now suggests per-column index types from column data
+  types — GIN for `jsonb`/array columns, trigram GIN for text columns.
 
 ## [0.1.0] - 2026-05-21
 

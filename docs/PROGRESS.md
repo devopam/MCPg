@@ -6,15 +6,15 @@
 
 ## Current state
 
-- **Phase:** 8 — Index intelligence & extension management (post-1.0)
+- **Phase:** 9 — Text search & fuzzy matching (post-1.0)
 - **Last updated:** 2026-05-21
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 8, Task 8.4 — TDD index-type-aware `recommend_indexes`: suggest GIN
-> for `jsonb`/array columns and trigram GIN for text columns frequently
-> filtered by `LIKE` (using `describe_table` column types).
+> Phase 9, Task 9.1 — TDD a trigram fuzzy-search tool over `pg_trgm`
+> (`similarity()` / `%` operator), degrading gracefully when the extension
+> is not installed.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -108,15 +108,18 @@
 
 > **v0.1.0 merged to `main` via PR #1.** Post-1.0 work continues below.
 
-## Phase 8 — Index intelligence & extension management
+## Phase 8 — Index intelligence & extension management  ✅ COMPLETE
 
 - [x] 8.1 `list_indexes` reports the index access method (btree/gin/gist/...)
 - [x] 8.2 `list_available_extensions` tool — installed vs available
 - [x] 8.3 `enable_extension` tool — gated DDL, known-extension allowlist
-- [ ] 8.4 Index-type-aware `recommend_indexes` — GIN for `jsonb`/arrays,
-      trigram GIN for `LIKE`, BRIN for append-only (HNSW/IVFFlat in Phase 10)
+- [x] 8.4 Index-type-aware `recommend_indexes` — GIN for `jsonb`/arrays,
+      trigram GIN for text columns
 
-## Phase 9 — Text search & fuzzy matching, incl. `pg_trgm` (not started)
+## Phase 9 — Text search & fuzzy matching, incl. `pg_trgm`
+
+- [ ] 9.1 Trigram fuzzy/similarity search tool over `pg_trgm` (TDD)
+- [ ] 9.2 Full-text search tool over `tsvector`/`tsquery` (TDD)
 ## Phase 10 — Vector search (`pgvector`) (not started)
 ## Phase 11 — Geospatial (PostGIS), optional (not started)
 
@@ -279,3 +282,7 @@
   runs `CREATE EXTENSION IF NOT EXISTS` for names on a curated allowlist
   (the injection guard, since the name is an identifier). Exposed as a
   DDL-gated MCP tool. 265 tests, 100% coverage.
+- 2026-05-21 — Task 8.4: `recommend_indexes` is now index-type aware — a
+  single join of `pg_stat_user_tables` + `information_schema.columns` yields
+  per-column `IndexSuggestion`s (GIN for `jsonb`/arrays, trigram GIN for
+  text). 268 tests, 100% coverage. **Phase 8 complete.**

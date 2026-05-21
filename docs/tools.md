@@ -62,9 +62,10 @@ Returns the slowest queries by mean execution time, via the
 `available: false` if the extension is not installed.
 
 ### `recommend_indexes`
-Flags large tables read mostly by sequential scan. Parameter:
-`min_live_tuples` (int, default 10000). Index-type-aware recommendations
-(GIN/trigram/HNSW) are planned for a later release.
+Flags large tables read mostly by sequential scan, and for each suggests
+per-column index types from the column's data type — GIN for `jsonb` and
+array columns, trigram GIN for text columns. Parameter: `min_live_tuples`
+(int, default 10000).
 
 ## Write (unrestricted mode only)
 
