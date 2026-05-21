@@ -12,9 +12,8 @@
 
 ## Next action
 
-> Phase 9, Task 9.1 — TDD a trigram fuzzy-search tool over `pg_trgm`
-> (`similarity()` / `%` operator), degrading gracefully when the extension
-> is not installed.
+> Phase 9, Task 9.2 — TDD a full-text search tool over built-in
+> `tsvector`/`tsquery` (`websearch_to_tsquery`, `ts_rank`).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -118,7 +117,7 @@
 
 ## Phase 9 — Text search & fuzzy matching, incl. `pg_trgm`
 
-- [ ] 9.1 Trigram fuzzy/similarity search tool over `pg_trgm` (TDD)
+- [x] 9.1 Trigram fuzzy/similarity search tool over `pg_trgm` (`mcpg/textsearch.py`, TDD)
 - [ ] 9.2 Full-text search tool over `tsvector`/`tsquery` (TDD)
 ## Phase 10 — Vector search (`pgvector`) (not started)
 ## Phase 11 — Geospatial (PostGIS), optional (not started)
@@ -286,3 +285,8 @@
   single join of `pg_stat_user_tables` + `information_schema.columns` yields
   per-column `IndexSuggestion`s (GIN for `jsonb`/arrays, trigram GIN for
   text). 268 tests, 100% coverage. **Phase 8 complete.**
+- 2026-05-21 — Task 9.1: added `mcpg/textsearch.py` — `fuzzy_search` ranks a
+  text column by `pg_trgm` trigram similarity, degrading to `available=False`
+  when the extension is absent. Identifiers are validated + quoted (the term
+  is bound). Shared `extension_installed` helper moved to `mcpg/extensions.py`.
+  277 tests, 100% coverage.

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mcpg._vendor.sql import SqlDriver
+from mcpg.extensions import extension_installed
 
 # Default number of slow queries to return.
 DEFAULT_LIMIT = 10
@@ -34,15 +35,6 @@ class WorkloadReport:
     slow_queries: list[SlowQuery]
 
 
-async def _extension_installed(driver: SqlDriver, name: str) -> bool:
-    rows = await driver.execute_query(
-        "SELECT 1 AS present FROM pg_extension WHERE extname = %s",
-        params=[name],
-        force_readonly=True,
-    )
-    return bool(rows)
-
-
 async def analyze_workload(driver: SqlDriver, *, limit: int = DEFAULT_LIMIT) -> WorkloadReport:
     """Return the slowest queries by mean execution time.
 
@@ -53,7 +45,7 @@ async def analyze_workload(driver: SqlDriver, *, limit: int = DEFAULT_LIMIT) -> 
         driver: The SQL driver to query through.
         limit: Maximum number of slow queries to return.
     """
-    if not await _extension_installed(driver, "pg_stat_statements"):
+    if not await extension_installed(driver, "pg_stat_statements"):
         return WorkloadReport(available=False, slow_queries=[])
 
     rows = await driver.execute_query(

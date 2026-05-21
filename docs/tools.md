@@ -67,6 +67,12 @@ per-column index types from the column's data type — GIN for `jsonb` and
 array columns, trigram GIN for text columns. Parameter: `min_live_tuples`
 (int, default 10000).
 
+### `fuzzy_search`
+Ranks a text column's values by trigram similarity to a search term, via the
+`pg_trgm` extension. Parameters: `schema`, `table`, `column`, `term`
+(strings), `limit` (int, default 10), `threshold` (float, default 0.3).
+Reports `available: false` if `pg_trgm` is not installed.
+
 ## Write (unrestricted mode only)
 
 ### `run_write`

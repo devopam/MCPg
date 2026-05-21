@@ -13,7 +13,17 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 
-from mcpg import __version__, extensions, health, indexing, introspection, query, workload, write
+from mcpg import (
+    __version__,
+    extensions,
+    health,
+    indexing,
+    introspection,
+    query,
+    textsearch,
+    workload,
+    write,
+)
 from mcpg._vendor.sql import SqlDriver
 from mcpg.config import Settings
 from mcpg.context import AppContext
@@ -163,6 +173,28 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     ) -> list[dict[str, Any]]:
         recommendations = await indexing.recommend_indexes(_driver(ctx), min_live_tuples=min_live_tuples)
         return [asdict(recommendation) for recommendation in recommendations]
+
+    @server.tool(
+        name="fuzzy_search",
+        description=(
+            "Rank a text column's values by trigram similarity to a search "
+            "term, via the pg_trgm extension. Reports available=false if "
+            "pg_trgm is not installed."
+        ),
+    )
+    async def fuzzy_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        term: str,
+        limit: int = textsearch.DEFAULT_LIMIT,
+        threshold: float = textsearch.DEFAULT_THRESHOLD,
+    ) -> dict[str, Any]:
+        result = await textsearch.fuzzy_search(
+            _driver(ctx), schema, table, column, term, limit=limit, threshold=threshold
+        )
+        return asdict(result)
 
 
 def _register_write(server: FastMCP[AppContext]) -> None:

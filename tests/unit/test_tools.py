@@ -27,6 +27,7 @@ _READ_TOOLS = {
     "check_database_health",
     "analyze_workload",
     "recommend_indexes",
+    "fuzzy_search",
 }
 
 

@@ -43,6 +43,16 @@ class ExtensionError(Exception):
     """Raised when an extension cannot be enabled."""
 
 
+async def extension_installed(driver: SqlDriver, name: str) -> bool:
+    """Return whether the named extension is installed in the database."""
+    rows = await driver.execute_query(
+        "SELECT 1 AS present FROM pg_extension WHERE extname = %s",
+        params=[name],
+        force_readonly=True,
+    )
+    return bool(rows)
+
+
 @dataclass(frozen=True, slots=True)
 class EnableExtensionResult:
     """The outcome of an enable_extension call."""

@@ -12,6 +12,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   database with its installed-vs-available status.
 - `enable_extension` tool — enables an allowlisted PostgreSQL extension;
   requires unrestricted mode and `MCPG_ALLOW_DDL`.
+- `fuzzy_search` tool — ranks a text column by `pg_trgm` trigram similarity
+  to a search term.
 
 ### Changed
 
