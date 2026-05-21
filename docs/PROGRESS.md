@@ -6,14 +6,15 @@
 
 ## Current state
 
-- **Phase:** 6 — Scalability & multi-tenancy
+- **Phase:** 7 — Docs, packaging & release
 - **Last updated:** 2026-05-20
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 6, Task 6.3 — documented scaling characteristics + a load/soak
-> benchmark harness.
+> Phase 7, Task 7.1 — usage guide and per-tool reference documentation
+> (`docs/usage.md`, `docs/tools/`). Phase 6 task 6.4 (server-side cursors,
+> read-replica routing) is optional and deferred post-1.0.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -95,8 +96,8 @@
       vendored `DbConnPool` patched per ADR-0003)
 - [x] 6.2 Multi-tenancy & RLS awareness — document-only for v0.1.0
       (`docs/security.md`); per-request-role mechanism deferred post-1.0
-- [ ] 6.3 Documented scaling characteristics + a load/soak benchmark harness
-- [ ] 6.4 (optional) server-side cursors for large reads; read-replica routing
+- [x] 6.3 Scaling characteristics (`docs/scaling.md`) + benchmark harness (`benchmarks/bench.py`)
+- [ ] 6.4 (optional, deferred post-1.0) server-side cursors; read-replica routing
 
 ## Phase 7 — Docs, packaging & release (not started)
 
@@ -241,6 +242,10 @@
   v0.1.0 — `docs/security.md` gains a "Multi-tenancy and Row-Level Security"
   section (one instance per tenant with a tenant-specific role). The
   per-request `SET ROLE` mechanism is deferred post-1.0.
+- 2026-05-20 — Task 6.3: added `benchmarks/bench.py` (concurrent `run_select`
+  throughput/latency harness) and `docs/scaling.md` (execution model, pool
+  sizing, measured baseline ~2200 req/s p50 ~7ms, bottleneck guidance).
+  Task 6.4 deferred post-1.0; **Phase 6 effectively complete for v0.1.0.**
 - 2026-05-20 — Planning: added PostgreSQL extension support to the roadmap
   (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
   `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority

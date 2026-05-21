@@ -71,3 +71,6 @@ adheres to [Semantic Versioning](https://semver.org/).
   types, and sequentially-scanned tables.
 - Configurable connection-pool sizing via `MCPG_POOL_MIN_SIZE` and
   `MCPG_POOL_MAX_SIZE` (defaults 1 and 5).
+- Multi-tenancy / Row-Level Security guidance in `docs/security.md`.
+- Scaling documentation (`docs/scaling.md`) and a benchmark harness
+  (`benchmarks/bench.py`).
