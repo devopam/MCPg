@@ -7,7 +7,7 @@ import pytest
 from mcpg.database import Database
 from mcpg.extensions import enable_extension
 from mcpg.introspection import list_available_extensions
-from mcpg.textsearch import full_text_search, fuzzy_search, vector_search
+from mcpg.textsearch import full_text_search, fuzzy_search, geo_search, vector_search
 
 _TABLE = "mcpg_trgm_it"
 
@@ -82,3 +82,32 @@ async def test_vector_search_against_real_pgvector(connected_database: Database)
         assert "embedding" not in result.matches[0].row
     finally:
         await driver.execute_query("DROP TABLE IF EXISTS mcpg_vsearch_it", force_readonly=False)
+
+
+async def test_geo_search_against_real_postgis(connected_database: Database) -> None:
+    driver = connected_database.driver()
+    available = {extension.name for extension in await list_available_extensions(driver)}
+    if "postgis" not in available:
+        pytest.skip("postgis is not available on this PostgreSQL server")
+    await enable_extension(driver, "postgis")
+    await driver.execute_query("DROP TABLE IF EXISTS mcpg_geo_it", force_readonly=False)
+    await driver.execute_query(
+        "CREATE TABLE mcpg_geo_it (id integer, location geometry(Point, 4326))",
+        force_readonly=False,
+    )
+    await driver.execute_query(
+        "INSERT INTO mcpg_geo_it (id, location) VALUES "
+        "(1, ST_SetSRID(ST_MakePoint(0, 0), 4326)), "
+        "(2, ST_SetSRID(ST_MakePoint(10, 10), 4326)), "
+        "(3, ST_SetSRID(ST_MakePoint(1, 1), 4326))",
+        force_readonly=False,
+    )
+    try:
+        result = await geo_search(driver, "public", "mcpg_geo_it", "location", 0.0, 0.0)
+
+        assert result.available is True
+        # The nearest row to (0,0) is row 1; the geometry column is dropped.
+        assert result.matches[0].row["id"] == 1
+        assert "location" not in result.matches[0].row
+    finally:
+        await driver.execute_query("DROP TABLE IF EXISTS mcpg_geo_it", force_readonly=False)

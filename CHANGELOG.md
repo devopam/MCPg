@@ -18,6 +18,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   `tsvector`/`tsquery` full-text search.
 - `vector_search` tool — finds the rows nearest to a query vector by
   `pgvector` distance (`l2`, `cosine`, or `inner_product`).
+- `geo_search` tool — finds the rows nearest to a lon/lat point by PostGIS
+  distance.
 
 ### Changed
 

@@ -9,10 +9,12 @@ from mcpg.server import create_server
 from mcpg.textsearch import (
     FullTextMatch,
     FuzzyMatch,
+    GeoMatch,
     SearchError,
     VectorMatch,
     full_text_search,
     fuzzy_search,
+    geo_search,
     vector_search,
 )
 
@@ -167,6 +169,69 @@ async def test_vector_search_tool_is_callable_from_a_client() -> None:
         result = await client.call_tool(
             "vector_search",
             {"schema": "app", "table": "docs", "column": "embedding", "query_vector": [1.0, 2.0]},
+        )
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["available"] is False
+
+
+# --- geo search ------------------------------------------------------------
+
+
+async def test_geo_search_reports_unavailable_without_postgis() -> None:
+    driver = FakeRoutingDriver({"pg_extension": []})
+
+    result = await geo_search(driver, "app", "places", "location", 1.0, 2.0)  # type: ignore[arg-type]
+
+    assert result.available is False
+    assert result.matches == []
+
+
+async def test_geo_search_returns_rows_without_the_geometry_column() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "ST_MakePoint": [{"id": 1, "name": "cafe", "location": "POINT(...)", "mcpg_distance": 0.5}],
+        }
+    )
+
+    result = await geo_search(driver, "app", "places", "location", 1.0, 2.0)  # type: ignore[arg-type]
+
+    assert result.available is True
+    assert result.matches == [GeoMatch(distance=0.5, row={"id": 1, "name": "cafe"})]
+
+
+async def test_geo_search_binds_the_point_and_limit() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}], "ST_MakePoint": []})
+
+    await geo_search(driver, "app", "places", "location", -73.9, 40.7, limit=5)  # type: ignore[arg-type]
+
+    search_call = next(call for call in driver.calls if "ST_MakePoint" in call[0])
+    assert search_call[1] == [-73.9, 40.7, -73.9, 40.7, 5]
+
+
+async def test_geo_search_rejects_invalid_identifiers() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(SearchError, match="invalid"):
+        await geo_search(driver, "places; DROP", "places", "location", 1.0, 2.0)  # type: ignore[arg-type]
+
+
+async def test_geo_search_tool_is_callable_from_a_client() -> None:
+    database = FakeDatabase(FakeRoutingDriver({"pg_extension": []}))
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool(
+            "geo_search",
+            {
+                "schema": "app",
+                "table": "places",
+                "column": "location",
+                "longitude": -73.9,
+                "latitude": 40.7,
+            },
         )
 
     assert result.isError is False

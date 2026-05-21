@@ -89,6 +89,13 @@ Finds the rows nearest to a query vector by `pgvector` distance. Parameters:
 default 10). Each match is the row (excluding the embedding column) plus its
 `distance`. Reports `available: false` if `pgvector` is not installed.
 
+### `geo_search`
+Finds the rows nearest to a lon/lat point by PostGIS distance. Parameters:
+`schema`, `table`, `column` (strings), `longitude`, `latitude` (numbers),
+`limit` (int, default 10). Each match is the row (excluding the geometry
+column) plus its `distance`. Reports `available: false` if `postgis` is not
+installed.
+
 ## Write (unrestricted mode only)
 
 ### `run_write`

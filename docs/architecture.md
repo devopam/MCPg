@@ -57,7 +57,7 @@ returns a typed result. Every call is audited.
 | `mcpg.health` | Database health checks |
 | `mcpg.workload` | Slow-query analysis (`pg_stat_statements`) |
 | `mcpg.indexing` | Index recommendations |
-| `mcpg.textsearch` | Trigram fuzzy search + full-text search |
+| `mcpg.textsearch` | Search: trigram fuzzy, full-text, pgvector, PostGIS |
 | `mcpg.extensions` | Extension management (`enable_extension`) |
 | `mcpg._vendor` | Vendored third-party code (see below) |
 

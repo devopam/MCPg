@@ -75,12 +75,13 @@ allowlist, executed read-only, and capped at `max_rows` (default 1000) with a
 `analyze_query_plan` summarises that plan (cost, node types, sequential
 scans).
 
-### Search text
+### Search
 
-`fuzzy_search` ranks a text column by trigram similarity (needs the
-`pg_trgm` extension). `full_text_search` ranks documents with PostgreSQL's
-built-in full-text search and accepts web-search syntax (quoted phrases,
-`or`, `-`).
+`fuzzy_search` ranks a text column by trigram similarity (needs `pg_trgm`).
+`full_text_search` ranks documents with PostgreSQL's built-in full-text
+search and accepts web-search syntax (quoted phrases, `or`, `-`).
+`vector_search` finds the rows nearest to a query vector (needs `pgvector`),
+and `geo_search` finds the rows nearest to a lon/lat point (needs `postgis`).
 
 ### Diagnose and tune
 
@@ -106,6 +107,8 @@ gracefully**: if the extension is not installed, the tool returns
 |---------------------|-----------------|
 | `fuzzy_search`      | `pg_trgm` |
 | `analyze_workload`  | `pg_stat_statements` |
+| `vector_search`     | `vector` (pgvector) |
+| `geo_search`        | `postgis` |
 
 In `unrestricted` + `MCPG_ALLOW_DDL` mode, `enable_extension` can install an
 allowlisted extension.

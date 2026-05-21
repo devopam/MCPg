@@ -1,9 +1,10 @@
-"""Search tools: trigram fuzzy matching, full-text search, and pgvector k-NN.
+"""Search tools: trigram fuzzy, full-text, pgvector k-NN, and PostGIS geo.
 
 ``fuzzy_search`` ranks values by ``pg_trgm`` trigram similarity (optional
 extension). ``full_text_search`` ranks documents with PostgreSQL's built-in
 ``tsvector``/``tsquery`` (no extension). ``vector_search`` finds nearest rows
-by ``pgvector`` distance (optional extension).
+by ``pgvector`` distance, and ``geo_search`` finds nearest rows by PostGIS
+distance to a point (both need their optional extension).
 
 Schema/table/column names and the text-search configuration are SQL
 identifiers and cannot be parameterised, so each is validated against a
@@ -83,6 +84,25 @@ class VectorSearchResult:
 
     available: bool
     matches: list[VectorMatch]
+
+
+@dataclass(frozen=True, slots=True)
+class GeoMatch:
+    """One geo-search hit: the row (minus the geometry column) and distance."""
+
+    distance: float
+    row: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class GeoSearchResult:
+    """The outcome of a geo search.
+
+    ``available`` is false when the ``postgis`` extension is not installed.
+    """
+
+    available: bool
+    matches: list[GeoMatch]
 
 
 def _checked(name: str, kind: str) -> str:
@@ -212,3 +232,45 @@ async def vector_search(
         cells.pop(column, None)  # drop the embedding column from the result
         matches.append(VectorMatch(distance=distance, row=cells))
     return VectorSearchResult(available=True, matches=matches)
+
+
+async def geo_search(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    column: str,
+    longitude: float,
+    latitude: float,
+    *,
+    limit: int = DEFAULT_LIMIT,
+) -> GeoSearchResult:
+    """Find the rows nearest to a point by PostGIS distance.
+
+    Requires the ``postgis`` extension; when absent the result is returned
+    with ``available=False``. The point is interpreted as lon/lat in SRID
+    4326; ``distance`` is in the units of that coordinate system. Each
+    match's ``row`` excludes the geometry column itself.
+
+    Raises:
+        SearchError: If a schema/table/column name is not a valid identifier.
+    """
+    if not await extension_installed(driver, "postgis"):
+        return GeoSearchResult(available=False, matches=[])
+
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    col = _quoted(column, "column")
+    # Casting to geometry accepts both geometry and geography columns.
+    point = "ST_SetSRID(ST_MakePoint(%s, %s), 4326)"
+    distance_expr = f"{col}::geometry <-> {point}"
+    rows = await driver.execute_query(
+        f"SELECT *, {distance_expr} AS mcpg_distance FROM {relation} ORDER BY {distance_expr} LIMIT %s",
+        params=[longitude, latitude, longitude, latitude, limit],
+        force_readonly=True,
+    )
+    matches: list[GeoMatch] = []
+    for row in rows or []:
+        cells = dict(row.cells)
+        distance = cells.pop("mcpg_distance")
+        cells.pop(column, None)  # drop the geometry column from the result
+        matches.append(GeoMatch(distance=distance, row=cells))
+    return GeoSearchResult(available=True, matches=matches)

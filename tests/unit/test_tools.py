@@ -30,6 +30,7 @@ _READ_TOOLS = {
     "fuzzy_search",
     "full_text_search",
     "vector_search",
+    "geo_search",
 }
 
 

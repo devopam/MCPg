@@ -240,6 +240,25 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         )
         return asdict(result)
 
+    @server.tool(
+        name="geo_search",
+        description=(
+            "Find the rows nearest to a lon/lat point by PostGIS distance. "
+            "Reports available=false if the postgis extension is not installed."
+        ),
+    )
+    async def geo_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        longitude: float,
+        latitude: float,
+        limit: int = textsearch.DEFAULT_LIMIT,
+    ) -> dict[str, Any]:
+        result = await textsearch.geo_search(_driver(ctx), schema, table, column, longitude, latitude, limit=limit)
+        return asdict(result)
+
 
 def _register_write(server: FastMCP[AppContext]) -> None:
     @server.tool(

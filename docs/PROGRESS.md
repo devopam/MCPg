@@ -6,18 +6,14 @@
 
 ## Current state
 
-- **Phase:** 10 complete — Phase 11 (PostGIS) pending a decision
+- **Phase:** all 11 phases complete — extension support fully delivered
 - **Last updated:** 2026-05-21
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 11 (PostGIS) is optional and needs a decision: no stock CI image has
-> both pgvector and PostGIS, so PostGIS integration tests can't run in the
-> current CI. Note that `describe_table` already surfaces geometry types and
-> `list_indexes` already reports GiST spatial indexes. Decide: build a
-> PostGIS spatial-search tool (unit-tested only), or close the roadmap at
-> Phase 10.
+> All eleven planned phases are complete (20 MCP tools). Open follow-ups:
+> a second v0.x release tagging the extension work; any new feature requests.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -132,7 +128,12 @@
 - [x] 10.3 HNSW/IVFFlat index awareness — `list_indexes` reports the access
       method; confirmed by an integration test (`method == "hnsw"`).
 
-## Phase 11 — Geospatial (PostGIS), optional (not started)
+## Phase 11 — Geospatial (PostGIS)  ✅ COMPLETE
+
+- [x] 11.1 `geo_search` tool — k-NN by PostGIS distance to a lon/lat point;
+      CI builds a pgvector + PostGIS image so it is integration-tested.
+- Geometry column types and GiST spatial indexes were already surfaced by
+  `describe_table` and `list_indexes`.
 
 > Phases 8–11 cover PostgreSQL extension and advanced-feature support; see
 > `PLAN.md` §7a for the capability inventory and per-extension priorities.
@@ -319,3 +320,8 @@
   textsearch.py`); confirmed HNSW index awareness via `list_indexes`.
   291 tests (3 pgvector integration tests run in CI), 100% coverage.
   **Phase 10 complete.** Phases 0–10 done; 19 MCP tools.
+- 2026-05-21 — Phase 11: CI now builds a pgvector + PostGIS image
+  (`.github/ci-postgres.Dockerfile`); added `geo_search` (PostGIS k-NN by
+  distance to a lon/lat point) to `mcpg/textsearch.py`. 296 tests (4
+  extension integration tests run in CI), 100% coverage. **Phase 11 complete
+  — all eleven planned phases delivered; 20 MCP tools.**
