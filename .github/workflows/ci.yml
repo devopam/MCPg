@@ -38,7 +38,10 @@ jobs:
         postgres: ["14", "15", "16", "17"]
     services:
       postgres:
-        image: postgres:${{ matrix.postgres }}
+        # pgvector images are the official postgres images plus the pgvector
+        # extension, so every existing test still passes and the Phase 10
+        # vector tests can run for real.
+        image: pgvector/pgvector:pg${{ matrix.postgres }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
