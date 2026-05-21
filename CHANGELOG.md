@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `list_available_extensions` tool — lists every extension available to the
+  database with its installed-vs-available status.
+
 ### Changed
 
 - `list_indexes` now reports each index's access method (`btree`, `gin`,

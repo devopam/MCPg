@@ -5,12 +5,14 @@ from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.introspection import (
+    AvailableExtension,
     ColumnInfo,
     ExtensionInfo,
     IndexInfo,
     SchemaInfo,
     TableInfo,
     describe_table,
+    list_available_extensions,
     list_extensions,
     list_indexes,
     list_schemas,
@@ -93,6 +95,20 @@ async def test_list_extensions_maps_rows() -> None:
     assert await list_extensions(driver) == [ExtensionInfo("plpgsql", "1.0")]
 
 
+async def test_list_available_extensions_reports_install_status() -> None:
+    driver = FakeDriver(
+        [
+            {"name": "plpgsql", "default_version": "1.0", "installed_version": "1.0"},
+            {"name": "pgvector", "default_version": "0.7.0", "installed_version": None},
+        ]
+    )
+
+    assert await list_available_extensions(driver) == [
+        AvailableExtension("plpgsql", "1.0", "1.0", installed=True),
+        AvailableExtension("pgvector", "0.7.0", None, installed=False),
+    ]
+
+
 # --- MCP tool registration -------------------------------------------------
 
 _INTROSPECTION_TOOLS = {
@@ -101,6 +117,7 @@ _INTROSPECTION_TOOLS = {
     "describe_table",
     "list_indexes",
     "list_extensions",
+    "list_available_extensions",
 }
 
 
@@ -126,6 +143,10 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
             [{"name": "i", "method": "btree", "definition": "d"}],
         ),
         "list_extensions": ({}, [{"extname": "plpgsql", "extversion": "1.0"}]),
+        "list_available_extensions": (
+            {},
+            [{"name": "plpgsql", "default_version": "1.0", "installed_version": "1.0"}],
+        ),
     }
 
     for name, (args, rows) in cases.items():

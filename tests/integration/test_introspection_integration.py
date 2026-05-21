@@ -8,6 +8,7 @@ from mcpg.database import Database
 from mcpg.introspection import (
     SchemaInfo,
     describe_table,
+    list_available_extensions,
     list_extensions,
     list_indexes,
     list_schemas,
@@ -67,3 +68,13 @@ async def test_list_extensions_includes_plpgsql(connected_database: Database) ->
     names = {extension.name for extension in await list_extensions(connected_database.driver())}
 
     assert "plpgsql" in names
+
+
+async def test_list_available_extensions_marks_plpgsql_installed(
+    connected_database: Database,
+) -> None:
+    available = await list_available_extensions(connected_database.driver())
+    by_name = {extension.name: extension for extension in available}
+
+    assert by_name  # the catalog always lists some available extensions
+    assert by_name["plpgsql"].installed is True

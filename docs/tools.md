@@ -29,6 +29,10 @@ Lists the indexes on a table, each with its access method (`btree`, `gin`,
 ### `list_extensions`
 Lists the extensions installed in the database.
 
+### `list_available_extensions`
+Lists every extension available to the database — name, default version,
+installed version, and whether it is `installed`.
+
 ## Query (read)
 
 ### `run_select`

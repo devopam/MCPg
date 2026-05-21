@@ -12,8 +12,9 @@
 
 ## Next action
 
-> Phase 8, Task 8.2 — TDD a `list_available_extensions` tool reporting which
-> extensions are installed vs available (`pg_available_extensions`).
+> Phase 8, Task 8.3 — TDD an `enable_extension` tool: `CREATE EXTENSION` gated
+> to unrestricted mode + `MCPG_ALLOW_DDL`, restricted to a known-extension
+> allowlist; extension name validated (no SQL injection).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -110,7 +111,7 @@
 ## Phase 8 — Index intelligence & extension management
 
 - [x] 8.1 `list_indexes` reports the index access method (btree/gin/gist/...)
-- [ ] 8.2 `list_available_extensions` tool — installed vs available
+- [x] 8.2 `list_available_extensions` tool — installed vs available
 - [ ] 8.3 `enable_extension` tool — gated DDL, known-extension allowlist
 - [ ] 8.4 Index-type-aware `recommend_indexes` — GIN for `jsonb`/arrays,
       trigram GIN for `LIKE`, BRIN for append-only (HNSW/IVFFlat in Phase 10)
@@ -271,3 +272,6 @@
 - 2026-05-21 — Task 8.1: `list_indexes` now reports each index's access
   method (btree/gin/gist/brin/hash/spgist) via a `pg_am` catalog join;
   `IndexInfo` gains a `method` field. 256 tests, 100% coverage.
+- 2026-05-21 — Task 8.2: added `list_available_extensions` (`pg_available_extensions`)
+  reporting every available extension with installed-vs-not status, exposed
+  as an MCP tool. 258 tests, 100% coverage.

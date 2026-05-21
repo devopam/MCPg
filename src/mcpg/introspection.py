@@ -61,6 +61,16 @@ class ExtensionInfo:
     version: str
 
 
+@dataclass(frozen=True, slots=True)
+class AvailableExtension:
+    """An extension available to the database, installed or not."""
+
+    name: str
+    default_version: str
+    installed_version: str | None
+    installed: bool
+
+
 def _is_system_schema(name: str) -> bool:
     return name in _SYSTEM_SCHEMAS or name.startswith("pg_")
 
@@ -137,3 +147,20 @@ async def list_extensions(driver: SqlDriver) -> list[ExtensionInfo]:
         force_readonly=True,
     )
     return [ExtensionInfo(name=row.cells["extname"], version=row.cells["extversion"]) for row in rows or []]
+
+
+async def list_available_extensions(driver: SqlDriver) -> list[AvailableExtension]:
+    """List every extension available to the database, with install status."""
+    rows = await driver.execute_query(
+        "SELECT name, default_version, installed_version FROM pg_available_extensions ORDER BY name",
+        force_readonly=True,
+    )
+    return [
+        AvailableExtension(
+            name=row.cells["name"],
+            default_version=row.cells["default_version"],
+            installed_version=row.cells["installed_version"],
+            installed=row.cells["installed_version"] is not None,
+        )
+        for row in rows or []
+    ]

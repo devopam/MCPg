@@ -86,6 +86,14 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         extensions = await introspection.list_extensions(_driver(ctx))
         return [asdict(extension) for extension in extensions]
 
+    @server.tool(
+        name="list_available_extensions",
+        description="List every extension available to the database, with whether it is installed.",
+    )
+    async def list_available_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
+        extensions = await introspection.list_available_extensions(_driver(ctx))
+        return [asdict(extension) for extension in extensions]
+
 
 def _register_query(server: FastMCP[AppContext]) -> None:
     @server.tool(
