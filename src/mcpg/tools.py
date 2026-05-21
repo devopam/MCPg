@@ -218,6 +218,28 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         )
         return [asdict(match) for match in matches]
 
+    @server.tool(
+        name="vector_search",
+        description=(
+            "Find the rows nearest to a query vector by pgvector distance "
+            "(metric: l2, cosine, or inner_product). Reports available=false "
+            "if the pgvector extension is not installed."
+        ),
+    )
+    async def vector_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        query_vector: list[float],
+        metric: str = textsearch.DEFAULT_VECTOR_METRIC,
+        limit: int = textsearch.DEFAULT_LIMIT,
+    ) -> dict[str, Any]:
+        result = await textsearch.vector_search(
+            _driver(ctx), schema, table, column, query_vector, metric=metric, limit=limit
+        )
+        return asdict(result)
+
 
 def _register_write(server: FastMCP[AppContext]) -> None:
     @server.tool(

@@ -7,7 +7,7 @@ import pytest
 from mcpg.database import Database
 from mcpg.extensions import enable_extension
 from mcpg.introspection import list_available_extensions
-from mcpg.textsearch import full_text_search, fuzzy_search
+from mcpg.textsearch import full_text_search, fuzzy_search, vector_search
 
 _TABLE = "mcpg_trgm_it"
 
@@ -59,3 +59,26 @@ async def test_full_text_search_against_real_postgres(connected_database: Databa
         assert "a lazy dog sleeps" not in values
     finally:
         await driver.execute_query("DROP TABLE IF EXISTS mcpg_fts_it", force_readonly=False)
+
+
+async def test_vector_search_against_real_pgvector(connected_database: Database) -> None:
+    driver = connected_database.driver()
+    available = {extension.name for extension in await list_available_extensions(driver)}
+    if "vector" not in available:
+        pytest.skip("pgvector is not available on this PostgreSQL server")
+    await enable_extension(driver, "vector")
+    await driver.execute_query("DROP TABLE IF EXISTS mcpg_vsearch_it", force_readonly=False)
+    await driver.execute_query("CREATE TABLE mcpg_vsearch_it (id integer, embedding vector(3))", force_readonly=False)
+    await driver.execute_query(
+        "INSERT INTO mcpg_vsearch_it (id, embedding) VALUES (1, '[1,0,0]'), (2, '[0,1,0]'), (3, '[0.9,0.1,0]')",
+        force_readonly=False,
+    )
+    try:
+        result = await vector_search(driver, "public", "mcpg_vsearch_it", "embedding", [1.0, 0.0, 0.0])
+
+        assert result.available is True
+        # The nearest row to [1,0,0] is row 1; the embedding column is dropped.
+        assert result.matches[0].row["id"] == 1
+        assert "embedding" not in result.matches[0].row
+    finally:
+        await driver.execute_query("DROP TABLE IF EXISTS mcpg_vsearch_it", force_readonly=False)

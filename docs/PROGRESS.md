@@ -12,9 +12,8 @@
 
 ## Next action
 
-> Phase 10, Task 10.2 — TDD a k-NN vector similarity search tool over
-> `pgvector` (`<->`/`<=>`/`<#>` distance operators), degrading gracefully
-> when the `vector` extension is absent.
+> Phase 10, Task 10.3 — confirm + document HNSW/IVFFlat index awareness
+> (`list_indexes` already reports the access method via Task 8.1).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -125,7 +124,7 @@
 ## Phase 10 — Vector search (`pgvector`)
 
 - [x] 10.1 `vector` column awareness — `describe_table` reports vector dimension (TDD)
-- [ ] 10.2 k-NN vector similarity search tool (`<->`/`<=>`/`<#>`) (TDD)
+- [x] 10.2 k-NN vector similarity search tool (`<->`/`<=>`/`<#>`) (`mcpg/textsearch.py`, TDD)
 - [ ] 10.3 HNSW/IVFFlat index awareness — already covered: `list_indexes`
       reports the access method (Task 8.1), so HNSW/IVFFlat indexes surface
       automatically. Confirm + add a note.

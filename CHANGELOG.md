@@ -16,6 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   to a search term.
 - `full_text_search` tool — ranks documents with PostgreSQL's built-in
   `tsvector`/`tsquery` full-text search.
+- `vector_search` tool — finds the rows nearest to a query vector by
+  `pgvector` distance (`l2`, `cosine`, or `inner_product`).
 
 ### Changed
 

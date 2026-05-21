@@ -29,6 +29,7 @@ _READ_TOOLS = {
     "recommend_indexes",
     "fuzzy_search",
     "full_text_search",
+    "vector_search",
 }
 
 

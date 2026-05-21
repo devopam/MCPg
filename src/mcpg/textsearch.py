@@ -1,19 +1,21 @@
-"""Text search: trigram fuzzy matching (``pg_trgm``) and built-in full-text.
+"""Search tools: trigram fuzzy matching, full-text search, and pgvector k-NN.
 
-``fuzzy_search`` ranks values by trigram similarity (needs the optional
-``pg_trgm`` extension). ``full_text_search`` ranks documents with PostgreSQL's
-built-in ``tsvector``/``tsquery`` (no extension required).
+``fuzzy_search`` ranks values by ``pg_trgm`` trigram similarity (optional
+extension). ``full_text_search`` ranks documents with PostgreSQL's built-in
+``tsvector``/``tsquery`` (no extension). ``vector_search`` finds nearest rows
+by ``pgvector`` distance (optional extension).
 
 Schema/table/column names and the text-search configuration are SQL
 identifiers and cannot be parameterised, so each is validated against a
-strict identifier pattern before being placed in the query. Search terms are
-always bound parameters.
+strict identifier pattern before being placed in the query. Search terms and
+query vectors are always bound parameters.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
@@ -26,6 +28,10 @@ DEFAULT_THRESHOLD = 0.3
 
 # Default text-search configuration for full-text search.
 DEFAULT_TEXT_CONFIG = "english"
+
+# Vector-distance metric -> pgvector operator.
+_VECTOR_METRICS = {"l2": "<->", "cosine": "<=>", "inner_product": "<#>"}
+DEFAULT_VECTOR_METRIC = "l2"
 
 
 class SearchError(Exception):
@@ -57,6 +63,26 @@ class FullTextMatch:
 
     value: str
     rank: float
+
+
+@dataclass(frozen=True, slots=True)
+class VectorMatch:
+    """One vector-search hit: the row (minus the embedding) and its distance."""
+
+    distance: float
+    row: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class VectorSearchResult:
+    """The outcome of a vector search.
+
+    ``available`` is false when the ``vector`` (pgvector) extension is not
+    installed.
+    """
+
+    available: bool
+    matches: list[VectorMatch]
 
 
 def _checked(name: str, kind: str) -> str:
@@ -139,3 +165,50 @@ async def full_text_search(
         force_readonly=True,
     )
     return [FullTextMatch(value=str(row.cells["value"]), rank=row.cells["rank"]) for row in rows or []]
+
+
+async def vector_search(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    column: str,
+    query_vector: list[float],
+    *,
+    metric: str = DEFAULT_VECTOR_METRIC,
+    limit: int = DEFAULT_LIMIT,
+) -> VectorSearchResult:
+    """Find the rows nearest to ``query_vector`` by ``pgvector`` distance.
+
+    Requires the ``vector`` extension; when absent the result is returned
+    with ``available=False``. Each match's ``row`` is the full row excluding
+    the embedding column itself.
+
+    Args:
+        metric: ``l2``, ``cosine``, or ``inner_product``.
+
+    Raises:
+        SearchError: If an identifier is invalid or ``metric`` is unknown.
+    """
+    if not await extension_installed(driver, "vector"):
+        return VectorSearchResult(available=False, matches=[])
+    if metric not in _VECTOR_METRICS:
+        raise SearchError(f"unknown vector metric: {metric!r}")
+
+    operator = _VECTOR_METRICS[metric]
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    col = _quoted(column, "column")
+    # pgvector accepts a bracketed text literal cast to ``vector``.
+    literal = "[" + ",".join(str(float(value)) for value in query_vector) + "]"
+    rows = await driver.execute_query(
+        f"SELECT *, {col} {operator} %s::vector AS mcpg_distance "
+        f"FROM {relation} ORDER BY {col} {operator} %s::vector LIMIT %s",
+        params=[literal, literal, limit],
+        force_readonly=True,
+    )
+    matches: list[VectorMatch] = []
+    for row in rows or []:
+        cells = dict(row.cells)
+        distance = cells.pop("mcpg_distance")
+        cells.pop(column, None)  # drop the embedding column from the result
+        matches.append(VectorMatch(distance=distance, row=cells))
+    return VectorSearchResult(available=True, matches=matches)

@@ -81,6 +81,13 @@ web-search syntax (quoted phrases, `or`, `-` exclusion). Parameters:
 `schema`, `table`, `column`, `search_query` (strings), `config` (string,
 default `english`), `limit` (int, default 10).
 
+### `vector_search`
+Finds the rows nearest to a query vector by `pgvector` distance. Parameters:
+`schema`, `table`, `column` (strings), `query_vector` (array of numbers),
+`metric` (`l2`, `cosine`, or `inner_product`; default `l2`), `limit` (int,
+default 10). Each match is the row (excluding the embedding column) plus its
+`distance`. Reports `available: false` if `pgvector` is not installed.
+
 ## Write (unrestricted mode only)
 
 ### `run_write`
