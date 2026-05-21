@@ -1,7 +1,7 @@
 # MCPg Tool Reference
 
 The tools MCPg exposes over MCP, grouped by category. Availability depends on
-the configured access mode (see [`usage.md`](usage.md)).
+the configured access mode (see the [User Guide](user-guide.md)).
 
 ## Server
 

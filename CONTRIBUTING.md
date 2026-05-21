@@ -48,6 +48,17 @@ its behaviour, add characterization tests first.
 - Update `docs/PROGRESS.md` when you complete a roadmap task.
 - All CI checks (lint, format, type-check, tests) must pass.
 
+## Keep the living documentation current
+
+Several documents are **living docs** — update them in the same change that
+alters the behaviour they describe:
+
+- A new or changed tool → [`docs/tools.md`](docs/tools.md) and, if it affects
+  usage, [`docs/user-guide.md`](docs/user-guide.md).
+- A new setting or install/run change → [`docs/installation.md`](docs/installation.md).
+- A new module, component, or structural change → [`docs/architecture.md`](docs/architecture.md).
+- A security-relevant change → [`docs/security.md`](docs/security.md).
+
 ## Code style
 
 `ruff` and `mypy --strict` are authoritative; their configuration lives in

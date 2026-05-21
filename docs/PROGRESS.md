@@ -101,7 +101,8 @@
 
 ## Phase 7 — Docs, packaging & release  ✅ COMPLETE (pending release sign-off)
 
-- [x] 7.1 Usage guide (`docs/usage.md`) + tool reference (`docs/tools.md`)
+- [x] 7.1 Usage docs + tool reference (`docs/tools.md`); the usage guide was
+      later split into `docs/installation.md` + `docs/user-guide.md`
 - [x] 7.2 Packaging — `Dockerfile`, `.dockerignore`, install instructions
 - [x] 7.3 v0.1.0 release prep — version bumped to 0.1.0, CHANGELOG finalised.
       Tagging/publishing awaits explicit user sign-off.
@@ -308,3 +309,7 @@
   a `pg_attribute` catalog query; `ColumnInfo` gains `vector_dimension`,
   reported for `vector(N)` columns. 286 tests (1 pgvector test skips locally),
   100% coverage.
+- 2026-05-21 — Docs: split `usage.md` into living `docs/installation.md`
+  (Installation Guide) and `docs/user-guide.md` (User Guide), and added
+  `docs/architecture.md` (Architecture Document). These are maintained
+  alongside feature work (see `CONTRIBUTING.md`).

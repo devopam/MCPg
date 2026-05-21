@@ -25,6 +25,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   types — GIN for `jsonb`/array columns, trigram GIN for text columns.
 - `describe_table` now reads the catalog directly and reports the
   `pgvector` dimension for `vector(N)` columns.
+- Documentation reorganised into living guides: `docs/installation.md`,
+  `docs/user-guide.md`, and `docs/architecture.md` (replacing `docs/usage.md`).
 
 ## [0.1.0] - 2026-05-21
 
