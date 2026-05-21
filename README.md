@@ -21,6 +21,8 @@ and tune a Postgres database.
 
 ## Documentation
 
+- [`docs/usage.md`](docs/usage.md) — install, configure, run, connect a client
+- [`docs/tools.md`](docs/tools.md) — reference for every MCP tool
 - [`PLAN.md`](PLAN.md) — master plan, architecture, technology choices, roadmap
 - [`docs/PROGRESS.md`](docs/PROGRESS.md) — live progress tracker (resume point)
 - [`docs/security.md`](docs/security.md) — threat model and security controls

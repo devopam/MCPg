@@ -12,9 +12,10 @@
 
 ## Next action
 
-> Phase 7, Task 7.1 — usage guide and per-tool reference documentation
-> (`docs/usage.md`, `docs/tools/`). Phase 6 task 6.4 (server-side cursors,
-> read-replica routing) is optional and deferred post-1.0.
+> Phase 7, Task 7.2 — packaging: Docker image and install instructions.
+> Then Task 7.3 — v0.1.0 release prep (version bump, CHANGELOG finalise).
+> NOTE: actually publishing to PyPI / tagging a release is a side-effecting
+> action — confirm with the user before doing it.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -99,7 +100,12 @@
 - [x] 6.3 Scaling characteristics (`docs/scaling.md`) + benchmark harness (`benchmarks/bench.py`)
 - [ ] 6.4 (optional, deferred post-1.0) server-side cursors; read-replica routing
 
-## Phase 7 — Docs, packaging & release (not started)
+## Phase 7 — Docs, packaging & release
+
+- [x] 7.1 Usage guide (`docs/usage.md`) + tool reference (`docs/tools.md`)
+- [ ] 7.2 Packaging — Docker image, install instructions
+- [ ] 7.3 v0.1.0 release prep — version bump, CHANGELOG finalise (publishing
+      itself needs explicit user sign-off)
 
 ## Phase 8 — Index intelligence & extension management (not started)
 
@@ -246,6 +252,9 @@
   throughput/latency harness) and `docs/scaling.md` (execution model, pool
   sizing, measured baseline ~2200 req/s p50 ~7ms, bottleneck guidance).
   Task 6.4 deferred post-1.0; **Phase 6 effectively complete for v0.1.0.**
+- 2026-05-20 — Task 7.1: wrote `docs/usage.md` (install, configuration env-var
+  table, access modes, running, MCP client config, troubleshooting) and
+  `docs/tools.md` (reference for all 14 tools). Linked from the README.
 - 2026-05-20 — Planning: added PostgreSQL extension support to the roadmap
   (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
   `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority
