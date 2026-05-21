@@ -95,6 +95,33 @@ def test_invalid_allow_ddl_raises() -> None:
         load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_DDL": "maybe"})
 
 
+def test_pool_sizes_default_to_one_and_five() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.pool_min_size == 1
+    assert settings.pool_max_size == 5
+
+
+def test_pool_sizes_are_parsed_from_the_environment() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_POOL_MIN_SIZE": "3", "MCPG_POOL_MAX_SIZE": "20"})
+    assert settings.pool_min_size == 3
+    assert settings.pool_max_size == 20
+
+
+def test_non_numeric_pool_size_raises() -> None:
+    with pytest.raises(ConfigError, match="MCPG_POOL_MAX_SIZE"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_POOL_MAX_SIZE": "lots"})
+
+
+def test_pool_size_below_one_raises() -> None:
+    with pytest.raises(ConfigError, match="MCPG_POOL_MIN_SIZE"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_POOL_MIN_SIZE": "0"})
+
+
+def test_pool_max_below_min_raises() -> None:
+    with pytest.raises(ConfigError, match="MCPG_POOL_MAX_SIZE"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_POOL_MIN_SIZE": "10", "MCPG_POOL_MAX_SIZE": "5"})
+
+
 def test_repr_does_not_leak_the_password() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
     rendered = repr(settings)

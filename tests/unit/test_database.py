@@ -77,3 +77,18 @@ def test_database_builds_its_own_pool_from_settings() -> None:
     db = Database(_SETTINGS)
     # No pool injected: it should construct one from the settings URL.
     assert isinstance(db._pool, DbConnPool)
+
+
+def test_database_applies_configured_pool_sizes() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_POOL_MIN_SIZE": "2",
+            "MCPG_POOL_MAX_SIZE": "12",
+        }
+    )
+
+    db = Database(settings)
+
+    assert db._pool.min_size == 2
+    assert db._pool.max_size == 12

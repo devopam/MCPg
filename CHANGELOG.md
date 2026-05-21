@@ -69,3 +69,5 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Query plan analysis (`mcpg.query`): the `analyze_query_plan` tool
   summarises a query's execution plan — total cost, estimated rows, node
   types, and sequentially-scanned tables.
+- Configurable connection-pool sizing via `MCPG_POOL_MIN_SIZE` and
+  `MCPG_POOL_MAX_SIZE` (defaults 1 and 5).

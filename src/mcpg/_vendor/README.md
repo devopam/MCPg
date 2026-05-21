@@ -16,10 +16,15 @@ authored by the MCPg project and is excluded from the coverage gate and from
 
 ### Local modifications
 
-The files are verbatim copies. The **only** changes are import-path rewrites
-in the accompanying tests (`tests/vendor/`): `postgres_mcp.sql` →
-`mcpg._vendor.sql`. The `sql/` source files themselves use relative imports
-and were copied unchanged.
+The source files are near-verbatim copies. Deliberate local changes:
+
+- **Test import paths** (`tests/vendor/`): `postgres_mcp.sql` →
+  `mcpg._vendor.sql`. The `sql/` source files use relative imports and were
+  otherwise copied unchanged.
+- **`sql_driver.py` — `DbConnPool` pool sizing (ADR-0003):** `__init__` gained
+  `min_size`/`max_size` parameters (defaulting to `1`/`5`, reproducing the
+  original behaviour), used in `pool_connect`. A ~3-line, behaviour-preserving
+  change; re-apply on re-sync. Marked in-file with `MCPg local modification`.
 
 ### Re-sync procedure
 

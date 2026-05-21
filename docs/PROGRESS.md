@@ -12,10 +12,9 @@
 
 ## Next action
 
-> Phase 6, Task 6.1 — configurable connection-pool sizing. NOTE: the vendored
-> `DbConnPool` hardcodes `min_size=1, max_size=5`; decide whether to add a
-> characterization test + small vendored patch, or wrap our own pool. Resolve
-> this before implementing (consider a brief ADR).
+> Phase 6, Task 6.2 — multi-tenancy & Row-Level-Security awareness: document
+> RLS interaction; optionally support a per-connection role. Resolve approach
+> first (the vendored driver opens plain pool connections).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -91,7 +90,14 @@
 - [x] 5.3 `recommend_indexes` — missing-index heuristics (`mcpg/indexing.py`, TDD)
 - [x] 5.4 `analyze_query_plan` — structured `EXPLAIN` plan analysis (`mcpg/query.py`, TDD)
 
-## Phase 6 — Scalability & multi-tenancy (not started)
+## Phase 6 — Scalability & multi-tenancy
+
+- [x] 6.1 Configurable connection-pool sizing (`MCPG_POOL_MIN_SIZE`/`MAX_SIZE`,
+      vendored `DbConnPool` patched per ADR-0003)
+- [ ] 6.2 Multi-tenancy & Row-Level-Security awareness (TDD)
+- [ ] 6.3 Documented scaling characteristics + a load/soak benchmark harness
+- [ ] 6.4 (optional) server-side cursors for large reads; read-replica routing
+
 ## Phase 7 — Docs, packaging & release (not started)
 
 ## Phase 8 — Index intelligence & extension management (not started)
@@ -119,6 +125,7 @@
 | —   | Phase 4: DDL gated behind a second opt-in (`MCPG_ALLOW_DDL`); no dry-run (direct execution) | accepted | 2026-05-20 |
 | —   | Extension support (Phases 8–11) lands **after** the v0.1.0 release (Phase 7) | accepted | 2026-05-20 |
 | —   | Index intelligence (Phase 8) is the first extension area implemented | accepted | 2026-05-20 |
+| ADR-0003 | Configurable pool sizing via a minimal behaviour-preserving patch to the vendored `DbConnPool` | accepted | 2026-05-20 |
 
 ## Open questions
 
@@ -225,6 +232,10 @@
   the `EXPLAIN (FORMAT JSON)` tree into a structured summary (total cost,
   estimated rows, node types, sequential scans). 249 tests, 100% coverage.
   **Phase 5 complete.**
+- 2026-05-20 — Task 6.1: configurable connection-pool sizing. ADR-0003 chose a
+  minimal vendored `DbConnPool` patch (`min_size`/`max_size` params); added
+  `MCPG_POOL_MIN_SIZE`/`MCPG_POOL_MAX_SIZE` settings flowing into `Database`.
+  256 tests, 100% coverage.
 - 2026-05-20 — Planning: added PostgreSQL extension support to the roadmap
   (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
   `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority

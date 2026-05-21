@@ -22,7 +22,15 @@ class Database:
 
     def __init__(self, settings: Settings, *, pool: DbConnPool | None = None) -> None:
         self._settings = settings
-        self._pool = pool if pool is not None else DbConnPool(settings.database_url)
+        self._pool = (
+            pool
+            if pool is not None
+            else DbConnPool(
+                settings.database_url,
+                min_size=settings.pool_min_size,
+                max_size=settings.pool_max_size,
+            )
+        )
         self._connected = False
 
     @property

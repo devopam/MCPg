@@ -50,6 +50,8 @@ class Settings:
     http_port: int = 8000
     log_level: str = "INFO"
     allow_ddl: bool = False
+    pool_min_size: int = 1
+    pool_max_size: int = 5
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -58,7 +60,8 @@ class Settings:
             f"access_mode={self.access_mode.value!r}, "
             f"transport={self.transport.value!r}, "
             f"http_host={self.http_host!r}, http_port={self.http_port}, "
-            f"log_level={self.log_level!r}, allow_ddl={self.allow_ddl})"
+            f"log_level={self.log_level!r}, allow_ddl={self.allow_ddl}, "
+            f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size})"
         )
 
 
@@ -87,6 +90,16 @@ def _parse_port(var: str, raw: str) -> int:
     if not 1 <= port <= 65535:
         raise ConfigError(f"{var} must be between 1 and 65535 (got {port})")
     return port
+
+
+def _parse_positive_int(var: str, raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ConfigError(f"{var} must be an integer (got {raw!r})") from None
+    if value < 1:
+        raise ConfigError(f"{var} must be at least 1 (got {value})")
+    return value
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -125,6 +138,17 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if (raw := env.get("MCPG_ALLOW_DDL")) is not None:
         allow_ddl = _parse_bool("MCPG_ALLOW_DDL", raw)
 
+    pool_min_size = 1
+    if (raw := env.get("MCPG_POOL_MIN_SIZE")) is not None:
+        pool_min_size = _parse_positive_int("MCPG_POOL_MIN_SIZE", raw)
+
+    pool_max_size = 5
+    if (raw := env.get("MCPG_POOL_MAX_SIZE")) is not None:
+        pool_max_size = _parse_positive_int("MCPG_POOL_MAX_SIZE", raw)
+
+    if pool_max_size < pool_min_size:
+        raise ConfigError(f"MCPG_POOL_MAX_SIZE ({pool_max_size}) must be >= MCPG_POOL_MIN_SIZE ({pool_min_size})")
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -133,4 +157,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_port=http_port,
         log_level=log_level,
         allow_ddl=allow_ddl,
+        pool_min_size=pool_min_size,
+        pool_max_size=pool_max_size,
     )

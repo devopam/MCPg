@@ -5,11 +5,24 @@ The connection-failure path is covered by a fast unit test in
 behaviour only.
 """
 
+from mcpg.config import load_settings
 from mcpg.database import Database
 
 
 async def test_connects_to_a_real_postgres(connected_database: Database) -> None:
     assert connected_database.is_connected is True
+
+
+async def test_connects_with_custom_pool_sizes(database_url: str) -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": database_url, "MCPG_POOL_MIN_SIZE": "2", "MCPG_POOL_MAX_SIZE": "4"})
+    database = Database(settings)
+    await database.connect()
+    try:
+        assert database.is_connected is True
+        rows = await database.driver().execute_query("SELECT 1 AS one")
+        assert rows is not None and rows[0].cells["one"] == 1
+    finally:
+        await database.close()
 
 
 async def test_driver_executes_a_query(connected_database: Database) -> None:
