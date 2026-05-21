@@ -54,9 +54,13 @@ async def test_describe_table_returns_typed_columns(connected_database: Database
 async def test_list_indexes_finds_primary_key_and_secondary_index(
     connected_database: Database, sample_schema: str
 ) -> None:
-    names = {index.name for index in await list_indexes(connected_database.driver(), sample_schema, "widget")}
+    indexes = await list_indexes(connected_database.driver(), sample_schema, "widget")
+    by_name = {index.name: index for index in indexes}
 
-    assert {"widget_pkey", "widget_name_idx"} <= names
+    assert {"widget_pkey", "widget_name_idx"} <= by_name.keys()
+    # Both sample indexes are plain B-tree; the access method is reported.
+    assert by_name["widget_pkey"].method == "btree"
+    assert by_name["widget_name_idx"].method == "btree"
 
 
 async def test_list_extensions_includes_plpgsql(connected_database: Database) -> None:

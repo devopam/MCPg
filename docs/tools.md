@@ -23,7 +23,8 @@ Describes a table's columns in ordinal order — name, data type, nullability,
 default. Parameters: `schema`, `table` (strings).
 
 ### `list_indexes`
-Lists the indexes on a table. Parameters: `schema`, `table` (strings).
+Lists the indexes on a table, each with its access method (`btree`, `gin`,
+`gist`, `brin`, `hash`, `spgist`). Parameters: `schema`, `table` (strings).
 
 ### `list_extensions`
 Lists the extensions installed in the database.

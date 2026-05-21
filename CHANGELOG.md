@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `list_indexes` now reports each index's access method (`btree`, `gin`,
+  `gist`, `brin`, `hash`, `spgist`).
+
 ## [0.1.0] - 2026-05-21
 
 First release: a production-grade PostgreSQL MCP server with 14 tools across

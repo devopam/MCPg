@@ -6,16 +6,14 @@
 
 ## Current state
 
-- **Phase:** 7 complete — v0.1.0 release-ready (awaiting sign-off)
+- **Phase:** 8 — Index intelligence & extension management (post-1.0)
 - **Last updated:** 2026-05-21
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Release prep is done (version 0.1.0, CHANGELOG finalised). **Awaiting user
-> sign-off** to tag `v0.1.0` and publish (PyPI / GitHub release) — these are
-> side-effecting and must not be done unprompted. After v0.1.0: Phase 8
-> (index intelligence & extension management) — see `PLAN.md` §7a.
+> Phase 8, Task 8.2 — TDD a `list_available_extensions` tool reporting which
+> extensions are installed vs available (`pg_available_extensions`).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -107,13 +105,15 @@
 - [x] 7.3 v0.1.0 release prep — version bumped to 0.1.0, CHANGELOG finalised.
       Tagging/publishing awaits explicit user sign-off.
 
-## Phase 8 — Index intelligence & extension management (not started)
+> **v0.1.0 merged to `main` via PR #1.** Post-1.0 work continues below.
 
-- Report index access methods (B-tree/GIN/GiST/BRIN/Hash/SP-GiST) in `list_indexes`.
-- `list_available_extensions`; `enable_extension` tool (gated DDL, allowlist).
-- **Revisit `recommend_indexes` (Task 5.3)** — make it index-type aware:
-  trigram GIN for `LIKE`/fuzzy, GIN for `jsonb`/arrays, BRIN for append-only,
-  and (with Phase 10) HNSW/IVFFlat for `vector` columns.
+## Phase 8 — Index intelligence & extension management
+
+- [x] 8.1 `list_indexes` reports the index access method (btree/gin/gist/...)
+- [ ] 8.2 `list_available_extensions` tool — installed vs available
+- [ ] 8.3 `enable_extension` tool — gated DDL, known-extension allowlist
+- [ ] 8.4 Index-type-aware `recommend_indexes` — GIN for `jsonb`/arrays,
+      trigram GIN for `LIKE`, BRIN for append-only (HNSW/IVFFlat in Phase 10)
 
 ## Phase 9 — Text search & fuzzy matching, incl. `pg_trgm` (not started)
 ## Phase 10 — Vector search (`pgvector`) (not started)
@@ -266,3 +266,8 @@
   (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
   `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority
   table recorded; ordering revisited before Phase 8 starts.
+- 2026-05-21 — v0.1.0 merged to `main` via PR #1 (CI green, PG 14–17).
+  Branch synced to merged `main`; post-1.0 extension work continues here.
+- 2026-05-21 — Task 8.1: `list_indexes` now reports each index's access
+  method (btree/gin/gist/brin/hash/spgist) via a `pg_am` catalog join;
+  `IndexInfo` gains a `method` field. 256 tests, 100% coverage.

@@ -73,11 +73,17 @@ async def test_describe_table_maps_columns_and_nullability() -> None:
     ]
 
 
-async def test_list_indexes_maps_rows() -> None:
-    driver = FakeDriver([{"indexname": "widget_pkey", "indexdef": "CREATE UNIQUE INDEX widget_pkey ..."}])
+async def test_list_indexes_maps_rows_including_the_access_method() -> None:
+    driver = FakeDriver(
+        [
+            {"name": "widget_pkey", "method": "btree", "definition": "CREATE UNIQUE INDEX widget_pkey ..."},
+            {"name": "widget_doc_idx", "method": "gin", "definition": "CREATE INDEX widget_doc_idx ..."},
+        ]
+    )
 
     assert await list_indexes(driver, "app", "widget") == [
-        IndexInfo("widget_pkey", "CREATE UNIQUE INDEX widget_pkey ...")
+        IndexInfo("widget_pkey", "btree", "CREATE UNIQUE INDEX widget_pkey ..."),
+        IndexInfo("widget_doc_idx", "gin", "CREATE INDEX widget_doc_idx ..."),
     ]
 
 
@@ -115,7 +121,10 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
             {"schema": "app", "table": "w"},
             [{"column_name": "id", "data_type": "integer", "is_nullable": "NO", "column_default": None}],
         ),
-        "list_indexes": ({"schema": "app", "table": "w"}, [{"indexname": "i", "indexdef": "d"}]),
+        "list_indexes": (
+            {"schema": "app", "table": "w"},
+            [{"name": "i", "method": "btree", "definition": "d"}],
+        ),
         "list_extensions": ({}, [{"extname": "plpgsql", "extversion": "1.0"}]),
     }
 

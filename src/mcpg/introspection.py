@@ -42,9 +42,14 @@ class ColumnInfo:
 
 @dataclass(frozen=True, slots=True)
 class IndexInfo:
-    """An index on a table."""
+    """An index on a table.
+
+    ``method`` is the access method — ``btree``, ``gin``, ``gist``, ``brin``,
+    ``hash``, or ``spgist``.
+    """
 
     name: str
+    method: str
     definition: str
 
 
@@ -103,13 +108,26 @@ async def describe_table(driver: SqlDriver, schema: str, table: str) -> list[Col
 
 
 async def list_indexes(driver: SqlDriver, schema: str, table: str) -> list[IndexInfo]:
-    """List the indexes defined on a table."""
+    """List the indexes defined on a table, with their access method."""
     rows = await driver.execute_query(
-        "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = %s AND tablename = %s ORDER BY indexname",
+        "SELECT i.relname AS name, am.amname AS method, pg_get_indexdef(i.oid) AS definition "
+        "FROM pg_class t "
+        "JOIN pg_namespace n ON n.oid = t.relnamespace "
+        "JOIN pg_index ix ON ix.indrelid = t.oid "
+        "JOIN pg_class i ON i.oid = ix.indexrelid "
+        "JOIN pg_am am ON am.oid = i.relam "
+        "WHERE n.nspname = %s AND t.relname = %s ORDER BY i.relname",
         params=[schema, table],
         force_readonly=True,
     )
-    return [IndexInfo(name=row.cells["indexname"], definition=row.cells["indexdef"]) for row in rows or []]
+    return [
+        IndexInfo(
+            name=row.cells["name"],
+            method=row.cells["method"],
+            definition=row.cells["definition"],
+        )
+        for row in rows or []
+    ]
 
 
 async def list_extensions(driver: SqlDriver) -> list[ExtensionInfo]:
