@@ -20,12 +20,17 @@ _READ_TOOLS = {
     "describe_table",
     "list_indexes",
     "list_extensions",
+    "list_available_extensions",
     "run_select",
     "explain_query",
     "analyze_query_plan",
     "check_database_health",
     "analyze_workload",
     "recommend_indexes",
+    "fuzzy_search",
+    "full_text_search",
+    "vector_search",
+    "geo_search",
 }
 
 

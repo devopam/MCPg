@@ -1,9 +1,9 @@
-"""Index recommendations from table scan statistics.
+"""Index recommendations from table scan statistics and column types.
 
-This is a deliberately simple table-level heuristic: it flags large tables
-that are read mostly by sequential scans. Choosing *which columns* to index
-needs query analysis (see ``analyze_workload`` and ``explain_query``).
-Index-type-aware recommendations (GIN, trigram, BRIN, ...) arrive in Phase 8.
+A table-level heuristic flags large tables read mostly by sequential scan;
+for each, column types drive per-column index-type suggestions (GIN for
+``jsonb``/arrays, trigram GIN for text). Choosing exactly which columns a
+workload filters on still needs query analysis (see ``analyze_workload``).
 """
 
 from __future__ import annotations
@@ -15,44 +15,88 @@ from mcpg._vendor.sql import SqlDriver
 # Tables smaller than this are ignored — sequential scans of them are cheap.
 DEFAULT_MIN_LIVE_TUPLES = 10_000
 
+# information_schema.columns data types treated as text for trigram indexing.
+_TEXT_TYPES = frozenset({"text", "character varying", "character"})
+
+
+@dataclass(frozen=True, slots=True)
+class IndexSuggestion:
+    """A suggested index for one column of a candidate table."""
+
+    column: str
+    index_type: str
+    rationale: str
+
 
 @dataclass(frozen=True, slots=True)
 class IndexRecommendation:
-    """A table that may benefit from an index."""
+    """A table that may benefit from indexing, with per-column suggestions."""
 
     schema: str
     table: str
     seq_scans: int
     live_tuples: int
     reason: str
+    suggestions: list[IndexSuggestion]
+
+
+def _suggest(column: str, data_type: str) -> IndexSuggestion | None:
+    """Suggest an index type for a column based on its data type, if any."""
+    if data_type == "jsonb":
+        return IndexSuggestion(column, "gin", "GIN supports jsonb containment and key lookups")
+    if data_type == "ARRAY":
+        return IndexSuggestion(column, "gin", "GIN supports array membership queries")
+    if data_type in _TEXT_TYPES:
+        return IndexSuggestion(column, "gin_trgm", "trigram GIN (pg_trgm) accelerates LIKE/ILIKE pattern search")
+    return None
 
 
 async def recommend_indexes(
     driver: SqlDriver, *, min_live_tuples: int = DEFAULT_MIN_LIVE_TUPLES
 ) -> list[IndexRecommendation]:
-    """Recommend tables that may benefit from indexing.
+    """Recommend tables that may benefit from indexing, with column hints.
 
     Heuristic: large tables (at least ``min_live_tuples`` rows) read more
-    often by sequential scan than by index scan.
+    often by sequential scan than by index scan. For each, columns with
+    GIN-friendly types yield an :class:`IndexSuggestion`.
 
     Args:
         driver: The SQL driver to query through.
         min_live_tuples: Smallest table (row estimate) worth flagging.
     """
     rows = await driver.execute_query(
-        "SELECT schemaname, relname, seq_scan, n_live_tup FROM pg_stat_user_tables "
-        "WHERE n_live_tup >= %s AND seq_scan > COALESCE(idx_scan, 0) "
-        "ORDER BY seq_scan DESC",
+        "SELECT s.schemaname, s.relname, s.seq_scan, s.n_live_tup, "
+        "c.column_name, c.data_type "
+        "FROM pg_stat_user_tables s "
+        "JOIN information_schema.columns c "
+        "  ON c.table_schema = s.schemaname AND c.table_name = s.relname "
+        "WHERE s.n_live_tup >= %s AND s.seq_scan > COALESCE(s.idx_scan, 0) "
+        "ORDER BY s.seq_scan DESC, s.relname, c.ordinal_position",
         params=[min_live_tuples],
         force_readonly=True,
     )
+
+    order: list[tuple[str, str]] = []
+    stats: dict[tuple[str, str], tuple[int, int]] = {}
+    suggestions: dict[tuple[str, str], list[IndexSuggestion]] = {}
+    for row in rows or []:
+        key = (row.cells["schemaname"], row.cells["relname"])
+        if key not in stats:
+            order.append(key)
+            stats[key] = (row.cells["seq_scan"], row.cells["n_live_tup"])
+            suggestions[key] = []
+        suggestion = _suggest(row.cells["column_name"], row.cells["data_type"])
+        if suggestion is not None:
+            suggestions[key].append(suggestion)
+
     return [
         IndexRecommendation(
-            schema=row.cells["schemaname"],
-            table=row.cells["relname"],
-            seq_scans=row.cells["seq_scan"],
-            live_tuples=row.cells["n_live_tup"],
+            schema=schema,
+            table=table,
+            seq_scans=stats[(schema, table)][0],
+            live_tuples=stats[(schema, table)][1],
             reason="large table read mostly by sequential scan",
+            suggestions=suggestions[(schema, table)],
         )
-        for row in rows or []
+        for schema, table in order
     ]

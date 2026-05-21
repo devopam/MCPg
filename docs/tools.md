@@ -1,7 +1,7 @@
 # MCPg Tool Reference
 
 The tools MCPg exposes over MCP, grouped by category. Availability depends on
-the configured access mode (see [`usage.md`](usage.md)).
+the configured access mode (see the [User Guide](user-guide.md)).
 
 ## Server
 
@@ -20,13 +20,20 @@ Lists the tables and views in a schema. Parameter: `schema` (string).
 
 ### `describe_table`
 Describes a table's columns in ordinal order — name, data type, nullability,
-default. Parameters: `schema`, `table` (strings).
+default, and (for `pgvector` `vector(N)` columns) the vector dimension.
+Parameters: `schema`, `table` (strings).
 
 ### `list_indexes`
-Lists the indexes on a table. Parameters: `schema`, `table` (strings).
+Lists the indexes on a table, each with its access method — a built-in one
+(`btree`, `gin`, `gist`, `brin`, `hash`, `spgist`) or an extension's (e.g.
+`hnsw`/`ivfflat` from `pgvector`). Parameters: `schema`, `table` (strings).
 
 ### `list_extensions`
 Lists the extensions installed in the database.
+
+### `list_available_extensions`
+Lists every extension available to the database — name, default version,
+installed version, and whether it is `installed`.
 
 ## Query (read)
 
@@ -57,9 +64,37 @@ Returns the slowest queries by mean execution time, via the
 `available: false` if the extension is not installed.
 
 ### `recommend_indexes`
-Flags large tables read mostly by sequential scan. Parameter:
-`min_live_tuples` (int, default 10000). Index-type-aware recommendations
-(GIN/trigram/HNSW) are planned for a later release.
+Flags large tables read mostly by sequential scan, and for each suggests
+per-column index types from the column's data type — GIN for `jsonb` and
+array columns, trigram GIN for text columns. Parameter: `min_live_tuples`
+(int, default 10000).
+
+### `fuzzy_search`
+Ranks a text column's values by trigram similarity to a search term, via the
+`pg_trgm` extension. Parameters: `schema`, `table`, `column`, `term`
+(strings), `limit` (int, default 10), `threshold` (float, default 0.3).
+Reports `available: false` if `pg_trgm` is not installed.
+
+### `full_text_search`
+Ranks a text column's documents against a full-text query using PostgreSQL's
+built-in `tsvector`/`tsquery` (no extension required). The query accepts
+web-search syntax (quoted phrases, `or`, `-` exclusion). Parameters:
+`schema`, `table`, `column`, `search_query` (strings), `config` (string,
+default `english`), `limit` (int, default 10).
+
+### `vector_search`
+Finds the rows nearest to a query vector by `pgvector` distance. Parameters:
+`schema`, `table`, `column` (strings), `query_vector` (array of numbers),
+`metric` (`l2`, `cosine`, or `inner_product`; default `l2`), `limit` (int,
+default 10). Each match is the row (excluding the embedding column) plus its
+`distance`. Reports `available: false` if `pgvector` is not installed.
+
+### `geo_search`
+Finds the rows nearest to a lon/lat point by PostGIS distance. Parameters:
+`schema`, `table`, `column` (strings), `longitude`, `latitude` (numbers),
+`limit` (int, default 10). Each match is the row (excluding the geometry
+column) plus its `distance`. Reports `available: false` if `postgis` is not
+installed.
 
 ## Write (unrestricted mode only)
 
@@ -72,6 +107,12 @@ committed on success. Multiple statements and non-DML are rejected. Add a
 Executes a single DDL statement (`CREATE`/`ALTER`/`DROP` and related).
 Requires `unrestricted` mode **and** `MCPG_ALLOW_DDL=true`. Parameter: `sql`
 (string).
+
+### `enable_extension`
+Enables a known PostgreSQL extension (`CREATE EXTENSION IF NOT EXISTS`). Only
+allowlisted extensions (`pg_trgm`, `vector`, `citext`, `postgis`, ...) may be
+enabled. Requires `unrestricted` mode **and** `MCPG_ALLOW_DDL=true`.
+Parameter: `name` (string).
 
 ## Errors
 

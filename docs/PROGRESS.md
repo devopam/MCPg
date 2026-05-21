@@ -6,16 +6,15 @@
 
 ## Current state
 
-- **Phase:** 7 complete — v0.1.0 release-ready (awaiting sign-off)
+- **Phase:** all 11 phases complete — extension support fully delivered
 - **Last updated:** 2026-05-21
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Release prep is done (version 0.1.0, CHANGELOG finalised). **Awaiting user
-> sign-off** to tag `v0.1.0` and publish (PyPI / GitHub release) — these are
-> side-effecting and must not be done unprompted. After v0.1.0: Phase 8
-> (index intelligence & extension management) — see `PLAN.md` §7a.
+> All eleven planned phases are complete (20 MCP tools). Version bumped to
+> 0.2.0; the extension work (Phases 8–11) is being merged to `main` via a
+> second PR. Tagging `v0.2.0` awaits user sign-off.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -102,22 +101,40 @@
 
 ## Phase 7 — Docs, packaging & release  ✅ COMPLETE (pending release sign-off)
 
-- [x] 7.1 Usage guide (`docs/usage.md`) + tool reference (`docs/tools.md`)
+- [x] 7.1 Usage docs + tool reference (`docs/tools.md`); the usage guide was
+      later split into `docs/installation.md` + `docs/user-guide.md`
 - [x] 7.2 Packaging — `Dockerfile`, `.dockerignore`, install instructions
 - [x] 7.3 v0.1.0 release prep — version bumped to 0.1.0, CHANGELOG finalised.
       Tagging/publishing awaits explicit user sign-off.
 
-## Phase 8 — Index intelligence & extension management (not started)
+> **v0.1.0 merged to `main` via PR #1.** Post-1.0 work continues below.
 
-- Report index access methods (B-tree/GIN/GiST/BRIN/Hash/SP-GiST) in `list_indexes`.
-- `list_available_extensions`; `enable_extension` tool (gated DDL, allowlist).
-- **Revisit `recommend_indexes` (Task 5.3)** — make it index-type aware:
-  trigram GIN for `LIKE`/fuzzy, GIN for `jsonb`/arrays, BRIN for append-only,
-  and (with Phase 10) HNSW/IVFFlat for `vector` columns.
+## Phase 8 — Index intelligence & extension management  ✅ COMPLETE
 
-## Phase 9 — Text search & fuzzy matching, incl. `pg_trgm` (not started)
-## Phase 10 — Vector search (`pgvector`) (not started)
-## Phase 11 — Geospatial (PostGIS), optional (not started)
+- [x] 8.1 `list_indexes` reports the index access method (btree/gin/gist/...)
+- [x] 8.2 `list_available_extensions` tool — installed vs available
+- [x] 8.3 `enable_extension` tool — gated DDL, known-extension allowlist
+- [x] 8.4 Index-type-aware `recommend_indexes` — GIN for `jsonb`/arrays,
+      trigram GIN for text columns
+
+## Phase 9 — Text search & fuzzy matching  ✅ COMPLETE
+
+- [x] 9.1 Trigram fuzzy/similarity search tool over `pg_trgm` (`mcpg/textsearch.py`, TDD)
+- [x] 9.2 Full-text search tool over `tsvector`/`tsquery` (`mcpg/textsearch.py`, TDD)
+
+## Phase 10 — Vector search (`pgvector`)  ✅ COMPLETE
+
+- [x] 10.1 `vector` column awareness — `describe_table` reports vector dimension (TDD)
+- [x] 10.2 k-NN vector similarity search tool (`<->`/`<=>`/`<#>`) (`mcpg/textsearch.py`, TDD)
+- [x] 10.3 HNSW/IVFFlat index awareness — `list_indexes` reports the access
+      method; confirmed by an integration test (`method == "hnsw"`).
+
+## Phase 11 — Geospatial (PostGIS)  ✅ COMPLETE
+
+- [x] 11.1 `geo_search` tool — k-NN by PostGIS distance to a lon/lat point;
+      CI builds a pgvector + PostGIS image so it is integration-tested.
+- Geometry column types and GiST spatial indexes were already surfaced by
+  `describe_table` and `list_indexes`.
 
 > Phases 8–11 cover PostgreSQL extension and advanced-feature support; see
 > `PLAN.md` §7a for the capability inventory and per-extension priorities.
@@ -266,3 +283,46 @@
   (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
   `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority
   table recorded; ordering revisited before Phase 8 starts.
+- 2026-05-21 — v0.1.0 merged to `main` via PR #1 (CI green, PG 14–17).
+  Branch synced to merged `main`; post-1.0 extension work continues here.
+- 2026-05-21 — Task 8.1: `list_indexes` now reports each index's access
+  method (btree/gin/gist/brin/hash/spgist) via a `pg_am` catalog join;
+  `IndexInfo` gains a `method` field. 256 tests, 100% coverage.
+- 2026-05-21 — Task 8.2: added `list_available_extensions` (`pg_available_extensions`)
+  reporting every available extension with installed-vs-not status, exposed
+  as an MCP tool. 258 tests, 100% coverage.
+- 2026-05-21 — Task 8.3: added `mcpg/extensions.py` — `enable_extension`
+  runs `CREATE EXTENSION IF NOT EXISTS` for names on a curated allowlist
+  (the injection guard, since the name is an identifier). Exposed as a
+  DDL-gated MCP tool. 265 tests, 100% coverage.
+- 2026-05-21 — Task 8.4: `recommend_indexes` is now index-type aware — a
+  single join of `pg_stat_user_tables` + `information_schema.columns` yields
+  per-column `IndexSuggestion`s (GIN for `jsonb`/arrays, trigram GIN for
+  text). 268 tests, 100% coverage. **Phase 8 complete.**
+- 2026-05-21 — Task 9.1: added `mcpg/textsearch.py` — `fuzzy_search` ranks a
+  text column by `pg_trgm` trigram similarity, degrading to `available=False`
+  when the extension is absent. Identifiers are validated + quoted (the term
+  is bound). Shared `extension_installed` helper moved to `mcpg/extensions.py`.
+  277 tests, 100% coverage.
+- 2026-05-21 — Task 9.2: added `full_text_search` (`mcpg/textsearch.py`) —
+  ranks documents via built-in `tsvector`/`websearch_to_tsquery`/`ts_rank`
+  (no extension needed); text-search config is identifier-validated.
+  285 tests, 100% coverage. **Phase 9 complete.**
+- 2026-05-21 — CI now runs the matrix on `pgvector/pgvector:pgNN` images so
+  Phase 10 vector tests run for real. Task 10.1: `describe_table` rewritten to
+  a `pg_attribute` catalog query; `ColumnInfo` gains `vector_dimension`,
+  reported for `vector(N)` columns. 286 tests (1 pgvector test skips locally),
+  100% coverage.
+- 2026-05-21 — Docs: split `usage.md` into living `docs/installation.md`
+  (Installation Guide) and `docs/user-guide.md` (User Guide), and added
+  `docs/architecture.md` (Architecture Document). These are maintained
+  alongside feature work (see `CONTRIBUTING.md`).
+- 2026-05-21 — Task 10.2/10.3: added `vector_search` (pgvector k-NN, `mcpg/
+  textsearch.py`); confirmed HNSW index awareness via `list_indexes`.
+  291 tests (3 pgvector integration tests run in CI), 100% coverage.
+  **Phase 10 complete.** Phases 0–10 done; 19 MCP tools.
+- 2026-05-21 — Phase 11: CI now builds a pgvector + PostGIS image
+  (`.github/ci-postgres.Dockerfile`); added `geo_search` (PostGIS k-NN by
+  distance to a lon/lat point) to `mcpg/textsearch.py`. 296 tests (4
+  extension integration tests run in CI), 100% coverage. **Phase 11 complete
+  — all eleven planned phases delivered; 20 MCP tools.**

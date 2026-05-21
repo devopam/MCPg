@@ -6,6 +6,38 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-21
+
+Extension support: index-method intelligence, extension management, and
+similarity-search tools (trigram, full-text, pgvector, PostGIS) — six new
+tools, each degrading gracefully when its extension is absent.
+
+### Added
+
+- `list_available_extensions` tool — lists every extension available to the
+  database with its installed-vs-available status.
+- `enable_extension` tool — enables an allowlisted PostgreSQL extension;
+  requires unrestricted mode and `MCPG_ALLOW_DDL`.
+- `fuzzy_search` tool — ranks a text column by `pg_trgm` trigram similarity
+  to a search term.
+- `full_text_search` tool — ranks documents with PostgreSQL's built-in
+  `tsvector`/`tsquery` full-text search.
+- `vector_search` tool — finds the rows nearest to a query vector by
+  `pgvector` distance (`l2`, `cosine`, or `inner_product`).
+- `geo_search` tool — finds the rows nearest to a lon/lat point by PostGIS
+  distance.
+
+### Changed
+
+- `list_indexes` now reports each index's access method (`btree`, `gin`,
+  `gist`, `brin`, `hash`, `spgist`).
+- `recommend_indexes` now suggests per-column index types from column data
+  types — GIN for `jsonb`/array columns, trigram GIN for text columns.
+- `describe_table` now reads the catalog directly and reports the
+  `pgvector` dimension for `vector(N)` columns.
+- Documentation reorganised into living guides: `docs/installation.md`,
+  `docs/user-guide.md`, and `docs/architecture.md` (replacing `docs/usage.md`).
+
 ## [0.1.0] - 2026-05-21
 
 First release: a production-grade PostgreSQL MCP server with 14 tools across

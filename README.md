@@ -4,9 +4,8 @@ A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
 server for **PostgreSQL** — letting AI agents safely inspect, query, operate,
 and tune a Postgres database.
 
-> **Status:** preparing the v0.1.0 release. The server is feature-complete
-> for its core scope (14 tools across introspection, querying, writes, and
-> tuning). See [`docs/PROGRESS.md`](docs/PROGRESS.md) for detail.
+> **Status:** v0.1.0 released; extension-support phases in progress. See
+> [`docs/PROGRESS.md`](docs/PROGRESS.md) for detail.
 
 ## Quick start
 
@@ -16,8 +15,8 @@ uv sync
 MCPG_DATABASE_URL=postgresql://localhost/mydb uv run mcpg
 ```
 
-See [`docs/usage.md`](docs/usage.md) for configuration, Docker, and MCP
-client setup, and [`docs/tools.md`](docs/tools.md) for the tool reference.
+See the [Installation Guide](docs/installation.md) and
+[User Guide](docs/user-guide.md) to get started.
 
 ## Goals
 
@@ -32,13 +31,15 @@ client setup, and [`docs/tools.md`](docs/tools.md) for the tool reference.
 
 ## Documentation
 
-- [`docs/usage.md`](docs/usage.md) — install, configure, run, connect a client
+- [`docs/installation.md`](docs/installation.md) — Installation Guide
+- [`docs/user-guide.md`](docs/user-guide.md) — User Guide
 - [`docs/tools.md`](docs/tools.md) — reference for every MCP tool
-- [`PLAN.md`](PLAN.md) — master plan, architecture, technology choices, roadmap
-- [`docs/PROGRESS.md`](docs/PROGRESS.md) — live progress tracker (resume point)
+- [`docs/architecture.md`](docs/architecture.md) — Architecture Document
 - [`docs/security.md`](docs/security.md) — threat model and security controls
 - [`docs/scaling.md`](docs/scaling.md) — scaling characteristics and tuning
 - [`docs/adr/`](docs/adr/) — architecture decision records
+- [`PLAN.md`](PLAN.md) — master plan and phased roadmap
+- [`docs/PROGRESS.md`](docs/PROGRESS.md) — live progress tracker (resume point)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — development setup and workflow
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes
 

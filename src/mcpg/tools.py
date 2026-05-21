@@ -13,7 +13,17 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 
-from mcpg import __version__, health, indexing, introspection, query, workload, write
+from mcpg import (
+    __version__,
+    extensions,
+    health,
+    indexing,
+    introspection,
+    query,
+    textsearch,
+    workload,
+    write,
+)
 from mcpg._vendor.sql import SqlDriver
 from mcpg.config import Settings
 from mcpg.context import AppContext
@@ -86,6 +96,14 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         extensions = await introspection.list_extensions(_driver(ctx))
         return [asdict(extension) for extension in extensions]
 
+    @server.tool(
+        name="list_available_extensions",
+        description="List every extension available to the database, with whether it is installed.",
+    )
+    async def list_available_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
+        extensions = await introspection.list_available_extensions(_driver(ctx))
+        return [asdict(extension) for extension in extensions]
+
 
 def _register_query(server: FastMCP[AppContext]) -> None:
     @server.tool(
@@ -156,6 +174,91 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         recommendations = await indexing.recommend_indexes(_driver(ctx), min_live_tuples=min_live_tuples)
         return [asdict(recommendation) for recommendation in recommendations]
 
+    @server.tool(
+        name="fuzzy_search",
+        description=(
+            "Rank a text column's values by trigram similarity to a search "
+            "term, via the pg_trgm extension. Reports available=false if "
+            "pg_trgm is not installed."
+        ),
+    )
+    async def fuzzy_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        term: str,
+        limit: int = textsearch.DEFAULT_LIMIT,
+        threshold: float = textsearch.DEFAULT_THRESHOLD,
+    ) -> dict[str, Any]:
+        result = await textsearch.fuzzy_search(
+            _driver(ctx), schema, table, column, term, limit=limit, threshold=threshold
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="full_text_search",
+        description=(
+            "Rank a text column's documents against a full-text query using "
+            "PostgreSQL's built-in tsvector/tsquery. The query accepts "
+            "web-search syntax (quoted phrases, or, - exclusion)."
+        ),
+    )
+    async def full_text_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        search_query: str,
+        config: str = textsearch.DEFAULT_TEXT_CONFIG,
+        limit: int = textsearch.DEFAULT_LIMIT,
+    ) -> list[dict[str, Any]]:
+        matches = await textsearch.full_text_search(
+            _driver(ctx), schema, table, column, search_query, config=config, limit=limit
+        )
+        return [asdict(match) for match in matches]
+
+    @server.tool(
+        name="vector_search",
+        description=(
+            "Find the rows nearest to a query vector by pgvector distance "
+            "(metric: l2, cosine, or inner_product). Reports available=false "
+            "if the pgvector extension is not installed."
+        ),
+    )
+    async def vector_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        query_vector: list[float],
+        metric: str = textsearch.DEFAULT_VECTOR_METRIC,
+        limit: int = textsearch.DEFAULT_LIMIT,
+    ) -> dict[str, Any]:
+        result = await textsearch.vector_search(
+            _driver(ctx), schema, table, column, query_vector, metric=metric, limit=limit
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="geo_search",
+        description=(
+            "Find the rows nearest to a lon/lat point by PostGIS distance. "
+            "Reports available=false if the postgis extension is not installed."
+        ),
+    )
+    async def geo_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        longitude: float,
+        latitude: float,
+        limit: int = textsearch.DEFAULT_LIMIT,
+    ) -> dict[str, Any]:
+        result = await textsearch.geo_search(_driver(ctx), schema, table, column, longitude, latitude, limit=limit)
+        return asdict(result)
+
 
 def _register_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
@@ -181,6 +284,18 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
     )
     async def run_ddl(ctx: _Ctx, sql: str) -> dict[str, Any]:
         result = await write.run_ddl(_driver(ctx), sql)
+        return asdict(result)
+
+    @server.tool(
+        name="enable_extension",
+        description=(
+            "Enable a known PostgreSQL extension (CREATE EXTENSION IF NOT "
+            "EXISTS). Only allowlisted extensions may be enabled. Available "
+            "only in unrestricted access mode with MCPG_ALLOW_DDL enabled."
+        ),
+    )
+    async def enable_extension(ctx: _Ctx, name: str) -> dict[str, Any]:
+        result = await extensions.enable_extension(_driver(ctx), name)
         return asdict(result)
 
 
