@@ -36,25 +36,22 @@ jobs:
       fail-fast: false
       matrix:
         postgres: ["14", "15", "16", "17"]
-    services:
-      postgres:
-        # pgvector images are the official postgres images plus the pgvector
-        # extension, so every existing test still passes and the Phase 10
-        # vector tests can run for real.
-        image: pgvector/pgvector:pg${{ matrix.postgres }}
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: mcpg_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      # A custom image (pgvector + PostGIS) so the integration suite can test
+      # vector and geospatial features against a real database. It is built
+      # and run as a step because GitHub `services:` cannot build images.
+      - name: Start PostgreSQL (pgvector + PostGIS)
+        run: |
+          docker build -f .github/ci-postgres.Dockerfile \
+            --build-arg PG_MAJOR=${{ matrix.postgres }} -t mcpg-ci-db .
+          docker run -d --name mcpg-db -p 5432:5432 \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=mcpg_test mcpg-ci-db
+          for _ in $(seq 1 30); do
+            docker exec mcpg-db pg_isready -U postgres && break
+            sleep 2
+          done
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
