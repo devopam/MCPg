@@ -1,0 +1,81 @@
+# MCPg Tool Reference
+
+The tools MCPg exposes over MCP, grouped by category. Availability depends on
+the configured access mode (see [`usage.md`](usage.md)).
+
+## Server
+
+### `get_server_info`
+Returns the MCPg version, access mode, transport, and database connection
+status. *Available in every mode.*
+
+## Introspection (read)
+
+### `list_schemas`
+Lists database schemas. Parameter: `include_system` (bool, default `false`) —
+include PostgreSQL's own schemas.
+
+### `list_tables`
+Lists the tables and views in a schema. Parameter: `schema` (string).
+
+### `describe_table`
+Describes a table's columns in ordinal order — name, data type, nullability,
+default. Parameters: `schema`, `table` (strings).
+
+### `list_indexes`
+Lists the indexes on a table. Parameters: `schema`, `table` (strings).
+
+### `list_extensions`
+Lists the extensions installed in the database.
+
+## Query (read)
+
+### `run_select`
+Validates and runs a read-only SQL query. The statement is parsed and checked
+against a safety allowlist; writes, DDL, and statement stacking are rejected.
+Parameters: `sql` (string), `max_rows` (int, default 1000). Returns columns,
+rows, `row_count`, and `truncated`.
+
+### `explain_query`
+Returns a query's `EXPLAIN (FORMAT JSON)` execution plan without running it.
+Parameter: `sql` (string).
+
+### `analyze_query_plan`
+Summarises a query's execution plan — total cost, estimated rows, node types,
+and sequentially-scanned tables. Parameter: `sql` (string).
+
+## Health & tuning (read)
+
+### `check_database_health`
+Runs health checks: connection utilisation, buffer cache hit ratio, tables
+needing vacuum, and invalid indexes. Returns an overall `status` plus
+per-check results.
+
+### `analyze_workload`
+Returns the slowest queries by mean execution time, via the
+`pg_stat_statements` extension. Parameter: `limit` (int, default 10). Reports
+`available: false` if the extension is not installed.
+
+### `recommend_indexes`
+Flags large tables read mostly by sequential scan. Parameter:
+`min_live_tuples` (int, default 10000). Index-type-aware recommendations
+(GIN/trigram/HNSW) are planned for a later release.
+
+## Write (unrestricted mode only)
+
+### `run_write`
+Executes a single `INSERT`, `UPDATE`, or `DELETE` in a read-write transaction
+committed on success. Multiple statements and non-DML are rejected. Add a
+`RETURNING` clause to receive affected rows. Parameter: `sql` (string).
+
+### `run_ddl`
+Executes a single DDL statement (`CREATE`/`ALTER`/`DROP` and related).
+Requires `unrestricted` mode **and** `MCPG_ALLOW_DDL=true`. Parameter: `sql`
+(string).
+
+## Errors
+
+Tools reject unsafe or invalid input before it reaches the database. Rejected
+calls return an MCP error result; the message explains the cause (unsafe
+statement, parse failure, non-positive `max_rows`, etc.). Every call —
+success or failure — is recorded to the `mcpg.audit` logger.
