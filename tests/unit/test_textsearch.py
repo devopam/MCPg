@@ -161,6 +161,21 @@ async def test_vector_search_rejects_an_unknown_metric() -> None:
         await vector_search(driver, "app", "docs", "embedding", [1.0], metric="manhattan")  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("bad", ["docs; DROP TABLE x", 'a"b', "1bad"])
+async def test_vector_search_rejects_invalid_identifiers(bad: str) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(SearchError, match="invalid"):
+        await vector_search(driver, bad, "docs", "embedding", [1.0])  # type: ignore[arg-type]
+
+
+async def test_vector_search_rejects_a_non_finite_query_vector() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(SearchError, match="finite"):
+        await vector_search(driver, "app", "docs", "embedding", [1.0, float("nan")])  # type: ignore[arg-type]
+
+
 async def test_vector_search_tool_is_callable_from_a_client() -> None:
     database = FakeDatabase(FakeRoutingDriver({"pg_extension": []}))
     server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]

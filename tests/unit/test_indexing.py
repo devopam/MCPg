@@ -1,5 +1,6 @@
 """Tests for index recommendations and the recommend_indexes tool."""
 
+import pytest
 from _fakes import FakeDatabase, FakeDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -39,8 +40,9 @@ async def test_recommend_indexes_groups_columns_into_one_table_recommendation() 
     ]
 
 
-async def test_recommend_indexes_suggests_trigram_gin_for_text_columns() -> None:
-    result = await recommend_indexes(FakeDriver([_row("name", "text")]))
+@pytest.mark.parametrize("data_type", ["text", "character varying", "character"])
+async def test_recommend_indexes_suggests_trigram_gin_for_text_columns(data_type: str) -> None:
+    result = await recommend_indexes(FakeDriver([_row("name", data_type)]))
 
     assert result[0].suggestions == [
         IndexSuggestion("name", "gin_trgm", "trigram GIN (pg_trgm) accelerates LIKE/ILIKE pattern search")

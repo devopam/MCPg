@@ -14,6 +14,7 @@ query vectors are always bound parameters.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -207,12 +208,15 @@ async def vector_search(
         metric: ``l2``, ``cosine``, or ``inner_product``.
 
     Raises:
-        SearchError: If an identifier is invalid or ``metric`` is unknown.
+        SearchError: If an identifier is invalid, ``metric`` is unknown, or
+            ``query_vector`` contains a non-finite value.
     """
     if not await extension_installed(driver, "vector"):
         return VectorSearchResult(available=False, matches=[])
     if metric not in _VECTOR_METRICS:
         raise SearchError(f"unknown vector metric: {metric!r}")
+    if not all(math.isfinite(value) for value in query_vector):
+        raise SearchError("query_vector must contain only finite numbers")
 
     operator = _VECTOR_METRICS[metric]
     relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
