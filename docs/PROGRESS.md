@@ -12,8 +12,9 @@
 
 ## Next action
 
-> All eleven planned phases are complete (20 MCP tools). Open follow-ups:
-> a second v0.x release tagging the extension work; any new feature requests.
+> All eleven planned phases are complete (20 MCP tools). Version bumped to
+> 0.2.0; the extension work (Phases 8–11) is being merged to `main` via a
+> second PR. Tagging `v0.2.0` awaits user sign-off.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 

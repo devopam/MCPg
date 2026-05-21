@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-21
+
+Extension support: index-method intelligence, extension management, and
+similarity-search tools (trigram, full-text, pgvector, PostGIS) — six new
+tools, each degrading gracefully when its extension is absent.
+
 ### Added
 
 - `list_available_extensions` tool — lists every extension available to the
