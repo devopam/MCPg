@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-21
+
+First release: a production-grade PostgreSQL MCP server with 14 tools across
+introspection, querying, writes, and tuning — read-only by default, every
+statement validated, every tool call audited.
+
 ### Added
 
 - Project plan, phased roadmap, and session-resume protocol (`PLAN.md`,
@@ -74,3 +80,5 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Multi-tenancy / Row-Level Security guidance in `docs/security.md`.
 - Scaling documentation (`docs/scaling.md`) and a benchmark harness
   (`benchmarks/bench.py`).
+- Usage guide (`docs/usage.md`), tool reference (`docs/tools.md`), and a
+  `uv`-based `Dockerfile`.

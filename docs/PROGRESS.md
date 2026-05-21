@@ -6,15 +6,16 @@
 
 ## Current state
 
-- **Phase:** 7 — Docs, packaging & release
-- **Last updated:** 2026-05-20
+- **Phase:** 7 complete — v0.1.0 release-ready (awaiting sign-off)
+- **Last updated:** 2026-05-21
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 7, Task 7.3 — v0.1.0 release prep: version bump (0.0.0 → 0.1.0),
-> CHANGELOG finalise. NOTE: actually publishing to PyPI / tagging a GitHub
-> release is a side-effecting action — confirm with the user before doing it.
+> Release prep is done (version 0.1.0, CHANGELOG finalised). **Awaiting user
+> sign-off** to tag `v0.1.0` and publish (PyPI / GitHub release) — these are
+> side-effecting and must not be done unprompted. After v0.1.0: Phase 8
+> (index intelligence & extension management) — see `PLAN.md` §7a.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -99,12 +100,12 @@
 - [x] 6.3 Scaling characteristics (`docs/scaling.md`) + benchmark harness (`benchmarks/bench.py`)
 - [ ] 6.4 (optional, deferred post-1.0) server-side cursors; read-replica routing
 
-## Phase 7 — Docs, packaging & release
+## Phase 7 — Docs, packaging & release  ✅ COMPLETE (pending release sign-off)
 
 - [x] 7.1 Usage guide (`docs/usage.md`) + tool reference (`docs/tools.md`)
 - [x] 7.2 Packaging — `Dockerfile`, `.dockerignore`, install instructions
-- [ ] 7.3 v0.1.0 release prep — version bump, CHANGELOG finalise (publishing
-      itself needs explicit user sign-off)
+- [x] 7.3 v0.1.0 release prep — version bumped to 0.1.0, CHANGELOG finalised.
+      Tagging/publishing awaits explicit user sign-off.
 
 ## Phase 8 — Index intelligence & extension management (not started)
 
@@ -257,6 +258,10 @@
 - 2026-05-20 — Task 7.2: added a `uv`-based `Dockerfile` (non-root,
   streamable-HTTP default) and `.dockerignore`; documented Docker usage and a
   README quick start. Not built locally (no Docker in this environment).
+- 2026-05-21 — Task 7.3: bumped the version to 0.1.0 (`pyproject.toml`,
+  `mcpg.__version__`, `uv.lock`), finalised the CHANGELOG with a `[0.1.0]`
+  section. 256 tests green. **Phase 7 complete — v0.1.0 release-ready,
+  awaiting user sign-off to tag/publish.**
 - 2026-05-20 — Planning: added PostgreSQL extension support to the roadmap
   (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
   `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority
