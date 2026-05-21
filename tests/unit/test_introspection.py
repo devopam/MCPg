@@ -59,20 +59,42 @@ async def test_list_tables_maps_rows_and_passes_schema_as_a_parameter() -> None:
     assert driver.calls[0][1] == ["app"]
 
 
+def _column_row(name: str, data_type: str, **overrides: object) -> dict[str, object]:
+    """A describe_table catalog row with sensible defaults."""
+    row: dict[str, object] = {
+        "column_name": name,
+        "data_type": data_type,
+        "nullable": True,
+        "column_default": None,
+        "type_name": "text",
+        "type_mod": -1,
+    }
+    row.update(overrides)
+    return row
+
+
 async def test_describe_table_maps_columns_and_nullability() -> None:
     driver = FakeDriver(
         [
-            {"column_name": "id", "data_type": "integer", "is_nullable": "NO", "column_default": "0"},
-            {"column_name": "note", "data_type": "text", "is_nullable": "YES", "column_default": None},
+            _column_row("id", "integer", nullable=False, column_default="0", type_name="int4"),
+            _column_row("note", "text", nullable=True, type_name="text"),
         ]
     )
 
     result = await describe_table(driver, "app", "widget")
 
     assert result == [
-        ColumnInfo("id", "integer", nullable=False, default="0"),
-        ColumnInfo("note", "text", nullable=True, default=None),
+        ColumnInfo("id", "integer", nullable=False, default="0", vector_dimension=None),
+        ColumnInfo("note", "text", nullable=True, default=None, vector_dimension=None),
     ]
+
+
+async def test_describe_table_reports_pgvector_dimension() -> None:
+    driver = FakeDriver([_column_row("embedding", "vector(384)", type_name="vector", type_mod=384)])
+
+    result = await describe_table(driver, "app", "docs")
+
+    assert result == [ColumnInfo("embedding", "vector(384)", nullable=True, default=None, vector_dimension=384)]
 
 
 async def test_list_indexes_maps_rows_including_the_access_method() -> None:
@@ -136,7 +158,7 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_tables": ({"schema": "app"}, [{"table_name": "w", "table_type": "BASE TABLE"}]),
         "describe_table": (
             {"schema": "app", "table": "w"},
-            [{"column_name": "id", "data_type": "integer", "is_nullable": "NO", "column_default": None}],
+            [_column_row("id", "integer", nullable=False, type_name="int4")],
         ),
         "list_indexes": (
             {"schema": "app", "table": "w"},

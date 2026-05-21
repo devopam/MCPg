@@ -12,8 +12,9 @@
 
 ## Next action
 
-> Phase 10, Task 10.1 — TDD `vector` column awareness: `describe_table`
-> reports `vector` columns and their dimension.
+> Phase 10, Task 10.2 — TDD a k-NN vector similarity search tool over
+> `pgvector` (`<->`/`<=>`/`<#>` distance operators), degrading gracefully
+> when the `vector` extension is absent.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -122,9 +123,11 @@
 
 ## Phase 10 — Vector search (`pgvector`)
 
-- [ ] 10.1 `vector` column awareness — `describe_table` reports vector dimension (TDD)
+- [x] 10.1 `vector` column awareness — `describe_table` reports vector dimension (TDD)
 - [ ] 10.2 k-NN vector similarity search tool (`<->`/`<=>`/`<#>`) (TDD)
-- [ ] 10.3 HNSW/IVFFlat index awareness in `list_indexes` / `recommend_indexes`
+- [ ] 10.3 HNSW/IVFFlat index awareness — already covered: `list_indexes`
+      reports the access method (Task 8.1), so HNSW/IVFFlat indexes surface
+      automatically. Confirm + add a note.
 
 ## Phase 11 — Geospatial (PostGIS), optional (not started)
 
@@ -300,3 +303,8 @@
   ranks documents via built-in `tsvector`/`websearch_to_tsquery`/`ts_rank`
   (no extension needed); text-search config is identifier-validated.
   285 tests, 100% coverage. **Phase 9 complete.**
+- 2026-05-21 — CI now runs the matrix on `pgvector/pgvector:pgNN` images so
+  Phase 10 vector tests run for real. Task 10.1: `describe_table` rewritten to
+  a `pg_attribute` catalog query; `ColumnInfo` gains `vector_dimension`,
+  reported for `vector(N)` columns. 286 tests (1 pgvector test skips locally),
+  100% coverage.

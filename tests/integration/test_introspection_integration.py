@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 import pytest
 
 from mcpg.database import Database
+from mcpg.extensions import enable_extension
 from mcpg.introspection import (
     SchemaInfo,
     describe_table,
@@ -62,6 +63,22 @@ async def test_list_indexes_finds_primary_key_and_secondary_index(
     # Both sample indexes are plain B-tree; the access method is reported.
     assert by_name["widget_pkey"].method == "btree"
     assert by_name["widget_name_idx"].method == "btree"
+
+
+async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:
+    driver = connected_database.driver()
+    available = {extension.name for extension in await list_available_extensions(driver)}
+    if "vector" not in available:
+        pytest.skip("pgvector is not available on this PostgreSQL server")
+    await enable_extension(driver, "vector")
+    await driver.execute_query("DROP TABLE IF EXISTS mcpg_vector_it", force_readonly=False)
+    await driver.execute_query("CREATE TABLE mcpg_vector_it (id integer, embedding vector(3))", force_readonly=False)
+    try:
+        columns = {col.name: col for col in await describe_table(driver, "public", "mcpg_vector_it")}
+        assert columns["embedding"].vector_dimension == 3
+        assert columns["id"].vector_dimension is None
+    finally:
+        await driver.execute_query("DROP TABLE IF EXISTS mcpg_vector_it", force_readonly=False)
 
 
 async def test_list_extensions_includes_plpgsql(connected_database: Database) -> None:

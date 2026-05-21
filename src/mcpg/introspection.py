@@ -32,12 +32,17 @@ class TableInfo:
 
 @dataclass(frozen=True, slots=True)
 class ColumnInfo:
-    """A column of a table."""
+    """A column of a table.
+
+    ``vector_dimension`` is set for ``pgvector`` ``vector(N)`` columns and is
+    ``None`` for every other column type.
+    """
 
     name: str
     data_type: str
     nullable: bool
     default: str | None
+    vector_dimension: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,11 +103,24 @@ async def list_tables(driver: SqlDriver, schema: str) -> list[TableInfo]:
 
 
 async def describe_table(driver: SqlDriver, schema: str, table: str) -> list[ColumnInfo]:
-    """Describe the columns of a table, in ordinal order."""
+    """Describe the columns of a table, in ordinal order.
+
+    Reads the catalog directly so the display type comes from ``format_type``
+    and ``pgvector`` ``vector(N)`` columns report their dimension.
+    """
     rows = await driver.execute_query(
-        "SELECT column_name, data_type, is_nullable, column_default "
-        "FROM information_schema.columns "
-        "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position",
+        "SELECT a.attname AS column_name, "
+        "format_type(a.atttypid, a.atttypmod) AS data_type, "
+        "NOT a.attnotnull AS nullable, "
+        "pg_get_expr(d.adbin, d.adrelid) AS column_default, "
+        "t.typname AS type_name, a.atttypmod AS type_mod "
+        "FROM pg_attribute a "
+        "JOIN pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_type t ON t.oid = a.atttypid "
+        "LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum "
+        "WHERE n.nspname = %s AND c.relname = %s AND a.attnum > 0 AND NOT a.attisdropped "
+        "ORDER BY a.attnum",
         params=[schema, table],
         force_readonly=True,
     )
@@ -110,8 +128,11 @@ async def describe_table(driver: SqlDriver, schema: str, table: str) -> list[Col
         ColumnInfo(
             name=row.cells["column_name"],
             data_type=row.cells["data_type"],
-            nullable=row.cells["is_nullable"] == "YES",
+            nullable=row.cells["nullable"],
             default=row.cells["column_default"],
+            vector_dimension=(
+                row.cells["type_mod"] if row.cells["type_name"] == "vector" and row.cells["type_mod"] > 0 else None
+            ),
         )
         for row in rows or []
     ]

@@ -20,7 +20,8 @@ Lists the tables and views in a schema. Parameter: `schema` (string).
 
 ### `describe_table`
 Describes a table's columns in ordinal order — name, data type, nullability,
-default. Parameters: `schema`, `table` (strings).
+default, and (for `pgvector` `vector(N)` columns) the vector dimension.
+Parameters: `schema`, `table` (strings).
 
 ### `list_indexes`
 Lists the indexes on a table, each with its access method (`btree`, `gin`,
