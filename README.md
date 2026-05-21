@@ -4,9 +4,20 @@ A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
 server for **PostgreSQL** — letting AI agents safely inspect, query, operate,
 and tune a Postgres database.
 
-> **Status:** planning. This project is in Phase 0. See [`PLAN.md`](PLAN.md)
-> for the full roadmap and [`docs/PROGRESS.md`](docs/PROGRESS.md) for current
-> progress.
+> **Status:** preparing the v0.1.0 release. The server is feature-complete
+> for its core scope (14 tools across introspection, querying, writes, and
+> tuning). See [`docs/PROGRESS.md`](docs/PROGRESS.md) for detail.
+
+## Quick start
+
+```bash
+git clone https://github.com/devopam/MCPg && cd MCPg
+uv sync
+MCPG_DATABASE_URL=postgresql://localhost/mydb uv run mcpg
+```
+
+See [`docs/usage.md`](docs/usage.md) for configuration, Docker, and MCP
+client setup, and [`docs/tools.md`](docs/tools.md) for the tool reference.
 
 ## Goals
 

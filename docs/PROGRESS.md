@@ -12,10 +12,9 @@
 
 ## Next action
 
-> Phase 7, Task 7.2 — packaging: Docker image and install instructions.
-> Then Task 7.3 — v0.1.0 release prep (version bump, CHANGELOG finalise).
-> NOTE: actually publishing to PyPI / tagging a release is a side-effecting
-> action — confirm with the user before doing it.
+> Phase 7, Task 7.3 — v0.1.0 release prep: version bump (0.0.0 → 0.1.0),
+> CHANGELOG finalise. NOTE: actually publishing to PyPI / tagging a GitHub
+> release is a side-effecting action — confirm with the user before doing it.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -103,7 +102,7 @@
 ## Phase 7 — Docs, packaging & release
 
 - [x] 7.1 Usage guide (`docs/usage.md`) + tool reference (`docs/tools.md`)
-- [ ] 7.2 Packaging — Docker image, install instructions
+- [x] 7.2 Packaging — `Dockerfile`, `.dockerignore`, install instructions
 - [ ] 7.3 v0.1.0 release prep — version bump, CHANGELOG finalise (publishing
       itself needs explicit user sign-off)
 
@@ -255,6 +254,9 @@
 - 2026-05-20 — Task 7.1: wrote `docs/usage.md` (install, configuration env-var
   table, access modes, running, MCP client config, troubleshooting) and
   `docs/tools.md` (reference for all 14 tools). Linked from the README.
+- 2026-05-20 — Task 7.2: added a `uv`-based `Dockerfile` (non-root,
+  streamable-HTTP default) and `.dockerignore`; documented Docker usage and a
+  README quick start. Not built locally (no Docker in this environment).
 - 2026-05-20 — Planning: added PostgreSQL extension support to the roadmap
   (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
   `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority

@@ -15,6 +15,19 @@ uv sync
 
 This installs the `mcpg` console script into the project environment.
 
+### Docker
+
+```bash
+docker build -t mcpg .
+docker run --rm -p 8000:8000 \
+    -e MCPG_DATABASE_URL=postgresql://user:pass@host:5432/db \
+    -e MCPG_ACCESS_MODE=read-only \
+    mcpg
+```
+
+The image defaults to the streamable-HTTP transport bound to `0.0.0.0:8000`
+and runs as an unprivileged user.
+
 ## Configure
 
 MCPg is configured entirely through environment variables.
