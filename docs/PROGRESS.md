@@ -12,9 +12,9 @@
 
 ## Next action
 
-> Phase 8, Task 8.3 — TDD an `enable_extension` tool: `CREATE EXTENSION` gated
-> to unrestricted mode + `MCPG_ALLOW_DDL`, restricted to a known-extension
-> allowlist; extension name validated (no SQL injection).
+> Phase 8, Task 8.4 — TDD index-type-aware `recommend_indexes`: suggest GIN
+> for `jsonb`/array columns and trigram GIN for text columns frequently
+> filtered by `LIKE` (using `describe_table` column types).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -112,7 +112,7 @@
 
 - [x] 8.1 `list_indexes` reports the index access method (btree/gin/gist/...)
 - [x] 8.2 `list_available_extensions` tool — installed vs available
-- [ ] 8.3 `enable_extension` tool — gated DDL, known-extension allowlist
+- [x] 8.3 `enable_extension` tool — gated DDL, known-extension allowlist
 - [ ] 8.4 Index-type-aware `recommend_indexes` — GIN for `jsonb`/arrays,
       trigram GIN for `LIKE`, BRIN for append-only (HNSW/IVFFlat in Phase 10)
 
@@ -275,3 +275,7 @@
 - 2026-05-21 — Task 8.2: added `list_available_extensions` (`pg_available_extensions`)
   reporting every available extension with installed-vs-not status, exposed
   as an MCP tool. 258 tests, 100% coverage.
+- 2026-05-21 — Task 8.3: added `mcpg/extensions.py` — `enable_extension`
+  runs `CREATE EXTENSION IF NOT EXISTS` for names on a curated allowlist
+  (the injection guard, since the name is an identifier). Exposed as a
+  DDL-gated MCP tool. 265 tests, 100% coverage.

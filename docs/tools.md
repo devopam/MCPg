@@ -78,6 +78,12 @@ Executes a single DDL statement (`CREATE`/`ALTER`/`DROP` and related).
 Requires `unrestricted` mode **and** `MCPG_ALLOW_DDL=true`. Parameter: `sql`
 (string).
 
+### `enable_extension`
+Enables a known PostgreSQL extension (`CREATE EXTENSION IF NOT EXISTS`). Only
+allowlisted extensions (`pg_trgm`, `vector`, `citext`, `postgis`, ...) may be
+enabled. Requires `unrestricted` mode **and** `MCPG_ALLOW_DDL=true`.
+Parameter: `name` (string).
+
 ## Errors
 
 Tools reject unsafe or invalid input before it reaches the database. Rejected

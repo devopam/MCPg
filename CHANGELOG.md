@@ -10,6 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 - `list_available_extensions` tool — lists every extension available to the
   database with its installed-vs-available status.
+- `enable_extension` tool — enables an allowlisted PostgreSQL extension;
+  requires unrestricted mode and `MCPG_ALLOW_DDL`.
 
 ### Changed
 

@@ -13,7 +13,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
 
-from mcpg import __version__, health, indexing, introspection, query, workload, write
+from mcpg import __version__, extensions, health, indexing, introspection, query, workload, write
 from mcpg._vendor.sql import SqlDriver
 from mcpg.config import Settings
 from mcpg.context import AppContext
@@ -189,6 +189,18 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
     )
     async def run_ddl(ctx: _Ctx, sql: str) -> dict[str, Any]:
         result = await write.run_ddl(_driver(ctx), sql)
+        return asdict(result)
+
+    @server.tool(
+        name="enable_extension",
+        description=(
+            "Enable a known PostgreSQL extension (CREATE EXTENSION IF NOT "
+            "EXISTS). Only allowlisted extensions may be enabled. Available "
+            "only in unrestricted access mode with MCPG_ALLOW_DDL enabled."
+        ),
+    )
+    async def enable_extension(ctx: _Ctx, name: str) -> dict[str, Any]:
+        result = await extensions.enable_extension(_driver(ctx), name)
         return asdict(result)
 
 
