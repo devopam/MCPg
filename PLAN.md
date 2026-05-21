@@ -163,8 +163,13 @@ sized to fit comfortably within a single session. Checklists live in
 - Deliverable: production tuning toolkit.
 
 ### Phase 6 — Scalability & multi-tenancy
-- Pool sizing/tuning, server-side cursors for big reads, backpressure.
-- Multi-tenant scoping; Row-Level-Security awareness; read-replica routing.
+- Configurable pool sizing (done, ADR-0003); server-side cursors for big
+  reads, backpressure.
+- Multi-tenancy: for v0.1.0, **document-only** RLS guidance — one MCPg
+  instance per tenant with a tenant-specific role (`docs/security.md`). An
+  optional per-request `SET ROLE` / session-variable mechanism is deferred
+  post-1.0 (pooled-connection session-state management). Read-replica routing
+  also post-1.0.
 - Load/soak test harness.
 - Deliverable: documented scaling characteristics + benchmarks.
 

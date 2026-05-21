@@ -85,9 +85,32 @@ MCPg is not a replacement for database-side security. Operators should:
   enforcement is a second line of defence, not the only one.
 - Use a dedicated role per deployment so audit logs and database logs can be
   correlated.
-- Consider PostgreSQL Row-Level Security for multi-tenant data (planned for
-  Phase 6).
+- For multi-tenant data, see "Multi-tenancy and Row-Level Security" below.
 - Configure where the `mcpg.audit` logger's records are shipped and retained.
+
+## Multi-tenancy and Row-Level Security
+
+PostgreSQL Row-Level Security (RLS) policies are evaluated against the
+**connecting role** (and session settings). MCPg connects with a *single*
+database role and pools those connections, so every agent request is, from
+the database's perspective, the same principal.
+
+**Implication:** RLS that distinguishes tenants by `current_user` will *not*
+isolate tenants if MCPg connects with one shared role. Do not rely on MCPg
+alone for tenant isolation.
+
+**Recommended deployment for multi-tenant databases:**
+
+- Run **one MCPg instance per tenant**, each configured (`MCPG_DATABASE_URL`)
+  with a tenant-specific, least-privilege database role. RLS policies keyed on
+  that role then isolate the tenant correctly, and audit logs are per-tenant.
+- Alternatively, restrict each instance to a tenant-specific schema or
+  database via the connection URL and role privileges.
+
+**Planned enhancement (post-1.0):** an optional per-request role / session
+variable (`SET ROLE` or `SET app.tenant_id`) so a single MCPg instance can
+serve multiple tenants under RLS. This requires careful pooled-connection
+session-state management and is deliberately deferred — see `PLAN.md`.
 
 ## Out of scope (current)
 

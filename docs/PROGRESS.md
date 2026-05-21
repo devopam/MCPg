@@ -12,9 +12,8 @@
 
 ## Next action
 
-> Phase 6, Task 6.2 — multi-tenancy & Row-Level-Security awareness: document
-> RLS interaction; optionally support a per-connection role. Resolve approach
-> first (the vendored driver opens plain pool connections).
+> Phase 6, Task 6.3 — documented scaling characteristics + a load/soak
+> benchmark harness.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -94,7 +93,8 @@
 
 - [x] 6.1 Configurable connection-pool sizing (`MCPG_POOL_MIN_SIZE`/`MAX_SIZE`,
       vendored `DbConnPool` patched per ADR-0003)
-- [ ] 6.2 Multi-tenancy & Row-Level-Security awareness (TDD)
+- [x] 6.2 Multi-tenancy & RLS awareness — document-only for v0.1.0
+      (`docs/security.md`); per-request-role mechanism deferred post-1.0
 - [ ] 6.3 Documented scaling characteristics + a load/soak benchmark harness
 - [ ] 6.4 (optional) server-side cursors for large reads; read-replica routing
 
@@ -126,6 +126,7 @@
 | —   | Extension support (Phases 8–11) lands **after** the v0.1.0 release (Phase 7) | accepted | 2026-05-20 |
 | —   | Index intelligence (Phase 8) is the first extension area implemented | accepted | 2026-05-20 |
 | ADR-0003 | Configurable pool sizing via a minimal behaviour-preserving patch to the vendored `DbConnPool` | accepted | 2026-05-20 |
+| —   | Multi-tenancy/RLS: document-only for v0.1.0 (one instance per tenant); per-request `SET ROLE` deferred post-1.0 | accepted | 2026-05-20 |
 
 ## Open questions
 
@@ -236,6 +237,10 @@
   minimal vendored `DbConnPool` patch (`min_size`/`max_size` params); added
   `MCPG_POOL_MIN_SIZE`/`MCPG_POOL_MAX_SIZE` settings flowing into `Database`.
   256 tests, 100% coverage.
+- 2026-05-20 — Task 6.2: multi-tenancy & RLS. Decided document-only for
+  v0.1.0 — `docs/security.md` gains a "Multi-tenancy and Row-Level Security"
+  section (one instance per tenant with a tenant-specific role). The
+  per-request `SET ROLE` mechanism is deferred post-1.0.
 - 2026-05-20 — Planning: added PostgreSQL extension support to the roadmap
   (`PLAN.md` §7a + Phases 8–11): index-method intelligence (GIN/GiST/BRIN/...),
   `pg_trgm` / full-text search, `pgvector`, PostGIS. Per-extension priority
