@@ -28,6 +28,11 @@ _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 DEFAULT_LIMIT = 10
 DEFAULT_THRESHOLD = 0.3
 
+# Fuzzy-match mode: "word" matches the term against the best word window of
+# the value (good for fragments); "full" compares the whole strings.
+_FUZZY_MODES = frozenset({"word", "full"})
+DEFAULT_FUZZY_MODE = "word"
+
 # Default text-search configuration for full-text search.
 DEFAULT_TEXT_CONFIG = "english"
 
@@ -125,6 +130,7 @@ async def fuzzy_search(
     column: str,
     term: str,
     *,
+    mode: str = DEFAULT_FUZZY_MODE,
     limit: int = DEFAULT_LIMIT,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> FuzzySearchResult:
@@ -133,18 +139,24 @@ async def fuzzy_search(
     Requires the ``pg_trgm`` extension; when absent the result is returned
     with ``available=False`` and no matches.
 
+    Args:
+        mode: ``word`` (default) scores the term against the best-matching
+            word window of each value — good for fragments and misspellings
+            within longer text. ``full`` compares the whole strings.
+
     Raises:
-        SearchError: If a schema/table/column name is not a valid identifier.
+        SearchError: If an identifier is invalid or ``mode`` is unknown.
     """
     if not await extension_installed(driver, "pg_trgm"):
         return FuzzySearchResult(available=False, matches=[])
+    if mode not in _FUZZY_MODES:
+        raise SearchError(f"unknown fuzzy mode: {mode!r}")
 
     relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
     col = _quoted(column, "column")
+    score = f"similarity({col}, %s)" if mode == "full" else f"word_similarity(%s, {col})"
     rows = await driver.execute_query(
-        f"SELECT {col} AS value, similarity({col}, %s) AS score "
-        f"FROM {relation} WHERE similarity({col}, %s) >= %s "
-        f"ORDER BY score DESC LIMIT %s",
+        f"SELECT {col} AS value, {score} AS score FROM {relation} WHERE {score} >= %s ORDER BY score DESC LIMIT %s",
         params=[term, term, threshold, limit],
         force_readonly=True,
     )

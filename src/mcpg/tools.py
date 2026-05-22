@@ -177,9 +177,10 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="fuzzy_search",
         description=(
-            "Rank a text column's values by trigram similarity to a search "
-            "term, via the pg_trgm extension. Reports available=false if "
-            "pg_trgm is not installed."
+            "Rank a text column's values by pg_trgm trigram similarity to a "
+            "search term. mode='word' (default) matches fragments within "
+            "longer text; mode='full' compares whole strings. Reports "
+            "available=false if pg_trgm is not installed."
         ),
     )
     async def fuzzy_search(
@@ -188,11 +189,12 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         table: str,
         column: str,
         term: str,
+        mode: str = textsearch.DEFAULT_FUZZY_MODE,
         limit: int = textsearch.DEFAULT_LIMIT,
         threshold: float = textsearch.DEFAULT_THRESHOLD,
     ) -> dict[str, Any]:
         result = await textsearch.fuzzy_search(
-            _driver(ctx), schema, table, column, term, limit=limit, threshold=threshold
+            _driver(ctx), schema, table, column, term, mode=mode, limit=limit, threshold=threshold
         )
         return asdict(result)
 

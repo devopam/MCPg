@@ -19,7 +19,8 @@ tools, each degrading gracefully when its extension is absent.
 - `enable_extension` tool — enables an allowlisted PostgreSQL extension;
   requires unrestricted mode and `MCPG_ALLOW_DDL`.
 - `fuzzy_search` tool — ranks a text column by `pg_trgm` trigram similarity
-  to a search term.
+  to a search term, with a `word` mode (fragment matching, the default) and
+  a `full` mode (whole-string comparison).
 - `full_text_search` tool — ranks documents with PostgreSQL's built-in
   `tsvector`/`tsquery` full-text search.
 - `vector_search` tool — finds the rows nearest to a query vector by

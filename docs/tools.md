@@ -70,9 +70,10 @@ array columns, trigram GIN for text columns. Parameter: `min_live_tuples`
 (int, default 10000).
 
 ### `fuzzy_search`
-Ranks a text column's values by trigram similarity to a search term, via the
-`pg_trgm` extension. Parameters: `schema`, `table`, `column`, `term`
-(strings), `limit` (int, default 10), `threshold` (float, default 0.3).
+Ranks a text column's values by `pg_trgm` trigram similarity to a search
+term. Parameters: `schema`, `table`, `column`, `term` (strings), `mode`
+(`word` — default — matches fragments within longer text; `full` compares
+whole strings), `limit` (int, default 10), `threshold` (float, default 0.3).
 Reports `available: false` if `pg_trgm` is not installed.
 
 ### `full_text_search`

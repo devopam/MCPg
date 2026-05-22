@@ -23,7 +23,7 @@ async def trigram_table(connected_database: Database) -> AsyncIterator[str]:
     await driver.execute_query(f"DROP TABLE IF EXISTS {_TABLE}", force_readonly=False)
     await driver.execute_query(f"CREATE TABLE {_TABLE} (name text)", force_readonly=False)
     await driver.execute_query(
-        f"INSERT INTO {_TABLE} (name) VALUES ('alice'), ('alicia'), ('bob')",
+        f"INSERT INTO {_TABLE} (name) VALUES ('alice'), ('alicia'), ('bob'), ('Espresso Machine')",
         force_readonly=False,
     )
     try:
@@ -41,6 +41,18 @@ async def test_fuzzy_search_ranks_real_rows_by_similarity(connected_database: Da
     assert "bob" not in values
     # Matches are ordered by descending similarity.
     assert result.matches == sorted(result.matches, key=lambda m: m.score, reverse=True)
+
+
+async def test_fuzzy_search_word_mode_matches_a_fragment_full_mode_misses(
+    connected_database: Database, trigram_table: str
+) -> None:
+    driver = connected_database.driver()
+    # "expreso" is a misspelled fragment of "Espresso Machine".
+    word = await fuzzy_search(driver, "public", trigram_table, "name", "expreso", mode="word")
+    full = await fuzzy_search(driver, "public", trigram_table, "name", "expreso", mode="full")
+
+    assert "Espresso Machine" in [match.value for match in word.matches]
+    assert "Espresso Machine" not in [match.value for match in full.matches]
 
 
 async def test_full_text_search_against_real_postgres(connected_database: Database) -> None:
