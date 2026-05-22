@@ -12,6 +12,7 @@ from mcpg.introspection import (
     FunctionInfo,
     IndexInfo,
     SchemaInfo,
+    SequenceInfo,
     TableInfo,
     TriggerInfo,
     ViewInfo,
@@ -22,6 +23,7 @@ from mcpg.introspection import (
     list_functions,
     list_indexes,
     list_schemas,
+    list_sequences,
     list_tables,
     list_triggers,
     list_views,
@@ -191,6 +193,47 @@ async def test_list_constraints_maps_an_unknown_type_code_to_other() -> None:
     assert (await list_constraints(driver, "app", "t"))[0].type == "other"
 
 
+async def test_list_sequences_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "widget_id_seq",
+                "data_type": "bigint",
+                "start_value": 1,
+                "min_value": 1,
+                "max_value": 9223372036854775807,
+                "increment": 1,
+                "cycle": False,
+                "last_value": 42,
+            }
+        ]
+    )
+
+    assert await list_sequences(driver, "app") == [
+        SequenceInfo("widget_id_seq", "bigint", 1, 1, 9223372036854775807, 1, cycle=False, last_value=42)
+    ]
+    assert driver.calls[0][1] == ["app"]
+
+
+async def test_list_sequences_allows_a_null_last_value() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "fresh_seq",
+                "data_type": "integer",
+                "start_value": 1,
+                "min_value": 1,
+                "max_value": 2147483647,
+                "increment": 1,
+                "cycle": False,
+                "last_value": None,
+            }
+        ]
+    )
+
+    assert (await list_sequences(driver, "app"))[0].last_value is None
+
+
 async def test_list_extensions_maps_rows() -> None:
     driver = FakeDriver([{"extname": "plpgsql", "extversion": "1.0"}])
 
@@ -222,6 +265,7 @@ _INTROSPECTION_TOOLS = {
     "list_views",
     "list_functions",
     "list_triggers",
+    "list_sequences",
     "list_extensions",
     "list_available_extensions",
 }
@@ -263,6 +307,21 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_triggers": (
             {"schema": "app", "table": "w"},
             [{"name": "t", "function": "fn", "definition": "CREATE TRIGGER t ..."}],
+        ),
+        "list_sequences": (
+            {"schema": "app"},
+            [
+                {
+                    "name": "s",
+                    "data_type": "bigint",
+                    "start_value": 1,
+                    "min_value": 1,
+                    "max_value": 100,
+                    "increment": 1,
+                    "cycle": False,
+                    "last_value": None,
+                }
+            ],
         ),
         "list_extensions": ({}, [{"extname": "plpgsql", "extversion": "1.0"}]),
         "list_available_extensions": (

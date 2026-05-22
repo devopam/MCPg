@@ -123,6 +123,14 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         triggers = await introspection.list_triggers(_driver(ctx), schema, table)
         return [asdict(trigger) for trigger in triggers]
 
+    @server.tool(
+        name="list_sequences",
+        description="List the sequences defined in a schema, with their range, increment, and last value.",
+    )
+    async def list_sequences(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        sequences = await introspection.list_sequences(_driver(ctx), schema)
+        return [asdict(sequence) for sequence in sequences]
+
     @server.tool(name="list_extensions", description="List the extensions installed in the database.")
     async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         extensions = await introspection.list_extensions(_driver(ctx))

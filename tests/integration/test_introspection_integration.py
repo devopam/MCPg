@@ -15,6 +15,7 @@ from mcpg.introspection import (
     list_functions,
     list_indexes,
     list_schemas,
+    list_sequences,
     list_tables,
     list_triggers,
     list_views,
@@ -31,6 +32,7 @@ async def sample_schema(connected_database: Database) -> AsyncIterator[str]:
     await driver.execute_query(f"CREATE SCHEMA {_SCHEMA}")
     await driver.execute_query(f"CREATE TABLE {_SCHEMA}.widget (id integer PRIMARY KEY, name text NOT NULL, note text)")
     await driver.execute_query(f"CREATE INDEX widget_name_idx ON {_SCHEMA}.widget (name)")
+    await driver.execute_query(f"CREATE SEQUENCE {_SCHEMA}.widget_seq")
     await driver.execute_query(f"CREATE VIEW {_SCHEMA}.widget_names AS SELECT name FROM {_SCHEMA}.widget")
     await driver.execute_query(
         f"CREATE FUNCTION {_SCHEMA}.widget_count() RETURNS bigint LANGUAGE sql "
@@ -111,6 +113,14 @@ async def test_list_triggers_finds_the_trigger(connected_database: Database, sam
 
     assert "widget_bi" in by_name
     assert by_name["widget_bi"].function == "widget_touch"
+
+
+async def test_list_sequences_finds_the_sequence(connected_database: Database, sample_schema: str) -> None:
+    sequences = await list_sequences(connected_database.driver(), sample_schema)
+    by_name = {sequence.name: sequence for sequence in sequences}
+
+    assert "widget_seq" in by_name
+    assert by_name["widget_seq"].increment == 1
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:

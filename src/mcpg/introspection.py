@@ -118,6 +118,24 @@ class ConstraintInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class SequenceInfo:
+    """A sequence within a schema.
+
+    ``last_value`` is ``None`` when the sequence has not yet been used or is
+    not readable by the connected role.
+    """
+
+    name: str
+    data_type: str
+    start_value: int
+    min_value: int
+    max_value: int
+    increment: int
+    cycle: bool
+    last_value: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class ExtensionInfo:
     """An installed PostgreSQL extension."""
 
@@ -310,6 +328,30 @@ async def list_constraints(driver: SqlDriver, schema: str, table: str) -> list[C
             name=row.cells["name"],
             type=_CONSTRAINT_TYPES.get(row.cells["type_code"], "other"),
             definition=row.cells["definition"],
+        )
+        for row in rows or []
+    ]
+
+
+async def list_sequences(driver: SqlDriver, schema: str) -> list[SequenceInfo]:
+    """List the sequences defined in a schema."""
+    rows = await driver.execute_query(
+        "SELECT sequencename AS name, data_type, start_value, min_value, "
+        "max_value, increment_by AS increment, cycle, last_value "
+        "FROM pg_sequences WHERE schemaname = %s ORDER BY sequencename",
+        params=[schema],
+        force_readonly=True,
+    )
+    return [
+        SequenceInfo(
+            name=row.cells["name"],
+            data_type=row.cells["data_type"],
+            start_value=row.cells["start_value"],
+            min_value=row.cells["min_value"],
+            max_value=row.cells["max_value"],
+            increment=row.cells["increment"],
+            cycle=row.cells["cycle"],
+            last_value=row.cells["last_value"],
         )
         for row in rows or []
     ]

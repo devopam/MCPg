@@ -15,6 +15,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 - `list_functions` tool — the functions and procedures in a schema, with
   kind, arguments, return type, and language.
 - `list_triggers` tool — the user-defined triggers on a table.
+- `list_sequences` tool — the sequences in a schema, with each sequence's
+  data type, range, increment, cycle flag, and last value.
 
 ## [0.2.0] - 2026-05-21
 

@@ -47,6 +47,11 @@ Lists the user-defined triggers on a table — each with the function it calls
 and its definition. Internal (constraint-enforcement) triggers are excluded.
 Parameters: `schema`, `table` (strings).
 
+### `list_sequences`
+Lists the sequences defined in a schema — each with its data type, start
+value, range (`min_value`/`max_value`), increment, `cycle` flag, and
+`last_value` (`null` if unused or not readable). Parameter: `schema` (string).
+
 ### `list_extensions`
 Lists the extensions installed in the database.
 

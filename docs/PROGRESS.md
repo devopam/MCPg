@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 12, Task 12.5 — TDD a `list_sequences` tool reporting sequences in a
-> schema.
+> Phase 13, Task 13.1 — TDD a `list_partitions` tool reporting a partitioned
+> table's strategy, bounds, and parent↔partition links.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -144,7 +144,7 @@
 - [x] 12.2 `list_views` (+ view definitions) (`mcpg/introspection.py`, TDD)
 - [x] 12.3 `list_functions` — functions and procedures (`mcpg/introspection.py`, TDD)
 - [x] 12.4 `list_triggers` (`mcpg/introspection.py`, TDD)
-- [ ] 12.5 `list_sequences` (TDD)
+- [x] 12.5 `list_sequences` (`mcpg/introspection.py`, TDD)
 
 ## Phase 13 — Partitioning
 
@@ -370,3 +370,6 @@
   313 tests, 100% coverage.
 - 2026-05-21 — Task 12.4: added `list_triggers` — user-defined triggers on a
   table (function + definition), via `pg_trigger`. 315 tests, 100% coverage.
+- 2026-05-22 — Task 12.5: added `list_sequences` — sequences in a schema
+  (data type, range, increment, cycle, last value), via `pg_sequences`.
+  Phase 12 complete. 318 tests, 100% coverage.
