@@ -37,6 +37,11 @@ Parameters: `schema`, `table` (strings).
 Lists the views and materialized views in a schema — each with a
 `materialized` flag and its definition. Parameter: `schema` (string).
 
+### `list_functions`
+Lists the functions and procedures in a schema — each with its `kind`
+(`function`, `procedure`, `aggregate`, `window`, `other`), arguments, return
+type, and language. Parameter: `schema` (string).
+
 ### `list_extensions`
 Lists the extensions installed in the database.
 

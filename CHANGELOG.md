@@ -12,6 +12,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   check, and exclusion constraints.
 - `list_views` tool — the views and materialized views in a schema, with
   their definitions.
+- `list_functions` tool — the functions and procedures in a schema, with
+  kind, arguments, return type, and language.
 
 ## [0.2.0] - 2026-05-21
 

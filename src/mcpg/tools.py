@@ -107,6 +107,14 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         views = await introspection.list_views(_driver(ctx), schema)
         return [asdict(view) for view in views]
 
+    @server.tool(
+        name="list_functions",
+        description="List the functions and procedures defined in a schema.",
+    )
+    async def list_functions(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        functions = await introspection.list_functions(_driver(ctx), schema)
+        return [asdict(function) for function in functions]
+
     @server.tool(name="list_extensions", description="List the extensions installed in the database.")
     async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         extensions = await introspection.list_extensions(_driver(ctx))

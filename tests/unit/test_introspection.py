@@ -9,6 +9,7 @@ from mcpg.introspection import (
     ColumnInfo,
     ConstraintInfo,
     ExtensionInfo,
+    FunctionInfo,
     IndexInfo,
     SchemaInfo,
     TableInfo,
@@ -17,6 +18,7 @@ from mcpg.introspection import (
     list_available_extensions,
     list_constraints,
     list_extensions,
+    list_functions,
     list_indexes,
     list_schemas,
     list_tables,
@@ -129,6 +131,32 @@ async def test_list_views_maps_views_and_materialized_views() -> None:
     ]
 
 
+async def test_list_functions_maps_routines() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "widget_count",
+                "kind_code": "f",
+                "arguments": "",
+                "returns": "bigint",
+                "language": "sql",
+            },
+            {
+                "name": "do_thing",
+                "kind_code": "p",
+                "arguments": "x integer",
+                "returns": None,
+                "language": "plpgsql",
+            },
+        ]
+    )
+
+    assert await list_functions(driver, "app") == [
+        FunctionInfo("widget_count", "function", "", "bigint", "sql"),
+        FunctionInfo("do_thing", "procedure", "x integer", None, "plpgsql"),
+    ]
+
+
 async def test_list_constraints_maps_constraint_types() -> None:
     driver = FakeDriver(
         [
@@ -180,6 +208,7 @@ _INTROSPECTION_TOOLS = {
     "list_indexes",
     "list_constraints",
     "list_views",
+    "list_functions",
     "list_extensions",
     "list_available_extensions",
 }
@@ -213,6 +242,10 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_views": (
             {"schema": "app"},
             [{"name": "v", "materialized": False, "definition": "SELECT 1"}],
+        ),
+        "list_functions": (
+            {"schema": "app"},
+            [{"name": "f", "kind_code": "f", "arguments": "", "returns": "void", "language": "sql"}],
         ),
         "list_extensions": ({}, [{"extname": "plpgsql", "extversion": "1.0"}]),
         "list_available_extensions": (

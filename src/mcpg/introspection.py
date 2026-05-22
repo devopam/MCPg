@@ -23,6 +23,9 @@ _CONSTRAINT_TYPES = {
     "x": "exclusion",
 }
 
+# pg_proc.prokind codes -> readable routine kind.
+_ROUTINE_KINDS = {"f": "function", "p": "procedure", "a": "aggregate", "w": "window"}
+
 
 @dataclass(frozen=True, slots=True)
 class SchemaInfo:
@@ -75,6 +78,21 @@ class ViewInfo:
     name: str
     materialized: bool
     definition: str
+
+
+@dataclass(frozen=True, slots=True)
+class FunctionInfo:
+    """A function or procedure within a schema.
+
+    ``kind`` is ``function``, ``procedure``, ``aggregate``, ``window``, or
+    ``other``. ``returns`` is ``None`` for procedures.
+    """
+
+    name: str
+    kind: str
+    arguments: str
+    returns: str | None
+    language: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +227,31 @@ async def list_views(driver: SqlDriver, schema: str) -> list[ViewInfo]:
             name=row.cells["name"],
             materialized=row.cells["materialized"],
             definition=row.cells["definition"],
+        )
+        for row in rows or []
+    ]
+
+
+async def list_functions(driver: SqlDriver, schema: str) -> list[FunctionInfo]:
+    """List the functions and procedures defined in a schema."""
+    rows = await driver.execute_query(
+        "SELECT p.proname AS name, p.prokind AS kind_code, "
+        "pg_get_function_arguments(p.oid) AS arguments, "
+        "pg_get_function_result(p.oid) AS returns, l.lanname AS language "
+        "FROM pg_proc p "
+        "JOIN pg_namespace n ON n.oid = p.pronamespace "
+        "JOIN pg_language l ON l.oid = p.prolang "
+        "WHERE n.nspname = %s ORDER BY p.proname, p.oid",
+        params=[schema],
+        force_readonly=True,
+    )
+    return [
+        FunctionInfo(
+            name=row.cells["name"],
+            kind=_ROUTINE_KINDS.get(row.cells["kind_code"], "other"),
+            arguments=row.cells["arguments"],
+            returns=row.cells["returns"],
+            language=row.cells["language"],
         )
         for row in rows or []
     ]

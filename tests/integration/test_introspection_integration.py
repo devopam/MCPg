@@ -12,6 +12,7 @@ from mcpg.introspection import (
     list_available_extensions,
     list_constraints,
     list_extensions,
+    list_functions,
     list_indexes,
     list_schemas,
     list_tables,
@@ -30,6 +31,10 @@ async def sample_schema(connected_database: Database) -> AsyncIterator[str]:
     await driver.execute_query(f"CREATE TABLE {_SCHEMA}.widget (id integer PRIMARY KEY, name text NOT NULL, note text)")
     await driver.execute_query(f"CREATE INDEX widget_name_idx ON {_SCHEMA}.widget (name)")
     await driver.execute_query(f"CREATE VIEW {_SCHEMA}.widget_names AS SELECT name FROM {_SCHEMA}.widget")
+    await driver.execute_query(
+        f"CREATE FUNCTION {_SCHEMA}.widget_count() RETURNS bigint LANGUAGE sql "
+        f"AS 'SELECT count(*) FROM {_SCHEMA}.widget'"
+    )
     try:
         yield _SCHEMA
     finally:
@@ -81,6 +86,15 @@ async def test_list_views_finds_the_view(connected_database: Database, sample_sc
 
     assert "widget_names" in by_name
     assert by_name["widget_names"].materialized is False
+
+
+async def test_list_functions_finds_the_function(connected_database: Database, sample_schema: str) -> None:
+    functions = await list_functions(connected_database.driver(), sample_schema)
+    by_name = {function.name: function for function in functions}
+
+    assert "widget_count" in by_name
+    assert by_name["widget_count"].kind == "function"
+    assert by_name["widget_count"].returns == "bigint"
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:
