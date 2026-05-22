@@ -91,6 +91,14 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         indexes = await introspection.list_indexes(_driver(ctx), schema, table)
         return [asdict(index) for index in indexes]
 
+    @server.tool(
+        name="list_constraints",
+        description="List a table's constraints — primary/foreign keys, unique, check, exclusion.",
+    )
+    async def list_constraints(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
+        constraints = await introspection.list_constraints(_driver(ctx), schema, table)
+        return [asdict(constraint) for constraint in constraints]
+
     @server.tool(name="list_extensions", description="List the extensions installed in the database.")
     async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         extensions = await introspection.list_extensions(_driver(ctx))

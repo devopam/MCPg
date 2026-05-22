@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 12, Task 12.1 — TDD a `list_constraints` tool: primary keys, foreign
-> keys, unique, check, and exclusion constraints on a table.
+> Phase 12, Task 12.2 — TDD a `list_views` tool reporting views (and
+> materialized views) in a schema with their definitions.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -140,7 +140,7 @@
 
 ## Phase 12 — Deeper schema introspection
 
-- [ ] 12.1 `list_constraints` — PK, FK, unique, check, exclusion (TDD)
+- [x] 12.1 `list_constraints` — PK, FK, unique, check, exclusion (`mcpg/introspection.py`, TDD)
 - [ ] 12.2 `list_views` (+ view definitions) (TDD)
 - [ ] 12.3 `list_functions` — functions and procedures (TDD)
 - [ ] 12.4 `list_triggers` (TDD)
@@ -360,3 +360,5 @@
 - 2026-05-21 — Capability gap analysis (`PLAN.md` §7b): added Phases 12–15 to
   the roadmap — deeper schema introspection, partitioning, access-control
   introspection, and live ops & maintenance.
+- 2026-05-21 — Task 12.1: added `list_constraints` — PK/FK/unique/check/
+  exclusion constraints on a table, via `pg_constraint`. 309 tests, 100% cov.

@@ -7,12 +7,14 @@ from mcpg.config import load_settings
 from mcpg.introspection import (
     AvailableExtension,
     ColumnInfo,
+    ConstraintInfo,
     ExtensionInfo,
     IndexInfo,
     SchemaInfo,
     TableInfo,
     describe_table,
     list_available_extensions,
+    list_constraints,
     list_extensions,
     list_indexes,
     list_schemas,
@@ -111,6 +113,28 @@ async def test_list_indexes_maps_rows_including_the_access_method() -> None:
     ]
 
 
+async def test_list_constraints_maps_constraint_types() -> None:
+    driver = FakeDriver(
+        [
+            {"name": "widget_pkey", "type_code": "p", "definition": "PRIMARY KEY (id)"},
+            {"name": "widget_cat_fk", "type_code": "f", "definition": "FOREIGN KEY (cat) REFERENCES c(id)"},
+            {"name": "widget_price_chk", "type_code": "c", "definition": "CHECK (price > 0)"},
+        ]
+    )
+
+    assert await list_constraints(driver, "app", "widget") == [
+        ConstraintInfo("widget_pkey", "primary_key", "PRIMARY KEY (id)"),
+        ConstraintInfo("widget_cat_fk", "foreign_key", "FOREIGN KEY (cat) REFERENCES c(id)"),
+        ConstraintInfo("widget_price_chk", "check", "CHECK (price > 0)"),
+    ]
+
+
+async def test_list_constraints_maps_an_unknown_type_code_to_other() -> None:
+    driver = FakeDriver([{"name": "x", "type_code": "z", "definition": "..."}])
+
+    assert (await list_constraints(driver, "app", "t"))[0].type == "other"
+
+
 async def test_list_extensions_maps_rows() -> None:
     driver = FakeDriver([{"extname": "plpgsql", "extversion": "1.0"}])
 
@@ -138,6 +162,7 @@ _INTROSPECTION_TOOLS = {
     "list_tables",
     "describe_table",
     "list_indexes",
+    "list_constraints",
     "list_extensions",
     "list_available_extensions",
 }
@@ -163,6 +188,10 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_indexes": (
             {"schema": "app", "table": "w"},
             [{"name": "i", "method": "btree", "definition": "d"}],
+        ),
+        "list_constraints": (
+            {"schema": "app", "table": "w"},
+            [{"name": "w_pkey", "type_code": "p", "definition": "PRIMARY KEY (id)"}],
         ),
         "list_extensions": ({}, [{"extname": "plpgsql", "extversion": "1.0"}]),
         "list_available_extensions": (

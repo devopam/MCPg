@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `list_constraints` tool — a table's primary-key, foreign-key, unique,
+  check, and exclusion constraints.
+
 ## [0.2.0] - 2026-05-21
 
 Extension support: index-method intelligence, extension management, and

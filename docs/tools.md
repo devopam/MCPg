@@ -28,6 +28,11 @@ Lists the indexes on a table, each with its access method — a built-in one
 (`btree`, `gin`, `gist`, `brin`, `hash`, `spgist`) or an extension's (e.g.
 `hnsw`/`ivfflat` from `pgvector`). Parameters: `schema`, `table` (strings).
 
+### `list_constraints`
+Lists a table's constraints — each with its `type` (`primary_key`,
+`foreign_key`, `unique`, `check`, `exclusion`, or `other`) and definition.
+Parameters: `schema`, `table` (strings).
+
 ### `list_extensions`
 Lists the extensions installed in the database.
 

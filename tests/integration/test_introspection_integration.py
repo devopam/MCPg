@@ -10,6 +10,7 @@ from mcpg.introspection import (
     SchemaInfo,
     describe_table,
     list_available_extensions,
+    list_constraints,
     list_extensions,
     list_indexes,
     list_schemas,
@@ -63,6 +64,13 @@ async def test_list_indexes_finds_primary_key_and_secondary_index(
     # Both sample indexes are plain B-tree; the access method is reported.
     assert by_name["widget_pkey"].method == "btree"
     assert by_name["widget_name_idx"].method == "btree"
+
+
+async def test_list_constraints_finds_the_primary_key(connected_database: Database, sample_schema: str) -> None:
+    constraints = await list_constraints(connected_database.driver(), sample_schema, "widget")
+
+    by_type = {constraint.type for constraint in constraints}
+    assert "primary_key" in by_type
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:

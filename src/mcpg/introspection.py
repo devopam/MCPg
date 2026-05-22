@@ -14,6 +14,15 @@ from mcpg._vendor.sql import SqlDriver
 # Schemas that belong to PostgreSQL itself rather than the user.
 _SYSTEM_SCHEMAS = frozenset({"pg_catalog", "information_schema", "pg_toast"})
 
+# pg_constraint.contype codes -> readable constraint type.
+_CONSTRAINT_TYPES = {
+    "p": "primary_key",
+    "f": "foreign_key",
+    "u": "unique",
+    "c": "check",
+    "x": "exclusion",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class SchemaInfo:
@@ -56,6 +65,19 @@ class IndexInfo:
 
     name: str
     method: str
+    definition: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConstraintInfo:
+    """A constraint on a table.
+
+    ``type`` is ``primary_key``, ``foreign_key``, ``unique``, ``check``,
+    ``exclusion``, or ``other``.
+    """
+
+    name: str
+    type: str
     definition: str
 
 
@@ -156,6 +178,28 @@ async def list_indexes(driver: SqlDriver, schema: str, table: str) -> list[Index
         IndexInfo(
             name=row.cells["name"],
             method=row.cells["method"],
+            definition=row.cells["definition"],
+        )
+        for row in rows or []
+    ]
+
+
+async def list_constraints(driver: SqlDriver, schema: str, table: str) -> list[ConstraintInfo]:
+    """List the constraints on a table — keys, unique, check, exclusion."""
+    rows = await driver.execute_query(
+        "SELECT con.conname AS name, con.contype AS type_code, "
+        "pg_get_constraintdef(con.oid) AS definition "
+        "FROM pg_constraint con "
+        "JOIN pg_class c ON c.oid = con.conrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relname = %s ORDER BY con.conname",
+        params=[schema, table],
+        force_readonly=True,
+    )
+    return [
+        ConstraintInfo(
+            name=row.cells["name"],
+            type=_CONSTRAINT_TYPES.get(row.cells["type_code"], "other"),
             definition=row.cells["definition"],
         )
         for row in rows or []
