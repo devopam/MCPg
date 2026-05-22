@@ -206,6 +206,20 @@ class RoleInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class GrantInfo:
+    """A privilege granted on a table.
+
+    ``grantable`` is ``True`` when the grantee may pass the privilege on
+    (``WITH GRANT OPTION``).
+    """
+
+    grantee: str
+    privilege: str
+    grantable: bool
+    grantor: str
+
+
+@dataclass(frozen=True, slots=True)
 class SequenceInfo:
     """A sequence within a schema.
 
@@ -544,6 +558,27 @@ async def list_roles(driver: SqlDriver, *, include_system: bool = False) -> list
     if include_system:
         return roles
     return [role for role in roles if not role.name.startswith("pg_")]
+
+
+async def list_grants(driver: SqlDriver, schema: str, table: str) -> list[GrantInfo]:
+    """List the privileges granted on a table — who may do what to it."""
+    rows = await driver.execute_query(
+        "SELECT grantee, privilege_type AS privilege, is_grantable, grantor "
+        "FROM information_schema.table_privileges "
+        "WHERE table_schema = %s AND table_name = %s "
+        "ORDER BY grantee, privilege_type",
+        params=[schema, table],
+        force_readonly=True,
+    )
+    return [
+        GrantInfo(
+            grantee=row.cells["grantee"],
+            privilege=row.cells["privilege"],
+            grantable=row.cells["is_grantable"] == "YES",
+            grantor=row.cells["grantor"],
+        )
+        for row in rows or []
+    ]
 
 
 async def list_sequences(driver: SqlDriver, schema: str) -> list[SequenceInfo]:

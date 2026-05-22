@@ -10,6 +10,7 @@ from mcpg.introspection import (
     ConstraintInfo,
     ExtensionInfo,
     FunctionInfo,
+    GrantInfo,
     IndexInfo,
     PartitionInfo,
     PartitionSet,
@@ -26,6 +27,7 @@ from mcpg.introspection import (
     list_constraints,
     list_extensions,
     list_functions,
+    list_grants,
     list_indexes,
     list_partitions,
     list_policies,
@@ -353,6 +355,21 @@ async def test_list_policies_reports_a_missing_table_as_unsecured() -> None:
     assert await list_policies(FakeDriver([]), "app", "missing") == PolicySet(rls_enabled=False, policies=[])
 
 
+async def test_list_grants_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {"grantee": "app_user", "privilege": "SELECT", "is_grantable": "NO", "grantor": "app_owner"},
+            {"grantee": "app_admin", "privilege": "UPDATE", "is_grantable": "YES", "grantor": "app_owner"},
+        ]
+    )
+
+    assert await list_grants(driver, "app", "widget") == [
+        GrantInfo("app_user", "SELECT", grantable=False, grantor="app_owner"),
+        GrantInfo("app_admin", "UPDATE", grantable=True, grantor="app_owner"),
+    ]
+    assert driver.calls[0][1] == ["app", "widget"]
+
+
 def _role_row(name: str, **overrides: object) -> dict[str, object]:
     """A pg_roles catalog row with sensible non-privileged defaults."""
     row: dict[str, object] = {
@@ -478,6 +495,7 @@ _INTROSPECTION_TOOLS = {
     "list_partitions",
     "list_policies",
     "list_roles",
+    "list_grants",
     "list_sequences",
     "list_extensions",
     "list_available_extensions",
@@ -540,6 +558,10 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
             ],
         ),
         "list_roles": ({}, [_role_row("app_user")]),
+        "list_grants": (
+            {"schema": "app", "table": "w"},
+            [{"grantee": "app_user", "privilege": "SELECT", "is_grantable": "NO", "grantor": "app_owner"}],
+        ),
         "list_sequences": (
             {"schema": "app"},
             [

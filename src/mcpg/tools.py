@@ -144,6 +144,14 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         return [asdict(role) for role in roles]
 
     @server.tool(
+        name="list_grants",
+        description="List the privileges granted on a table — who may do what to it.",
+    )
+    async def list_grants(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
+        grants = await introspection.list_grants(_driver(ctx), schema, table)
+        return [asdict(grant) for grant in grants]
+
+    @server.tool(
         name="list_policies",
         description="List the Row-Level-Security policies on a table, and whether row security is enabled.",
     )

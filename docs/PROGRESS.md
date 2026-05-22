@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 14, Task 14.3 — TDD a `list_grants` tool reporting table/object
-> privileges.
+> Phase 15, Task 15.1 — TDD a `list_active_queries` tool reporting the
+> currently-running queries from `pg_stat_activity`.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -156,7 +156,7 @@
 
 - [x] 14.1 `list_policies` — Row-Level-Security policies on a table (`mcpg/introspection.py`, TDD)
 - [x] 14.2 `list_roles` (`mcpg/introspection.py`, TDD)
-- [ ] 14.3 `list_grants` — table/object privileges (TDD)
+- [x] 14.3 `list_grants` — table/object privileges (`mcpg/introspection.py`, TDD)
 
 ## Phase 15 — Live ops & maintenance
 
@@ -388,3 +388,7 @@
   attributes (superuser, create-role/db, login, replication, bypass-RLS,
   connection limit, membership), via `pg_roles` and `pg_auth_members`.
   340 tests, 100% coverage.
+- 2026-05-22 — Task 14.3: added `list_grants` — privileges granted on a
+  table (grantee, privilege, grantable, grantor), via
+  `information_schema.table_privileges`. Phase 14 complete. 342 tests,
+  100% coverage.

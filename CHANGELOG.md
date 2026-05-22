@@ -25,6 +25,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 - `list_roles` tool — the database roles and their attributes (superuser,
   create-role/db, login, replication, bypass-RLS, connection limit, and
   role membership).
+- `list_grants` tool — the privileges granted on a table, with each
+  grant's grantee, privilege, grantable flag, and grantor.
 
 ### Changed
 

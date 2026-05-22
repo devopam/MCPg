@@ -13,6 +13,7 @@ from mcpg.introspection import (
     list_constraints,
     list_extensions,
     list_functions,
+    list_grants,
     list_indexes,
     list_partitions,
     list_policies,
@@ -174,6 +175,13 @@ async def test_list_partitions_reports_a_plain_table_as_not_partitioned(
     result = await list_partitions(connected_database.driver(), sample_schema, "widget")
 
     assert result.partitioned is False
+
+
+async def test_list_grants_finds_the_owner_privileges(connected_database: Database, sample_schema: str) -> None:
+    grants = await list_grants(connected_database.driver(), sample_schema, "widget")
+
+    assert grants  # the table owner always holds privileges on its own table
+    assert "SELECT" in {grant.privilege for grant in grants}
 
 
 async def test_list_roles_includes_a_login_capable_role(connected_database: Database) -> None:

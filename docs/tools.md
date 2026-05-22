@@ -63,6 +63,11 @@ Lists the database roles and their attributes — `superuser`, `create_role`,
 and `member_of` (roles each role belongs to). Parameter: `include_system`
 (bool, default `false`) — include PostgreSQL's own `pg_*` roles.
 
+### `list_grants`
+Lists the privileges granted on a table — each with its `grantee`,
+`privilege` (`SELECT`, `INSERT`, `UPDATE`, ...), `grantable` flag (`WITH
+GRANT OPTION`), and `grantor`. Parameters: `schema`, `table` (strings).
+
 ### `list_policies`
 Lists the Row-Level-Security policies on a table. Returns `rls_enabled`
 (bool — policies are inert while off) and `policies` — each with its
