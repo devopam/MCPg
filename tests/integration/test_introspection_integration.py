@@ -39,6 +39,7 @@ async def sample_schema(connected_database: Database) -> AsyncIterator[str]:
         f"CREATE TABLE {_SCHEMA}.event_2026 PARTITION OF {_SCHEMA}.event "
         f"FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')"
     )
+    await driver.execute_query(f"CREATE INDEX event_created_idx ON {_SCHEMA}.event (created)")
     await driver.execute_query(f"CREATE VIEW {_SCHEMA}.widget_names AS SELECT name FROM {_SCHEMA}.widget")
     await driver.execute_query(
         f"CREATE FUNCTION {_SCHEMA}.widget_count() RETURNS bigint LANGUAGE sql "
@@ -91,6 +92,14 @@ async def test_list_indexes_finds_primary_key_and_secondary_index(
     # Both sample indexes are plain B-tree; the access method is reported.
     assert by_name["widget_pkey"].method == "btree"
     assert by_name["widget_name_idx"].method == "btree"
+    assert by_name["widget_pkey"].partitioned is False
+
+
+async def test_list_indexes_flags_a_partitioned_index(connected_database: Database, sample_schema: str) -> None:
+    indexes = await list_indexes(connected_database.driver(), sample_schema, "event")
+    by_name = {index.name: index for index in indexes}
+
+    assert by_name["event_created_idx"].partitioned is True
 
 
 async def test_list_constraints_finds_the_primary_key(connected_database: Database, sample_schema: str) -> None:

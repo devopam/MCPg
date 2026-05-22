@@ -24,6 +24,11 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 - `list_tables` now flags each table with `partitioned` (a partitioned
   parent) and `is_partition` (itself a partition).
+- `list_indexes` now flags each index with `partitioned` (a
+  partitioned-index template).
+- `recommend_indexes` now rolls a flagged partition up to its partitioned
+  parent — summing scan and row counts and setting a `partitioned` flag —
+  since an index created on the parent propagates to every partition.
 
 ## [0.2.0] - 2026-05-21
 

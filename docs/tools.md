@@ -28,7 +28,9 @@ Parameters: `schema`, `table` (strings).
 ### `list_indexes`
 Lists the indexes on a table, each with its access method — a built-in one
 (`btree`, `gin`, `gist`, `brin`, `hash`, `spgist`) or an extension's (e.g.
-`hnsw`/`ivfflat` from `pgvector`). Parameters: `schema`, `table` (strings).
+`hnsw`/`ivfflat` from `pgvector`) — and a `partitioned` flag (a
+partitioned-index template propagated to each partition). Parameters:
+`schema`, `table` (strings).
 
 ### `list_constraints`
 Lists a table's constraints — each with its `type` (`primary_key`,
@@ -98,8 +100,10 @@ Returns the slowest queries by mean execution time, via the
 ### `recommend_indexes`
 Flags large tables read mostly by sequential scan, and for each suggests
 per-column index types from the column's data type — GIN for `jsonb` and
-array columns, trigram GIN for text columns. Parameter: `min_live_tuples`
-(int, default 10000).
+array columns, trigram GIN for text columns. A flagged partition is rolled
+up to its partitioned parent (where the index belongs), with scan and row
+counts summed across partitions and a `partitioned` flag set. Parameter:
+`min_live_tuples` (int, default 10000).
 
 ### `fuzzy_search`
 Ranks a text column's values by `pg_trgm` trigram similarity to a search

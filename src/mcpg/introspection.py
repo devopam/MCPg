@@ -75,12 +75,14 @@ class IndexInfo:
 
     ``method`` is the access method — a built-in one (``btree``, ``gin``,
     ``gist``, ``brin``, ``hash``, ``spgist``) or an extension's (e.g.
-    ``hnsw`` / ``ivfflat`` from ``pgvector``).
+    ``hnsw`` / ``ivfflat`` from ``pgvector``). ``partitioned`` is ``True``
+    for a partitioned index — the template propagated to each partition.
     """
 
     name: str
     method: str
     definition: str
+    partitioned: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,7 +270,8 @@ async def describe_table(driver: SqlDriver, schema: str, table: str) -> list[Col
 async def list_indexes(driver: SqlDriver, schema: str, table: str) -> list[IndexInfo]:
     """List the indexes defined on a table, with their access method."""
     rows = await driver.execute_query(
-        "SELECT i.relname AS name, am.amname AS method, pg_get_indexdef(i.oid) AS definition "
+        "SELECT i.relname AS name, am.amname AS method, i.relkind AS relkind, "
+        "pg_get_indexdef(i.oid) AS definition "
         "FROM pg_class t "
         "JOIN pg_namespace n ON n.oid = t.relnamespace "
         "JOIN pg_index ix ON ix.indrelid = t.oid "
@@ -283,6 +286,7 @@ async def list_indexes(driver: SqlDriver, schema: str, table: str) -> list[Index
             name=row.cells["name"],
             method=row.cells["method"],
             definition=row.cells["definition"],
+            partitioned=row.cells["relkind"] == "I",
         )
         for row in rows or []
     ]

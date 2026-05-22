@@ -30,7 +30,12 @@ class IndexSuggestion:
 
 @dataclass(frozen=True, slots=True)
 class IndexRecommendation:
-    """A table that may benefit from indexing, with per-column suggestions."""
+    """A table that may benefit from indexing, with per-column suggestions.
+
+    For a partitioned table, ``partitioned`` is ``True`` and the scan and row
+    counts are summed across its partitions — an index created on the parent
+    propagates to them all.
+    """
 
     schema: str
     table: str
@@ -38,6 +43,7 @@ class IndexRecommendation:
     live_tuples: int
     reason: str
     suggestions: list[IndexSuggestion]
+    partitioned: bool
 
 
 def _suggest(column: str, data_type: str) -> IndexSuggestion | None:
@@ -58,7 +64,9 @@ async def recommend_indexes(
 
     Heuristic: large tables (at least ``min_live_tuples`` rows) read more
     often by sequential scan than by index scan. For each, columns with
-    GIN-friendly types yield an :class:`IndexSuggestion`.
+    GIN-friendly types yield an :class:`IndexSuggestion`. A flagged partition
+    is rolled up to its partitioned parent, since an index belongs on the
+    parent; scan and row counts are summed across the partitions.
 
     Args:
         driver: The SQL driver to query through.
@@ -66,10 +74,15 @@ async def recommend_indexes(
     """
     rows = await driver.execute_query(
         "SELECT s.schemaname, s.relname, s.seq_scan, s.n_live_tup, "
-        "c.column_name, c.data_type "
+        "c.column_name, c.data_type, "
+        "pn.nspname AS parent_schema, parent.relname AS parent_table "
         "FROM pg_stat_user_tables s "
         "JOIN information_schema.columns c "
         "  ON c.table_schema = s.schemaname AND c.table_name = s.relname "
+        "LEFT JOIN pg_inherits inh ON inh.inhrelid = s.relid "
+        "LEFT JOIN pg_class parent "
+        "  ON parent.oid = inh.inhparent AND parent.relkind = 'p' "
+        "LEFT JOIN pg_namespace pn ON pn.oid = parent.relnamespace "
         "WHERE s.n_live_tup >= %s AND s.seq_scan > COALESCE(s.idx_scan, 0) "
         "ORDER BY s.seq_scan DESC, s.relname, c.ordinal_position",
         params=[min_live_tuples],
@@ -77,16 +90,33 @@ async def recommend_indexes(
     )
 
     order: list[tuple[str, str]] = []
-    stats: dict[tuple[str, str], tuple[int, int]] = {}
+    stats: dict[tuple[str, str], list[int]] = {}
+    partitioned: dict[tuple[str, str], bool] = {}
     suggestions: dict[tuple[str, str], list[IndexSuggestion]] = {}
+    suggested_columns: dict[tuple[str, str], set[str]] = {}
+    counted: set[tuple[str, str]] = set()
     for row in rows or []:
-        key = (row.cells["schemaname"], row.cells["relname"])
+        parent_table = row.cells["parent_table"]
+        is_partition = parent_table is not None
+        if is_partition:
+            key = (row.cells["parent_schema"], parent_table)
+        else:
+            key = (row.cells["schemaname"], row.cells["relname"])
         if key not in stats:
             order.append(key)
-            stats[key] = (row.cells["seq_scan"], row.cells["n_live_tup"])
+            stats[key] = [0, 0]
+            partitioned[key] = False
             suggestions[key] = []
+            suggested_columns[key] = set()
+        physical = (row.cells["schemaname"], row.cells["relname"])
+        if physical not in counted:
+            counted.add(physical)
+            stats[key][0] += row.cells["seq_scan"]
+            stats[key][1] += row.cells["n_live_tup"]
+            partitioned[key] = partitioned[key] or is_partition
         suggestion = _suggest(row.cells["column_name"], row.cells["data_type"])
-        if suggestion is not None:
+        if suggestion is not None and suggestion.column not in suggested_columns[key]:
+            suggested_columns[key].add(suggestion.column)
             suggestions[key].append(suggestion)
 
     return [
@@ -95,8 +125,13 @@ async def recommend_indexes(
             table=table,
             seq_scans=stats[(schema, table)][0],
             live_tuples=stats[(schema, table)][1],
-            reason="large table read mostly by sequential scan",
+            reason=(
+                "partitioned table whose partitions are read mostly by sequential scan"
+                if partitioned[(schema, table)]
+                else "large table read mostly by sequential scan"
+            ),
             suggestions=suggestions[(schema, table)],
+            partitioned=partitioned[(schema, table)],
         )
         for schema, table in order
     ]

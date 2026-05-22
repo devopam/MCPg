@@ -127,14 +127,34 @@ async def test_describe_table_reports_pgvector_dimension() -> None:
 async def test_list_indexes_maps_rows_including_the_access_method() -> None:
     driver = FakeDriver(
         [
-            {"name": "widget_pkey", "method": "btree", "definition": "CREATE UNIQUE INDEX widget_pkey ..."},
-            {"name": "widget_doc_idx", "method": "gin", "definition": "CREATE INDEX widget_doc_idx ..."},
+            {
+                "name": "widget_pkey",
+                "method": "btree",
+                "relkind": "i",
+                "definition": "CREATE UNIQUE INDEX widget_pkey ...",
+            },
+            {
+                "name": "widget_doc_idx",
+                "method": "gin",
+                "relkind": "i",
+                "definition": "CREATE INDEX widget_doc_idx ...",
+            },
         ]
     )
 
     assert await list_indexes(driver, "app", "widget") == [
-        IndexInfo("widget_pkey", "btree", "CREATE UNIQUE INDEX widget_pkey ..."),
-        IndexInfo("widget_doc_idx", "gin", "CREATE INDEX widget_doc_idx ..."),
+        IndexInfo("widget_pkey", "btree", "CREATE UNIQUE INDEX widget_pkey ...", partitioned=False),
+        IndexInfo("widget_doc_idx", "gin", "CREATE INDEX widget_doc_idx ...", partitioned=False),
+    ]
+
+
+async def test_list_indexes_flags_a_partitioned_index() -> None:
+    driver = FakeDriver(
+        [{"name": "event_created_idx", "method": "btree", "relkind": "I", "definition": "CREATE INDEX ..."}]
+    )
+
+    assert await list_indexes(driver, "app", "event") == [
+        IndexInfo("event_created_idx", "btree", "CREATE INDEX ...", partitioned=True)
     ]
 
 
@@ -353,7 +373,7 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         ),
         "list_indexes": (
             {"schema": "app", "table": "w"},
-            [{"name": "i", "method": "btree", "definition": "d"}],
+            [{"name": "i", "method": "btree", "relkind": "i", "definition": "d"}],
         ),
         "list_constraints": (
             {"schema": "app", "table": "w"},

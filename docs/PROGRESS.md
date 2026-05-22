@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 13, Task 13.3 — TDD partition-aware `list_indexes` and
-> `recommend_indexes`.
+> Phase 14, Task 14.1 — TDD a `list_policies` tool reporting the
+> Row-Level-Security policies on a table.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -150,7 +150,7 @@
 
 - [x] 13.1 `list_partitions` — strategy, bounds, parent↔partition links (`mcpg/introspection.py`, TDD)
 - [x] 13.2 Flag partitioned tables / partitions in `list_tables` (`mcpg/introspection.py`, TDD)
-- [ ] 13.3 Partition-aware `list_indexes` and `recommend_indexes` (TDD)
+- [x] 13.3 Partition-aware `list_indexes` and `recommend_indexes` (TDD)
 
 ## Phase 14 — Access-control introspection
 
@@ -378,3 +378,6 @@
   and `pg_inherits`. 323 tests, 100% coverage.
 - 2026-05-22 — Task 13.2: `list_tables` now reads `pg_class` and flags each
   table with `partitioned` and `is_partition`. 325 tests, 100% coverage.
+- 2026-05-22 — Task 13.3: `list_indexes` flags partitioned-index templates;
+  `recommend_indexes` rolls partition stats up to the partitioned parent.
+  Phase 13 complete. 328 tests, 100% coverage.
