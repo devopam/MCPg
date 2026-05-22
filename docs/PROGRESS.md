@@ -6,15 +6,14 @@
 
 ## Current state
 
-- **Phase:** all 11 phases complete — extension support fully delivered
+- **Phase:** 12 — Deeper schema introspection (Phases 0–11 complete)
 - **Last updated:** 2026-05-21
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> All eleven planned phases are complete (20 MCP tools). Version bumped to
-> 0.2.0; the extension work (Phases 8–11) is being merged to `main` via a
-> second PR. Tagging `v0.2.0` awaits user sign-off.
+> Phase 12, Task 12.1 — TDD a `list_constraints` tool: primary keys, foreign
+> keys, unique, check, and exclusion constraints on a table.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -138,6 +137,36 @@
 
 > Phases 8–11 cover PostgreSQL extension and advanced-feature support; see
 > `PLAN.md` §7a for the capability inventory and per-extension priorities.
+
+## Phase 12 — Deeper schema introspection
+
+- [ ] 12.1 `list_constraints` — PK, FK, unique, check, exclusion (TDD)
+- [ ] 12.2 `list_views` (+ view definitions) (TDD)
+- [ ] 12.3 `list_functions` — functions and procedures (TDD)
+- [ ] 12.4 `list_triggers` (TDD)
+- [ ] 12.5 `list_sequences` (TDD)
+
+## Phase 13 — Partitioning
+
+- [ ] 13.1 `list_partitions` — strategy, bounds, parent↔partition links (TDD)
+- [ ] 13.2 Flag partitioned tables / partitions in `list_tables` (TDD)
+- [ ] 13.3 Partition-aware `list_indexes` and `recommend_indexes` (TDD)
+
+## Phase 14 — Access-control introspection
+
+- [ ] 14.1 `list_policies` — Row-Level-Security policies on a table (TDD)
+- [ ] 14.2 `list_roles` (TDD)
+- [ ] 14.3 `list_grants` — table/object privileges (TDD)
+
+## Phase 15 — Live ops & maintenance
+
+- [ ] 15.1 `list_active_queries` + lock / blocking inspection (TDD)
+- [ ] 15.2 Replication-lag and bloat health checks (TDD)
+- [ ] 15.3 Gated `run_maintenance` (VACUUM/ANALYZE) (TDD)
+- [ ] 15.4 Gated `cancel_query` / `terminate_backend` (TDD)
+
+> Phases 12–15 cover deeper introspection and live ops; see `PLAN.md` §7b for
+> the capability gap analysis behind them.
 
 ## Decisions log
 
@@ -326,3 +355,8 @@
   distance to a lon/lat point) to `mcpg/textsearch.py`. 296 tests (4
   extension integration tests run in CI), 100% coverage. **Phase 11 complete
   — all eleven planned phases delivered; 20 MCP tools.**
+- 2026-05-21 — Live-test of the real server surfaced a `fuzzy_search` UX gap;
+  added a `word`/`full` `mode` (default `word`). 306 tests.
+- 2026-05-21 — Capability gap analysis (`PLAN.md` §7b): added Phases 12–15 to
+  the roadmap — deeper schema introspection, partitioning, access-control
+  introspection, and live ops & maintenance.

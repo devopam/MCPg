@@ -248,6 +248,45 @@ degrades gracefully when its extension is absent.
 > trigram): Phase 8 (index intelligence) → 9 (text/trigram) → 10 (pgvector)
 > → 11 (PostGIS). Re-orderable; revisit before starting Phase 8.
 
+## 7b. Capability gap analysis — Phases 12–15 (post-extension)
+
+After the extension phases, MCPg still lacks introspection and operations for
+several core PostgreSQL areas. Partition DDL already runs via `run_ddl`, but
+nothing is partition-*aware*; similarly there is no view of constraints,
+non-table objects, RLS policies, roles, or live activity.
+
+### Phase 12 — Deeper schema introspection
+- `list_constraints` — primary keys, foreign keys, unique, check, exclusion.
+- `list_views` (+ definitions), `list_functions`, `list_triggers`,
+  `list_sequences`.
+- Deliverable: an agent can see a table's full structure, not just columns.
+
+### Phase 13 — Partitioning
+- `list_partitions` — partition strategy (range/list/hash), bounds,
+  parent↔partition links; flag partitioned tables in `list_tables`.
+- Make `list_indexes` / `recommend_indexes` partition-aware (parent vs
+  per-partition indexes; aggregate partition scan stats).
+- Deliverable: partitioned schemas are correctly understood, including the
+  index interaction.
+
+### Phase 14 — Access-control introspection
+- `list_policies` — Row-Level-Security policies on a table (supports the
+  multi-tenant / partition-per-tenant story).
+- `list_roles`, `list_grants` — roles and table/object privileges.
+- Deliverable: "who can access what", and RLS visibility.
+
+### Phase 15 — Live ops & maintenance
+- `list_active_queries`, lock / blocking inspection (`pg_stat_activity`,
+  `pg_locks`).
+- Replication-lag and table/index bloat health checks (extends
+  `check_database_health`).
+- Gated maintenance: `run_maintenance` (`VACUUM`/`ANALYZE`),
+  `cancel_query` / `terminate_backend`.
+- Deliverable: diagnose and act on a running database.
+
+Each phase is TDD'd with unit + real-PostgreSQL integration tests, like
+Phases 0–11. Ordering 12 → 15; re-orderable.
+
 ## 8. Resume protocol (work across session limits)
 
 To resume at any time, a new session must:
