@@ -157,6 +157,36 @@ class PartitionSet:
 
 
 @dataclass(frozen=True, slots=True)
+class PolicyInfo:
+    """A Row-Level-Security policy on a table.
+
+    ``permissive`` is ``True`` for a permissive policy, ``False`` for a
+    restrictive one. ``using_expression`` and ``check_expression`` are the
+    policy's ``USING`` and ``WITH CHECK`` predicates, or ``None``.
+    """
+
+    name: str
+    command: str
+    permissive: bool
+    roles: list[str]
+    using_expression: str | None
+    check_expression: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PolicySet:
+    """The Row-Level-Security configuration of a table.
+
+    ``rls_enabled`` reflects whether row security is switched on for the
+    table — policies can exist while it is off, in which case they are
+    inert.
+    """
+
+    rls_enabled: bool
+    policies: list[PolicyInfo]
+
+
+@dataclass(frozen=True, slots=True)
 class SequenceInfo:
     """A sequence within a schema.
 
@@ -416,6 +446,43 @@ async def list_partitions(driver: SqlDriver, schema: str, table: str) -> Partiti
         if row.cells["partition_name"] is not None
     ]
     return PartitionSet(partitioned=True, strategy=strategy, partitions=partitions)
+
+
+async def list_policies(driver: SqlDriver, schema: str, table: str) -> PolicySet:
+    """List the Row-Level-Security policies on a table.
+
+    Also reports whether row security is enabled on the table; policies are
+    inert while it is off.
+    """
+    rows = await driver.execute_query(
+        "SELECT c.relrowsecurity AS rls_enabled, "
+        "p.policyname AS name, p.cmd AS command, p.permissive AS permissive, "
+        "p.roles AS roles, p.qual AS using_expression, "
+        "p.with_check AS check_expression "
+        "FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "LEFT JOIN pg_policies p ON p.schemaname = n.nspname AND p.tablename = c.relname "
+        "WHERE n.nspname = %s AND c.relname = %s "
+        "ORDER BY p.policyname",
+        params=[schema, table],
+        force_readonly=True,
+    )
+    rows = rows or []
+    if not rows:
+        return PolicySet(rls_enabled=False, policies=[])
+    policies = [
+        PolicyInfo(
+            name=row.cells["name"],
+            command=row.cells["command"],
+            permissive=row.cells["permissive"] == "PERMISSIVE",
+            roles=list(row.cells["roles"]),
+            using_expression=row.cells["using_expression"],
+            check_expression=row.cells["check_expression"],
+        )
+        for row in rows
+        if row.cells["name"] is not None
+    ]
+    return PolicySet(rls_enabled=rows[0].cells["rls_enabled"], policies=policies)
 
 
 async def list_sequences(driver: SqlDriver, schema: str) -> list[SequenceInfo]:

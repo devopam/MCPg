@@ -57,6 +57,12 @@ Describes how a table is partitioned and lists its partitions. Returns
 `partitions` — each with its `name` and `bounds` expression. Parameters:
 `schema`, `table` (strings).
 
+### `list_policies`
+Lists the Row-Level-Security policies on a table. Returns `rls_enabled`
+(bool — policies are inert while off) and `policies` — each with its
+`command`, `permissive` flag, `roles`, and `using`/`check` expressions.
+Parameters: `schema`, `table` (strings).
+
 ### `list_sequences`
 Lists the sequences defined in a schema — each with its data type, start
 value, range (`min_value`/`max_value`), increment, `cycle` flag, and

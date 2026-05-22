@@ -15,6 +15,7 @@ from mcpg.introspection import (
     list_functions,
     list_indexes,
     list_partitions,
+    list_policies,
     list_schemas,
     list_sequences,
     list_tables,
@@ -52,6 +53,8 @@ async def sample_schema(connected_database: Database) -> AsyncIterator[str]:
         f"CREATE TRIGGER widget_bi BEFORE INSERT ON {_SCHEMA}.widget "
         f"FOR EACH ROW EXECUTE FUNCTION {_SCHEMA}.widget_touch()"
     )
+    await driver.execute_query(f"ALTER TABLE {_SCHEMA}.widget ENABLE ROW LEVEL SECURITY")
+    await driver.execute_query(f"CREATE POLICY widget_select ON {_SCHEMA}.widget FOR SELECT USING (true)")
     try:
         yield _SCHEMA
     finally:
@@ -132,6 +135,20 @@ async def test_list_triggers_finds_the_trigger(connected_database: Database, sam
 
     assert "widget_bi" in by_name
     assert by_name["widget_bi"].function == "widget_touch"
+
+
+async def test_list_policies_finds_the_policy(connected_database: Database, sample_schema: str) -> None:
+    result = await list_policies(connected_database.driver(), sample_schema, "widget")
+
+    assert result.rls_enabled is True
+    assert "widget_select" in {policy.name for policy in result.policies}
+
+
+async def test_list_policies_reports_an_unsecured_table(connected_database: Database, sample_schema: str) -> None:
+    result = await list_policies(connected_database.driver(), sample_schema, "event")
+
+    assert result.rls_enabled is False
+    assert result.policies == []
 
 
 async def test_list_sequences_finds_the_sequence(connected_database: Database, sample_schema: str) -> None:

@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 14, Task 14.1 — TDD a `list_policies` tool reporting the
-> Row-Level-Security policies on a table.
+> Phase 14, Task 14.2 — TDD a `list_roles` tool reporting the database
+> roles and their attributes.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -154,7 +154,7 @@
 
 ## Phase 14 — Access-control introspection
 
-- [ ] 14.1 `list_policies` — Row-Level-Security policies on a table (TDD)
+- [x] 14.1 `list_policies` — Row-Level-Security policies on a table (`mcpg/introspection.py`, TDD)
 - [ ] 14.2 `list_roles` (TDD)
 - [ ] 14.3 `list_grants` — table/object privileges (TDD)
 
@@ -381,3 +381,6 @@
 - 2026-05-22 — Task 13.3: `list_indexes` flags partitioned-index templates;
   `recommend_indexes` rolls partition stats up to the partitioned parent.
   Phase 13 complete. 328 tests, 100% coverage.
+- 2026-05-22 — Task 14.1: added `list_policies` — Row-Level-Security
+  policies on a table (command, permissive, roles, predicates) plus the
+  table's RLS-enabled flag, via `pg_policies`. 334 tests, 100% coverage.

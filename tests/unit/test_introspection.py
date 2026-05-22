@@ -13,6 +13,8 @@ from mcpg.introspection import (
     IndexInfo,
     PartitionInfo,
     PartitionSet,
+    PolicyInfo,
+    PolicySet,
     SchemaInfo,
     SequenceInfo,
     TableInfo,
@@ -25,6 +27,7 @@ from mcpg.introspection import (
     list_functions,
     list_indexes,
     list_partitions,
+    list_policies,
     list_schemas,
     list_sequences,
     list_tables,
@@ -275,6 +278,79 @@ async def test_list_partitions_reports_a_plain_table_as_not_partitioned() -> Non
     )
 
 
+async def test_list_policies_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "rls_enabled": True,
+                "name": "widget_select",
+                "command": "SELECT",
+                "permissive": "PERMISSIVE",
+                "roles": ["app_reader"],
+                "using_expression": "(owner = current_user)",
+                "check_expression": None,
+            }
+        ]
+    )
+
+    result = await list_policies(driver, "app", "widget")
+
+    assert result == PolicySet(
+        rls_enabled=True,
+        policies=[
+            PolicyInfo(
+                name="widget_select",
+                command="SELECT",
+                permissive=True,
+                roles=["app_reader"],
+                using_expression="(owner = current_user)",
+                check_expression=None,
+            )
+        ],
+    )
+    assert driver.calls[0][1] == ["app", "widget"]
+
+
+async def test_list_policies_reports_a_restrictive_policy() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "rls_enabled": True,
+                "name": "widget_block",
+                "command": "ALL",
+                "permissive": "RESTRICTIVE",
+                "roles": ["public"],
+                "using_expression": "false",
+                "check_expression": None,
+            }
+        ]
+    )
+
+    assert (await list_policies(driver, "app", "widget")).policies[0].permissive is False
+
+
+async def test_list_policies_reports_a_table_with_no_policies() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "rls_enabled": False,
+                "name": None,
+                "command": None,
+                "permissive": None,
+                "roles": None,
+                "using_expression": None,
+                "check_expression": None,
+            }
+        ]
+    )
+
+    assert await list_policies(driver, "app", "widget") == PolicySet(rls_enabled=False, policies=[])
+
+
+async def test_list_policies_reports_a_missing_table_as_unsecured() -> None:
+    assert await list_policies(FakeDriver([]), "app", "missing") == PolicySet(rls_enabled=False, policies=[])
+
+
 async def test_list_sequences_maps_rows() -> None:
     driver = FakeDriver(
         [
@@ -348,6 +424,7 @@ _INTROSPECTION_TOOLS = {
     "list_functions",
     "list_triggers",
     "list_partitions",
+    "list_policies",
     "list_sequences",
     "list_extensions",
     "list_available_extensions",
@@ -394,6 +471,20 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_partitions": (
             {"schema": "app", "table": "event"},
             [{"strategy_code": "r", "partition_name": "event_2026", "bounds": "FOR VALUES ..."}],
+        ),
+        "list_policies": (
+            {"schema": "app", "table": "w"},
+            [
+                {
+                    "rls_enabled": True,
+                    "name": "p",
+                    "command": "SELECT",
+                    "permissive": "PERMISSIVE",
+                    "roles": ["public"],
+                    "using_expression": "true",
+                    "check_expression": None,
+                }
+            ],
         ),
         "list_sequences": (
             {"schema": "app"},

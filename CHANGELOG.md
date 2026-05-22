@@ -19,6 +19,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   data type, range, increment, cycle flag, and last value.
 - `list_partitions` tool — how a table is partitioned (range, list, or
   hash) and its partitions, each with its bound expression.
+- `list_policies` tool — the Row-Level-Security policies on a table, with
+  each policy's command, permissive flag, roles, and predicates, plus
+  whether row security is enabled on the table.
 
 ### Changed
 

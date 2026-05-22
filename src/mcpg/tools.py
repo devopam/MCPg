@@ -135,6 +135,14 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         return asdict(partition_set)
 
     @server.tool(
+        name="list_policies",
+        description="List the Row-Level-Security policies on a table, and whether row security is enabled.",
+    )
+    async def list_policies(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
+        policy_set = await introspection.list_policies(_driver(ctx), schema, table)
+        return asdict(policy_set)
+
+    @server.tool(
         name="list_sequences",
         description="List the sequences defined in a schema, with their range, increment, and last value.",
     )
