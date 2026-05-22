@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 13, Task 13.2 — TDD flagging partitioned tables and partitions in
-> `list_tables`.
+> Phase 13, Task 13.3 — TDD partition-aware `list_indexes` and
+> `recommend_indexes`.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -149,7 +149,7 @@
 ## Phase 13 — Partitioning
 
 - [x] 13.1 `list_partitions` — strategy, bounds, parent↔partition links (`mcpg/introspection.py`, TDD)
-- [ ] 13.2 Flag partitioned tables / partitions in `list_tables` (TDD)
+- [x] 13.2 Flag partitioned tables / partitions in `list_tables` (`mcpg/introspection.py`, TDD)
 - [ ] 13.3 Partition-aware `list_indexes` and `recommend_indexes` (TDD)
 
 ## Phase 14 — Access-control introspection
@@ -376,3 +376,5 @@
 - 2026-05-22 — Task 13.1: added `list_partitions` — a table's partitioning
   strategy and partitions with bound expressions, via `pg_partitioned_table`
   and `pg_inherits`. 323 tests, 100% coverage.
+- 2026-05-22 — Task 13.2: `list_tables` now reads `pg_class` and flags each
+  table with `partitioned` and `is_partition`. 325 tests, 100% coverage.

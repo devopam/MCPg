@@ -29,6 +29,9 @@ _ROUTINE_KINDS = {"f": "function", "p": "procedure", "a": "aggregate", "w": "win
 # pg_partitioned_table.partstrat codes -> readable partitioning strategy.
 _PARTITION_STRATEGIES = {"r": "range", "l": "list", "h": "hash"}
 
+# pg_class.relkind codes -> the table type reported by list_tables.
+_TABLE_TYPES = {"r": "BASE TABLE", "p": "BASE TABLE", "v": "VIEW", "f": "FOREIGN"}
+
 
 @dataclass(frozen=True, slots=True)
 class SchemaInfo:
@@ -39,10 +42,16 @@ class SchemaInfo:
 
 @dataclass(frozen=True, slots=True)
 class TableInfo:
-    """A table or view within a schema."""
+    """A table or view within a schema.
+
+    ``partitioned`` is ``True`` for a partitioned table (the parent);
+    ``is_partition`` is ``True`` when the table is itself a partition of one.
+    """
 
     name: str
     type: str
+    partitioned: bool
+    is_partition: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,13 +207,26 @@ async def list_schemas(driver: SqlDriver, *, include_system: bool = False) -> li
 
 
 async def list_tables(driver: SqlDriver, schema: str) -> list[TableInfo]:
-    """List the tables and views in a schema."""
+    """List the tables and views in a schema, flagging partitioning."""
     rows = await driver.execute_query(
-        "SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = %s ORDER BY table_name",
+        "SELECT c.relname AS name, c.relkind AS relkind, "
+        "c.relispartition AS is_partition "
+        "FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relkind IN ('r', 'p', 'v', 'f') "
+        "ORDER BY c.relname",
         params=[schema],
         force_readonly=True,
     )
-    return [TableInfo(name=row.cells["table_name"], type=row.cells["table_type"]) for row in rows or []]
+    return [
+        TableInfo(
+            name=row.cells["name"],
+            type=_TABLE_TYPES.get(row.cells["relkind"], "other"),
+            partitioned=row.cells["relkind"] == "p",
+            is_partition=row.cells["is_partition"],
+        )
+        for row in rows or []
+    ]
 
 
 async def describe_table(driver: SqlDriver, schema: str, table: str) -> list[ColumnInfo]:

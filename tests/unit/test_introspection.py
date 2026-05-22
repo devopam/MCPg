@@ -63,13 +63,27 @@ async def test_list_schemas_includes_system_schemas_when_requested() -> None:
 
 
 async def test_list_tables_maps_rows_and_passes_schema_as_a_parameter() -> None:
-    driver = FakeDriver([{"table_name": "widget", "table_type": "BASE TABLE"}])
+    driver = FakeDriver([{"name": "widget", "relkind": "r", "is_partition": False}])
 
     result = await list_tables(driver, "app")
 
-    assert result == [TableInfo("widget", "BASE TABLE")]
+    assert result == [TableInfo("widget", "BASE TABLE", partitioned=False, is_partition=False)]
     # The schema must be bound as a parameter, never interpolated into SQL.
     assert driver.calls[0][1] == ["app"]
+
+
+async def test_list_tables_flags_partitioned_tables_and_partitions() -> None:
+    driver = FakeDriver(
+        [
+            {"name": "event", "relkind": "p", "is_partition": False},
+            {"name": "event_2026", "relkind": "r", "is_partition": True},
+        ]
+    )
+
+    assert await list_tables(driver, "app") == [
+        TableInfo("event", "BASE TABLE", partitioned=True, is_partition=False),
+        TableInfo("event_2026", "BASE TABLE", partitioned=False, is_partition=True),
+    ]
 
 
 def _column_row(name: str, data_type: str, **overrides: object) -> dict[str, object]:
@@ -332,7 +346,7 @@ async def test_introspection_tools_are_registered() -> None:
 async def test_every_introspection_tool_is_callable_from_a_client() -> None:
     cases: dict[str, tuple[dict[str, str], list[dict[str, object]]]] = {
         "list_schemas": ({}, [{"schema_name": "app"}]),
-        "list_tables": ({"schema": "app"}, [{"table_name": "w", "table_type": "BASE TABLE"}]),
+        "list_tables": ({"schema": "app"}, [{"name": "w", "relkind": "r", "is_partition": False}]),
         "describe_table": (
             {"schema": "app", "table": "w"},
             [_column_row("id", "integer", nullable=False, type_name="int4")],

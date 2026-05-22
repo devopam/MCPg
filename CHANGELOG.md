@@ -20,6 +20,11 @@ adheres to [Semantic Versioning](https://semver.org/).
 - `list_partitions` tool — how a table is partitioned (range, list, or
   hash) and its partitions, each with its bound expression.
 
+### Changed
+
+- `list_tables` now flags each table with `partitioned` (a partitioned
+  parent) and `is_partition` (itself a partition).
+
 ## [0.2.0] - 2026-05-21
 
 Extension support: index-method intelligence, extension management, and

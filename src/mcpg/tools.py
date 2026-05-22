@@ -76,7 +76,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         schemas = await introspection.list_schemas(_driver(ctx), include_system=include_system)
         return [asdict(schema) for schema in schemas]
 
-    @server.tool(name="list_tables", description="List the tables and views in a schema.")
+    @server.tool(
+        name="list_tables",
+        description="List the tables and views in a schema, flagging partitioned tables and partitions.",
+    )
     async def list_tables(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         tables = await introspection.list_tables(_driver(ctx), schema)
         return [asdict(table) for table in tables]

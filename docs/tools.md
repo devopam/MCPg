@@ -16,7 +16,9 @@ Lists database schemas. Parameter: `include_system` (bool, default `false`) —
 include PostgreSQL's own schemas.
 
 ### `list_tables`
-Lists the tables and views in a schema. Parameter: `schema` (string).
+Lists the tables and views in a schema. Each entry carries a `partitioned`
+flag (the table is a partitioned parent) and an `is_partition` flag (the
+table is itself a partition). Parameter: `schema` (string).
 
 ### `describe_table`
 Describes a table's columns in ordinal order — name, data type, nullability,

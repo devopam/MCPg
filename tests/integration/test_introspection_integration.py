@@ -65,8 +65,12 @@ async def test_list_schemas_includes_a_user_schema(connected_database: Database,
 
 async def test_list_tables_finds_the_table(connected_database: Database, sample_schema: str) -> None:
     tables = await list_tables(connected_database.driver(), sample_schema)
+    by_name = {table.name: table for table in tables}
 
-    assert ("widget", "BASE TABLE") in {(table.name, table.type) for table in tables}
+    assert by_name["widget"].type == "BASE TABLE"
+    assert by_name["widget"].partitioned is False
+    assert by_name["event"].partitioned is True
+    assert by_name["event_2026"].is_partition is True
 
 
 async def test_describe_table_returns_typed_columns(connected_database: Database, sample_schema: str) -> None:
