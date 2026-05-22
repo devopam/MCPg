@@ -16,6 +16,7 @@ from mcpg.introspection import (
     list_indexes,
     list_partitions,
     list_policies,
+    list_roles,
     list_schemas,
     list_sequences,
     list_tables,
@@ -173,6 +174,19 @@ async def test_list_partitions_reports_a_plain_table_as_not_partitioned(
     result = await list_partitions(connected_database.driver(), sample_schema, "widget")
 
     assert result.partitioned is False
+
+
+async def test_list_roles_includes_a_login_capable_role(connected_database: Database) -> None:
+    roles = await list_roles(connected_database.driver())
+
+    assert roles  # every cluster has at least the bootstrap superuser
+    assert any(role.can_login for role in roles)
+
+
+async def test_list_roles_excludes_predefined_roles_by_default(connected_database: Database) -> None:
+    roles = await list_roles(connected_database.driver())
+
+    assert not any(role.name.startswith("pg_") for role in roles)
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:

@@ -15,6 +15,7 @@ from mcpg.introspection import (
     PartitionSet,
     PolicyInfo,
     PolicySet,
+    RoleInfo,
     SchemaInfo,
     SequenceInfo,
     TableInfo,
@@ -28,6 +29,7 @@ from mcpg.introspection import (
     list_indexes,
     list_partitions,
     list_policies,
+    list_roles,
     list_schemas,
     list_sequences,
     list_tables,
@@ -351,6 +353,56 @@ async def test_list_policies_reports_a_missing_table_as_unsecured() -> None:
     assert await list_policies(FakeDriver([]), "app", "missing") == PolicySet(rls_enabled=False, policies=[])
 
 
+def _role_row(name: str, **overrides: object) -> dict[str, object]:
+    """A pg_roles catalog row with sensible non-privileged defaults."""
+    row: dict[str, object] = {
+        "name": name,
+        "superuser": False,
+        "create_role": False,
+        "create_db": False,
+        "can_login": True,
+        "replication": False,
+        "bypass_rls": False,
+        "connection_limit": -1,
+        "member_of": [],
+    }
+    row.update(overrides)
+    return row
+
+
+async def test_list_roles_maps_attributes_and_membership() -> None:
+    driver = FakeDriver([_role_row("app_user", create_db=True, member_of=["app_readers"])])
+
+    assert await list_roles(driver) == [
+        RoleInfo(
+            name="app_user",
+            superuser=False,
+            create_role=False,
+            create_db=True,
+            can_login=True,
+            replication=False,
+            bypass_rls=False,
+            connection_limit=-1,
+            member_of=["app_readers"],
+        )
+    ]
+
+
+async def test_list_roles_excludes_predefined_roles_by_default() -> None:
+    driver = FakeDriver([_role_row("app_user"), _role_row("pg_read_all_data")])
+
+    assert [role.name for role in await list_roles(driver)] == ["app_user"]
+
+
+async def test_list_roles_includes_predefined_roles_when_requested() -> None:
+    driver = FakeDriver([_role_row("app_user"), _role_row("pg_read_all_data")])
+
+    assert [role.name for role in await list_roles(driver, include_system=True)] == [
+        "app_user",
+        "pg_read_all_data",
+    ]
+
+
 async def test_list_sequences_maps_rows() -> None:
     driver = FakeDriver(
         [
@@ -425,6 +477,7 @@ _INTROSPECTION_TOOLS = {
     "list_triggers",
     "list_partitions",
     "list_policies",
+    "list_roles",
     "list_sequences",
     "list_extensions",
     "list_available_extensions",
@@ -486,6 +539,7 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
                 }
             ],
         ),
+        "list_roles": ({}, [_role_row("app_user")]),
         "list_sequences": (
             {"schema": "app"},
             [

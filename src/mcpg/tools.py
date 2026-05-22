@@ -135,6 +135,15 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         return asdict(partition_set)
 
     @server.tool(
+        name="list_roles",
+        description="List the database roles and their attributes, excluding PostgreSQL's own roles "
+        "unless include_system is true.",
+    )
+    async def list_roles(ctx: _Ctx, include_system: bool = False) -> list[dict[str, Any]]:
+        roles = await introspection.list_roles(_driver(ctx), include_system=include_system)
+        return [asdict(role) for role in roles]
+
+    @server.tool(
         name="list_policies",
         description="List the Row-Level-Security policies on a table, and whether row security is enabled.",
     )

@@ -25,6 +25,7 @@ _READ_TOOLS = {
     "list_triggers",
     "list_partitions",
     "list_policies",
+    "list_roles",
     "list_sequences",
     "list_extensions",
     "list_available_extensions",

@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 14, Task 14.2 — TDD a `list_roles` tool reporting the database
-> roles and their attributes.
+> Phase 14, Task 14.3 — TDD a `list_grants` tool reporting table/object
+> privileges.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -155,7 +155,7 @@
 ## Phase 14 — Access-control introspection
 
 - [x] 14.1 `list_policies` — Row-Level-Security policies on a table (`mcpg/introspection.py`, TDD)
-- [ ] 14.2 `list_roles` (TDD)
+- [x] 14.2 `list_roles` (`mcpg/introspection.py`, TDD)
 - [ ] 14.3 `list_grants` — table/object privileges (TDD)
 
 ## Phase 15 — Live ops & maintenance
@@ -384,3 +384,7 @@
 - 2026-05-22 — Task 14.1: added `list_policies` — Row-Level-Security
   policies on a table (command, permissive, roles, predicates) plus the
   table's RLS-enabled flag, via `pg_policies`. 334 tests, 100% coverage.
+- 2026-05-22 — Task 14.2: added `list_roles` — database roles and their
+  attributes (superuser, create-role/db, login, replication, bypass-RLS,
+  connection limit, membership), via `pg_roles` and `pg_auth_members`.
+  340 tests, 100% coverage.

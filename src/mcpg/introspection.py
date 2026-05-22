@@ -187,6 +187,25 @@ class PolicySet:
 
 
 @dataclass(frozen=True, slots=True)
+class RoleInfo:
+    """A database role and its attributes.
+
+    ``connection_limit`` is ``-1`` when the role has no connection cap.
+    ``member_of`` lists the roles this role is a direct member of.
+    """
+
+    name: str
+    superuser: bool
+    create_role: bool
+    create_db: bool
+    can_login: bool
+    replication: bool
+    bypass_rls: bool
+    connection_limit: int
+    member_of: list[str]
+
+
+@dataclass(frozen=True, slots=True)
 class SequenceInfo:
     """A sequence within a schema.
 
@@ -483,6 +502,48 @@ async def list_policies(driver: SqlDriver, schema: str, table: str) -> PolicySet
         if row.cells["name"] is not None
     ]
     return PolicySet(rls_enabled=rows[0].cells["rls_enabled"], policies=policies)
+
+
+async def list_roles(driver: SqlDriver, *, include_system: bool = False) -> list[RoleInfo]:
+    """List the database roles and their attributes.
+
+    PostgreSQL's own predefined roles (named ``pg_*``) are excluded unless
+    ``include_system`` is set.
+    """
+    rows = await driver.execute_query(
+        "SELECT r.rolname AS name, r.rolsuper AS superuser, "
+        "r.rolcreaterole AS create_role, r.rolcreatedb AS create_db, "
+        "r.rolcanlogin AS can_login, r.rolreplication AS replication, "
+        "r.rolbypassrls AS bypass_rls, r.rolconnlimit AS connection_limit, "
+        "COALESCE("
+        "  array_agg(m.rolname ORDER BY m.rolname) FILTER (WHERE m.rolname IS NOT NULL), "
+        "  '{}'"
+        ") AS member_of "
+        "FROM pg_roles r "
+        "LEFT JOIN pg_auth_members am ON am.member = r.oid "
+        "LEFT JOIN pg_roles m ON m.oid = am.roleid "
+        "GROUP BY r.oid, r.rolname, r.rolsuper, r.rolcreaterole, r.rolcreatedb, "
+        "r.rolcanlogin, r.rolreplication, r.rolbypassrls, r.rolconnlimit "
+        "ORDER BY r.rolname",
+        force_readonly=True,
+    )
+    roles = [
+        RoleInfo(
+            name=row.cells["name"],
+            superuser=row.cells["superuser"],
+            create_role=row.cells["create_role"],
+            create_db=row.cells["create_db"],
+            can_login=row.cells["can_login"],
+            replication=row.cells["replication"],
+            bypass_rls=row.cells["bypass_rls"],
+            connection_limit=row.cells["connection_limit"],
+            member_of=list(row.cells["member_of"]),
+        )
+        for row in rows or []
+    ]
+    if include_system:
+        return roles
+    return [role for role in roles if not role.name.startswith("pg_")]
 
 
 async def list_sequences(driver: SqlDriver, schema: str) -> list[SequenceInfo]:

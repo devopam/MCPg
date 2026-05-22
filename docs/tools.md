@@ -57,6 +57,12 @@ Describes how a table is partitioned and lists its partitions. Returns
 `partitions` — each with its `name` and `bounds` expression. Parameters:
 `schema`, `table` (strings).
 
+### `list_roles`
+Lists the database roles and their attributes — `superuser`, `create_role`,
+`create_db`, `can_login`, `replication`, `bypass_rls`, `connection_limit`,
+and `member_of` (roles each role belongs to). Parameter: `include_system`
+(bool, default `false`) — include PostgreSQL's own `pg_*` roles.
+
 ### `list_policies`
 Lists the Row-Level-Security policies on a table. Returns `rls_enabled`
 (bool — policies are inert while off) and `policies` — each with its

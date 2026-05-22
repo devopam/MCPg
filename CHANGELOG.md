@@ -22,6 +22,9 @@ adheres to [Semantic Versioning](https://semver.org/).
 - `list_policies` tool — the Row-Level-Security policies on a table, with
   each policy's command, permissive flag, roles, and predicates, plus
   whether row security is enabled on the table.
+- `list_roles` tool — the database roles and their attributes (superuser,
+  create-role/db, login, replication, bypass-RLS, connection limit, and
+  role membership).
 
 ### Changed
 
