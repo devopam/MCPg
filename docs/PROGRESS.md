@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 13, Task 13.1 — TDD a `list_partitions` tool reporting a partitioned
-> table's strategy, bounds, and parent↔partition links.
+> Phase 13, Task 13.2 — TDD flagging partitioned tables and partitions in
+> `list_tables`.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -148,7 +148,7 @@
 
 ## Phase 13 — Partitioning
 
-- [ ] 13.1 `list_partitions` — strategy, bounds, parent↔partition links (TDD)
+- [x] 13.1 `list_partitions` — strategy, bounds, parent↔partition links (`mcpg/introspection.py`, TDD)
 - [ ] 13.2 Flag partitioned tables / partitions in `list_tables` (TDD)
 - [ ] 13.3 Partition-aware `list_indexes` and `recommend_indexes` (TDD)
 
@@ -373,3 +373,6 @@
 - 2026-05-22 — Task 12.5: added `list_sequences` — sequences in a schema
   (data type, range, increment, cycle, last value), via `pg_sequences`.
   Phase 12 complete. 318 tests, 100% coverage.
+- 2026-05-22 — Task 13.1: added `list_partitions` — a table's partitioning
+  strategy and partitions with bound expressions, via `pg_partitioned_table`
+  and `pg_inherits`. 323 tests, 100% coverage.

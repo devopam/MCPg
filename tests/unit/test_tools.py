@@ -23,6 +23,7 @@ _READ_TOOLS = {
     "list_views",
     "list_functions",
     "list_triggers",
+    "list_partitions",
     "list_sequences",
     "list_extensions",
     "list_available_extensions",

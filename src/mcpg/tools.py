@@ -124,6 +124,14 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         return [asdict(trigger) for trigger in triggers]
 
     @server.tool(
+        name="list_partitions",
+        description="Describe how a table is partitioned (strategy and bounds) and list its partitions.",
+    )
+    async def list_partitions(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
+        partition_set = await introspection.list_partitions(_driver(ctx), schema, table)
+        return asdict(partition_set)
+
+    @server.tool(
         name="list_sequences",
         description="List the sequences defined in a schema, with their range, increment, and last value.",
     )

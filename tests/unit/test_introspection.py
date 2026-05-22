@@ -11,6 +11,8 @@ from mcpg.introspection import (
     ExtensionInfo,
     FunctionInfo,
     IndexInfo,
+    PartitionInfo,
+    PartitionSet,
     SchemaInfo,
     SequenceInfo,
     TableInfo,
@@ -22,6 +24,7 @@ from mcpg.introspection import (
     list_extensions,
     list_functions,
     list_indexes,
+    list_partitions,
     list_schemas,
     list_sequences,
     list_tables,
@@ -193,6 +196,51 @@ async def test_list_constraints_maps_an_unknown_type_code_to_other() -> None:
     assert (await list_constraints(driver, "app", "t"))[0].type == "other"
 
 
+async def test_list_partitions_describes_a_range_partitioned_table() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "strategy_code": "r",
+                "partition_name": "event_2026",
+                "bounds": "FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')",
+            },
+            {
+                "strategy_code": "r",
+                "partition_name": "event_2027",
+                "bounds": "FOR VALUES FROM ('2027-01-01') TO ('2028-01-01')",
+            },
+        ]
+    )
+
+    result = await list_partitions(driver, "app", "event")
+
+    assert result == PartitionSet(
+        partitioned=True,
+        strategy="range",
+        partitions=[
+            PartitionInfo("event_2026", "FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')"),
+            PartitionInfo("event_2027", "FOR VALUES FROM ('2027-01-01') TO ('2028-01-01')"),
+        ],
+    )
+    assert driver.calls[0][1] == ["app", "event"]
+
+
+async def test_list_partitions_reports_a_partitioned_table_with_no_partitions() -> None:
+    driver = FakeDriver([{"strategy_code": "l", "partition_name": None, "bounds": None}])
+
+    result = await list_partitions(driver, "app", "event")
+
+    assert result == PartitionSet(partitioned=True, strategy="list", partitions=[])
+
+
+async def test_list_partitions_reports_a_plain_table_as_not_partitioned() -> None:
+    driver = FakeDriver([])
+
+    assert await list_partitions(driver, "app", "widget") == PartitionSet(
+        partitioned=False, strategy=None, partitions=[]
+    )
+
+
 async def test_list_sequences_maps_rows() -> None:
     driver = FakeDriver(
         [
@@ -265,6 +313,7 @@ _INTROSPECTION_TOOLS = {
     "list_views",
     "list_functions",
     "list_triggers",
+    "list_partitions",
     "list_sequences",
     "list_extensions",
     "list_available_extensions",
@@ -307,6 +356,10 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_triggers": (
             {"schema": "app", "table": "w"},
             [{"name": "t", "function": "fn", "definition": "CREATE TRIGGER t ..."}],
+        ),
+        "list_partitions": (
+            {"schema": "app", "table": "event"},
+            [{"strategy_code": "r", "partition_name": "event_2026", "bounds": "FOR VALUES ..."}],
         ),
         "list_sequences": (
             {"schema": "app"},

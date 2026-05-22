@@ -26,6 +26,9 @@ _CONSTRAINT_TYPES = {
 # pg_proc.prokind codes -> readable routine kind.
 _ROUTINE_KINDS = {"f": "function", "p": "procedure", "a": "aggregate", "w": "window"}
 
+# pg_partitioned_table.partstrat codes -> readable partitioning strategy.
+_PARTITION_STRATEGIES = {"r": "range", "l": "list", "h": "hash"}
+
 
 @dataclass(frozen=True, slots=True)
 class SchemaInfo:
@@ -115,6 +118,31 @@ class ConstraintInfo:
     name: str
     type: str
     definition: str
+
+
+@dataclass(frozen=True, slots=True)
+class PartitionInfo:
+    """A partition of a partitioned table.
+
+    ``bounds`` is the partition's bound expression — e.g.
+    ``FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')``.
+    """
+
+    name: str
+    bounds: str
+
+
+@dataclass(frozen=True, slots=True)
+class PartitionSet:
+    """How a table is partitioned, with its partitions.
+
+    ``partitioned`` is ``False`` for an ordinary table, in which case
+    ``strategy`` is ``None`` and ``partitions`` is empty.
+    """
+
+    partitioned: bool
+    strategy: str | None
+    partitions: list[PartitionInfo]
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,6 +359,37 @@ async def list_constraints(driver: SqlDriver, schema: str, table: str) -> list[C
         )
         for row in rows or []
     ]
+
+
+async def list_partitions(driver: SqlDriver, schema: str, table: str) -> PartitionSet:
+    """Describe how a table is partitioned and list its partitions.
+
+    Returns ``partitioned=False`` when the table is not a partitioned table.
+    """
+    rows = await driver.execute_query(
+        "SELECT pt.partstrat AS strategy_code, "
+        "child.relname AS partition_name, "
+        "pg_get_expr(child.relpartbound, child.oid) AS bounds "
+        "FROM pg_class parent "
+        "JOIN pg_namespace n ON n.oid = parent.relnamespace "
+        "JOIN pg_partitioned_table pt ON pt.partrelid = parent.oid "
+        "LEFT JOIN pg_inherits i ON i.inhparent = parent.oid "
+        "LEFT JOIN pg_class child ON child.oid = i.inhrelid "
+        "WHERE n.nspname = %s AND parent.relname = %s "
+        "ORDER BY child.relname",
+        params=[schema, table],
+        force_readonly=True,
+    )
+    rows = rows or []
+    if not rows:
+        return PartitionSet(partitioned=False, strategy=None, partitions=[])
+    strategy = _PARTITION_STRATEGIES.get(rows[0].cells["strategy_code"])
+    partitions = [
+        PartitionInfo(name=row.cells["partition_name"], bounds=row.cells["bounds"])
+        for row in rows
+        if row.cells["partition_name"] is not None
+    ]
+    return PartitionSet(partitioned=True, strategy=strategy, partitions=partitions)
 
 
 async def list_sequences(driver: SqlDriver, schema: str) -> list[SequenceInfo]:

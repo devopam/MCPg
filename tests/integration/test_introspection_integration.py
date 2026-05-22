@@ -14,6 +14,7 @@ from mcpg.introspection import (
     list_extensions,
     list_functions,
     list_indexes,
+    list_partitions,
     list_schemas,
     list_sequences,
     list_tables,
@@ -33,6 +34,11 @@ async def sample_schema(connected_database: Database) -> AsyncIterator[str]:
     await driver.execute_query(f"CREATE TABLE {_SCHEMA}.widget (id integer PRIMARY KEY, name text NOT NULL, note text)")
     await driver.execute_query(f"CREATE INDEX widget_name_idx ON {_SCHEMA}.widget (name)")
     await driver.execute_query(f"CREATE SEQUENCE {_SCHEMA}.widget_seq")
+    await driver.execute_query(f"CREATE TABLE {_SCHEMA}.event (id integer, created date) PARTITION BY RANGE (created)")
+    await driver.execute_query(
+        f"CREATE TABLE {_SCHEMA}.event_2026 PARTITION OF {_SCHEMA}.event "
+        f"FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')"
+    )
     await driver.execute_query(f"CREATE VIEW {_SCHEMA}.widget_names AS SELECT name FROM {_SCHEMA}.widget")
     await driver.execute_query(
         f"CREATE FUNCTION {_SCHEMA}.widget_count() RETURNS bigint LANGUAGE sql "
@@ -121,6 +127,22 @@ async def test_list_sequences_finds_the_sequence(connected_database: Database, s
 
     assert "widget_seq" in by_name
     assert by_name["widget_seq"].increment == 1
+
+
+async def test_list_partitions_describes_a_partitioned_table(connected_database: Database, sample_schema: str) -> None:
+    result = await list_partitions(connected_database.driver(), sample_schema, "event")
+
+    assert result.partitioned is True
+    assert result.strategy == "range"
+    assert "event_2026" in {partition.name for partition in result.partitions}
+
+
+async def test_list_partitions_reports_a_plain_table_as_not_partitioned(
+    connected_database: Database, sample_schema: str
+) -> None:
+    result = await list_partitions(connected_database.driver(), sample_schema, "widget")
+
+    assert result.partitioned is False
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:

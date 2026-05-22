@@ -17,6 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 - `list_triggers` tool — the user-defined triggers on a table.
 - `list_sequences` tool — the sequences in a schema, with each sequence's
   data type, range, increment, cycle flag, and last value.
+- `list_partitions` tool — how a table is partitioned (range, list, or
+  hash) and its partitions, each with its bound expression.
 
 ## [0.2.0] - 2026-05-21
 
