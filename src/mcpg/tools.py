@@ -115,6 +115,14 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         functions = await introspection.list_functions(_driver(ctx), schema)
         return [asdict(function) for function in functions]
 
+    @server.tool(
+        name="list_triggers",
+        description="List the user-defined triggers on a table.",
+    )
+    async def list_triggers(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
+        triggers = await introspection.list_triggers(_driver(ctx), schema, table)
+        return [asdict(trigger) for trigger in triggers]
+
     @server.tool(name="list_extensions", description="List the extensions installed in the database.")
     async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         extensions = await introspection.list_extensions(_driver(ctx))

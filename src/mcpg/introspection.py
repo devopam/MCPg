@@ -96,6 +96,15 @@ class FunctionInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class TriggerInfo:
+    """A user-defined trigger on a table."""
+
+    name: str
+    function: str
+    definition: str
+
+
+@dataclass(frozen=True, slots=True)
 class ConstraintInfo:
     """A constraint on a table.
 
@@ -252,6 +261,33 @@ async def list_functions(driver: SqlDriver, schema: str) -> list[FunctionInfo]:
             arguments=row.cells["arguments"],
             returns=row.cells["returns"],
             language=row.cells["language"],
+        )
+        for row in rows or []
+    ]
+
+
+async def list_triggers(driver: SqlDriver, schema: str, table: str) -> list[TriggerInfo]:
+    """List the user-defined triggers on a table.
+
+    Internal triggers (such as those enforcing foreign keys) are excluded.
+    """
+    rows = await driver.execute_query(
+        "SELECT t.tgname AS name, p.proname AS function, "
+        "pg_get_triggerdef(t.oid) AS definition "
+        "FROM pg_trigger t "
+        "JOIN pg_class c ON c.oid = t.tgrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_proc p ON p.oid = t.tgfoid "
+        "WHERE n.nspname = %s AND c.relname = %s AND NOT t.tgisinternal "
+        "ORDER BY t.tgname",
+        params=[schema, table],
+        force_readonly=True,
+    )
+    return [
+        TriggerInfo(
+            name=row.cells["name"],
+            function=row.cells["function"],
+            definition=row.cells["definition"],
         )
         for row in rows or []
     ]

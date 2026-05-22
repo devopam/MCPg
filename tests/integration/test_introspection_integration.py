@@ -16,6 +16,7 @@ from mcpg.introspection import (
     list_indexes,
     list_schemas,
     list_tables,
+    list_triggers,
     list_views,
 )
 
@@ -34,6 +35,13 @@ async def sample_schema(connected_database: Database) -> AsyncIterator[str]:
     await driver.execute_query(
         f"CREATE FUNCTION {_SCHEMA}.widget_count() RETURNS bigint LANGUAGE sql "
         f"AS 'SELECT count(*) FROM {_SCHEMA}.widget'"
+    )
+    await driver.execute_query(
+        f"CREATE FUNCTION {_SCHEMA}.widget_touch() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NEW; END'"
+    )
+    await driver.execute_query(
+        f"CREATE TRIGGER widget_bi BEFORE INSERT ON {_SCHEMA}.widget "
+        f"FOR EACH ROW EXECUTE FUNCTION {_SCHEMA}.widget_touch()"
     )
     try:
         yield _SCHEMA
@@ -95,6 +103,14 @@ async def test_list_functions_finds_the_function(connected_database: Database, s
     assert "widget_count" in by_name
     assert by_name["widget_count"].kind == "function"
     assert by_name["widget_count"].returns == "bigint"
+
+
+async def test_list_triggers_finds_the_trigger(connected_database: Database, sample_schema: str) -> None:
+    triggers = await list_triggers(connected_database.driver(), sample_schema, "widget")
+    by_name = {trigger.name: trigger for trigger in triggers}
+
+    assert "widget_bi" in by_name
+    assert by_name["widget_bi"].function == "widget_touch"
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:

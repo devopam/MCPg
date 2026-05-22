@@ -13,6 +13,7 @@ from mcpg.introspection import (
     IndexInfo,
     SchemaInfo,
     TableInfo,
+    TriggerInfo,
     ViewInfo,
     describe_table,
     list_available_extensions,
@@ -22,6 +23,7 @@ from mcpg.introspection import (
     list_indexes,
     list_schemas,
     list_tables,
+    list_triggers,
     list_views,
 )
 from mcpg.server import create_server
@@ -157,6 +159,16 @@ async def test_list_functions_maps_routines() -> None:
     ]
 
 
+async def test_list_triggers_maps_rows() -> None:
+    driver = FakeDriver(
+        [{"name": "widget_bi", "function": "widget_touch", "definition": "CREATE TRIGGER widget_bi ..."}]
+    )
+
+    assert await list_triggers(driver, "app", "widget") == [
+        TriggerInfo("widget_bi", "widget_touch", "CREATE TRIGGER widget_bi ...")
+    ]
+
+
 async def test_list_constraints_maps_constraint_types() -> None:
     driver = FakeDriver(
         [
@@ -209,6 +221,7 @@ _INTROSPECTION_TOOLS = {
     "list_constraints",
     "list_views",
     "list_functions",
+    "list_triggers",
     "list_extensions",
     "list_available_extensions",
 }
@@ -246,6 +259,10 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_functions": (
             {"schema": "app"},
             [{"name": "f", "kind_code": "f", "arguments": "", "returns": "void", "language": "sql"}],
+        ),
+        "list_triggers": (
+            {"schema": "app", "table": "w"},
+            [{"name": "t", "function": "fn", "definition": "CREATE TRIGGER t ..."}],
         ),
         "list_extensions": ({}, [{"extname": "plpgsql", "extversion": "1.0"}]),
         "list_available_extensions": (

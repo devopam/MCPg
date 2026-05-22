@@ -42,6 +42,11 @@ Lists the functions and procedures in a schema — each with its `kind`
 (`function`, `procedure`, `aggregate`, `window`, `other`), arguments, return
 type, and language. Parameter: `schema` (string).
 
+### `list_triggers`
+Lists the user-defined triggers on a table — each with the function it calls
+and its definition. Internal (constraint-enforcement) triggers are excluded.
+Parameters: `schema`, `table` (strings).
+
 ### `list_extensions`
 Lists the extensions installed in the database.
 

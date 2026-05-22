@@ -22,6 +22,7 @@ _READ_TOOLS = {
     "list_constraints",
     "list_views",
     "list_functions",
+    "list_triggers",
     "list_extensions",
     "list_available_extensions",
     "run_select",

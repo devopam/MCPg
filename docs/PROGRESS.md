@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 12, Task 12.4 — TDD a `list_triggers` tool reporting triggers on a
-> table.
+> Phase 12, Task 12.5 — TDD a `list_sequences` tool reporting sequences in a
+> schema.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -143,7 +143,7 @@
 - [x] 12.1 `list_constraints` — PK, FK, unique, check, exclusion (`mcpg/introspection.py`, TDD)
 - [x] 12.2 `list_views` (+ view definitions) (`mcpg/introspection.py`, TDD)
 - [x] 12.3 `list_functions` — functions and procedures (`mcpg/introspection.py`, TDD)
-- [ ] 12.4 `list_triggers` (TDD)
+- [x] 12.4 `list_triggers` (`mcpg/introspection.py`, TDD)
 - [ ] 12.5 `list_sequences` (TDD)
 
 ## Phase 13 — Partitioning
@@ -368,3 +368,5 @@
 - 2026-05-21 — Task 12.3: added `list_functions` — functions and procedures
   in a schema (kind, arguments, return type, language), via `pg_proc`.
   313 tests, 100% coverage.
+- 2026-05-21 — Task 12.4: added `list_triggers` — user-defined triggers on a
+  table (function + definition), via `pg_trigger`. 315 tests, 100% coverage.
