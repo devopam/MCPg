@@ -36,6 +36,7 @@ _READ_TOOLS = {
     "check_database_health",
     "analyze_workload",
     "recommend_indexes",
+    "list_active_queries",
     "fuzzy_search",
     "full_text_search",
     "vector_search",

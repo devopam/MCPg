@@ -12,8 +12,7 @@
 
 ## Next action
 
-> Phase 15, Task 15.1 — TDD a `list_active_queries` tool reporting the
-> currently-running queries from `pg_stat_activity`.
+> Phase 15, Task 15.2 — TDD replication-lag and bloat health checks.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -160,7 +159,7 @@
 
 ## Phase 15 — Live ops & maintenance
 
-- [ ] 15.1 `list_active_queries` + lock / blocking inspection (TDD)
+- [x] 15.1 `list_active_queries` + lock / blocking inspection (`mcpg/liveops.py`, TDD)
 - [ ] 15.2 Replication-lag and bloat health checks (TDD)
 - [ ] 15.3 Gated `run_maintenance` (VACUUM/ANALYZE) (TDD)
 - [ ] 15.4 Gated `cancel_query` / `terminate_backend` (TDD)
@@ -392,3 +391,7 @@
   table (grantee, privilege, grantable, grantor), via
   `information_schema.table_privileges`. Phase 14 complete. 342 tests,
   100% coverage.
+- 2026-05-22 — Task 15.1: added `list_active_queries` (new `mcpg/liveops`
+  module) — in-flight queries with wait events, duration, and blocking
+  PIDs, via `pg_stat_activity` and `pg_blocking_pids`. 346 tests, 100%
+  coverage.

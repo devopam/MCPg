@@ -27,6 +27,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   role membership).
 - `list_grants` tool — the privileges granted on a table, with each
   grant's grantee, privilege, grantable flag, and grantor.
+- `list_active_queries` tool — the queries currently running on the
+  server, each with its wait event, duration, and blocking PIDs.
 
 ### Changed
 

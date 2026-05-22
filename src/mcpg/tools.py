@@ -19,6 +19,7 @@ from mcpg import (
     health,
     indexing,
     introspection,
+    liveops,
     query,
     textsearch,
     workload,
@@ -338,6 +339,19 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_liveops(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="list_active_queries",
+        description=(
+            "List the queries currently running on the server, with each "
+            "backend's wait event, duration, and the PIDs blocking it."
+        ),
+    )
+    async def list_active_queries(ctx: _Ctx) -> list[dict[str, Any]]:
+        queries = await liveops.list_active_queries(_driver(ctx))
+        return [asdict(active) for active in queries]
+
+
 def _register_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="run_write",
@@ -390,6 +404,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_introspection(server)
         _register_query(server)
         _register_health(server)
+        _register_liveops(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:

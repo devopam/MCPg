@@ -150,6 +150,15 @@ Finds the rows nearest to a lon/lat point by PostGIS distance. Parameters:
 column) plus its `distance`. Reports `available: false` if `postgis` is not
 installed.
 
+## Live operations (read)
+
+### `list_active_queries`
+Lists the queries currently running on the server, from `pg_stat_activity`.
+Each entry carries the backend `pid`, `username`, `application`, `state`,
+`wait_event` (`type:event` when waiting), `duration_seconds`, `query`, and
+`blocked_by` — the PIDs holding locks it waits on. Idle connections,
+PostgreSQL's background processes, and MCPg's own backend are excluded.
+
 ## Write (unrestricted mode only)
 
 ### `run_write`
