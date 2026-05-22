@@ -106,8 +106,9 @@ and sequentially-scanned tables. Parameter: `sql` (string).
 
 ### `check_database_health`
 Runs health checks: connection utilisation, buffer cache hit ratio, tables
-needing vacuum, and invalid indexes. Returns an overall `status` plus
-per-check results.
+needing vacuum, invalid indexes, replication lag (how far connected
+standbys trail), and table bloat (tables far larger than their estimated
+minimum size). Returns an overall `status` plus per-check results.
 
 ### `analyze_workload`
 Returns the slowest queries by mean execution time, via the

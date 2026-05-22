@@ -29,6 +29,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   grant's grantee, privilege, grantable flag, and grantor.
 - `list_active_queries` tool — the queries currently running on the
   server, each with its wait event, duration, and blocking PIDs.
+- `check_database_health` gains two checks — replication lag (how far
+  connected standbys trail) and table bloat (tables far larger than their
+  estimated minimum size).
 
 ### Changed
 

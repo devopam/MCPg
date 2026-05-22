@@ -12,7 +12,8 @@
 
 ## Next action
 
-> Phase 15, Task 15.2 — TDD replication-lag and bloat health checks.
+> Phase 15, Task 15.3 — TDD a gated `run_maintenance` tool (VACUUM /
+> ANALYZE).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -160,7 +161,7 @@
 ## Phase 15 — Live ops & maintenance
 
 - [x] 15.1 `list_active_queries` + lock / blocking inspection (`mcpg/liveops.py`, TDD)
-- [ ] 15.2 Replication-lag and bloat health checks (TDD)
+- [x] 15.2 Replication-lag and bloat health checks (`mcpg/health.py`, TDD)
 - [ ] 15.3 Gated `run_maintenance` (VACUUM/ANALYZE) (TDD)
 - [ ] 15.4 Gated `cancel_query` / `terminate_backend` (TDD)
 
@@ -395,3 +396,6 @@
   module) — in-flight queries with wait events, duration, and blocking
   PIDs, via `pg_stat_activity` and `pg_blocking_pids`. 346 tests, 100%
   coverage.
+- 2026-05-22 — Task 15.2: `check_database_health` gains `replication_lag`
+  (via `pg_stat_replication`) and `table_bloat` (catalog-only size
+  estimate) checks. 349 tests, 100% coverage.

@@ -13,6 +13,8 @@ async def test_check_database_health_against_real_postgres(connected_database: D
         "cache_hit_ratio",
         "dead_tuples",
         "invalid_indexes",
+        "replication_lag",
+        "table_bloat",
     }
     # A freshly created test database should have no invalid indexes.
     invalid = next(check for check in report.checks if check.name == "invalid_indexes")

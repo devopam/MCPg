@@ -14,6 +14,9 @@ from mcpg._vendor.sql import SqlDriver
 # Classification thresholds.
 _CONNECTION_WARN_RATIO = 0.8  # warn above 80% of max_connections
 _CACHE_HIT_WARN_RATIO = 0.99  # warn below a 99% buffer cache hit ratio
+_REPLICATION_LAG_WARN_BYTES = 64 * 1024 * 1024  # warn above 64 MiB of standby lag
+_BLOAT_RATIO_WARN = 2.0  # warn when a table occupies 2x its estimated minimum
+_BLOAT_MIN_PAGES = 128  # ignore tables smaller than ~1 MiB
 
 _OK = "ok"
 _WARNING = "warning"
@@ -86,6 +89,50 @@ async def check_invalid_indexes(driver: SqlDriver) -> HealthCheck:
     return HealthCheck("invalid_indexes", status, f"{invalid} invalid indexes")
 
 
+async def check_replication_lag(driver: SqlDriver) -> HealthCheck:
+    """Measure how far connected standbys trail in replaying WAL."""
+    rows = await driver.execute_query(
+        "SELECT count(*) AS standbys, "
+        "COALESCE(max(pg_wal_lsn_diff("
+        "CASE WHEN pg_is_in_recovery() THEN pg_last_wal_replay_lsn() "
+        "ELSE pg_current_wal_lsn() END, replay_lsn)), 0) AS max_lag_bytes "
+        "FROM pg_stat_replication",
+        force_readonly=True,
+    )
+    cells = (rows or [])[0].cells
+    standbys, max_lag = cells["standbys"], int(cells["max_lag_bytes"])
+    if standbys == 0:
+        return HealthCheck("replication_lag", _OK, "no replication standbys connected")
+    status = _WARNING if max_lag > _REPLICATION_LAG_WARN_BYTES else _OK
+    return HealthCheck("replication_lag", status, f"{standbys} standby(s), max lag {max_lag} bytes")
+
+
+async def check_table_bloat(driver: SqlDriver) -> HealthCheck:
+    """Count tables far larger than their estimated minimum size.
+
+    The estimate is catalog-only — ``relpages`` against a size derived from
+    ``reltuples`` and the average row width — so the check stays cheap.
+    """
+    rows = await driver.execute_query(
+        "WITH table_stats AS ("
+        "SELECT c.relpages, c.reltuples, "
+        "(SELECT sum(COALESCE(s.avg_width, 0)) FROM pg_stats s "
+        "WHERE s.schemaname = n.nspname AND s.tablename = c.relname) AS row_width "
+        "FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema')"
+        ") "
+        "SELECT count(*) AS bloated FROM table_stats "
+        "WHERE relpages > %s AND reltuples > 0 AND row_width > 0 "
+        "AND relpages::numeric / GREATEST(ceil(reltuples * (row_width + 24) / (8192 - 24)), 1) > %s",
+        params=[_BLOAT_MIN_PAGES, _BLOAT_RATIO_WARN],
+        force_readonly=True,
+    )
+    bloated = (rows or [])[0].cells["bloated"]
+    status = _WARNING if bloated > 0 else _OK
+    return HealthCheck("table_bloat", status, f"{bloated} tables appear bloated")
+
+
 async def check_database_health(driver: SqlDriver) -> HealthReport:
     """Run every health check and summarise the overall status."""
     checks = [
@@ -93,6 +140,8 @@ async def check_database_health(driver: SqlDriver) -> HealthReport:
         await check_cache_hit_ratio(driver),
         await check_dead_tuples(driver),
         await check_invalid_indexes(driver),
+        await check_replication_lag(driver),
+        await check_table_bloat(driver),
     ]
     status = _OK if all(check.status == _OK for check in checks) else _WARNING
     return HealthReport(status=status, checks=checks)
