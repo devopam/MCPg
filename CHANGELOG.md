@@ -35,6 +35,9 @@ adheres to [Semantic Versioning](https://semver.org/).
 - `run_maintenance` tool — runs `VACUUM` or `ANALYZE` against one table;
   requires unrestricted mode. Runs on an autocommit connection, since
   `VACUUM` cannot run inside a transaction.
+- `cancel_query` and `terminate_backend` tools — signal a backend PID to
+  cancel its current query or close its connection; require unrestricted
+  mode.
 
 ### Changed
 

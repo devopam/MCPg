@@ -381,6 +381,30 @@ def _register_maintenance(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_backend_control(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="cancel_query",
+        description=(
+            "Cancel the query running on a backend PID (pg_cancel_backend); "
+            "the connection stays open. Available only in unrestricted mode."
+        ),
+    )
+    async def cancel_query(ctx: _Ctx, pid: int) -> dict[str, Any]:
+        result = await liveops.cancel_query(_driver(ctx), pid)
+        return asdict(result)
+
+    @server.tool(
+        name="terminate_backend",
+        description=(
+            "Terminate a backend PID (pg_terminate_backend), closing its "
+            "connection. Available only in unrestricted mode."
+        ),
+    )
+    async def terminate_backend(ctx: _Ctx, pid: int) -> dict[str, Any]:
+        result = await liveops.terminate_backend(_driver(ctx), pid)
+        return asdict(result)
+
+
 def _register_ddl(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="run_ddl",
@@ -423,5 +447,6 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
+        _register_backend_control(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)

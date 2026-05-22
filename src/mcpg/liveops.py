@@ -12,6 +12,19 @@ from mcpg._vendor.sql import SqlDriver
 
 
 @dataclass(frozen=True, slots=True)
+class BackendActionResult:
+    """The outcome of cancelling a query or terminating a backend.
+
+    ``succeeded`` is ``False`` when PostgreSQL could not act on the PID —
+    most often because no such backend exists.
+    """
+
+    pid: int
+    action: str
+    succeeded: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ActiveQuery:
     """A query currently executing on the server.
 
@@ -63,3 +76,33 @@ async def list_active_queries(driver: SqlDriver) -> list[ActiveQuery]:
         )
         for row in rows or []
     ]
+
+
+async def cancel_query(driver: SqlDriver, pid: int) -> BackendActionResult:
+    """Cancel the query currently running on a backend.
+
+    Sends a cancel signal via ``pg_cancel_backend``; the connection itself
+    stays open. ``succeeded`` is ``False`` if no such backend exists.
+    """
+    rows = await driver.execute_query(
+        "SELECT pg_cancel_backend(%s) AS ok",
+        params=[pid],
+        force_readonly=True,
+    )
+    succeeded = bool((rows or [])[0].cells["ok"])
+    return BackendActionResult(pid=pid, action="cancel_query", succeeded=succeeded)
+
+
+async def terminate_backend(driver: SqlDriver, pid: int) -> BackendActionResult:
+    """Terminate a backend, closing its connection.
+
+    Sends a terminate signal via ``pg_terminate_backend``. ``succeeded`` is
+    ``False`` if no such backend exists.
+    """
+    rows = await driver.execute_query(
+        "SELECT pg_terminate_backend(%s) AS ok",
+        params=[pid],
+        force_readonly=True,
+    )
+    succeeded = bool((rows or [])[0].cells["ok"])
+    return BackendActionResult(pid=pid, action="terminate_backend", succeeded=succeeded)

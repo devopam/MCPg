@@ -4,10 +4,19 @@ from _fakes import FakeDatabase, FakeDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
-from mcpg.liveops import ActiveQuery, list_active_queries
+from mcpg.liveops import (
+    ActiveQuery,
+    BackendActionResult,
+    cancel_query,
+    list_active_queries,
+    terminate_backend,
+)
 from mcpg.server import create_server
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+_UNRESTRICTED = load_settings(
+    {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
+)
 
 
 def _row(pid: int, **overrides: object) -> dict[str, object]:
@@ -63,3 +72,38 @@ async def test_list_active_queries_tool_is_callable_from_a_client() -> None:
         result = await client.call_tool("list_active_queries", {})
 
     assert result.isError is False
+
+
+async def test_cancel_query_reports_the_signal_outcome() -> None:
+    driver = FakeDriver([{"ok": True}])
+
+    result = await cancel_query(driver, 4242)
+
+    assert result == BackendActionResult(pid=4242, action="cancel_query", succeeded=True)
+    assert driver.calls[0][1] == [4242]
+
+
+async def test_cancel_query_reports_failure_for_an_unknown_backend() -> None:
+    result = await cancel_query(FakeDriver([{"ok": False}]), 999999)
+
+    assert result.succeeded is False
+
+
+async def test_terminate_backend_reports_the_signal_outcome() -> None:
+    driver = FakeDriver([{"ok": True}])
+
+    result = await terminate_backend(driver, 7000)
+
+    assert result == BackendActionResult(pid=7000, action="terminate_backend", succeeded=True)
+    assert driver.calls[0][1] == [7000]
+
+
+async def test_backend_control_tools_are_callable_in_unrestricted_mode() -> None:
+    server = create_server(_UNRESTRICTED, database=FakeDatabase(FakeDriver([{"ok": True}])))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        cancelled = await client.call_tool("cancel_query", {"pid": 100})
+        terminated = await client.call_tool("terminate_backend", {"pid": 100})
+
+    assert cancelled.isError is False
+    assert terminated.isError is False

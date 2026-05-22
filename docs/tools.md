@@ -173,6 +173,16 @@ Runs `VACUUM` or `ANALYZE` against one table. Parameters: `operation`
 Requires `unrestricted` mode. The schema and table are quoted identifiers,
 not parameters; both are escaped before reaching SQL.
 
+### `cancel_query`
+Cancels the query running on a backend PID (`pg_cancel_backend`); the
+connection stays open. Parameter: `pid` (int). Returns `succeeded` —
+`false` if no such backend exists. Requires `unrestricted` mode.
+
+### `terminate_backend`
+Terminates a backend PID (`pg_terminate_backend`), closing its connection.
+Parameter: `pid` (int). Returns `succeeded` — `false` if no such backend
+exists. Requires `unrestricted` mode.
+
 ### `run_ddl`
 Executes a single DDL statement (`CREATE`/`ALTER`/`DROP` and related).
 Requires `unrestricted` mode **and** `MCPG_ALLOW_DDL=true`. Parameter: `sql`

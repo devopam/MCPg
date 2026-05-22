@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 15, Task 15.4 — TDD gated `cancel_query` / `terminate_backend`
-> tools.
+> Phases 12–15 complete. No task in progress — pick the next initiative
+> from `PLAN.md` or await direction.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -163,7 +163,7 @@
 - [x] 15.1 `list_active_queries` + lock / blocking inspection (`mcpg/liveops.py`, TDD)
 - [x] 15.2 Replication-lag and bloat health checks (`mcpg/health.py`, TDD)
 - [x] 15.3 Gated `run_maintenance` (VACUUM/ANALYZE) (`mcpg/maintenance.py`, TDD)
-- [ ] 15.4 Gated `cancel_query` / `terminate_backend` (TDD)
+- [x] 15.4 Gated `cancel_query` / `terminate_backend` (`mcpg/liveops.py`, TDD)
 
 > Phases 12–15 cover deeper introspection and live ops; see `PLAN.md` §7b for
 > the capability gap analysis behind them.
@@ -402,3 +402,7 @@
 - 2026-05-22 — Task 15.3: added gated `run_maintenance` (new
   `mcpg/maintenance` module) — VACUUM/ANALYZE on one table via a new
   autocommit `Database.run_unmanaged` path. 357 tests, 100% coverage.
+- 2026-05-22 — Task 15.4: added gated `cancel_query` and
+  `terminate_backend` — signal a backend PID via `pg_cancel_backend` /
+  `pg_terminate_backend`. Phases 12–15 complete. 365 tests, 100%
+  coverage.
