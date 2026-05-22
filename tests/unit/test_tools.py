@@ -20,6 +20,7 @@ _READ_TOOLS = {
     "describe_table",
     "list_indexes",
     "list_constraints",
+    "list_views",
     "list_extensions",
     "list_available_extensions",
     "run_select",

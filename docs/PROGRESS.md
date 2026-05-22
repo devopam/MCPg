@@ -12,8 +12,8 @@
 
 ## Next action
 
-> Phase 12, Task 12.2 — TDD a `list_views` tool reporting views (and
-> materialized views) in a schema with their definitions.
+> Phase 12, Task 12.3 — TDD a `list_functions` tool reporting functions and
+> procedures in a schema.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -141,7 +141,7 @@
 ## Phase 12 — Deeper schema introspection
 
 - [x] 12.1 `list_constraints` — PK, FK, unique, check, exclusion (`mcpg/introspection.py`, TDD)
-- [ ] 12.2 `list_views` (+ view definitions) (TDD)
+- [x] 12.2 `list_views` (+ view definitions) (`mcpg/introspection.py`, TDD)
 - [ ] 12.3 `list_functions` — functions and procedures (TDD)
 - [ ] 12.4 `list_triggers` (TDD)
 - [ ] 12.5 `list_sequences` (TDD)
@@ -362,3 +362,6 @@
   introspection, and live ops & maintenance.
 - 2026-05-21 — Task 12.1: added `list_constraints` — PK/FK/unique/check/
   exclusion constraints on a table, via `pg_constraint`. 309 tests, 100% cov.
+- 2026-05-21 — PR #2 (v0.2.0 + Phase 12 start) merged to `main`; branch
+  re-synced. Task 12.2: added `list_views` — views and materialized views in
+  a schema with definitions, via `pg_class`. 311 tests, 100% coverage.

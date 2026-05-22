@@ -33,6 +33,10 @@ Lists a table's constraints — each with its `type` (`primary_key`,
 `foreign_key`, `unique`, `check`, `exclusion`, or `other`) and definition.
 Parameters: `schema`, `table` (strings).
 
+### `list_views`
+Lists the views and materialized views in a schema — each with a
+`materialized` flag and its definition. Parameter: `schema` (string).
+
 ### `list_extensions`
 Lists the extensions installed in the database.
 

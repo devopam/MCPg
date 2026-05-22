@@ -15,6 +15,7 @@ from mcpg.introspection import (
     list_indexes,
     list_schemas,
     list_tables,
+    list_views,
 )
 
 _SCHEMA = "mcpg_introspection_it"
@@ -28,6 +29,7 @@ async def sample_schema(connected_database: Database) -> AsyncIterator[str]:
     await driver.execute_query(f"CREATE SCHEMA {_SCHEMA}")
     await driver.execute_query(f"CREATE TABLE {_SCHEMA}.widget (id integer PRIMARY KEY, name text NOT NULL, note text)")
     await driver.execute_query(f"CREATE INDEX widget_name_idx ON {_SCHEMA}.widget (name)")
+    await driver.execute_query(f"CREATE VIEW {_SCHEMA}.widget_names AS SELECT name FROM {_SCHEMA}.widget")
     try:
         yield _SCHEMA
     finally:
@@ -71,6 +73,14 @@ async def test_list_constraints_finds_the_primary_key(connected_database: Databa
 
     by_type = {constraint.type for constraint in constraints}
     assert "primary_key" in by_type
+
+
+async def test_list_views_finds_the_view(connected_database: Database, sample_schema: str) -> None:
+    views = await list_views(connected_database.driver(), sample_schema)
+    by_name = {view.name: view for view in views}
+
+    assert "widget_names" in by_name
+    assert by_name["widget_names"].materialized is False
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:

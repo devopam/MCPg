@@ -12,6 +12,7 @@ from mcpg.introspection import (
     IndexInfo,
     SchemaInfo,
     TableInfo,
+    ViewInfo,
     describe_table,
     list_available_extensions,
     list_constraints,
@@ -19,6 +20,7 @@ from mcpg.introspection import (
     list_indexes,
     list_schemas,
     list_tables,
+    list_views,
 )
 from mcpg.server import create_server
 
@@ -113,6 +115,20 @@ async def test_list_indexes_maps_rows_including_the_access_method() -> None:
     ]
 
 
+async def test_list_views_maps_views_and_materialized_views() -> None:
+    driver = FakeDriver(
+        [
+            {"name": "active_users", "materialized": False, "definition": "SELECT * FROM users"},
+            {"name": "user_stats", "materialized": True, "definition": "SELECT count(*) FROM users"},
+        ]
+    )
+
+    assert await list_views(driver, "app") == [
+        ViewInfo("active_users", materialized=False, definition="SELECT * FROM users"),
+        ViewInfo("user_stats", materialized=True, definition="SELECT count(*) FROM users"),
+    ]
+
+
 async def test_list_constraints_maps_constraint_types() -> None:
     driver = FakeDriver(
         [
@@ -163,6 +179,7 @@ _INTROSPECTION_TOOLS = {
     "describe_table",
     "list_indexes",
     "list_constraints",
+    "list_views",
     "list_extensions",
     "list_available_extensions",
 }
@@ -192,6 +209,10 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_constraints": (
             {"schema": "app", "table": "w"},
             [{"name": "w_pkey", "type_code": "p", "definition": "PRIMARY KEY (id)"}],
+        ),
+        "list_views": (
+            {"schema": "app"},
+            [{"name": "v", "materialized": False, "definition": "SELECT 1"}],
         ),
         "list_extensions": ({}, [{"extname": "plpgsql", "extversion": "1.0"}]),
         "list_available_extensions": (

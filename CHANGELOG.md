@@ -10,6 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 - `list_constraints` tool — a table's primary-key, foreign-key, unique,
   check, and exclusion constraints.
+- `list_views` tool — the views and materialized views in a schema, with
+  their definitions.
 
 ## [0.2.0] - 2026-05-21
 

@@ -69,6 +69,15 @@ class IndexInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class ViewInfo:
+    """A view or materialized view within a schema."""
+
+    name: str
+    materialized: bool
+    definition: str
+
+
+@dataclass(frozen=True, slots=True)
 class ConstraintInfo:
     """A constraint on a table.
 
@@ -178,6 +187,27 @@ async def list_indexes(driver: SqlDriver, schema: str, table: str) -> list[Index
         IndexInfo(
             name=row.cells["name"],
             method=row.cells["method"],
+            definition=row.cells["definition"],
+        )
+        for row in rows or []
+    ]
+
+
+async def list_views(driver: SqlDriver, schema: str) -> list[ViewInfo]:
+    """List the views and materialized views in a schema, with definitions."""
+    rows = await driver.execute_query(
+        "SELECT c.relname AS name, (c.relkind = 'm') AS materialized, "
+        "pg_get_viewdef(c.oid, true) AS definition "
+        "FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relkind IN ('v', 'm') ORDER BY c.relname",
+        params=[schema],
+        force_readonly=True,
+    )
+    return [
+        ViewInfo(
+            name=row.cells["name"],
+            materialized=row.cells["materialized"],
             definition=row.cells["definition"],
         )
         for row in rows or []
