@@ -20,6 +20,7 @@ from mcpg import (
     indexing,
     introspection,
     liveops,
+    maintenance,
     query,
     textsearch,
     workload,
@@ -366,6 +367,20 @@ def _register_write(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_maintenance(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="run_maintenance",
+        description=(
+            "Run VACUUM or ANALYZE against one table (operation: vacuum, "
+            "analyze, or vacuum_analyze). Available only in unrestricted mode."
+        ),
+    )
+    async def run_maintenance(ctx: _Ctx, operation: str, schema: str, table: str) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await maintenance.run_maintenance(database, operation, schema, table)
+        return asdict(result)
+
+
 def _register_ddl(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="run_ddl",
@@ -407,5 +422,6 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_liveops(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
+        _register_maintenance(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)

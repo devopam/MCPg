@@ -67,6 +67,25 @@ class Database:
             raise DatabaseError("database is not connected; call connect() first")
         return SqlDriver(conn=self._pool)
 
+    async def run_unmanaged(self, sql: str) -> None:
+        """Execute a statement on an autocommit connection — no transaction.
+
+        For maintenance commands such as ``VACUUM`` that cannot run inside a
+        transaction block. The caller is responsible for SQL safety.
+
+        Raises:
+            DatabaseError: If called before :meth:`connect`.
+        """
+        if not self._connected:
+            raise DatabaseError("database is not connected; call connect() first")
+        pool = await self._pool.pool_connect()
+        async with pool.connection() as connection:
+            await connection.set_autocommit(True)
+            try:
+                await connection.execute(sql)
+            finally:
+                await connection.set_autocommit(False)
+
     async def __aenter__(self) -> Database:
         await self.connect()
         return self

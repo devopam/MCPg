@@ -73,6 +73,67 @@ async def test_driver_after_connect_returns_a_sql_driver() -> None:
     assert isinstance(db.driver(), SqlDriver)
 
 
+class _FakeConnection:
+    """Stand-in for an async psycopg connection used by run_unmanaged."""
+
+    def __init__(self) -> None:
+        self.autocommit_calls: list[bool] = []
+        self.executed: list[str] = []
+
+    async def set_autocommit(self, value: bool) -> None:
+        self.autocommit_calls.append(value)
+
+    async def execute(self, sql: str) -> None:
+        self.executed.append(sql)
+
+
+class _FakeConnectionContext:
+    """Async context manager yielding a fake connection, like pool.connection()."""
+
+    def __init__(self, connection: _FakeConnection) -> None:
+        self._connection = connection
+
+    async def __aenter__(self) -> _FakeConnection:
+        return self._connection
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+
+class _UnmanagedPool(FakePool):
+    """FakePool whose pool_connect yields a handle with a fake connection."""
+
+    def __init__(self, connection: _FakeConnection) -> None:
+        super().__init__()
+        self._connection = connection
+
+    async def pool_connect(self, connection_url: str | None = None) -> object:
+        await super().pool_connect(connection_url)
+        return self
+
+    def connection(self) -> _FakeConnectionContext:
+        return _FakeConnectionContext(self._connection)
+
+
+async def test_run_unmanaged_executes_on_an_autocommit_connection() -> None:
+    connection = _FakeConnection()
+    db = Database(_SETTINGS, pool=_UnmanagedPool(connection))  # type: ignore[arg-type]
+    await db.connect()
+
+    await db.run_unmanaged('VACUUM "app"."widget"')
+
+    assert connection.executed == ['VACUUM "app"."widget"']
+    # Autocommit is switched on for the statement, then restored.
+    assert connection.autocommit_calls == [True, False]
+
+
+async def test_run_unmanaged_before_connect_raises() -> None:
+    db = Database(_SETTINGS, pool=FakePool())  # type: ignore[arg-type]
+
+    with pytest.raises(DatabaseError, match="not connected"):
+        await db.run_unmanaged("VACUUM x")
+
+
 def test_database_builds_its_own_pool_from_settings() -> None:
     db = Database(_SETTINGS)
     # No pool injected: it should construct one from the settings URL.

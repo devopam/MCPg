@@ -115,6 +115,7 @@ async def test_write_tools_are_exposed_only_in_unrestricted_mode(access_mode: Ac
         names = {tool.name for tool in (await client.list_tools()).tools}
 
     assert ("run_write" in names) is (access_mode is AccessMode.UNRESTRICTED)
+    assert ("run_maintenance" in names) is (access_mode is AccessMode.UNRESTRICTED)
 
 
 @pytest.mark.parametrize(

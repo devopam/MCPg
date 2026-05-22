@@ -32,6 +32,9 @@ adheres to [Semantic Versioning](https://semver.org/).
 - `check_database_health` gains two checks — replication lag (how far
   connected standbys trail) and table bloat (tables far larger than their
   estimated minimum size).
+- `run_maintenance` tool — runs `VACUUM` or `ANALYZE` against one table;
+  requires unrestricted mode. Runs on an autocommit connection, since
+  `VACUUM` cannot run inside a transaction.
 
 ### Changed
 

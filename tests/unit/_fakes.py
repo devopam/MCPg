@@ -69,9 +69,11 @@ class FakeRoutingDriver:
 class FakeDatabase:
     """Stand-in for Database whose driver() returns a supplied FakeDriver."""
 
-    def __init__(self, driver: FakeDriver) -> None:
+    def __init__(self, driver: FakeDriver, *, unmanaged_fail: bool = False) -> None:
         self._driver = driver
         self.is_connected = False
+        self.unmanaged_fail = unmanaged_fail
+        self.unmanaged: list[str] = []
 
     async def connect(self) -> None:
         self.is_connected = True
@@ -81,6 +83,11 @@ class FakeDatabase:
 
     def driver(self) -> FakeDriver:
         return self._driver
+
+    async def run_unmanaged(self, sql: str) -> None:
+        self.unmanaged.append(sql)
+        if self.unmanaged_fail:
+            raise RuntimeError("maintenance failed")
 
     async def __aenter__(self) -> FakeDatabase:
         await self.connect()

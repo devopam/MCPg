@@ -167,6 +167,12 @@ Executes a single `INSERT`, `UPDATE`, or `DELETE` in a read-write transaction
 committed on success. Multiple statements and non-DML are rejected. Add a
 `RETURNING` clause to receive affected rows. Parameter: `sql` (string).
 
+### `run_maintenance`
+Runs `VACUUM` or `ANALYZE` against one table. Parameters: `operation`
+(`vacuum`, `analyze`, or `vacuum_analyze`), `schema`, `table` (strings).
+Requires `unrestricted` mode. The schema and table are quoted identifiers,
+not parameters; both are escaped before reaching SQL.
+
 ### `run_ddl`
 Executes a single DDL statement (`CREATE`/`ALTER`/`DROP` and related).
 Requires `unrestricted` mode **and** `MCPG_ALLOW_DDL=true`. Parameter: `sql`
