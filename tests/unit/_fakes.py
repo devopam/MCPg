@@ -66,6 +66,32 @@ class FakeRoutingDriver:
         return []
 
 
+class FakeParamRoutingDriver:
+    """SqlDriver double routing by (query-substring, params tuple).
+
+    Routes are tried in insertion order; the first whose substring matches
+    the query AND whose params equal the tuple key wins. A trailing route
+    keyed by ``(substring, None)`` acts as a default for that substring
+    regardless of params.
+    """
+
+    def __init__(self, routes: dict[tuple[str, tuple[Any, ...] | None], list[dict[str, Any]]]) -> None:
+        self._routes = routes
+        self.calls: list[tuple[str, Any, bool]] = []
+
+    async def execute_query(
+        self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+    ) -> list[SqlDriver.RowResult]:
+        self.calls.append((query, params, force_readonly))
+        params_key = tuple(params) if params is not None else ()
+        for (substring, route_params), rows in self._routes.items():
+            if substring not in query:
+                continue
+            if route_params is None or route_params == params_key:
+                return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
+        return []
+
+
 class FakeDatabase:
     """Stand-in for Database whose driver() returns a supplied FakeDriver."""
 

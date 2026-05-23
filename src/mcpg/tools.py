@@ -23,6 +23,7 @@ from mcpg import (
     liveops,
     maintenance,
     query,
+    schema_diff,
     textsearch,
     workload,
     write,
@@ -275,6 +276,21 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
     )
     async def generate_schema_diagram(ctx: _Ctx, schema: str, include_partitions: bool = False) -> str:
         return await diagrams.generate_schema_diagram(_driver(ctx), schema, include_partitions=include_partitions)
+
+
+def _register_schema_diff(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="compare_schemas",
+        description=(
+            "Return the structural diff between two schemas — tables/columns/"
+            "indexes/constraints/foreign-keys added, removed, or changed. "
+            "Base tables only; views and custom types are not compared. "
+            "Renames surface as a paired add + remove."
+        ),
+    )
+    async def compare_schemas(ctx: _Ctx, left_schema: str, right_schema: str) -> dict[str, Any]:
+        diff = await schema_diff.compare_schemas(_driver(ctx), left_schema, right_schema)
+        return asdict(diff)
 
 
 def _register_query(server: FastMCP[AppContext]) -> None:
@@ -536,6 +552,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     if is_permitted(settings.access_mode, Capability.READ):
         _register_introspection(server)
         _register_diagrams(server)
+        _register_schema_diff(server)
         _register_query(server)
         _register_health(server)
         _register_liveops(server)
