@@ -323,6 +323,41 @@ class UserMappingInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class PublicationInfo:
+    """A logical-replication publication.
+
+    ``tables`` lists ``"schema.table"`` qualified names included in the
+    publication; empty when ``all_tables`` is true.
+    """
+
+    name: str
+    owner: str
+    all_tables: bool
+    publishes_insert: bool
+    publishes_update: bool
+    publishes_delete: bool
+    publishes_truncate: bool
+    tables: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class SubscriptionInfo:
+    """A logical-replication subscription.
+
+    ``publications`` lists the publication names this subscription consumes.
+    ``connection`` is the libpq connection string; password fields are
+    not redacted by PostgreSQL and the caller should treat the field as
+    sensitive.
+    """
+
+    name: str
+    owner: str
+    enabled: bool
+    connection: str
+    publications: list[str]
+
+
+@dataclass(frozen=True, slots=True)
 class ExtensionInfo:
     """An installed PostgreSQL extension."""
 
@@ -856,6 +891,64 @@ async def list_user_mappings(driver: SqlDriver) -> list[UserMappingInfo]:
             user=row.cells["user_name"],
             server=row.cells["server"],
             options=_parse_options(row.cells["options"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_publications(driver: SqlDriver) -> list[PublicationInfo]:
+    """List the logical-replication publications in the database."""
+    rows = await driver.execute_query(
+        "SELECT p.pubname AS name, r.rolname AS owner, p.puballtables AS all_tables, "
+        "  p.pubinsert AS publishes_insert, p.pubupdate AS publishes_update, "
+        "  p.pubdelete AS publishes_delete, p.pubtruncate AS publishes_truncate, "
+        "  COALESCE("
+        "    (SELECT array_agg(pt.schemaname || '.' || pt.tablename ORDER BY pt.schemaname, pt.tablename) "
+        "       FROM pg_publication_tables pt WHERE pt.pubname = p.pubname), "
+        "    '{}'"
+        "  ) AS tables "
+        "FROM pg_publication p "
+        "JOIN pg_roles r ON r.oid = p.pubowner "
+        "ORDER BY p.pubname",
+        force_readonly=True,
+    )
+    return [
+        PublicationInfo(
+            name=row.cells["name"],
+            owner=row.cells["owner"],
+            all_tables=row.cells["all_tables"],
+            publishes_insert=row.cells["publishes_insert"],
+            publishes_update=row.cells["publishes_update"],
+            publishes_delete=row.cells["publishes_delete"],
+            publishes_truncate=row.cells["publishes_truncate"],
+            tables=list(row.cells["tables"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_subscriptions(driver: SqlDriver) -> list[SubscriptionInfo]:
+    """List the logical-replication subscriptions in the database.
+
+    Reading ``pg_subscription`` requires superuser privileges; with a
+    non-privileged role the result will be empty even when subscriptions
+    exist.
+    """
+    rows = await driver.execute_query(
+        "SELECT s.subname AS name, r.rolname AS owner, s.subenabled AS enabled, "
+        "  s.subconninfo AS connection, s.subpublications AS publications "
+        "FROM pg_subscription s "
+        "JOIN pg_roles r ON r.oid = s.subowner "
+        "ORDER BY s.subname",
+        force_readonly=True,
+    )
+    return [
+        SubscriptionInfo(
+            name=row.cells["name"],
+            owner=row.cells["owner"],
+            enabled=row.cells["enabled"],
+            connection=row.cells["connection"],
+            publications=list(row.cells["publications"]),
         )
         for row in rows or []
     ]

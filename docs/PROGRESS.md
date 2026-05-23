@@ -6,14 +6,15 @@
 
 ## Current state
 
-- **Phase:** 12 — Deeper schema introspection (Phases 0–11 complete)
-- **Last updated:** 2026-05-21
+- **Phase:** 16 — Introspection gaps (Phases 0–15 complete)
+- **Last updated:** 2026-05-23
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phases 12–15 complete. No task in progress — pick the next initiative
-> from `PLAN.md` or await direction.
+> Phase 16 complete (Tasks 16.1–16.3, nine new introspection tools).
+> Awaiting direction before starting Phase 17 (schema visualisation /
+> Mermaid ER) — the next item in Batch A of the post-Phase-15 roadmap.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -406,3 +407,19 @@
   `terminate_backend` — signal a backend PID via `pg_cancel_backend` /
   `pg_terminate_backend`. Phases 12–15 complete. 365 tests, 100%
   coverage.
+- 2026-05-23 — Post-Phase-15 roadmap (`PLAN.md` §11) captured: Phases
+  16–27 grouped into six batches (catalog completeness, advisors,
+  extension wrappers, data movement, replication/events, migrations).
+- 2026-05-23 — Task 16.1: added `list_enums`, `list_domains`,
+  `list_composite_types` — user-defined types via `pg_type`/`pg_enum`/
+  `pg_constraint` and `pg_attribute`. Composite types filter on
+  `relkind='c'` to exclude table row-types. 251 unit tests.
+- 2026-05-23 — Task 16.2: added `list_foreign_data_wrappers`,
+  `list_foreign_servers`, `list_foreign_tables`, `list_user_mappings` —
+  postgres_fdw and other wrappers via `pg_foreign_data_wrapper`,
+  `pg_foreign_server`, `pg_foreign_table`, `pg_user_mappings`. Text[]
+  options parsed into typed dicts. 255 unit tests.
+- 2026-05-23 — Task 16.3: added `list_publications` and
+  `list_subscriptions` — read-only logical-replication catalog via
+  `pg_publication`/`pg_publication_tables` and `pg_subscription`.
+  Phase 16 complete (29 MCP tools total). 257 unit tests, 100% coverage.

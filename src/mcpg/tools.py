@@ -225,6 +225,22 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         mappings = await introspection.list_user_mappings(_driver(ctx))
         return [asdict(mapping) for mapping in mappings]
 
+    @server.tool(
+        name="list_publications",
+        description="List logical-replication publications with the tables and operations they include.",
+    )
+    async def list_publications(ctx: _Ctx) -> list[dict[str, Any]]:
+        publications = await introspection.list_publications(_driver(ctx))
+        return [asdict(publication) for publication in publications]
+
+    @server.tool(
+        name="list_subscriptions",
+        description="List logical-replication subscriptions; requires superuser to see any rows.",
+    )
+    async def list_subscriptions(ctx: _Ctx) -> list[dict[str, Any]]:
+        subscriptions = await introspection.list_subscriptions(_driver(ctx))
+        return [asdict(subscription) for subscription in subscriptions]
+
     @server.tool(name="list_extensions", description="List the extensions installed in the database.")
     async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         extensions = await introspection.list_extensions(_driver(ctx))

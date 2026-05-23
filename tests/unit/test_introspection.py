@@ -23,9 +23,11 @@ from mcpg.introspection import (
     PartitionSet,
     PolicyInfo,
     PolicySet,
+    PublicationInfo,
     RoleInfo,
     SchemaInfo,
     SequenceInfo,
+    SubscriptionInfo,
     TableInfo,
     TriggerInfo,
     UserMappingInfo,
@@ -45,9 +47,11 @@ from mcpg.introspection import (
     list_indexes,
     list_partitions,
     list_policies,
+    list_publications,
     list_roles,
     list_schemas,
     list_sequences,
+    list_subscriptions,
     list_tables,
     list_triggers,
     list_user_mappings,
@@ -609,6 +613,56 @@ async def test_list_user_mappings_maps_rows() -> None:
     ]
 
 
+async def test_list_publications_maps_rows_including_tables() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "widget_pub",
+                "owner": "app_owner",
+                "all_tables": False,
+                "publishes_insert": True,
+                "publishes_update": True,
+                "publishes_delete": False,
+                "publishes_truncate": False,
+                "tables": ["app.widget", "app.event"],
+            },
+            {
+                "name": "everything_pub",
+                "owner": "postgres",
+                "all_tables": True,
+                "publishes_insert": True,
+                "publishes_update": True,
+                "publishes_delete": True,
+                "publishes_truncate": True,
+                "tables": [],
+            },
+        ]
+    )
+
+    assert await list_publications(driver) == [
+        PublicationInfo("widget_pub", "app_owner", False, True, True, False, False, ["app.widget", "app.event"]),
+        PublicationInfo("everything_pub", "postgres", True, True, True, True, True, []),
+    ]
+
+
+async def test_list_subscriptions_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "widget_sub",
+                "owner": "app_owner",
+                "enabled": True,
+                "connection": "host=upstream dbname=app",
+                "publications": ["widget_pub"],
+            }
+        ]
+    )
+
+    assert await list_subscriptions(driver) == [
+        SubscriptionInfo("widget_sub", "app_owner", True, "host=upstream dbname=app", ["widget_pub"]),
+    ]
+
+
 async def test_list_extensions_maps_rows() -> None:
     driver = FakeDriver([{"extname": "plpgsql", "extversion": "1.0"}])
 
@@ -652,6 +706,8 @@ _INTROSPECTION_TOOLS = {
     "list_foreign_servers",
     "list_foreign_tables",
     "list_user_mappings",
+    "list_publications",
+    "list_subscriptions",
     "list_extensions",
     "list_available_extensions",
 }
@@ -767,6 +823,33 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_user_mappings": (
             {},
             [{"user_name": "public", "server": "remote_db", "options": []}],
+        ),
+        "list_publications": (
+            {},
+            [
+                {
+                    "name": "p",
+                    "owner": "postgres",
+                    "all_tables": False,
+                    "publishes_insert": True,
+                    "publishes_update": True,
+                    "publishes_delete": True,
+                    "publishes_truncate": False,
+                    "tables": ["app.widget"],
+                }
+            ],
+        ),
+        "list_subscriptions": (
+            {},
+            [
+                {
+                    "name": "s",
+                    "owner": "postgres",
+                    "enabled": True,
+                    "connection": "host=u",
+                    "publications": ["p"],
+                }
+            ],
         ),
         "list_extensions": ({}, [{"extname": "plpgsql", "extversion": "1.0"}]),
         "list_available_extensions": (

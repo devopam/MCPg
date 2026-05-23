@@ -23,9 +23,11 @@ from mcpg.introspection import (
     list_indexes,
     list_partitions,
     list_policies,
+    list_publications,
     list_roles,
     list_schemas,
     list_sequences,
+    list_subscriptions,
     list_tables,
     list_triggers,
     list_user_mappings,
@@ -293,6 +295,38 @@ async def test_list_user_mappings_finds_the_public_mapping(
     by_server = {(m.user, m.server) for m in mappings}
 
     assert ("public", "mcpg_fdw_server") in by_server
+
+
+@pytest.fixture
+async def publication_setup(connected_database: Database, sample_schema: str) -> AsyncIterator[str]:
+    """Create a logical-replication publication covering the sample widget table."""
+    driver = connected_database.driver()
+    await driver.execute_query("DROP PUBLICATION IF EXISTS mcpg_widget_pub")
+    await driver.execute_query(f"CREATE PUBLICATION mcpg_widget_pub FOR TABLE {sample_schema}.widget")
+    try:
+        yield "mcpg_widget_pub"
+    finally:
+        await driver.execute_query("DROP PUBLICATION IF EXISTS mcpg_widget_pub")
+
+
+async def test_list_publications_finds_the_publication_with_its_table(
+    connected_database: Database, publication_setup: str, sample_schema: str
+) -> None:
+    pubs = {p.name: p for p in await list_publications(connected_database.driver())}
+
+    assert publication_setup in pubs
+    assert pubs[publication_setup].all_tables is False
+    assert f"{sample_schema}.widget" in pubs[publication_setup].tables
+    assert pubs[publication_setup].publishes_insert is True
+
+
+async def test_list_subscriptions_returns_a_list(connected_database: Database) -> None:
+    # Subscriptions need a remote publisher and superuser to read; we only
+    # assert the call succeeds and returns a (possibly empty) list — the
+    # mapping is exercised in the unit tests.
+    subscriptions = await list_subscriptions(connected_database.driver())
+
+    assert isinstance(subscriptions, list)
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:
