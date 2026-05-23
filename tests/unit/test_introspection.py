@@ -7,7 +7,11 @@ from mcpg.config import load_settings
 from mcpg.introspection import (
     AvailableExtension,
     ColumnInfo,
+    CompositeAttribute,
+    CompositeTypeInfo,
     ConstraintInfo,
+    DomainInfo,
+    EnumInfo,
     ExtensionInfo,
     FunctionInfo,
     GrantInfo,
@@ -24,7 +28,10 @@ from mcpg.introspection import (
     ViewInfo,
     describe_table,
     list_available_extensions,
+    list_composite_types,
     list_constraints,
+    list_domains,
+    list_enums,
     list_extensions,
     list_functions,
     list_grants,
@@ -461,6 +468,73 @@ async def test_list_sequences_allows_a_null_last_value() -> None:
     assert (await list_sequences(driver, "app"))[0].last_value is None
 
 
+async def test_list_enums_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {"name": "status", "values": ["draft", "live", "archived"]},
+            {"name": "tier", "values": ["bronze", "silver", "gold"]},
+        ]
+    )
+
+    assert await list_enums(driver, "app") == [
+        EnumInfo("status", ["draft", "live", "archived"]),
+        EnumInfo("tier", ["bronze", "silver", "gold"]),
+    ]
+    assert driver.calls[0][1] == ["app"]
+
+
+async def test_list_domains_maps_rows_including_constraints() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "positive_int",
+                "base_type": "integer",
+                "nullable": False,
+                "default_value": "0",
+                "constraints": ["CHECK ((VALUE > 0))"],
+            },
+            {
+                "name": "free_text",
+                "base_type": "text",
+                "nullable": True,
+                "default_value": None,
+                "constraints": [],
+            },
+        ]
+    )
+
+    assert await list_domains(driver, "app") == [
+        DomainInfo("positive_int", "integer", False, "0", ["CHECK ((VALUE > 0))"]),
+        DomainInfo("free_text", "text", True, None, []),
+    ]
+
+
+async def test_list_composite_types_groups_attributes_by_type() -> None:
+    driver = FakeDriver(
+        [
+            {"type_name": "address", "attr_name": "street", "attr_type": "text", "attr_num": 1},
+            {"type_name": "address", "attr_name": "city", "attr_type": "text", "attr_num": 2},
+            {"type_name": "money_range", "attr_name": "low", "attr_type": "numeric", "attr_num": 1},
+            {"type_name": "money_range", "attr_name": "high", "attr_type": "numeric", "attr_num": 2},
+        ]
+    )
+
+    assert await list_composite_types(driver, "app") == [
+        CompositeTypeInfo(
+            "address",
+            [CompositeAttribute("street", "text"), CompositeAttribute("city", "text")],
+        ),
+        CompositeTypeInfo(
+            "money_range",
+            [CompositeAttribute("low", "numeric"), CompositeAttribute("high", "numeric")],
+        ),
+    ]
+
+
+async def test_list_composite_types_returns_empty_for_a_schema_with_no_types() -> None:
+    assert await list_composite_types(FakeDriver([]), "app") == []
+
+
 async def test_list_extensions_maps_rows() -> None:
     driver = FakeDriver([{"extname": "plpgsql", "extversion": "1.0"}])
 
@@ -497,6 +571,9 @@ _INTROSPECTION_TOOLS = {
     "list_roles",
     "list_grants",
     "list_sequences",
+    "list_enums",
+    "list_domains",
+    "list_composite_types",
     "list_extensions",
     "list_available_extensions",
 }
@@ -576,6 +653,26 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
                     "last_value": None,
                 }
             ],
+        ),
+        "list_enums": (
+            {"schema": "app"},
+            [{"name": "status", "values": ["draft", "live"]}],
+        ),
+        "list_domains": (
+            {"schema": "app"},
+            [
+                {
+                    "name": "positive_int",
+                    "base_type": "integer",
+                    "nullable": False,
+                    "default_value": "0",
+                    "constraints": ["CHECK ((VALUE > 0))"],
+                }
+            ],
+        ),
+        "list_composite_types": (
+            {"schema": "app"},
+            [{"type_name": "address", "attr_name": "street", "attr_type": "text", "attr_num": 1}],
         ),
         "list_extensions": ({}, [{"extname": "plpgsql", "extversion": "1.0"}]),
         "list_available_extensions": (

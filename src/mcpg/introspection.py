@@ -238,6 +238,45 @@ class SequenceInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class EnumInfo:
+    """An enum type within a schema and its labels in sort order."""
+
+    name: str
+    values: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class DomainInfo:
+    """A domain type within a schema.
+
+    ``constraints`` are the rendered ``CHECK`` constraint definitions
+    attached to the domain, in catalog order.
+    """
+
+    name: str
+    base_type: str
+    nullable: bool
+    default: str | None
+    constraints: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class CompositeAttribute:
+    """A column of a composite type."""
+
+    name: str
+    data_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class CompositeTypeInfo:
+    """A standalone composite type within a schema (excludes table row-types)."""
+
+    name: str
+    attributes: list[CompositeAttribute]
+
+
+@dataclass(frozen=True, slots=True)
 class ExtensionInfo:
     """An installed PostgreSQL extension."""
 
@@ -603,6 +642,81 @@ async def list_sequences(driver: SqlDriver, schema: str) -> list[SequenceInfo]:
         )
         for row in rows or []
     ]
+
+
+async def list_enums(driver: SqlDriver, schema: str) -> list[EnumInfo]:
+    """List the enum types in a schema, with their labels in sort order."""
+    rows = await driver.execute_query(
+        "SELECT t.typname AS name, "
+        "array_agg(e.enumlabel ORDER BY e.enumsortorder) AS values "
+        "FROM pg_type t "
+        "JOIN pg_namespace n ON n.oid = t.typnamespace "
+        "JOIN pg_enum e ON e.enumtypid = t.oid "
+        "WHERE n.nspname = %s "
+        "GROUP BY t.typname ORDER BY t.typname",
+        params=[schema],
+        force_readonly=True,
+    )
+    return [EnumInfo(name=row.cells["name"], values=list(row.cells["values"])) for row in rows or []]
+
+
+async def list_domains(driver: SqlDriver, schema: str) -> list[DomainInfo]:
+    """List the domain types in a schema, with base type and check constraints."""
+    rows = await driver.execute_query(
+        "SELECT t.typname AS name, "
+        "format_type(t.typbasetype, t.typtypmod) AS base_type, "
+        "NOT t.typnotnull AS nullable, "
+        "t.typdefault AS default_value, "
+        "COALESCE("
+        "  array_agg(pg_get_constraintdef(con.oid) ORDER BY con.conname) "
+        "    FILTER (WHERE con.oid IS NOT NULL), "
+        "  '{}'"
+        ") AS constraints "
+        "FROM pg_type t "
+        "JOIN pg_namespace n ON n.oid = t.typnamespace "
+        "LEFT JOIN pg_constraint con ON con.contypid = t.oid "
+        "WHERE n.nspname = %s AND t.typtype = 'd' "
+        "GROUP BY t.typname, t.typbasetype, t.typtypmod, t.typnotnull, t.typdefault "
+        "ORDER BY t.typname",
+        params=[schema],
+        force_readonly=True,
+    )
+    return [
+        DomainInfo(
+            name=row.cells["name"],
+            base_type=row.cells["base_type"],
+            nullable=row.cells["nullable"],
+            default=row.cells["default_value"],
+            constraints=list(row.cells["constraints"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_composite_types(driver: SqlDriver, schema: str) -> list[CompositeTypeInfo]:
+    """List the standalone composite types in a schema.
+
+    Implicit row-types of tables and views (which also live in ``pg_type``
+    with ``typtype = 'c'``) are excluded.
+    """
+    rows = await driver.execute_query(
+        "SELECT t.typname AS type_name, a.attname AS attr_name, "
+        "format_type(a.atttypid, a.atttypmod) AS attr_type, a.attnum AS attr_num "
+        "FROM pg_type t "
+        "JOIN pg_namespace n ON n.oid = t.typnamespace "
+        "JOIN pg_class c ON c.oid = t.typrelid "
+        "JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped "
+        "WHERE n.nspname = %s AND t.typtype = 'c' AND c.relkind = 'c' "
+        "ORDER BY t.typname, a.attnum",
+        params=[schema],
+        force_readonly=True,
+    )
+    grouped: dict[str, list[CompositeAttribute]] = {}
+    for row in rows or []:
+        grouped.setdefault(row.cells["type_name"], []).append(
+            CompositeAttribute(name=row.cells["attr_name"], data_type=row.cells["attr_type"])
+        )
+    return [CompositeTypeInfo(name=name, attributes=attrs) for name, attrs in grouped.items()]
 
 
 async def list_extensions(driver: SqlDriver) -> list[ExtensionInfo]:

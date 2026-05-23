@@ -169,6 +169,30 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         sequences = await introspection.list_sequences(_driver(ctx), schema)
         return [asdict(sequence) for sequence in sequences]
 
+    @server.tool(
+        name="list_enums",
+        description="List the enum types in a schema, with their labels in sort order.",
+    )
+    async def list_enums(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        enums = await introspection.list_enums(_driver(ctx), schema)
+        return [asdict(enum) for enum in enums]
+
+    @server.tool(
+        name="list_domains",
+        description="List the domain types in a schema, with base type, default, and check constraints.",
+    )
+    async def list_domains(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        domains = await introspection.list_domains(_driver(ctx), schema)
+        return [asdict(domain) for domain in domains]
+
+    @server.tool(
+        name="list_composite_types",
+        description="List the standalone composite types in a schema with their attributes.",
+    )
+    async def list_composite_types(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        types = await introspection.list_composite_types(_driver(ctx), schema)
+        return [asdict(t) for t in types]
+
     @server.tool(name="list_extensions", description="List the extensions installed in the database.")
     async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         extensions = await introspection.list_extensions(_driver(ctx))

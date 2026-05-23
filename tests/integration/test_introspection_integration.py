@@ -10,7 +10,10 @@ from mcpg.introspection import (
     SchemaInfo,
     describe_table,
     list_available_extensions,
+    list_composite_types,
     list_constraints,
+    list_domains,
+    list_enums,
     list_extensions,
     list_functions,
     list_grants,
@@ -57,6 +60,9 @@ async def sample_schema(connected_database: Database) -> AsyncIterator[str]:
     )
     await driver.execute_query(f"ALTER TABLE {_SCHEMA}.widget ENABLE ROW LEVEL SECURITY")
     await driver.execute_query(f"CREATE POLICY widget_select ON {_SCHEMA}.widget FOR SELECT USING (true)")
+    await driver.execute_query(f"CREATE TYPE {_SCHEMA}.status AS ENUM ('draft', 'live', 'archived')")
+    await driver.execute_query(f"CREATE DOMAIN {_SCHEMA}.positive_int AS integer NOT NULL DEFAULT 1 CHECK (VALUE > 0)")
+    await driver.execute_query(f"CREATE TYPE {_SCHEMA}.address AS (street text, city text)")
     try:
         yield _SCHEMA
     finally:
@@ -195,6 +201,29 @@ async def test_list_roles_excludes_predefined_roles_by_default(connected_databas
     roles = await list_roles(connected_database.driver())
 
     assert not any(role.name.startswith("pg_") for role in roles)
+
+
+async def test_list_enums_finds_an_enum_with_its_labels(connected_database: Database, sample_schema: str) -> None:
+    enums = {enum.name: enum for enum in await list_enums(connected_database.driver(), sample_schema)}
+
+    assert enums["status"].values == ["draft", "live", "archived"]
+
+
+async def test_list_domains_finds_a_domain_with_its_check(connected_database: Database, sample_schema: str) -> None:
+    domains = {domain.name: domain for domain in await list_domains(connected_database.driver(), sample_schema)}
+
+    assert domains["positive_int"].base_type == "integer"
+    assert domains["positive_int"].nullable is False
+    assert any("VALUE > 0" in constraint for constraint in domains["positive_int"].constraints)
+
+
+async def test_list_composite_types_excludes_table_row_types(connected_database: Database, sample_schema: str) -> None:
+    types = {t.name: t for t in await list_composite_types(connected_database.driver(), sample_schema)}
+
+    assert "address" in types
+    assert {attr.name for attr in types["address"].attributes} == {"street", "city"}
+    # Tables' implicit row-types must not appear.
+    assert "widget" not in types
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:
