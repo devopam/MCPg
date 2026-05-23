@@ -360,6 +360,14 @@ opens its own feature branch and pull request.
 - **Phase 26** — `LISTEN`/`NOTIFY` bridge. ADR-0005 picks between a
   polling model (recommended) and MCP notifications.
 
+### Batch G — ORM bridges (USP)
+- **Phase 28** — `generate_prisma_schema`: read the PG catalog and emit a
+  valid `.prisma` schema (mirrors `prisma db pull`). High-leverage
+  differentiator for TS/JS agentic workflows; sibling tools for Drizzle,
+  SQLAlchemy, and sqlc can follow under the same "schema → ORM DSL"
+  umbrella. Scope is deliberately narrow: catalog → DSL only, no
+  `.prisma` → DDL parsing and no `prisma migrate` subprocess driving.
+
 ### Batch F — Migrations with shadow workflow (LARGEST — gated on ADR-0006)
 - **Phase 27** — `prepare_migration`/`complete_migration` driven by the
   Phase-18 schema diff. ADR-0006 picks between same-DB shadow schema

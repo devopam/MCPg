@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `list_foreign_keys` tool — every foreign key in a schema, resolved to
+  its from-columns, referenced schema, referenced table, and
+  to-columns. The two column arrays are aligned by ordinal position.
+- `generate_schema_diagram` tool — renders a Mermaid ER diagram for a
+  schema (entities with PK/FK column markers, edges parent → child).
+  Views and foreign tables are excluded; partitions are excluded by
+  default and can be included with ``include_partitions=true``.
 - `list_constraints` tool — a table's primary-key, foreign-key, unique,
   check, and exclusion constraints.
 - `list_views` tool — the views and materialized views in a schema, with

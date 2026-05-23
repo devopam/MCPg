@@ -6,15 +6,17 @@
 
 ## Current state
 
-- **Phase:** 16 — Introspection gaps (Phases 0–15 complete)
+- **Phase:** 17 — Schema visualisation (Phases 0–16 complete)
 - **Last updated:** 2026-05-23
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 16 complete (Tasks 16.1–16.3, nine new introspection tools).
-> Awaiting direction before starting Phase 17 (schema visualisation /
-> Mermaid ER) — the next item in Batch A of the post-Phase-15 roadmap.
+> Phase 17 complete (`generate_schema_diagram` + `list_foreign_keys`).
+> Next: Phase 18 — schema diff (`compare_schemas`) — last item in
+> Batch A. `PLAN.md` §11 also gained Batch G (ORM bridges) starting
+> with Phase 28 `generate_prisma_schema` — a deliberate USP move; not
+> in flight yet.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -423,3 +425,14 @@
   `list_subscriptions` — read-only logical-replication catalog via
   `pg_publication`/`pg_publication_tables` and `pg_subscription`.
   Phase 16 complete (29 MCP tools total). 257 unit tests, 100% coverage.
+- 2026-05-23 — PR #4 merged to `main` (Phase 16); branch re-synced.
+- 2026-05-23 — Phase 17: added `list_foreign_keys` (structured FK
+  introspection via `pg_constraint`/`pg_attribute` aligned by ordinal)
+  and `generate_schema_diagram` (new `mcpg.diagrams` module) — a
+  Mermaid ER renderer with PK/FK column markers, parent→child edges,
+  cross-schema edge filtering, and an `include_partitions` knob.
+  Phase 17 complete (31 MCP tools total). 396 tests, 100% coverage.
+- 2026-05-23 — `PLAN.md` §11 gained Batch G (ORM bridges): Phase 28
+  `generate_prisma_schema` flagged as a deliberate USP. Sibling tools
+  for Drizzle, SQLAlchemy, sqlc may follow; scope deliberately narrow
+  (catalog → DSL only, no DSL→DDL parsing, no `prisma migrate` driving).

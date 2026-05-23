@@ -14,6 +14,7 @@ from mcpg.introspection import (
     EnumInfo,
     ExtensionInfo,
     ForeignDataWrapperInfo,
+    ForeignKeyInfo,
     ForeignServerInfo,
     ForeignTableInfo,
     FunctionInfo,
@@ -40,6 +41,7 @@ from mcpg.introspection import (
     list_enums,
     list_extensions,
     list_foreign_data_wrappers,
+    list_foreign_keys,
     list_foreign_servers,
     list_foreign_tables,
     list_functions,
@@ -254,6 +256,39 @@ async def test_list_constraints_maps_an_unknown_type_code_to_other() -> None:
     driver = FakeDriver([{"name": "x", "type_code": "z", "definition": "..."}])
 
     assert (await list_constraints(driver, "app", "t"))[0].type == "other"
+
+
+async def test_list_foreign_keys_maps_rows_aligned_by_ordinal() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "order_widget_fk",
+                "from_table": "order",
+                "to_schema": "app",
+                "to_table": "widget",
+                "from_columns": ["widget_id"],
+                "to_columns": ["id"],
+            },
+            {
+                "name": "order_composite_fk",
+                "from_table": "order",
+                "to_schema": "app",
+                "to_table": "shard",
+                "from_columns": ["tenant", "shard_no"],
+                "to_columns": ["tenant_id", "no"],
+            },
+        ]
+    )
+
+    assert await list_foreign_keys(driver, "app") == [
+        ForeignKeyInfo("order_widget_fk", "order", ["widget_id"], "app", "widget", ["id"]),
+        ForeignKeyInfo("order_composite_fk", "order", ["tenant", "shard_no"], "app", "shard", ["tenant_id", "no"]),
+    ]
+    assert driver.calls[0][1] == ["app"]
+
+
+async def test_list_foreign_keys_returns_an_empty_list_when_no_foreign_keys() -> None:
+    assert await list_foreign_keys(FakeDriver([]), "app") == []
 
 
 async def test_list_partitions_describes_a_range_partitioned_table() -> None:
@@ -714,6 +749,7 @@ _INTROSPECTION_TOOLS = {
     "describe_table",
     "list_indexes",
     "list_constraints",
+    "list_foreign_keys",
     "list_views",
     "list_functions",
     "list_triggers",
@@ -760,6 +796,19 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_constraints": (
             {"schema": "app", "table": "w"},
             [{"name": "w_pkey", "type_code": "p", "definition": "PRIMARY KEY (id)"}],
+        ),
+        "list_foreign_keys": (
+            {"schema": "app"},
+            [
+                {
+                    "name": "fk",
+                    "from_table": "order",
+                    "to_schema": "app",
+                    "to_table": "widget",
+                    "from_columns": ["widget_id"],
+                    "to_columns": ["id"],
+                }
+            ],
         ),
         "list_views": (
             {"schema": "app"},
