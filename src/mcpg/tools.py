@@ -15,6 +15,7 @@ from mcp.server.session import ServerSession
 
 from mcpg import (
     __version__,
+    diagrams,
     extensions,
     health,
     indexing,
@@ -103,6 +104,14 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     async def list_constraints(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
         constraints = await introspection.list_constraints(_driver(ctx), schema, table)
         return [asdict(constraint) for constraint in constraints]
+
+    @server.tool(
+        name="list_foreign_keys",
+        description="List foreign keys in a schema, resolved to columns and referenced table.",
+    )
+    async def list_foreign_keys(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        fks = await introspection.list_foreign_keys(_driver(ctx), schema)
+        return [asdict(fk) for fk in fks]
 
     @server.tool(
         name="list_views",
@@ -253,6 +262,19 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     async def list_available_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         extensions = await introspection.list_available_extensions(_driver(ctx))
         return [asdict(extension) for extension in extensions]
+
+
+def _register_diagrams(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="generate_schema_diagram",
+        description=(
+            "Render a Mermaid ER diagram for a schema. Views and foreign tables are "
+            "excluded; partitions are excluded by default — pass include_partitions=true "
+            "to draw each partition as its own entity."
+        ),
+    )
+    async def generate_schema_diagram(ctx: _Ctx, schema: str, include_partitions: bool = False) -> str:
+        return await diagrams.generate_schema_diagram(_driver(ctx), schema, include_partitions=include_partitions)
 
 
 def _register_query(server: FastMCP[AppContext]) -> None:
@@ -513,6 +535,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     _register_server_info(server)
     if is_permitted(settings.access_mode, Capability.READ):
         _register_introspection(server)
+        _register_diagrams(server)
         _register_query(server)
         _register_health(server)
         _register_liveops(server)

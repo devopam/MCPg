@@ -132,6 +132,23 @@ class ConstraintInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class ForeignKeyInfo:
+    """A foreign-key constraint resolved to its referenced columns.
+
+    ``from_columns`` and ``to_columns`` are aligned by ordinal position —
+    ``from_columns[i]`` references ``to_columns[i]`` of
+    ``to_schema.to_table``.
+    """
+
+    name: str
+    from_table: str
+    from_columns: list[str]
+    to_schema: str
+    to_table: str
+    to_columns: list[str]
+
+
+@dataclass(frozen=True, slots=True)
 class PartitionInfo:
     """A partition of a partitioned table.
 
@@ -582,6 +599,47 @@ async def list_constraints(driver: SqlDriver, schema: str, table: str) -> list[C
             name=row.cells["name"],
             type=_CONSTRAINT_TYPES.get(row.cells["type_code"], "other"),
             definition=row.cells["definition"],
+        )
+        for row in rows or []
+    ]
+
+
+async def list_foreign_keys(driver: SqlDriver, schema: str) -> list[ForeignKeyInfo]:
+    """List every foreign key in a schema, resolved to columns and referenced table.
+
+    ``from_columns`` and ``to_columns`` are aligned by ordinal position.
+    """
+    rows = await driver.execute_query(
+        "SELECT c.conname AS name, cl.relname AS from_table, "
+        "  nf.nspname AS to_schema, clf.relname AS to_table, "
+        "  ("
+        "    SELECT array_agg(att.attname ORDER BY u.ord) "
+        "    FROM unnest(c.conkey) WITH ORDINALITY u(num, ord) "
+        "    JOIN pg_attribute att ON att.attrelid = c.conrelid AND att.attnum = u.num"
+        "  ) AS from_columns, "
+        "  ("
+        "    SELECT array_agg(att.attname ORDER BY u.ord) "
+        "    FROM unnest(c.confkey) WITH ORDINALITY u(num, ord) "
+        "    JOIN pg_attribute att ON att.attrelid = c.confrelid AND att.attnum = u.num"
+        "  ) AS to_columns "
+        "FROM pg_constraint c "
+        "JOIN pg_class cl ON cl.oid = c.conrelid "
+        "JOIN pg_namespace n ON n.oid = cl.relnamespace "
+        "JOIN pg_class clf ON clf.oid = c.confrelid "
+        "JOIN pg_namespace nf ON nf.oid = clf.relnamespace "
+        "WHERE c.contype = 'f' AND n.nspname = %s "
+        "ORDER BY cl.relname, c.conname",
+        params=[schema],
+        force_readonly=True,
+    )
+    return [
+        ForeignKeyInfo(
+            name=row.cells["name"],
+            from_table=row.cells["from_table"],
+            from_columns=list(row.cells["from_columns"]),
+            to_schema=row.cells["to_schema"],
+            to_table=row.cells["to_table"],
+            to_columns=list(row.cells["to_columns"]),
         )
         for row in rows or []
     ]
