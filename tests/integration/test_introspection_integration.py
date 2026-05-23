@@ -15,6 +15,9 @@ from mcpg.introspection import (
     list_domains,
     list_enums,
     list_extensions,
+    list_foreign_data_wrappers,
+    list_foreign_servers,
+    list_foreign_tables,
     list_functions,
     list_grants,
     list_indexes,
@@ -25,6 +28,7 @@ from mcpg.introspection import (
     list_sequences,
     list_tables,
     list_triggers,
+    list_user_mappings,
     list_views,
 )
 
@@ -224,6 +228,71 @@ async def test_list_composite_types_excludes_table_row_types(connected_database:
     assert {attr.name for attr in types["address"].attributes} == {"street", "city"}
     # Tables' implicit row-types must not appear.
     assert "widget" not in types
+
+
+@pytest.fixture
+async def foreign_data_setup(connected_database: Database) -> AsyncIterator[str]:
+    """Create a postgres_fdw server, mapping, and foreign table; clean up after."""
+    driver = connected_database.driver()
+    available = {extension.name for extension in await list_available_extensions(driver)}
+    if "postgres_fdw" not in available:
+        pytest.skip("postgres_fdw is not available on this PostgreSQL server")
+    schema = "mcpg_fdw_it"
+    await driver.execute_query("DROP SERVER IF EXISTS mcpg_fdw_server CASCADE")
+    await driver.execute_query(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+    await enable_extension(driver, "postgres_fdw")
+    await driver.execute_query(f"CREATE SCHEMA {schema}")
+    await driver.execute_query(
+        "CREATE SERVER mcpg_fdw_server FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host 'localhost', dbname 'postgres')"
+    )
+    await driver.execute_query("CREATE USER MAPPING FOR PUBLIC SERVER mcpg_fdw_server OPTIONS (user 'postgres')")
+    await driver.execute_query(
+        f"CREATE FOREIGN TABLE {schema}.remote_widget (id integer, name text) "
+        "SERVER mcpg_fdw_server OPTIONS (schema_name 'public', table_name 'widget')"
+    )
+    try:
+        yield schema
+    finally:
+        await driver.execute_query("DROP SERVER IF EXISTS mcpg_fdw_server CASCADE")
+        await driver.execute_query(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+
+
+async def test_list_foreign_data_wrappers_finds_postgres_fdw(
+    connected_database: Database, foreign_data_setup: str
+) -> None:
+    wrappers = {w.name: w for w in await list_foreign_data_wrappers(connected_database.driver())}
+
+    assert "postgres_fdw" in wrappers
+    assert wrappers["postgres_fdw"].handler is not None
+
+
+async def test_list_foreign_servers_finds_the_server_and_options(
+    connected_database: Database, foreign_data_setup: str
+) -> None:
+    servers = {s.name: s for s in await list_foreign_servers(connected_database.driver())}
+
+    assert "mcpg_fdw_server" in servers
+    assert servers["mcpg_fdw_server"].wrapper == "postgres_fdw"
+    assert servers["mcpg_fdw_server"].options.get("host") == "localhost"
+
+
+async def test_list_foreign_tables_finds_the_foreign_table(
+    connected_database: Database, foreign_data_setup: str
+) -> None:
+    tables = {t.name: t for t in await list_foreign_tables(connected_database.driver(), foreign_data_setup)}
+
+    assert "remote_widget" in tables
+    assert tables["remote_widget"].server == "mcpg_fdw_server"
+    assert tables["remote_widget"].options.get("table_name") == "widget"
+
+
+async def test_list_user_mappings_finds_the_public_mapping(
+    connected_database: Database, foreign_data_setup: str
+) -> None:
+    mappings = await list_user_mappings(connected_database.driver())
+    by_server = {(m.user, m.server) for m in mappings}
+
+    assert ("public", "mcpg_fdw_server") in by_server
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:

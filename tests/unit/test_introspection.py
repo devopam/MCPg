@@ -13,6 +13,9 @@ from mcpg.introspection import (
     DomainInfo,
     EnumInfo,
     ExtensionInfo,
+    ForeignDataWrapperInfo,
+    ForeignServerInfo,
+    ForeignTableInfo,
     FunctionInfo,
     GrantInfo,
     IndexInfo,
@@ -25,6 +28,7 @@ from mcpg.introspection import (
     SequenceInfo,
     TableInfo,
     TriggerInfo,
+    UserMappingInfo,
     ViewInfo,
     describe_table,
     list_available_extensions,
@@ -33,6 +37,9 @@ from mcpg.introspection import (
     list_domains,
     list_enums,
     list_extensions,
+    list_foreign_data_wrappers,
+    list_foreign_servers,
+    list_foreign_tables,
     list_functions,
     list_grants,
     list_indexes,
@@ -43,6 +50,7 @@ from mcpg.introspection import (
     list_sequences,
     list_tables,
     list_triggers,
+    list_user_mappings,
     list_views,
 )
 from mcpg.server import create_server
@@ -535,6 +543,72 @@ async def test_list_composite_types_returns_empty_for_a_schema_with_no_types() -
     assert await list_composite_types(FakeDriver([]), "app") == []
 
 
+async def test_list_foreign_data_wrappers_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "postgres_fdw",
+                "handler": "public.postgres_fdw_handler",
+                "validator": "public.postgres_fdw_validator",
+                "options": ["debug=true"],
+            },
+            {"name": "no_handler_fdw", "handler": None, "validator": None, "options": None},
+        ]
+    )
+
+    assert await list_foreign_data_wrappers(driver) == [
+        ForeignDataWrapperInfo(
+            "postgres_fdw", "public.postgres_fdw_handler", "public.postgres_fdw_validator", {"debug": "true"}
+        ),
+        ForeignDataWrapperInfo("no_handler_fdw", None, None, {}),
+    ]
+
+
+async def test_list_foreign_servers_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "remote_db",
+                "wrapper": "postgres_fdw",
+                "type": None,
+                "version": None,
+                "options": ["host=remote", "dbname=app"],
+            }
+        ]
+    )
+
+    assert await list_foreign_servers(driver) == [
+        ForeignServerInfo("remote_db", "postgres_fdw", None, None, {"host": "remote", "dbname": "app"}),
+    ]
+
+
+async def test_list_foreign_tables_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {"name": "remote_widget", "server": "remote_db", "options": ["schema_name=public", "table_name=widget"]},
+        ]
+    )
+
+    assert await list_foreign_tables(driver, "app") == [
+        ForeignTableInfo("remote_widget", "remote_db", {"schema_name": "public", "table_name": "widget"}),
+    ]
+    assert driver.calls[0][1] == ["app"]
+
+
+async def test_list_user_mappings_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {"user_name": "public", "server": "remote_db", "options": []},
+            {"user_name": "app_user", "server": "remote_db", "options": ["user=app", "password=secret"]},
+        ]
+    )
+
+    assert await list_user_mappings(driver) == [
+        UserMappingInfo("public", "remote_db", {}),
+        UserMappingInfo("app_user", "remote_db", {"user": "app", "password": "secret"}),
+    ]
+
+
 async def test_list_extensions_maps_rows() -> None:
     driver = FakeDriver([{"extname": "plpgsql", "extversion": "1.0"}])
 
@@ -574,6 +648,10 @@ _INTROSPECTION_TOOLS = {
     "list_enums",
     "list_domains",
     "list_composite_types",
+    "list_foreign_data_wrappers",
+    "list_foreign_servers",
+    "list_foreign_tables",
+    "list_user_mappings",
     "list_extensions",
     "list_available_extensions",
 }
@@ -673,6 +751,22 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
         "list_composite_types": (
             {"schema": "app"},
             [{"type_name": "address", "attr_name": "street", "attr_type": "text", "attr_num": 1}],
+        ),
+        "list_foreign_data_wrappers": (
+            {},
+            [{"name": "postgres_fdw", "handler": None, "validator": None, "options": []}],
+        ),
+        "list_foreign_servers": (
+            {},
+            [{"name": "remote_db", "wrapper": "postgres_fdw", "type": None, "version": None, "options": []}],
+        ),
+        "list_foreign_tables": (
+            {"schema": "app"},
+            [{"name": "remote_widget", "server": "remote_db", "options": []}],
+        ),
+        "list_user_mappings": (
+            {},
+            [{"user_name": "public", "server": "remote_db", "options": []}],
         ),
         "list_extensions": ({}, [{"extname": "plpgsql", "extversion": "1.0"}]),
         "list_available_extensions": (

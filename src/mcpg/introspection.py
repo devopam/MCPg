@@ -277,6 +277,52 @@ class CompositeTypeInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class ForeignDataWrapperInfo:
+    """A foreign-data wrapper installed in the database.
+
+    ``handler`` and ``validator`` are the qualified function names, or
+    ``None`` when the FDW does not define one.
+    """
+
+    name: str
+    handler: str | None
+    validator: str | None
+    options: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class ForeignServerInfo:
+    """A foreign server defined for an FDW."""
+
+    name: str
+    wrapper: str
+    type: str | None
+    version: str | None
+    options: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class ForeignTableInfo:
+    """A foreign table within a schema."""
+
+    name: str
+    server: str
+    options: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class UserMappingInfo:
+    """A role-to-foreign-server mapping.
+
+    ``user`` is ``"public"`` for the catch-all mapping.
+    """
+
+    user: str
+    server: str
+    options: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
 class ExtensionInfo:
     """An installed PostgreSQL extension."""
 
@@ -296,6 +342,16 @@ class AvailableExtension:
 
 def _is_system_schema(name: str) -> bool:
     return name in _SYSTEM_SCHEMAS or name.startswith("pg_")
+
+
+def _parse_options(raw: list[str] | None) -> dict[str, str]:
+    """Parse a PostgreSQL ``text[]`` of ``"key=value"`` entries into a dict."""
+    options: dict[str, str] = {}
+    for item in raw or []:
+        key, sep, value = item.partition("=")
+        if sep:
+            options[key] = value
+    return options
 
 
 async def list_schemas(driver: SqlDriver, *, include_system: bool = False) -> list[SchemaInfo]:
@@ -717,6 +773,92 @@ async def list_composite_types(driver: SqlDriver, schema: str) -> list[Composite
             CompositeAttribute(name=row.cells["attr_name"], data_type=row.cells["attr_type"])
         )
     return [CompositeTypeInfo(name=name, attributes=attrs) for name, attrs in grouped.items()]
+
+
+async def list_foreign_data_wrappers(driver: SqlDriver) -> list[ForeignDataWrapperInfo]:
+    """List the foreign-data wrappers installed in the database."""
+    rows = await driver.execute_query(
+        "SELECT fdwname AS name, "
+        "  CASE WHEN fdwhandler = 0 THEN NULL ELSE fdwhandler::regproc::text END AS handler, "
+        "  CASE WHEN fdwvalidator = 0 THEN NULL ELSE fdwvalidator::regproc::text END AS validator, "
+        "  fdwoptions AS options "
+        "FROM pg_foreign_data_wrapper ORDER BY fdwname",
+        force_readonly=True,
+    )
+    return [
+        ForeignDataWrapperInfo(
+            name=row.cells["name"],
+            handler=row.cells["handler"],
+            validator=row.cells["validator"],
+            options=_parse_options(row.cells["options"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_foreign_servers(driver: SqlDriver) -> list[ForeignServerInfo]:
+    """List the foreign servers defined in the database."""
+    rows = await driver.execute_query(
+        "SELECT s.srvname AS name, fdw.fdwname AS wrapper, "
+        "  s.srvtype AS type, s.srvversion AS version, s.srvoptions AS options "
+        "FROM pg_foreign_server s "
+        "JOIN pg_foreign_data_wrapper fdw ON fdw.oid = s.srvfdw "
+        "ORDER BY s.srvname",
+        force_readonly=True,
+    )
+    return [
+        ForeignServerInfo(
+            name=row.cells["name"],
+            wrapper=row.cells["wrapper"],
+            type=row.cells["type"],
+            version=row.cells["version"],
+            options=_parse_options(row.cells["options"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_foreign_tables(driver: SqlDriver, schema: str) -> list[ForeignTableInfo]:
+    """List the foreign tables in a schema, with their server and options."""
+    rows = await driver.execute_query(
+        "SELECT c.relname AS name, s.srvname AS server, ft.ftoptions AS options "
+        "FROM pg_foreign_table ft "
+        "JOIN pg_class c ON c.oid = ft.ftrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_foreign_server s ON s.oid = ft.ftserver "
+        "WHERE n.nspname = %s ORDER BY c.relname",
+        params=[schema],
+        force_readonly=True,
+    )
+    return [
+        ForeignTableInfo(
+            name=row.cells["name"],
+            server=row.cells["server"],
+            options=_parse_options(row.cells["options"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_user_mappings(driver: SqlDriver) -> list[UserMappingInfo]:
+    """List the role-to-foreign-server mappings defined in the database.
+
+    The catch-all ``PUBLIC`` mapping appears with ``user = "public"``.
+    """
+    rows = await driver.execute_query(
+        "SELECT COALESCE(usename, 'public') AS user_name, srvname AS server, "
+        "  umoptions AS options "
+        "FROM pg_user_mappings ORDER BY srvname, user_name",
+        force_readonly=True,
+    )
+    return [
+        UserMappingInfo(
+            user=row.cells["user_name"],
+            server=row.cells["server"],
+            options=_parse_options(row.cells["options"]),
+        )
+        for row in rows or []
+    ]
 
 
 async def list_extensions(driver: SqlDriver) -> list[ExtensionInfo]:
