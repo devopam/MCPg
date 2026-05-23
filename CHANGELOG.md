@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-23
+
+Twelve new MCP tools, closing Batch A of the post-0.2.0 roadmap
+(`PLAN.md` §11): catalog completeness (Phase 16), schema visualisation
+(Phase 17), and structural schema diff (Phase 18). Brings the total
+MCP tool surface from 33 to 45 and lays the structural foundation for
+Phase 27 shadow migrations.
+
 ### Added
 
 - `list_foreign_keys` tool — every foreign key in a schema, resolved to
@@ -62,6 +70,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   logical-replication publications (with the tables and operations they
   cover) and subscriptions; reading subscriptions requires superuser, by
   PostgreSQL design.
+- `postgres_fdw` added to `ENABLEABLE_EXTENSIONS` — agents can now
+  enable the wrapper they can already introspect (gated on unrestricted
+  mode + `MCPG_ALLOW_DDL`).
 
 ### Changed
 
@@ -72,6 +83,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 - `recommend_indexes` now rolls a flagged partition up to its partitioned
   parent — summing scan and row counts and setting a `partitioned` flag —
   since an index created on the parent propagates to every partition.
+- The "every introspection tool is callable" check moved from the unit
+  suite (fakes-only) to the integration suite — it now runs against the
+  real catalog across the PG 14–17 CI matrix, closing a trust gap the
+  unit-level fake driver couldn't reach.
 
 ## [0.2.0] - 2026-05-21
 

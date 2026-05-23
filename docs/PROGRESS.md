@@ -6,15 +6,16 @@
 
 ## Current state
 
-- **Phase:** 18 — Schema diff (Phases 0–17 complete; **Batch A done**)
+- **Phase:** 18 — Schema diff (Phases 0–18 complete; **Batch A done**;
+  v0.3.0 cut)
 - **Last updated:** 2026-05-23
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
+- **Tool count:** 45
 
 ## Next action
 
-> Phase 18 complete (`compare_schemas`). **Batch A finished** — catalog
-> completeness, visualisation, and structural diff are all in.
-> Awaiting direction on the next batch:
+> **v0.3.0 cut** — Batch A delivered (catalog completeness →
+> visualisation → diff). Awaiting direction on the next batch:
 >
 > - **Batch B** — Advisors / lint (Phase 20) + audit trail (Phase 21);
 > - **Batch C** — extension power-tools (`pg_cron`/`pg_partman`/pgvector);
@@ -430,14 +431,14 @@
 - 2026-05-23 — Task 16.3: added `list_publications` and
   `list_subscriptions` — read-only logical-replication catalog via
   `pg_publication`/`pg_publication_tables` and `pg_subscription`.
-  Phase 16 complete (29 MCP tools total). 257 unit tests, 100% coverage.
+  Phase 16 complete (42 MCP tools total). 257 unit tests, 100% coverage.
 - 2026-05-23 — PR #4 merged to `main` (Phase 16); branch re-synced.
 - 2026-05-23 — Phase 17: added `list_foreign_keys` (structured FK
   introspection via `pg_constraint`/`pg_attribute` aligned by ordinal)
   and `generate_schema_diagram` (new `mcpg.diagrams` module) — a
   Mermaid ER renderer with PK/FK column markers, parent→child edges,
   cross-schema edge filtering, and an `include_partitions` knob.
-  Phase 17 complete (31 MCP tools total). 396 tests, 100% coverage.
+  Phase 17 complete (44 MCP tools total). 396 tests, 100% coverage.
 - 2026-05-23 — `PLAN.md` §11 gained Batch G (ORM bridges): Phase 28
   `generate_prisma_schema` flagged as a deliberate USP. Sibling tools
   for Drizzle, SQLAlchemy, sqlc may follow; scope deliberately narrow
@@ -451,6 +452,15 @@
   differing `ColumnInfo` fields. Built on a small generic name-keyed
   helper `_diff_by_name[T, C]` shared across the four per-table object
   kinds. **Batch A complete** (catalog completeness → visualisation →
-  diff). Phase 18 complete (32 MCP tools total). 409 tests, 100%
+  diff). Phase 18 complete (45 MCP tools total). 409 tests, 100%
   coverage. `FakeParamRoutingDriver` test fake added so the diff can
   be exercised in unit tests with two distinct fake schemas.
+- 2026-05-23 — **v0.3.0 cut**. Version bumped (pyproject + `__init__`);
+  CHANGELOG `[Unreleased]` → `[0.3.0]`. README refreshed (tool count
+  45, capability summary, PG 14–17 matrix). `docs/tools.md` gained
+  sections for the 12 Phase-16/17/18 tools and a new "Visualisation &
+  diff (read)" group. Tech-debt audit: the "every introspection tool
+  is callable" wiring check moved from unit (fakes-only) to
+  integration (real-PG smoke across the matrix) — closes the one
+  trust gap a fake driver couldn't reach. PROGRESS tool counts
+  corrected (Phases 16/17/18 were drifting low).

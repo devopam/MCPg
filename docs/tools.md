@@ -79,12 +79,78 @@ Lists the sequences defined in a schema — each with its data type, start
 value, range (`min_value`/`max_value`), increment, `cycle` flag, and
 `last_value` (`null` if unused or not readable). Parameter: `schema` (string).
 
+### `list_enums`
+Lists the enum types in a schema, each with its labels in sort order.
+Parameter: `schema` (string).
+
+### `list_domains`
+Lists the domain types in a schema — each with its base type, nullable
+flag, default expression, and the rendered `CHECK` constraint
+definitions attached to the domain. Parameter: `schema` (string).
+
+### `list_composite_types`
+Lists the standalone composite types in a schema with their attributes
+(name + rendered type). The catalog's implicit table row-types are
+excluded. Parameter: `schema` (string).
+
+### `list_foreign_keys`
+Lists every foreign key in a schema, resolved to its `from_columns`,
+referenced `to_schema`/`to_table`, and `to_columns`. The two column
+arrays are aligned by ordinal position. Parameter: `schema` (string).
+
+### `list_foreign_data_wrappers`
+Lists the foreign-data wrappers installed in the database — name,
+handler/validator (qualified function names or `null`), and options dict.
+
+### `list_foreign_servers`
+Lists the foreign servers defined in the database — name, wrapper, type,
+version, and options dict.
+
+### `list_foreign_tables`
+Lists the foreign tables in a schema — name, server, and options dict.
+Parameter: `schema` (string).
+
+### `list_user_mappings`
+Lists role-to-foreign-server mappings. The catch-all `PUBLIC` mapping
+surfaces as `user="public"`.
+
+### `list_publications`
+Lists the logical-replication publications in the database — owner, the
+`all_tables` flag, per-publication operations (`publishes_insert`,
+`publishes_update`, `publishes_delete`, `publishes_truncate`), and the
+qualified table names included (empty when `all_tables` is true).
+
+### `list_subscriptions`
+Lists the logical-replication subscriptions in the database — name,
+owner, enabled flag, connection string, and the publications it
+consumes. Reading `pg_subscription` requires superuser; non-privileged
+roles get an empty list.
+
 ### `list_extensions`
 Lists the extensions installed in the database.
 
 ### `list_available_extensions`
 Lists every extension available to the database — name, default version,
 installed version, and whether it is `installed`.
+
+## Visualisation & diff (read)
+
+### `generate_schema_diagram`
+Renders a Mermaid ER diagram for a schema as a single string the agent
+can paste into any Mermaid-aware renderer. Entities carry PK/FK column
+markers; edges point from referenced parent to referencing child. Views
+and foreign tables are excluded; partitions are excluded by default.
+Parameters: `schema` (string), `include_partitions` (bool, default
+`false`).
+
+### `compare_schemas`
+Returns the structural diff between two schemas. Reports tables added /
+removed, and per-changed-table the same trichotomy for columns, indexes,
+constraints, and foreign keys (`columns_changed` entries carry a
+`fields_changed` list of differing `ColumnInfo` field names). Base
+tables only; views and custom types are not compared. Identity is by
+name — renames surface as a paired add + remove. Parameters:
+`left_schema` and `right_schema` (strings).
 
 ## Query (read)
 
