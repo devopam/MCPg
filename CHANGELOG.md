@@ -15,6 +15,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   schema (entities with PK/FK column markers, edges parent → child).
   Views and foreign tables are excluded; partitions are excluded by
   default and can be included with ``include_partitions=true``.
+- `compare_schemas` tool — structural diff between two schemas. Reports
+  tables / columns / indexes / constraints / foreign keys as added,
+  removed, or changed; column changes include the list of differing
+  ColumnInfo fields. Object identity is by name; renames surface as a
+  paired add + remove. Foundation for the Phase-27 shadow-migration
+  workflow.
 - `list_constraints` tool — a table's primary-key, foreign-key, unique,
   check, and exclusion constraints.
 - `list_views` tool — the views and materialized views in a schema, with

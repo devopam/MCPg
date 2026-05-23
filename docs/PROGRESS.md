@@ -6,17 +6,23 @@
 
 ## Current state
 
-- **Phase:** 17 — Schema visualisation (Phases 0–16 complete)
+- **Phase:** 18 — Schema diff (Phases 0–17 complete; **Batch A done**)
 - **Last updated:** 2026-05-23
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> Phase 17 complete (`generate_schema_diagram` + `list_foreign_keys`).
-> Next: Phase 18 — schema diff (`compare_schemas`) — last item in
-> Batch A. `PLAN.md` §11 also gained Batch G (ORM bridges) starting
-> with Phase 28 `generate_prisma_schema` — a deliberate USP move; not
-> in flight yet.
+> Phase 18 complete (`compare_schemas`). **Batch A finished** — catalog
+> completeness, visualisation, and structural diff are all in.
+> Awaiting direction on the next batch:
+>
+> - **Batch B** — Advisors / lint (Phase 20) + audit trail (Phase 21);
+> - **Batch C** — extension power-tools (`pg_cron`/`pg_partman`/pgvector);
+> - **Batch G (USP)** — `generate_prisma_schema` then sibling ORM
+>   bridges (Drizzle, SQLAlchemy, sqlc).
+>
+> Batches D, E, F still require their ADRs first (subprocess policy,
+> NOTIFY model, migration shadowing).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -436,3 +442,15 @@
   `generate_prisma_schema` flagged as a deliberate USP. Sibling tools
   for Drizzle, SQLAlchemy, sqlc may follow; scope deliberately narrow
   (catalog → DSL only, no DSL→DDL parsing, no `prisma migrate` driving).
+- 2026-05-23 — PR #5 merged to `main` (Phase 17); branch re-synced.
+- 2026-05-23 — Phase 18: added `compare_schemas` (new
+  `mcpg.schema_diff` module) — structural diff between two schemas
+  reporting tables / columns / indexes / constraints / foreign keys as
+  added, removed, or changed. Identity is by name (renames = paired
+  add + remove). Column changes carry a `fields_changed` list of
+  differing `ColumnInfo` fields. Built on a small generic name-keyed
+  helper `_diff_by_name[T, C]` shared across the four per-table object
+  kinds. **Batch A complete** (catalog completeness → visualisation →
+  diff). Phase 18 complete (32 MCP tools total). 409 tests, 100%
+  coverage. `FakeParamRoutingDriver` test fake added so the diff can
+  be exercised in unit tests with two distinct fake schemas.
