@@ -495,6 +495,10 @@ async def test_list_enums_maps_rows() -> None:
     assert driver.calls[0][1] == ["app"]
 
 
+async def test_list_enums_returns_empty_for_a_schema_with_no_enums() -> None:
+    assert await list_enums(FakeDriver([]), "app") == []
+
+
 async def test_list_domains_maps_rows_including_constraints() -> None:
     driver = FakeDriver(
         [
@@ -565,6 +569,25 @@ async def test_list_foreign_data_wrappers_maps_rows() -> None:
             "postgres_fdw", "public.postgres_fdw_handler", "public.postgres_fdw_validator", {"debug": "true"}
         ),
         ForeignDataWrapperInfo("no_handler_fdw", None, None, {}),
+    ]
+
+
+async def test_options_parser_tolerates_catalog_quirks() -> None:
+    # text[] catalog columns can contain NULL elements and entries without
+    # a separator; duplicate keys collapse to the last value seen.
+    driver = FakeDriver(
+        [
+            {
+                "name": "quirky_fdw",
+                "handler": None,
+                "validator": None,
+                "options": ["debug=true", "no_equal_sign", None, "debug=false", "work_mem=64MB"],
+            }
+        ]
+    )
+
+    assert await list_foreign_data_wrappers(driver) == [
+        ForeignDataWrapperInfo("quirky_fdw", None, None, {"debug": "false", "work_mem": "64MB"}),
     ]
 
 

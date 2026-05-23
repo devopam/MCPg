@@ -217,10 +217,12 @@ async def test_list_enums_finds_an_enum_with_its_labels(connected_database: Data
 
 async def test_list_domains_finds_a_domain_with_its_check(connected_database: Database, sample_schema: str) -> None:
     domains = {domain.name: domain for domain in await list_domains(connected_database.driver(), sample_schema)}
+    positive_int = domains["positive_int"]
 
-    assert domains["positive_int"].base_type == "integer"
-    assert domains["positive_int"].nullable is False
-    assert any("VALUE > 0" in constraint for constraint in domains["positive_int"].constraints)
+    assert positive_int.base_type == "integer"
+    assert positive_int.nullable is False
+    assert positive_int.default == "1"
+    assert any("VALUE > 0" in constraint for constraint in positive_int.constraints)
 
 
 async def test_list_composite_types_excludes_table_row_types(connected_database: Database, sample_schema: str) -> None:

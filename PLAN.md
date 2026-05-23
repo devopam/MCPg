@@ -358,7 +358,7 @@ opens its own feature branch and pull request.
 - **Phase 25** — Logical replication management: replication slots and
   publication/subscription create+drop wrappers (write-gated).
 - **Phase 26** — `LISTEN`/`NOTIFY` bridge. ADR-0005 picks between a
-  tool-poll model (recommended) and MCP notifications.
+  polling model (recommended) and MCP notifications.
 
 ### Batch F — Migrations with shadow workflow (LARGEST — gated on ADR-0006)
 - **Phase 27** — `prepare_migration`/`complete_migration` driven by the

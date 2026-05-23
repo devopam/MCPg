@@ -379,10 +379,17 @@ def _is_system_schema(name: str) -> bool:
     return name in _SYSTEM_SCHEMAS or name.startswith("pg_")
 
 
-def _parse_options(raw: list[str] | None) -> dict[str, str]:
-    """Parse a PostgreSQL ``text[]`` of ``"key=value"`` entries into a dict."""
+def _parse_options(raw: list[str | None] | None) -> dict[str, str]:
+    """Parse a PostgreSQL ``text[]`` of ``"key=value"`` entries into a dict.
+
+    Tolerant of catalog quirks: ``NULL`` array elements are skipped, and
+    entries without an ``=`` separator are ignored. When a key appears more
+    than once the last occurrence wins.
+    """
     options: dict[str, str] = {}
     for item in raw or []:
+        if not isinstance(item, str):
+            continue
         key, sep, value = item.partition("=")
         if sep:
             options[key] = value
