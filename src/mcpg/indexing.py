@@ -8,7 +8,7 @@ workload filters on still needs query analysis (see ``analyze_workload``).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from mcpg._vendor.sql import SqlDriver
 
@@ -44,6 +44,31 @@ class IndexRecommendation:
     reason: str
     suggestions: list[IndexSuggestion]
     partitioned: bool
+
+
+@dataclass(slots=True)
+class _TableAgg:
+    """Per-logical-table aggregator used while rolling up scan stats."""
+
+    seq_scans: int = 0
+    live_tuples: int = 0
+    partitioned: bool = False
+    suggestions: list[IndexSuggestion] = field(default_factory=list)
+    _seen_columns: set[str] = field(default_factory=set, repr=False)
+
+    def add_stats(self, seq_scan: int, live_tup: int, is_partition: bool) -> None:
+        self.seq_scans += seq_scan
+        self.live_tuples += live_tup
+        self.partitioned = self.partitioned or is_partition
+
+    def add_suggestion(self, column: str, data_type: str) -> None:
+        if column in self._seen_columns:
+            return
+        suggestion = _suggest(column, data_type)
+        if suggestion is None:
+            return
+        self._seen_columns.add(column)
+        self.suggestions.append(suggestion)
 
 
 def _suggest(column: str, data_type: str) -> IndexSuggestion | None:
@@ -93,10 +118,7 @@ async def recommend_indexes(
     )
 
     order: list[tuple[str, str]] = []
-    stats: dict[tuple[str, str], list[int]] = {}
-    partitioned: dict[tuple[str, str], bool] = {}
-    suggestions: dict[tuple[str, str], list[IndexSuggestion]] = {}
-    suggested_columns: dict[tuple[str, str], set[str]] = {}
+    tables: dict[tuple[str, str], _TableAgg] = {}
     counted: set[tuple[str, str]] = set()
     for row in rows or []:
         parent_table = row.cells["parent_table"]
@@ -105,36 +127,29 @@ async def recommend_indexes(
             key = (row.cells["parent_schema"], parent_table)
         else:
             key = (row.cells["schemaname"], row.cells["relname"])
-        if key not in stats:
+        if key not in tables:
+            tables[key] = _TableAgg()
             order.append(key)
-            stats[key] = [0, 0]
-            partitioned[key] = False
-            suggestions[key] = []
-            suggested_columns[key] = set()
+        agg = tables[key]
         physical = (row.cells["schemaname"], row.cells["relname"])
         if physical not in counted:
             counted.add(physical)
-            stats[key][0] += row.cells["seq_scan"]
-            stats[key][1] += row.cells["n_live_tup"]
-            partitioned[key] = partitioned[key] or is_partition
-        suggestion = _suggest(row.cells["column_name"], row.cells["data_type"])
-        if suggestion is not None and suggestion.column not in suggested_columns[key]:
-            suggested_columns[key].add(suggestion.column)
-            suggestions[key].append(suggestion)
+            agg.add_stats(row.cells["seq_scan"], row.cells["n_live_tup"], is_partition)
+        agg.add_suggestion(row.cells["column_name"], row.cells["data_type"])
 
     return [
         IndexRecommendation(
             schema=schema,
             table=table,
-            seq_scans=stats[(schema, table)][0],
-            live_tuples=stats[(schema, table)][1],
+            seq_scans=tables[(schema, table)].seq_scans,
+            live_tuples=tables[(schema, table)].live_tuples,
             reason=(
                 "partitioned table whose partitions are read mostly by sequential scan"
-                if partitioned[(schema, table)]
+                if tables[(schema, table)].partitioned
                 else "large table read mostly by sequential scan"
             ),
-            suggestions=suggestions[(schema, table)],
-            partitioned=partitioned[(schema, table)],
+            suggestions=tables[(schema, table)].suggestions,
+            partitioned=tables[(schema, table)].partitioned,
         )
         for schema, table in order
     ]
