@@ -35,6 +35,7 @@ ENABLEABLE_EXTENSIONS = frozenset(
         "cube",
         "earthdistance",
         "postgis",
+        "postgres_fdw",
     }
 )
 

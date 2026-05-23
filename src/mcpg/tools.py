@@ -169,6 +169,78 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         sequences = await introspection.list_sequences(_driver(ctx), schema)
         return [asdict(sequence) for sequence in sequences]
 
+    @server.tool(
+        name="list_enums",
+        description="List the enum types in a schema, with their labels in sort order.",
+    )
+    async def list_enums(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        enums = await introspection.list_enums(_driver(ctx), schema)
+        return [asdict(enum) for enum in enums]
+
+    @server.tool(
+        name="list_domains",
+        description="List the domain types in a schema, with base type, default, and check constraints.",
+    )
+    async def list_domains(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        domains = await introspection.list_domains(_driver(ctx), schema)
+        return [asdict(domain) for domain in domains]
+
+    @server.tool(
+        name="list_composite_types",
+        description="List the standalone composite types in a schema with their attributes.",
+    )
+    async def list_composite_types(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        types = await introspection.list_composite_types(_driver(ctx), schema)
+        return [asdict(t) for t in types]
+
+    @server.tool(
+        name="list_foreign_data_wrappers",
+        description="List the foreign-data wrappers installed in the database.",
+    )
+    async def list_foreign_data_wrappers(ctx: _Ctx) -> list[dict[str, Any]]:
+        wrappers = await introspection.list_foreign_data_wrappers(_driver(ctx))
+        return [asdict(wrapper) for wrapper in wrappers]
+
+    @server.tool(
+        name="list_foreign_servers",
+        description="List the foreign servers defined in the database, with their FDW and options.",
+    )
+    async def list_foreign_servers(ctx: _Ctx) -> list[dict[str, Any]]:
+        servers = await introspection.list_foreign_servers(_driver(ctx))
+        return [asdict(server_info) for server_info in servers]
+
+    @server.tool(
+        name="list_foreign_tables",
+        description="List the foreign tables in a schema, with their server and options.",
+    )
+    async def list_foreign_tables(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        tables = await introspection.list_foreign_tables(_driver(ctx), schema)
+        return [asdict(table) for table in tables]
+
+    @server.tool(
+        name="list_user_mappings",
+        description="List role-to-foreign-server mappings; the catch-all appears as user='public'.",
+    )
+    async def list_user_mappings(ctx: _Ctx) -> list[dict[str, Any]]:
+        mappings = await introspection.list_user_mappings(_driver(ctx))
+        return [asdict(mapping) for mapping in mappings]
+
+    @server.tool(
+        name="list_publications",
+        description="List logical-replication publications with the tables and operations they include.",
+    )
+    async def list_publications(ctx: _Ctx) -> list[dict[str, Any]]:
+        publications = await introspection.list_publications(_driver(ctx))
+        return [asdict(publication) for publication in publications]
+
+    @server.tool(
+        name="list_subscriptions",
+        description="List logical-replication subscriptions; requires superuser to see any rows.",
+    )
+    async def list_subscriptions(ctx: _Ctx) -> list[dict[str, Any]]:
+        subscriptions = await introspection.list_subscriptions(_driver(ctx))
+        return [asdict(subscription) for subscription in subscriptions]
+
     @server.tool(name="list_extensions", description="List the extensions installed in the database.")
     async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         extensions = await introspection.list_extensions(_driver(ctx))

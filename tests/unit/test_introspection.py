@@ -7,8 +7,15 @@ from mcpg.config import load_settings
 from mcpg.introspection import (
     AvailableExtension,
     ColumnInfo,
+    CompositeAttribute,
+    CompositeTypeInfo,
     ConstraintInfo,
+    DomainInfo,
+    EnumInfo,
     ExtensionInfo,
+    ForeignDataWrapperInfo,
+    ForeignServerInfo,
+    ForeignTableInfo,
     FunctionInfo,
     GrantInfo,
     IndexInfo,
@@ -16,26 +23,38 @@ from mcpg.introspection import (
     PartitionSet,
     PolicyInfo,
     PolicySet,
+    PublicationInfo,
     RoleInfo,
     SchemaInfo,
     SequenceInfo,
+    SubscriptionInfo,
     TableInfo,
     TriggerInfo,
+    UserMappingInfo,
     ViewInfo,
     describe_table,
     list_available_extensions,
+    list_composite_types,
     list_constraints,
+    list_domains,
+    list_enums,
     list_extensions,
+    list_foreign_data_wrappers,
+    list_foreign_servers,
+    list_foreign_tables,
     list_functions,
     list_grants,
     list_indexes,
     list_partitions,
     list_policies,
+    list_publications,
     list_roles,
     list_schemas,
     list_sequences,
+    list_subscriptions,
     list_tables,
     list_triggers,
+    list_user_mappings,
     list_views,
 )
 from mcpg.server import create_server
@@ -461,6 +480,212 @@ async def test_list_sequences_allows_a_null_last_value() -> None:
     assert (await list_sequences(driver, "app"))[0].last_value is None
 
 
+async def test_list_enums_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {"name": "status", "values": ["draft", "live", "archived"]},
+            {"name": "tier", "values": ["bronze", "silver", "gold"]},
+        ]
+    )
+
+    assert await list_enums(driver, "app") == [
+        EnumInfo("status", ["draft", "live", "archived"]),
+        EnumInfo("tier", ["bronze", "silver", "gold"]),
+    ]
+    assert driver.calls[0][1] == ["app"]
+
+
+async def test_list_enums_returns_empty_for_a_schema_with_no_enums() -> None:
+    assert await list_enums(FakeDriver([]), "app") == []
+
+
+async def test_list_domains_maps_rows_including_constraints() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "positive_int",
+                "base_type": "integer",
+                "nullable": False,
+                "default_value": "0",
+                "constraints": ["CHECK ((VALUE > 0))"],
+            },
+            {
+                "name": "free_text",
+                "base_type": "text",
+                "nullable": True,
+                "default_value": None,
+                "constraints": [],
+            },
+        ]
+    )
+
+    assert await list_domains(driver, "app") == [
+        DomainInfo("positive_int", "integer", False, "0", ["CHECK ((VALUE > 0))"]),
+        DomainInfo("free_text", "text", True, None, []),
+    ]
+
+
+async def test_list_composite_types_groups_attributes_by_type() -> None:
+    driver = FakeDriver(
+        [
+            {"type_name": "address", "attr_name": "street", "attr_type": "text", "attr_num": 1},
+            {"type_name": "address", "attr_name": "city", "attr_type": "text", "attr_num": 2},
+            {"type_name": "money_range", "attr_name": "low", "attr_type": "numeric", "attr_num": 1},
+            {"type_name": "money_range", "attr_name": "high", "attr_type": "numeric", "attr_num": 2},
+        ]
+    )
+
+    assert await list_composite_types(driver, "app") == [
+        CompositeTypeInfo(
+            "address",
+            [CompositeAttribute("street", "text"), CompositeAttribute("city", "text")],
+        ),
+        CompositeTypeInfo(
+            "money_range",
+            [CompositeAttribute("low", "numeric"), CompositeAttribute("high", "numeric")],
+        ),
+    ]
+
+
+async def test_list_composite_types_returns_empty_for_a_schema_with_no_types() -> None:
+    assert await list_composite_types(FakeDriver([]), "app") == []
+
+
+async def test_list_foreign_data_wrappers_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "postgres_fdw",
+                "handler": "public.postgres_fdw_handler",
+                "validator": "public.postgres_fdw_validator",
+                "options": ["debug=true"],
+            },
+            {"name": "no_handler_fdw", "handler": None, "validator": None, "options": None},
+        ]
+    )
+
+    assert await list_foreign_data_wrappers(driver) == [
+        ForeignDataWrapperInfo(
+            "postgres_fdw", "public.postgres_fdw_handler", "public.postgres_fdw_validator", {"debug": "true"}
+        ),
+        ForeignDataWrapperInfo("no_handler_fdw", None, None, {}),
+    ]
+
+
+async def test_options_parser_tolerates_catalog_quirks() -> None:
+    # text[] catalog columns can contain NULL elements and entries without
+    # a separator; duplicate keys collapse to the last value seen.
+    driver = FakeDriver(
+        [
+            {
+                "name": "quirky_fdw",
+                "handler": None,
+                "validator": None,
+                "options": ["debug=true", "no_equal_sign", None, "debug=false", "work_mem=64MB"],
+            }
+        ]
+    )
+
+    assert await list_foreign_data_wrappers(driver) == [
+        ForeignDataWrapperInfo("quirky_fdw", None, None, {"debug": "false", "work_mem": "64MB"}),
+    ]
+
+
+async def test_list_foreign_servers_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "remote_db",
+                "wrapper": "postgres_fdw",
+                "type": None,
+                "version": None,
+                "options": ["host=remote", "dbname=app"],
+            }
+        ]
+    )
+
+    assert await list_foreign_servers(driver) == [
+        ForeignServerInfo("remote_db", "postgres_fdw", None, None, {"host": "remote", "dbname": "app"}),
+    ]
+
+
+async def test_list_foreign_tables_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {"name": "remote_widget", "server": "remote_db", "options": ["schema_name=public", "table_name=widget"]},
+        ]
+    )
+
+    assert await list_foreign_tables(driver, "app") == [
+        ForeignTableInfo("remote_widget", "remote_db", {"schema_name": "public", "table_name": "widget"}),
+    ]
+    assert driver.calls[0][1] == ["app"]
+
+
+async def test_list_user_mappings_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {"user_name": "public", "server": "remote_db", "options": []},
+            {"user_name": "app_user", "server": "remote_db", "options": ["user=app", "password=secret"]},
+        ]
+    )
+
+    assert await list_user_mappings(driver) == [
+        UserMappingInfo("public", "remote_db", {}),
+        UserMappingInfo("app_user", "remote_db", {"user": "app", "password": "secret"}),
+    ]
+
+
+async def test_list_publications_maps_rows_including_tables() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "widget_pub",
+                "owner": "app_owner",
+                "all_tables": False,
+                "publishes_insert": True,
+                "publishes_update": True,
+                "publishes_delete": False,
+                "publishes_truncate": False,
+                "tables": ["app.widget", "app.event"],
+            },
+            {
+                "name": "everything_pub",
+                "owner": "postgres",
+                "all_tables": True,
+                "publishes_insert": True,
+                "publishes_update": True,
+                "publishes_delete": True,
+                "publishes_truncate": True,
+                "tables": [],
+            },
+        ]
+    )
+
+    assert await list_publications(driver) == [
+        PublicationInfo("widget_pub", "app_owner", False, True, True, False, False, ["app.widget", "app.event"]),
+        PublicationInfo("everything_pub", "postgres", True, True, True, True, True, []),
+    ]
+
+
+async def test_list_subscriptions_maps_rows() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "name": "widget_sub",
+                "owner": "app_owner",
+                "enabled": True,
+                "connection": "host=upstream dbname=app",
+                "publications": ["widget_pub"],
+            }
+        ]
+    )
+
+    assert await list_subscriptions(driver) == [
+        SubscriptionInfo("widget_sub", "app_owner", True, "host=upstream dbname=app", ["widget_pub"]),
+    ]
+
+
 async def test_list_extensions_maps_rows() -> None:
     driver = FakeDriver([{"extname": "plpgsql", "extversion": "1.0"}])
 
@@ -497,6 +722,15 @@ _INTROSPECTION_TOOLS = {
     "list_roles",
     "list_grants",
     "list_sequences",
+    "list_enums",
+    "list_domains",
+    "list_composite_types",
+    "list_foreign_data_wrappers",
+    "list_foreign_servers",
+    "list_foreign_tables",
+    "list_user_mappings",
+    "list_publications",
+    "list_subscriptions",
     "list_extensions",
     "list_available_extensions",
 }
@@ -574,6 +808,69 @@ async def test_every_introspection_tool_is_callable_from_a_client() -> None:
                     "increment": 1,
                     "cycle": False,
                     "last_value": None,
+                }
+            ],
+        ),
+        "list_enums": (
+            {"schema": "app"},
+            [{"name": "status", "values": ["draft", "live"]}],
+        ),
+        "list_domains": (
+            {"schema": "app"},
+            [
+                {
+                    "name": "positive_int",
+                    "base_type": "integer",
+                    "nullable": False,
+                    "default_value": "0",
+                    "constraints": ["CHECK ((VALUE > 0))"],
+                }
+            ],
+        ),
+        "list_composite_types": (
+            {"schema": "app"},
+            [{"type_name": "address", "attr_name": "street", "attr_type": "text", "attr_num": 1}],
+        ),
+        "list_foreign_data_wrappers": (
+            {},
+            [{"name": "postgres_fdw", "handler": None, "validator": None, "options": []}],
+        ),
+        "list_foreign_servers": (
+            {},
+            [{"name": "remote_db", "wrapper": "postgres_fdw", "type": None, "version": None, "options": []}],
+        ),
+        "list_foreign_tables": (
+            {"schema": "app"},
+            [{"name": "remote_widget", "server": "remote_db", "options": []}],
+        ),
+        "list_user_mappings": (
+            {},
+            [{"user_name": "public", "server": "remote_db", "options": []}],
+        ),
+        "list_publications": (
+            {},
+            [
+                {
+                    "name": "p",
+                    "owner": "postgres",
+                    "all_tables": False,
+                    "publishes_insert": True,
+                    "publishes_update": True,
+                    "publishes_delete": True,
+                    "publishes_truncate": False,
+                    "tables": ["app.widget"],
+                }
+            ],
+        ),
+        "list_subscriptions": (
+            {},
+            [
+                {
+                    "name": "s",
+                    "owner": "postgres",
+                    "enabled": True,
+                    "connection": "host=u",
+                    "publications": ["p"],
                 }
             ],
         ),

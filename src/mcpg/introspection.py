@@ -238,6 +238,126 @@ class SequenceInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class EnumInfo:
+    """An enum type within a schema and its labels in sort order."""
+
+    name: str
+    values: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class DomainInfo:
+    """A domain type within a schema.
+
+    ``constraints`` are the rendered ``CHECK`` constraint definitions
+    attached to the domain, in catalog order.
+    """
+
+    name: str
+    base_type: str
+    nullable: bool
+    default: str | None
+    constraints: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class CompositeAttribute:
+    """A column of a composite type."""
+
+    name: str
+    data_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class CompositeTypeInfo:
+    """A standalone composite type within a schema (excludes table row-types)."""
+
+    name: str
+    attributes: list[CompositeAttribute]
+
+
+@dataclass(frozen=True, slots=True)
+class ForeignDataWrapperInfo:
+    """A foreign-data wrapper installed in the database.
+
+    ``handler`` and ``validator`` are the qualified function names, or
+    ``None`` when the FDW does not define one.
+    """
+
+    name: str
+    handler: str | None
+    validator: str | None
+    options: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class ForeignServerInfo:
+    """A foreign server defined for an FDW."""
+
+    name: str
+    wrapper: str
+    type: str | None
+    version: str | None
+    options: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class ForeignTableInfo:
+    """A foreign table within a schema."""
+
+    name: str
+    server: str
+    options: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class UserMappingInfo:
+    """A role-to-foreign-server mapping.
+
+    ``user`` is ``"public"`` for the catch-all mapping.
+    """
+
+    user: str
+    server: str
+    options: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class PublicationInfo:
+    """A logical-replication publication.
+
+    ``tables`` lists ``"schema.table"`` qualified names included in the
+    publication; empty when ``all_tables`` is true.
+    """
+
+    name: str
+    owner: str
+    all_tables: bool
+    publishes_insert: bool
+    publishes_update: bool
+    publishes_delete: bool
+    publishes_truncate: bool
+    tables: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class SubscriptionInfo:
+    """A logical-replication subscription.
+
+    ``publications`` lists the publication names this subscription consumes.
+    ``connection`` is the libpq connection string; password fields are
+    not redacted by PostgreSQL and the caller should treat the field as
+    sensitive.
+    """
+
+    name: str
+    owner: str
+    enabled: bool
+    connection: str
+    publications: list[str]
+
+
+@dataclass(frozen=True, slots=True)
 class ExtensionInfo:
     """An installed PostgreSQL extension."""
 
@@ -257,6 +377,23 @@ class AvailableExtension:
 
 def _is_system_schema(name: str) -> bool:
     return name in _SYSTEM_SCHEMAS or name.startswith("pg_")
+
+
+def _parse_options(raw: list[str | None] | None) -> dict[str, str]:
+    """Parse a PostgreSQL ``text[]`` of ``"key=value"`` entries into a dict.
+
+    Tolerant of catalog quirks: ``NULL`` array elements are skipped, and
+    entries without an ``=`` separator are ignored. When a key appears more
+    than once the last occurrence wins.
+    """
+    options: dict[str, str] = {}
+    for item in raw or []:
+        if not isinstance(item, str):
+            continue
+        key, sep, value = item.partition("=")
+        if sep:
+            options[key] = value
+    return options
 
 
 async def list_schemas(driver: SqlDriver, *, include_system: bool = False) -> list[SchemaInfo]:
@@ -600,6 +737,225 @@ async def list_sequences(driver: SqlDriver, schema: str) -> list[SequenceInfo]:
             increment=row.cells["increment"],
             cycle=row.cells["cycle"],
             last_value=row.cells["last_value"],
+        )
+        for row in rows or []
+    ]
+
+
+async def list_enums(driver: SqlDriver, schema: str) -> list[EnumInfo]:
+    """List the enum types in a schema, with their labels in sort order."""
+    rows = await driver.execute_query(
+        "SELECT t.typname AS name, "
+        "array_agg(e.enumlabel ORDER BY e.enumsortorder) AS values "
+        "FROM pg_type t "
+        "JOIN pg_namespace n ON n.oid = t.typnamespace "
+        "JOIN pg_enum e ON e.enumtypid = t.oid "
+        "WHERE n.nspname = %s "
+        "GROUP BY t.typname ORDER BY t.typname",
+        params=[schema],
+        force_readonly=True,
+    )
+    return [EnumInfo(name=row.cells["name"], values=list(row.cells["values"])) for row in rows or []]
+
+
+async def list_domains(driver: SqlDriver, schema: str) -> list[DomainInfo]:
+    """List the domain types in a schema, with base type and check constraints."""
+    rows = await driver.execute_query(
+        "SELECT t.typname AS name, "
+        "format_type(t.typbasetype, t.typtypmod) AS base_type, "
+        "NOT t.typnotnull AS nullable, "
+        "t.typdefault AS default_value, "
+        "COALESCE("
+        "  array_agg(pg_get_constraintdef(con.oid) ORDER BY con.conname) "
+        "    FILTER (WHERE con.oid IS NOT NULL), "
+        "  '{}'"
+        ") AS constraints "
+        "FROM pg_type t "
+        "JOIN pg_namespace n ON n.oid = t.typnamespace "
+        "LEFT JOIN pg_constraint con ON con.contypid = t.oid "
+        "WHERE n.nspname = %s AND t.typtype = 'd' "
+        "GROUP BY t.typname, t.typbasetype, t.typtypmod, t.typnotnull, t.typdefault "
+        "ORDER BY t.typname",
+        params=[schema],
+        force_readonly=True,
+    )
+    return [
+        DomainInfo(
+            name=row.cells["name"],
+            base_type=row.cells["base_type"],
+            nullable=row.cells["nullable"],
+            default=row.cells["default_value"],
+            constraints=list(row.cells["constraints"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_composite_types(driver: SqlDriver, schema: str) -> list[CompositeTypeInfo]:
+    """List the standalone composite types in a schema.
+
+    Implicit row-types of tables and views (which also live in ``pg_type``
+    with ``typtype = 'c'``) are excluded.
+    """
+    rows = await driver.execute_query(
+        "SELECT t.typname AS type_name, a.attname AS attr_name, "
+        "format_type(a.atttypid, a.atttypmod) AS attr_type, a.attnum AS attr_num "
+        "FROM pg_type t "
+        "JOIN pg_namespace n ON n.oid = t.typnamespace "
+        "JOIN pg_class c ON c.oid = t.typrelid "
+        "JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped "
+        "WHERE n.nspname = %s AND t.typtype = 'c' AND c.relkind = 'c' "
+        "ORDER BY t.typname, a.attnum",
+        params=[schema],
+        force_readonly=True,
+    )
+    grouped: dict[str, list[CompositeAttribute]] = {}
+    for row in rows or []:
+        grouped.setdefault(row.cells["type_name"], []).append(
+            CompositeAttribute(name=row.cells["attr_name"], data_type=row.cells["attr_type"])
+        )
+    return [CompositeTypeInfo(name=name, attributes=attrs) for name, attrs in grouped.items()]
+
+
+async def list_foreign_data_wrappers(driver: SqlDriver) -> list[ForeignDataWrapperInfo]:
+    """List the foreign-data wrappers installed in the database."""
+    rows = await driver.execute_query(
+        "SELECT fdwname AS name, "
+        "  CASE WHEN fdwhandler = 0 THEN NULL ELSE fdwhandler::regproc::text END AS handler, "
+        "  CASE WHEN fdwvalidator = 0 THEN NULL ELSE fdwvalidator::regproc::text END AS validator, "
+        "  fdwoptions AS options "
+        "FROM pg_foreign_data_wrapper ORDER BY fdwname",
+        force_readonly=True,
+    )
+    return [
+        ForeignDataWrapperInfo(
+            name=row.cells["name"],
+            handler=row.cells["handler"],
+            validator=row.cells["validator"],
+            options=_parse_options(row.cells["options"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_foreign_servers(driver: SqlDriver) -> list[ForeignServerInfo]:
+    """List the foreign servers defined in the database."""
+    rows = await driver.execute_query(
+        "SELECT s.srvname AS name, fdw.fdwname AS wrapper, "
+        "  s.srvtype AS type, s.srvversion AS version, s.srvoptions AS options "
+        "FROM pg_foreign_server s "
+        "JOIN pg_foreign_data_wrapper fdw ON fdw.oid = s.srvfdw "
+        "ORDER BY s.srvname",
+        force_readonly=True,
+    )
+    return [
+        ForeignServerInfo(
+            name=row.cells["name"],
+            wrapper=row.cells["wrapper"],
+            type=row.cells["type"],
+            version=row.cells["version"],
+            options=_parse_options(row.cells["options"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_foreign_tables(driver: SqlDriver, schema: str) -> list[ForeignTableInfo]:
+    """List the foreign tables in a schema, with their server and options."""
+    rows = await driver.execute_query(
+        "SELECT c.relname AS name, s.srvname AS server, ft.ftoptions AS options "
+        "FROM pg_foreign_table ft "
+        "JOIN pg_class c ON c.oid = ft.ftrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_foreign_server s ON s.oid = ft.ftserver "
+        "WHERE n.nspname = %s ORDER BY c.relname",
+        params=[schema],
+        force_readonly=True,
+    )
+    return [
+        ForeignTableInfo(
+            name=row.cells["name"],
+            server=row.cells["server"],
+            options=_parse_options(row.cells["options"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_user_mappings(driver: SqlDriver) -> list[UserMappingInfo]:
+    """List the role-to-foreign-server mappings defined in the database.
+
+    The catch-all ``PUBLIC`` mapping appears with ``user = "public"``.
+    """
+    rows = await driver.execute_query(
+        "SELECT COALESCE(usename, 'public') AS user_name, srvname AS server, "
+        "  umoptions AS options "
+        "FROM pg_user_mappings ORDER BY srvname, user_name",
+        force_readonly=True,
+    )
+    return [
+        UserMappingInfo(
+            user=row.cells["user_name"],
+            server=row.cells["server"],
+            options=_parse_options(row.cells["options"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_publications(driver: SqlDriver) -> list[PublicationInfo]:
+    """List the logical-replication publications in the database."""
+    rows = await driver.execute_query(
+        "SELECT p.pubname AS name, r.rolname AS owner, p.puballtables AS all_tables, "
+        "  p.pubinsert AS publishes_insert, p.pubupdate AS publishes_update, "
+        "  p.pubdelete AS publishes_delete, p.pubtruncate AS publishes_truncate, "
+        "  COALESCE("
+        "    (SELECT array_agg(pt.schemaname || '.' || pt.tablename ORDER BY pt.schemaname, pt.tablename) "
+        "       FROM pg_publication_tables pt WHERE pt.pubname = p.pubname), "
+        "    '{}'"
+        "  ) AS tables "
+        "FROM pg_publication p "
+        "JOIN pg_roles r ON r.oid = p.pubowner "
+        "ORDER BY p.pubname",
+        force_readonly=True,
+    )
+    return [
+        PublicationInfo(
+            name=row.cells["name"],
+            owner=row.cells["owner"],
+            all_tables=row.cells["all_tables"],
+            publishes_insert=row.cells["publishes_insert"],
+            publishes_update=row.cells["publishes_update"],
+            publishes_delete=row.cells["publishes_delete"],
+            publishes_truncate=row.cells["publishes_truncate"],
+            tables=list(row.cells["tables"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def list_subscriptions(driver: SqlDriver) -> list[SubscriptionInfo]:
+    """List the logical-replication subscriptions in the database.
+
+    Reading ``pg_subscription`` requires superuser privileges; with a
+    non-privileged role the result will be empty even when subscriptions
+    exist.
+    """
+    rows = await driver.execute_query(
+        "SELECT s.subname AS name, r.rolname AS owner, s.subenabled AS enabled, "
+        "  s.subconninfo AS connection, s.subpublications AS publications "
+        "FROM pg_subscription s "
+        "JOIN pg_roles r ON r.oid = s.subowner "
+        "ORDER BY s.subname",
+        force_readonly=True,
+    )
+    return [
+        SubscriptionInfo(
+            name=row.cells["name"],
+            owner=row.cells["owner"],
+            enabled=row.cells["enabled"],
+            connection=row.cells["connection"],
+            publications=list(row.cells["publications"]),
         )
         for row in rows or []
     ]

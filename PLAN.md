@@ -313,3 +313,60 @@ never lost when limits are hit.
 - Telemetry/observability scope (OpenTelemetry?) — revisit in Phase 6.
 
 These are tracked and resolved via ADRs as phases reach them.
+
+## 11. Post-Phase-15 roadmap (Phases 16–27)
+
+After Phases 12–15 closed (365 tests, 100% coverage), a second round of
+capability selection picked eleven themes spanning catalog completeness,
+advisors, extension wrappers, data movement, replication, events, and
+migrations. The work is grouped into six deliverable batches; each batch
+opens its own feature branch and pull request.
+
+### Batch A — Catalog completeness & visualisation
+- **Phase 16** — Introspection gaps: `list_enums`, `list_domains`,
+  `list_composite_types`, `list_foreign_data_wrappers`,
+  `list_foreign_servers`, `list_foreign_tables`, `list_user_mappings`,
+  `list_publications`, `list_subscriptions`.
+- **Phase 17** — Schema visualisation: `generate_schema_diagram`
+  returning a Mermaid ER diagram (tables, columns, PK/FK, partitions).
+- **Phase 18** — Schema diff: `compare_schemas(left, right)` returning a
+  structured diff. Foundation for Batch F.
+- **Phase 19** — Storage & cost telemetry: `analyze_storage`;
+  `wal_volume` health check.
+
+### Batch B — Advisors & trust
+- **Phase 20** — Advisors / lint layer: `run_advisors` with codified
+  rules (missing PKs, unindexed FKs, RLS gaps, duplicate indexes, etc).
+- **Phase 21** — Audit trail with semantic diff: `run_write`/`run_ddl`
+  emit a structured diff alongside their result; optional persistence
+  to an `mcpg_audit` schema (off by default).
+
+### Batch C — Extension power-tools
+- **Phase 22** — `pg_cron` + `pg_partman` wrappers: list / schedule /
+  unschedule / create-parent / run-maintenance / drop-partition.
+- **Phase 23** — pgvector tuning: `tune_vector_index`,
+  `vector_recall_at_k`.
+
+### Batch D — Data movement (LARGE — gated on ADR-0004)
+- **Phase 24** — Export/import: `export_query`, `export_table`,
+  `import_csv`/`import_json`, `dump_database`/`restore_database`,
+  `copy_table_between_databases`. Subprocess execution is a new attack
+  surface; ADR-0004 must define the allowlist / opt-in / redaction
+  policy before any code is written.
+
+### Batch E — Replication & event streams (LARGE — gated on ADR-0005)
+- **Phase 25** — Logical replication management: replication slots and
+  publication/subscription create+drop wrappers (write-gated).
+- **Phase 26** — `LISTEN`/`NOTIFY` bridge. ADR-0005 picks between a
+  polling model (recommended) and MCP notifications.
+
+### Batch F — Migrations with shadow workflow (LARGEST — gated on ADR-0006)
+- **Phase 27** — `prepare_migration`/`complete_migration` driven by the
+  Phase-18 schema diff. ADR-0006 picks between same-DB shadow schema
+  (Option 1, recommended) and side-channel `CREATE DATABASE ... TEMPLATE`
+  (Option 2, heavyweight).
+
+Cadence: per-task TDD; 90% coverage gate (current 100%); ruff / mypy /
+PG 14–17 CI matrix must be green before each commit. Batches D, E, F
+require their ADR to be merged and signed off before implementation
+begins.

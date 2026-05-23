@@ -38,6 +38,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 - `cancel_query` and `terminate_backend` tools — signal a backend PID to
   cancel its current query or close its connection; require unrestricted
   mode.
+- `list_enums`, `list_domains`, `list_composite_types` tools — the
+  user-defined types in a schema. Composite types report each attribute
+  with its rendered type; the catalog's implicit table row-types are
+  excluded.
+- `list_foreign_data_wrappers`, `list_foreign_servers`,
+  `list_foreign_tables`, `list_user_mappings` tools — the FDW catalog,
+  with each entry's options array parsed into a typed dict.
+- `list_publications` and `list_subscriptions` tools — read-only view of
+  logical-replication publications (with the tables and operations they
+  cover) and subscriptions; reading subscriptions requires superuser, by
+  PostgreSQL design.
 
 ### Changed
 

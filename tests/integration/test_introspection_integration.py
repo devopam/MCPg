@@ -10,18 +10,27 @@ from mcpg.introspection import (
     SchemaInfo,
     describe_table,
     list_available_extensions,
+    list_composite_types,
     list_constraints,
+    list_domains,
+    list_enums,
     list_extensions,
+    list_foreign_data_wrappers,
+    list_foreign_servers,
+    list_foreign_tables,
     list_functions,
     list_grants,
     list_indexes,
     list_partitions,
     list_policies,
+    list_publications,
     list_roles,
     list_schemas,
     list_sequences,
+    list_subscriptions,
     list_tables,
     list_triggers,
+    list_user_mappings,
     list_views,
 )
 
@@ -57,6 +66,9 @@ async def sample_schema(connected_database: Database) -> AsyncIterator[str]:
     )
     await driver.execute_query(f"ALTER TABLE {_SCHEMA}.widget ENABLE ROW LEVEL SECURITY")
     await driver.execute_query(f"CREATE POLICY widget_select ON {_SCHEMA}.widget FOR SELECT USING (true)")
+    await driver.execute_query(f"CREATE TYPE {_SCHEMA}.status AS ENUM ('draft', 'live', 'archived')")
+    await driver.execute_query(f"CREATE DOMAIN {_SCHEMA}.positive_int AS integer NOT NULL DEFAULT 1 CHECK (VALUE > 0)")
+    await driver.execute_query(f"CREATE TYPE {_SCHEMA}.address AS (street text, city text)")
     try:
         yield _SCHEMA
     finally:
@@ -195,6 +207,128 @@ async def test_list_roles_excludes_predefined_roles_by_default(connected_databas
     roles = await list_roles(connected_database.driver())
 
     assert not any(role.name.startswith("pg_") for role in roles)
+
+
+async def test_list_enums_finds_an_enum_with_its_labels(connected_database: Database, sample_schema: str) -> None:
+    enums = {enum.name: enum for enum in await list_enums(connected_database.driver(), sample_schema)}
+
+    assert enums["status"].values == ["draft", "live", "archived"]
+
+
+async def test_list_domains_finds_a_domain_with_its_check(connected_database: Database, sample_schema: str) -> None:
+    domains = {domain.name: domain for domain in await list_domains(connected_database.driver(), sample_schema)}
+    positive_int = domains["positive_int"]
+
+    assert positive_int.base_type == "integer"
+    assert positive_int.nullable is False
+    assert positive_int.default == "1"
+    assert any("VALUE > 0" in constraint for constraint in positive_int.constraints)
+
+
+async def test_list_composite_types_excludes_table_row_types(connected_database: Database, sample_schema: str) -> None:
+    types = {t.name: t for t in await list_composite_types(connected_database.driver(), sample_schema)}
+
+    assert "address" in types
+    assert {attr.name for attr in types["address"].attributes} == {"street", "city"}
+    # Tables' implicit row-types must not appear.
+    assert "widget" not in types
+
+
+@pytest.fixture
+async def foreign_data_setup(connected_database: Database) -> AsyncIterator[str]:
+    """Create a postgres_fdw server, mapping, and foreign table; clean up after."""
+    driver = connected_database.driver()
+    available = {extension.name for extension in await list_available_extensions(driver)}
+    if "postgres_fdw" not in available:
+        pytest.skip("postgres_fdw is not available on this PostgreSQL server")
+    schema = "mcpg_fdw_it"
+    await driver.execute_query("DROP SERVER IF EXISTS mcpg_fdw_server CASCADE")
+    await driver.execute_query(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+    await enable_extension(driver, "postgres_fdw")
+    await driver.execute_query(f"CREATE SCHEMA {schema}")
+    await driver.execute_query(
+        "CREATE SERVER mcpg_fdw_server FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host 'localhost', dbname 'postgres')"
+    )
+    await driver.execute_query("CREATE USER MAPPING FOR PUBLIC SERVER mcpg_fdw_server OPTIONS (user 'postgres')")
+    await driver.execute_query(
+        f"CREATE FOREIGN TABLE {schema}.remote_widget (id integer, name text) "
+        "SERVER mcpg_fdw_server OPTIONS (schema_name 'public', table_name 'widget')"
+    )
+    try:
+        yield schema
+    finally:
+        await driver.execute_query("DROP SERVER IF EXISTS mcpg_fdw_server CASCADE")
+        await driver.execute_query(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+
+
+async def test_list_foreign_data_wrappers_finds_postgres_fdw(
+    connected_database: Database, foreign_data_setup: str
+) -> None:
+    wrappers = {w.name: w for w in await list_foreign_data_wrappers(connected_database.driver())}
+
+    assert "postgres_fdw" in wrappers
+    assert wrappers["postgres_fdw"].handler is not None
+
+
+async def test_list_foreign_servers_finds_the_server_and_options(
+    connected_database: Database, foreign_data_setup: str
+) -> None:
+    servers = {s.name: s for s in await list_foreign_servers(connected_database.driver())}
+
+    assert "mcpg_fdw_server" in servers
+    assert servers["mcpg_fdw_server"].wrapper == "postgres_fdw"
+    assert servers["mcpg_fdw_server"].options.get("host") == "localhost"
+
+
+async def test_list_foreign_tables_finds_the_foreign_table(
+    connected_database: Database, foreign_data_setup: str
+) -> None:
+    tables = {t.name: t for t in await list_foreign_tables(connected_database.driver(), foreign_data_setup)}
+
+    assert "remote_widget" in tables
+    assert tables["remote_widget"].server == "mcpg_fdw_server"
+    assert tables["remote_widget"].options.get("table_name") == "widget"
+
+
+async def test_list_user_mappings_finds_the_public_mapping(
+    connected_database: Database, foreign_data_setup: str
+) -> None:
+    mappings = await list_user_mappings(connected_database.driver())
+    by_server = {(m.user, m.server) for m in mappings}
+
+    assert ("public", "mcpg_fdw_server") in by_server
+
+
+@pytest.fixture
+async def publication_setup(connected_database: Database, sample_schema: str) -> AsyncIterator[str]:
+    """Create a logical-replication publication covering the sample widget table."""
+    driver = connected_database.driver()
+    await driver.execute_query("DROP PUBLICATION IF EXISTS mcpg_widget_pub")
+    await driver.execute_query(f"CREATE PUBLICATION mcpg_widget_pub FOR TABLE {sample_schema}.widget")
+    try:
+        yield "mcpg_widget_pub"
+    finally:
+        await driver.execute_query("DROP PUBLICATION IF EXISTS mcpg_widget_pub")
+
+
+async def test_list_publications_finds_the_publication_with_its_table(
+    connected_database: Database, publication_setup: str, sample_schema: str
+) -> None:
+    pubs = {p.name: p for p in await list_publications(connected_database.driver())}
+
+    assert publication_setup in pubs
+    assert pubs[publication_setup].all_tables is False
+    assert f"{sample_schema}.widget" in pubs[publication_setup].tables
+    assert pubs[publication_setup].publishes_insert is True
+
+
+async def test_list_subscriptions_returns_a_list(connected_database: Database) -> None:
+    # Subscriptions need a remote publisher and superuser to read; we only
+    # assert the call succeeds and returns a (possibly empty) list — the
+    # mapping is exercised in the unit tests.
+    subscriptions = await list_subscriptions(connected_database.driver())
+
+    assert isinstance(subscriptions, list)
 
 
 async def test_describe_table_reports_pgvector_dimension(connected_database: Database) -> None:
