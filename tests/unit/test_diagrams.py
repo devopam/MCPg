@@ -23,6 +23,8 @@ def test_sanitize_collapses_non_alphanumeric_runs_and_strips_edges() -> None:
     # Pathological all-punctuation input degrades to a placeholder rather
     # than producing an empty Mermaid token (which the parser would reject).
     assert _sanitize("---") == "_"
+    # Leading and trailing whitespace must not survive as separator underscores.
+    assert _sanitize("  text with spaces  ") == "text_with_spaces"
 
 
 def test_parse_pk_columns_extracts_quoted_and_unquoted_columns() -> None:
@@ -121,6 +123,47 @@ async def test_generate_schema_diagram_skips_edges_pointing_outside_the_schema()
     assert "||--o{" not in rendered
 
 
+async def test_generate_schema_diagram_includes_partitions_when_requested() -> None:
+    routes = _routes()
+    routes["FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %s AND c.relkind"] = [
+        {"name": "event", "relkind": "p", "is_partition": False},
+        {"name": "event_2026", "relkind": "r", "is_partition": True},
+    ]
+    driver = FakeRoutingDriver(routes)
+
+    rendered = await generate_schema_diagram(driver, "app", include_partitions=True)
+
+    # Both the partitioned parent and the partition itself are drawn.
+    assert "    event {\n" in rendered
+    assert "    event_2026 {\n" in rendered
+
+
+async def test_generate_schema_diagram_skips_edges_pointing_to_filtered_partitions() -> None:
+    # Same-schema partner of the cross-schema test — the FK target table is
+    # filtered out (partition skipped by default), so no edge is emitted
+    # even though the FK has to_schema == 'app'.
+    routes = _routes()
+    routes["FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %s AND c.relkind"] = [
+        {"name": "order", "relkind": "r", "is_partition": False},
+        {"name": "event_2026", "relkind": "r", "is_partition": True},
+    ]
+    routes["FROM pg_constraint c JOIN pg_class cl ON cl.oid = c.conrelid"] = [
+        {
+            "name": "order_event_fk",
+            "from_table": "order",
+            "to_schema": "app",
+            "to_table": "event_2026",
+            "from_columns": ["event_id"],
+            "to_columns": ["id"],
+        }
+    ]
+    driver = FakeRoutingDriver(routes)
+
+    rendered = await generate_schema_diagram(driver, "app", include_partitions=False)
+
+    assert "||--o{" not in rendered
+
+
 # --- MCP tool wiring -------------------------------------------------------
 
 
@@ -134,3 +177,6 @@ async def test_generate_schema_diagram_tool_is_registered_and_callable() -> None
         result = await client.call_tool("generate_schema_diagram", {"schema": "app"})
 
     assert result.isError is False
+    # The wiring should hand the raw Mermaid string straight through; an empty
+    # schema still produces the ``erDiagram`` preamble.
+    assert result.content[0].text.startswith("erDiagram\n")  # type: ignore[union-attr]

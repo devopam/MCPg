@@ -287,6 +287,10 @@ async def test_list_foreign_keys_maps_rows_aligned_by_ordinal() -> None:
     assert driver.calls[0][1] == ["app"]
 
 
+async def test_list_foreign_keys_returns_an_empty_list_when_no_foreign_keys() -> None:
+    assert await list_foreign_keys(FakeDriver([]), "app") == []
+
+
 async def test_list_partitions_describes_a_range_partitioned_table() -> None:
     driver = FakeDriver(
         [

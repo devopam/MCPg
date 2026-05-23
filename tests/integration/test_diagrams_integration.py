@@ -38,5 +38,5 @@ async def test_generate_schema_diagram_renders_entities_and_fk_edge(
     assert "widget {" in rendered
     assert "order_item {" in rendered
     assert "integer id PK" in rendered
-    assert "integer widget_id" in rendered and "FK" in rendered
+    assert "integer widget_id FK" in rendered
     assert "widget ||--o{ order_item" in rendered

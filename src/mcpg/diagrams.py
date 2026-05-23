@@ -53,6 +53,11 @@ async def generate_schema_diagram(driver: SqlDriver, schema: str, *, include_par
         tables = [table for table in tables if not table.is_partition]
     entity_names = {table.name for table in tables}
 
+    foreign_keys = await list_foreign_keys(driver, schema)
+    fk_columns_by_table: dict[str, set[str]] = {}
+    for fk in foreign_keys:
+        fk_columns_by_table.setdefault(fk.from_table, set()).update(fk.from_columns)
+
     lines = ["erDiagram"]
     for table in tables:
         columns = await describe_table(driver, schema, table.name)
@@ -62,10 +67,7 @@ async def generate_schema_diagram(driver: SqlDriver, schema: str, *, include_par
             if constraint.type == "primary_key":
                 pk_columns |= _parse_pk_columns(constraint.definition)
 
-        fk_columns: set[str] = set()
-        for fk in await list_foreign_keys(driver, schema):
-            if fk.from_table == table.name:
-                fk_columns |= set(fk.from_columns)
+        fk_columns = fk_columns_by_table.get(table.name, set())
 
         lines.append(f"    {_sanitize(table.name)} {{")
         for column in columns:
@@ -78,7 +80,7 @@ async def generate_schema_diagram(driver: SqlDriver, schema: str, *, include_par
             lines.append(f"        {_sanitize(column.data_type)} {_sanitize(column.name)}{suffix}")
         lines.append("    }")
 
-    for fk in await list_foreign_keys(driver, schema):
+    for fk in foreign_keys:
         if fk.from_table not in entity_names or fk.to_table not in entity_names:
             # Cross-schema FK or pointing to a filtered-out table — skip the
             # edge rather than emit a dangling reference.
