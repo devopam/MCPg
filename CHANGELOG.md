@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `list_cron_jobs` tool — read pg_cron's `cron.job` catalog. Returns an
+  empty list when pg_cron is not installed (graceful degradation).
+- `schedule_cron_job` and `unschedule_cron_job` tools (write-gated) —
+  thin wrappers over `cron.schedule()` / `cron.unschedule()`. Raise
+  `CronError` when pg_cron is not installed.
+- `partman_create_parent`, `partman_run_maintenance`,
+  `partman_drop_partition` tools (write-gated) — pg_partman
+  partition-set creation, periodic maintenance (forward partitions +
+  retention drops), and explicit retention-based drops (time- or
+  id-controlled). `partition_type` is allowlisted to
+  range/list/native. Raise `PartmanError` when pg_partman is not
+  installed.
+- `pg_cron` and `pg_partman` added to `ENABLEABLE_EXTENSIONS` — agents
+  can request enabling them (still gated on unrestricted mode +
+  `MCPG_ALLOW_DDL`; pg_cron also requires server-side
+  `shared_preload_libraries`).
+
 ## [0.3.0] - 2026-05-23
 
 Twelve new MCP tools, closing Batch A of the post-0.2.0 roadmap

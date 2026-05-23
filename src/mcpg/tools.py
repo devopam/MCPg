@@ -15,6 +15,7 @@ from mcp.server.session import ServerSession
 
 from mcpg import (
     __version__,
+    cron,
     diagrams,
     extensions,
     health,
@@ -22,6 +23,7 @@ from mcpg import (
     introspection,
     liveops,
     maintenance,
+    partman,
     query,
     schema_diff,
     textsearch,
@@ -462,6 +464,100 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
         queries = await liveops.list_active_queries(_driver(ctx))
         return [asdict(active) for active in queries]
 
+    @server.tool(
+        name="list_cron_jobs",
+        description=(
+            "List the pg_cron jobs registered in the database. Returns an empty list when pg_cron is not installed."
+        ),
+    )
+    async def list_cron_jobs(ctx: _Ctx) -> list[dict[str, Any]]:
+        jobs = await cron.list_cron_jobs(_driver(ctx))
+        return [asdict(job) for job in jobs]
+
+
+def _register_scheduling(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="schedule_cron_job",
+        description=(
+            "Register a pg_cron job. ``schedule`` is a cron expression or "
+            "pg_cron interval shortcut (e.g. '30 seconds'). Available only "
+            "in unrestricted mode; requires pg_cron installed."
+        ),
+    )
+    async def schedule_cron_job(ctx: _Ctx, name: str, schedule: str, command: str) -> dict[str, Any]:
+        result = await cron.schedule_cron_job(_driver(ctx), name, schedule, command)
+        return asdict(result)
+
+    @server.tool(
+        name="unschedule_cron_job",
+        description=(
+            "Unschedule a pg_cron job by name. Returns ``removed=true`` when the "
+            "job existed. Available only in unrestricted mode."
+        ),
+    )
+    async def unschedule_cron_job(ctx: _Ctx, name: str) -> dict[str, Any]:
+        removed = await cron.unschedule_cron_job(_driver(ctx), name)
+        return {"name": name, "removed": removed}
+
+    @server.tool(
+        name="partman_create_parent",
+        description=(
+            "Register a partitioned table with pg_partman. ``partition_type`` "
+            "must be 'range', 'list', or 'native'. Available only in "
+            "unrestricted mode; requires pg_partman installed."
+        ),
+    )
+    async def partman_create_parent(
+        ctx: _Ctx,
+        parent_table: str,
+        control_column: str,
+        partition_interval: str,
+        partition_type: str = "range",
+    ) -> dict[str, Any]:
+        result = await partman.partman_create_parent(
+            _driver(ctx),
+            parent_table,
+            control_column,
+            partition_interval,
+            partition_type=partition_type,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="partman_run_maintenance",
+        description=(
+            "Run pg_partman maintenance — add forward partitions and drop "
+            "retired ones. Pass parent_table to scope to one parent; omit "
+            "to run for every managed parent. Unrestricted mode only."
+        ),
+    )
+    async def partman_run_maintenance(ctx: _Ctx, parent_table: str | None = None) -> dict[str, Any]:
+        result = await partman.partman_run_maintenance(_driver(ctx), parent_table)
+        return asdict(result)
+
+    @server.tool(
+        name="partman_drop_partition",
+        description=(
+            "Drop pg_partman partitions older than ``retention``. Time-controlled "
+            "parents take a PG interval (e.g. '30 days'); id-controlled parents "
+            "take an integer-like string with control_is_time=false. Returns the "
+            "dropped partition names. Unrestricted mode only."
+        ),
+    )
+    async def partman_drop_partition(
+        ctx: _Ctx,
+        parent_table: str,
+        retention: str,
+        control_is_time: bool = True,
+    ) -> dict[str, Any]:
+        dropped = await partman.partman_drop_partition(
+            _driver(ctx),
+            parent_table,
+            retention,
+            control_is_time=control_is_time,
+        )
+        return {"parent_table": parent_table, "dropped": dropped}
+
 
 def _register_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
@@ -560,5 +656,6 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_write(server)
         _register_maintenance(server)
         _register_backend_control(server)
+        _register_scheduling(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
