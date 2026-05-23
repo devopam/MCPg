@@ -6,15 +6,14 @@
 
 ## Current state
 
-- **Phase:** all 11 phases complete — extension support fully delivered
+- **Phase:** 12 — Deeper schema introspection (Phases 0–11 complete)
 - **Last updated:** 2026-05-21
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 
 ## Next action
 
-> All eleven planned phases are complete (20 MCP tools). Version bumped to
-> 0.2.0; the extension work (Phases 8–11) is being merged to `main` via a
-> second PR. Tagging `v0.2.0` awaits user sign-off.
+> Phases 12–15 complete. No task in progress — pick the next initiative
+> from `PLAN.md` or await direction.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -138,6 +137,36 @@
 
 > Phases 8–11 cover PostgreSQL extension and advanced-feature support; see
 > `PLAN.md` §7a for the capability inventory and per-extension priorities.
+
+## Phase 12 — Deeper schema introspection
+
+- [x] 12.1 `list_constraints` — PK, FK, unique, check, exclusion (`mcpg/introspection.py`, TDD)
+- [x] 12.2 `list_views` (+ view definitions) (`mcpg/introspection.py`, TDD)
+- [x] 12.3 `list_functions` — functions and procedures (`mcpg/introspection.py`, TDD)
+- [x] 12.4 `list_triggers` (`mcpg/introspection.py`, TDD)
+- [x] 12.5 `list_sequences` (`mcpg/introspection.py`, TDD)
+
+## Phase 13 — Partitioning
+
+- [x] 13.1 `list_partitions` — strategy, bounds, parent↔partition links (`mcpg/introspection.py`, TDD)
+- [x] 13.2 Flag partitioned tables / partitions in `list_tables` (`mcpg/introspection.py`, TDD)
+- [x] 13.3 Partition-aware `list_indexes` and `recommend_indexes` (TDD)
+
+## Phase 14 — Access-control introspection
+
+- [x] 14.1 `list_policies` — Row-Level-Security policies on a table (`mcpg/introspection.py`, TDD)
+- [x] 14.2 `list_roles` (`mcpg/introspection.py`, TDD)
+- [x] 14.3 `list_grants` — table/object privileges (`mcpg/introspection.py`, TDD)
+
+## Phase 15 — Live ops & maintenance
+
+- [x] 15.1 `list_active_queries` + lock / blocking inspection (`mcpg/liveops.py`, TDD)
+- [x] 15.2 Replication-lag and bloat health checks (`mcpg/health.py`, TDD)
+- [x] 15.3 Gated `run_maintenance` (VACUUM/ANALYZE) (`mcpg/maintenance.py`, TDD)
+- [x] 15.4 Gated `cancel_query` / `terminate_backend` (`mcpg/liveops.py`, TDD)
+
+> Phases 12–15 cover deeper introspection and live ops; see `PLAN.md` §7b for
+> the capability gap analysis behind them.
 
 ## Decisions log
 
@@ -326,3 +355,54 @@
   distance to a lon/lat point) to `mcpg/textsearch.py`. 296 tests (4
   extension integration tests run in CI), 100% coverage. **Phase 11 complete
   — all eleven planned phases delivered; 20 MCP tools.**
+- 2026-05-21 — Live-test of the real server surfaced a `fuzzy_search` UX gap;
+  added a `word`/`full` `mode` (default `word`). 306 tests.
+- 2026-05-21 — Capability gap analysis (`PLAN.md` §7b): added Phases 12–15 to
+  the roadmap — deeper schema introspection, partitioning, access-control
+  introspection, and live ops & maintenance.
+- 2026-05-21 — Task 12.1: added `list_constraints` — PK/FK/unique/check/
+  exclusion constraints on a table, via `pg_constraint`. 309 tests, 100% cov.
+- 2026-05-21 — PR #2 (v0.2.0 + Phase 12 start) merged to `main`; branch
+  re-synced. Task 12.2: added `list_views` — views and materialized views in
+  a schema with definitions, via `pg_class`. 311 tests, 100% coverage.
+- 2026-05-21 — Task 12.3: added `list_functions` — functions and procedures
+  in a schema (kind, arguments, return type, language), via `pg_proc`.
+  313 tests, 100% coverage.
+- 2026-05-21 — Task 12.4: added `list_triggers` — user-defined triggers on a
+  table (function + definition), via `pg_trigger`. 315 tests, 100% coverage.
+- 2026-05-22 — Task 12.5: added `list_sequences` — sequences in a schema
+  (data type, range, increment, cycle, last value), via `pg_sequences`.
+  Phase 12 complete. 318 tests, 100% coverage.
+- 2026-05-22 — Task 13.1: added `list_partitions` — a table's partitioning
+  strategy and partitions with bound expressions, via `pg_partitioned_table`
+  and `pg_inherits`. 323 tests, 100% coverage.
+- 2026-05-22 — Task 13.2: `list_tables` now reads `pg_class` and flags each
+  table with `partitioned` and `is_partition`. 325 tests, 100% coverage.
+- 2026-05-22 — Task 13.3: `list_indexes` flags partitioned-index templates;
+  `recommend_indexes` rolls partition stats up to the partitioned parent.
+  Phase 13 complete. 328 tests, 100% coverage.
+- 2026-05-22 — Task 14.1: added `list_policies` — Row-Level-Security
+  policies on a table (command, permissive, roles, predicates) plus the
+  table's RLS-enabled flag, via `pg_policies`. 334 tests, 100% coverage.
+- 2026-05-22 — Task 14.2: added `list_roles` — database roles and their
+  attributes (superuser, create-role/db, login, replication, bypass-RLS,
+  connection limit, membership), via `pg_roles` and `pg_auth_members`.
+  340 tests, 100% coverage.
+- 2026-05-22 — Task 14.3: added `list_grants` — privileges granted on a
+  table (grantee, privilege, grantable, grantor), via
+  `information_schema.table_privileges`. Phase 14 complete. 342 tests,
+  100% coverage.
+- 2026-05-22 — Task 15.1: added `list_active_queries` (new `mcpg/liveops`
+  module) — in-flight queries with wait events, duration, and blocking
+  PIDs, via `pg_stat_activity` and `pg_blocking_pids`. 346 tests, 100%
+  coverage.
+- 2026-05-22 — Task 15.2: `check_database_health` gains `replication_lag`
+  (via `pg_stat_replication`) and `table_bloat` (catalog-only size
+  estimate) checks. 349 tests, 100% coverage.
+- 2026-05-22 — Task 15.3: added gated `run_maintenance` (new
+  `mcpg/maintenance` module) — VACUUM/ANALYZE on one table via a new
+  autocommit `Database.run_unmanaged` path. 357 tests, 100% coverage.
+- 2026-05-22 — Task 15.4: added gated `cancel_query` and
+  `terminate_backend` — signal a backend PID via `pg_cancel_backend` /
+  `pg_terminate_backend`. Phases 12–15 complete. 365 tests, 100%
+  coverage.

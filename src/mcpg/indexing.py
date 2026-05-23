@@ -8,7 +8,7 @@ workload filters on still needs query analysis (see ``analyze_workload``).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from mcpg._vendor.sql import SqlDriver
 
@@ -30,7 +30,12 @@ class IndexSuggestion:
 
 @dataclass(frozen=True, slots=True)
 class IndexRecommendation:
-    """A table that may benefit from indexing, with per-column suggestions."""
+    """A table that may benefit from indexing, with per-column suggestions.
+
+    For a partitioned table, ``partitioned`` is ``True`` and the scan and row
+    counts are summed across its partitions — an index created on the parent
+    propagates to them all.
+    """
 
     schema: str
     table: str
@@ -38,6 +43,32 @@ class IndexRecommendation:
     live_tuples: int
     reason: str
     suggestions: list[IndexSuggestion]
+    partitioned: bool
+
+
+@dataclass(slots=True)
+class _TableAgg:
+    """Per-logical-table aggregator used while rolling up scan stats."""
+
+    seq_scans: int = 0
+    live_tuples: int = 0
+    partitioned: bool = False
+    suggestions: list[IndexSuggestion] = field(default_factory=list)
+    _seen_columns: set[str] = field(default_factory=set, repr=False)
+
+    def add_stats(self, seq_scan: int, live_tup: int, is_partition: bool) -> None:
+        self.seq_scans += seq_scan
+        self.live_tuples += live_tup
+        self.partitioned = self.partitioned or is_partition
+
+    def add_suggestion(self, column: str, data_type: str) -> None:
+        if column in self._seen_columns:
+            return
+        suggestion = _suggest(column, data_type)
+        if suggestion is None:
+            return
+        self._seen_columns.add(column)
+        self.suggestions.append(suggestion)
 
 
 def _suggest(column: str, data_type: str) -> IndexSuggestion | None:
@@ -58,7 +89,11 @@ async def recommend_indexes(
 
     Heuristic: large tables (at least ``min_live_tuples`` rows) read more
     often by sequential scan than by index scan. For each, columns with
-    GIN-friendly types yield an :class:`IndexSuggestion`.
+    GIN-friendly types yield an :class:`IndexSuggestion`. A flagged partition
+    is rolled up to its partitioned parent, since an index belongs on the
+    parent; scan and row counts are summed across the partitions. The
+    partitioned parent's own (empty) stats row is excluded from the
+    aggregation so partition stats are not double-counted.
 
     Args:
         driver: The SQL driver to query through.
@@ -66,10 +101,16 @@ async def recommend_indexes(
     """
     rows = await driver.execute_query(
         "SELECT s.schemaname, s.relname, s.seq_scan, s.n_live_tup, "
-        "c.column_name, c.data_type "
+        "c.column_name, c.data_type, "
+        "pn.nspname AS parent_schema, parent.relname AS parent_table "
         "FROM pg_stat_user_tables s "
+        "JOIN pg_class self ON self.oid = s.relid AND self.relkind <> 'p' "
         "JOIN information_schema.columns c "
         "  ON c.table_schema = s.schemaname AND c.table_name = s.relname "
+        "LEFT JOIN pg_inherits inh ON inh.inhrelid = s.relid "
+        "LEFT JOIN pg_class parent "
+        "  ON parent.oid = inh.inhparent AND parent.relkind = 'p' "
+        "LEFT JOIN pg_namespace pn ON pn.oid = parent.relnamespace "
         "WHERE s.n_live_tup >= %s AND s.seq_scan > COALESCE(s.idx_scan, 0) "
         "ORDER BY s.seq_scan DESC, s.relname, c.ordinal_position",
         params=[min_live_tuples],
@@ -77,26 +118,38 @@ async def recommend_indexes(
     )
 
     order: list[tuple[str, str]] = []
-    stats: dict[tuple[str, str], tuple[int, int]] = {}
-    suggestions: dict[tuple[str, str], list[IndexSuggestion]] = {}
+    tables: dict[tuple[str, str], _TableAgg] = {}
+    counted: set[tuple[str, str]] = set()
     for row in rows or []:
-        key = (row.cells["schemaname"], row.cells["relname"])
-        if key not in stats:
+        parent_table = row.cells["parent_table"]
+        is_partition = parent_table is not None
+        if is_partition:
+            key = (row.cells["parent_schema"], parent_table)
+        else:
+            key = (row.cells["schemaname"], row.cells["relname"])
+        if key not in tables:
+            tables[key] = _TableAgg()
             order.append(key)
-            stats[key] = (row.cells["seq_scan"], row.cells["n_live_tup"])
-            suggestions[key] = []
-        suggestion = _suggest(row.cells["column_name"], row.cells["data_type"])
-        if suggestion is not None:
-            suggestions[key].append(suggestion)
+        agg = tables[key]
+        physical = (row.cells["schemaname"], row.cells["relname"])
+        if physical not in counted:
+            counted.add(physical)
+            agg.add_stats(row.cells["seq_scan"], row.cells["n_live_tup"], is_partition)
+        agg.add_suggestion(row.cells["column_name"], row.cells["data_type"])
 
     return [
         IndexRecommendation(
             schema=schema,
             table=table,
-            seq_scans=stats[(schema, table)][0],
-            live_tuples=stats[(schema, table)][1],
-            reason="large table read mostly by sequential scan",
-            suggestions=suggestions[(schema, table)],
+            seq_scans=tables[(schema, table)].seq_scans,
+            live_tuples=tables[(schema, table)].live_tuples,
+            reason=(
+                "partitioned table whose partitions are read mostly by sequential scan"
+                if tables[(schema, table)].partitioned
+                else "large table read mostly by sequential scan"
+            ),
+            suggestions=tables[(schema, table)].suggestions,
+            partitioned=tables[(schema, table)].partitioned,
         )
         for schema, table in order
     ]

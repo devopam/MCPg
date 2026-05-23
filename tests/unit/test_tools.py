@@ -19,6 +19,15 @@ _READ_TOOLS = {
     "list_tables",
     "describe_table",
     "list_indexes",
+    "list_constraints",
+    "list_views",
+    "list_functions",
+    "list_triggers",
+    "list_partitions",
+    "list_policies",
+    "list_roles",
+    "list_grants",
+    "list_sequences",
     "list_extensions",
     "list_available_extensions",
     "run_select",
@@ -27,6 +36,7 @@ _READ_TOOLS = {
     "check_database_health",
     "analyze_workload",
     "recommend_indexes",
+    "list_active_queries",
     "fuzzy_search",
     "full_text_search",
     "vector_search",
@@ -105,6 +115,9 @@ async def test_write_tools_are_exposed_only_in_unrestricted_mode(access_mode: Ac
         names = {tool.name for tool in (await client.list_tools()).tools}
 
     assert ("run_write" in names) is (access_mode is AccessMode.UNRESTRICTED)
+    assert ("run_maintenance" in names) is (access_mode is AccessMode.UNRESTRICTED)
+    assert ("cancel_query" in names) is (access_mode is AccessMode.UNRESTRICTED)
+    assert ("terminate_backend" in names) is (access_mode is AccessMode.UNRESTRICTED)
 
 
 @pytest.mark.parametrize(

@@ -20,6 +20,24 @@ def _row(column: str, data_type: str) -> dict[str, object]:
         "n_live_tup": 250000,
         "column_name": column,
         "data_type": data_type,
+        "parent_schema": None,
+        "parent_table": None,
+    }
+
+
+def _partition_row(
+    partition: str, parent: str, column: str, data_type: str, *, seq_scan: int, n_live_tup: int
+) -> dict[str, object]:
+    """One (partition x column) row whose parent partitioned table is ``parent``."""
+    return {
+        "schemaname": "app",
+        "relname": partition,
+        "seq_scan": seq_scan,
+        "n_live_tup": n_live_tup,
+        "column_name": column,
+        "data_type": data_type,
+        "parent_schema": "app",
+        "parent_table": parent,
     }
 
 
@@ -36,6 +54,49 @@ async def test_recommend_indexes_groups_columns_into_one_table_recommendation() 
             live_tuples=250000,
             reason="large table read mostly by sequential scan",
             suggestions=[IndexSuggestion("payload", "gin", "GIN supports jsonb containment and key lookups")],
+            partitioned=False,
+        )
+    ]
+
+
+async def test_recommend_indexes_deduplicates_suggestions_across_partitions() -> None:
+    # Both partitions expose the same GIN-friendly column. After roll-up, the
+    # parent should be flagged once with a single payload suggestion.
+    driver = FakeDriver(
+        [
+            _partition_row("event_2026", "event", "payload", "jsonb", seq_scan=4000, n_live_tup=120000),
+            _partition_row("event_2027", "event", "payload", "jsonb", seq_scan=3000, n_live_tup=90000),
+        ]
+    )
+
+    result = await recommend_indexes(driver)
+
+    assert len(result) == 1
+    assert result[0].table == "event"
+    assert result[0].suggestions == [
+        IndexSuggestion("payload", "gin", "GIN supports jsonb containment and key lookups")
+    ]
+
+
+async def test_recommend_indexes_rolls_partition_stats_up_to_the_parent() -> None:
+    driver = FakeDriver(
+        [
+            _partition_row("event_2026", "event", "id", "integer", seq_scan=4000, n_live_tup=120000),
+            _partition_row("event_2027", "event", "payload", "jsonb", seq_scan=3000, n_live_tup=90000),
+        ]
+    )
+
+    result = await recommend_indexes(driver)
+
+    assert result == [
+        IndexRecommendation(
+            schema="app",
+            table="event",
+            seq_scans=7000,
+            live_tuples=210000,
+            reason="partitioned table whose partitions are read mostly by sequential scan",
+            suggestions=[IndexSuggestion("payload", "gin", "GIN supports jsonb containment and key lookups")],
+            partitioned=True,
         )
     ]
 

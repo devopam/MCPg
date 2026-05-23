@@ -6,6 +6,49 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `list_constraints` tool — a table's primary-key, foreign-key, unique,
+  check, and exclusion constraints.
+- `list_views` tool — the views and materialized views in a schema, with
+  their definitions.
+- `list_functions` tool — the functions and procedures in a schema, with
+  kind, arguments, return type, and language.
+- `list_triggers` tool — the user-defined triggers on a table.
+- `list_sequences` tool — the sequences in a schema, with each sequence's
+  data type, range, increment, cycle flag, and last value.
+- `list_partitions` tool — how a table is partitioned (range, list, or
+  hash) and its partitions, each with its bound expression.
+- `list_policies` tool — the Row-Level-Security policies on a table, with
+  each policy's command, permissive flag, roles, and predicates, plus
+  whether row security is enabled on the table.
+- `list_roles` tool — the database roles and their attributes (superuser,
+  create-role/db, login, replication, bypass-RLS, connection limit, and
+  role membership).
+- `list_grants` tool — the privileges granted on a table, with each
+  grant's grantee, privilege, grantable flag, and grantor.
+- `list_active_queries` tool — the queries currently running on the
+  server, each with its wait event, duration, and blocking PIDs.
+- `check_database_health` gains two checks — replication lag (how far
+  connected standbys trail) and table bloat (tables far larger than their
+  estimated minimum size).
+- `run_maintenance` tool — runs `VACUUM` or `ANALYZE` against one table;
+  requires unrestricted mode. Runs on an autocommit connection, since
+  `VACUUM` cannot run inside a transaction.
+- `cancel_query` and `terminate_backend` tools — signal a backend PID to
+  cancel its current query or close its connection; require unrestricted
+  mode.
+
+### Changed
+
+- `list_tables` now flags each table with `partitioned` (a partitioned
+  parent) and `is_partition` (itself a partition).
+- `list_indexes` now flags each index with `partitioned` (a
+  partitioned-index template).
+- `recommend_indexes` now rolls a flagged partition up to its partitioned
+  parent — summing scan and row counts and setting a `partitioned` flag —
+  since an index created on the parent propagates to every partition.
+
 ## [0.2.0] - 2026-05-21
 
 Extension support: index-method intelligence, extension management, and
@@ -19,7 +62,8 @@ tools, each degrading gracefully when its extension is absent.
 - `enable_extension` tool — enables an allowlisted PostgreSQL extension;
   requires unrestricted mode and `MCPG_ALLOW_DDL`.
 - `fuzzy_search` tool — ranks a text column by `pg_trgm` trigram similarity
-  to a search term.
+  to a search term, with a `word` mode (fragment matching, the default) and
+  a `full` mode (whole-string comparison).
 - `full_text_search` tool — ranks documents with PostgreSQL's built-in
   `tsvector`/`tsquery` full-text search.
 - `vector_search` tool — finds the rows nearest to a query vector by

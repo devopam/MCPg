@@ -19,6 +19,8 @@ from mcpg import (
     health,
     indexing,
     introspection,
+    liveops,
+    maintenance,
     query,
     textsearch,
     workload,
@@ -76,7 +78,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         schemas = await introspection.list_schemas(_driver(ctx), include_system=include_system)
         return [asdict(schema) for schema in schemas]
 
-    @server.tool(name="list_tables", description="List the tables and views in a schema.")
+    @server.tool(
+        name="list_tables",
+        description="List the tables and views in a schema, flagging partitioned tables and partitions.",
+    )
     async def list_tables(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         tables = await introspection.list_tables(_driver(ctx), schema)
         return [asdict(table) for table in tables]
@@ -90,6 +95,79 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     async def list_indexes(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
         indexes = await introspection.list_indexes(_driver(ctx), schema, table)
         return [asdict(index) for index in indexes]
+
+    @server.tool(
+        name="list_constraints",
+        description="List a table's constraints — primary/foreign keys, unique, check, exclusion.",
+    )
+    async def list_constraints(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
+        constraints = await introspection.list_constraints(_driver(ctx), schema, table)
+        return [asdict(constraint) for constraint in constraints]
+
+    @server.tool(
+        name="list_views",
+        description="List the views and materialized views in a schema, with their definitions.",
+    )
+    async def list_views(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        views = await introspection.list_views(_driver(ctx), schema)
+        return [asdict(view) for view in views]
+
+    @server.tool(
+        name="list_functions",
+        description="List the functions and procedures defined in a schema.",
+    )
+    async def list_functions(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        functions = await introspection.list_functions(_driver(ctx), schema)
+        return [asdict(function) for function in functions]
+
+    @server.tool(
+        name="list_triggers",
+        description="List the user-defined triggers on a table.",
+    )
+    async def list_triggers(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
+        triggers = await introspection.list_triggers(_driver(ctx), schema, table)
+        return [asdict(trigger) for trigger in triggers]
+
+    @server.tool(
+        name="list_partitions",
+        description="Describe how a table is partitioned (strategy and bounds) and list its partitions.",
+    )
+    async def list_partitions(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
+        partition_set = await introspection.list_partitions(_driver(ctx), schema, table)
+        return asdict(partition_set)
+
+    @server.tool(
+        name="list_roles",
+        description="List the database roles and their attributes, excluding PostgreSQL's own roles "
+        "unless include_system is true.",
+    )
+    async def list_roles(ctx: _Ctx, include_system: bool = False) -> list[dict[str, Any]]:
+        roles = await introspection.list_roles(_driver(ctx), include_system=include_system)
+        return [asdict(role) for role in roles]
+
+    @server.tool(
+        name="list_grants",
+        description="List the privileges granted on a table — who may do what to it.",
+    )
+    async def list_grants(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
+        grants = await introspection.list_grants(_driver(ctx), schema, table)
+        return [asdict(grant) for grant in grants]
+
+    @server.tool(
+        name="list_policies",
+        description="List the Row-Level-Security policies on a table, and whether row security is enabled.",
+    )
+    async def list_policies(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
+        policy_set = await introspection.list_policies(_driver(ctx), schema, table)
+        return asdict(policy_set)
+
+    @server.tool(
+        name="list_sequences",
+        description="List the sequences defined in a schema, with their range, increment, and last value.",
+    )
+    async def list_sequences(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        sequences = await introspection.list_sequences(_driver(ctx), schema)
+        return [asdict(sequence) for sequence in sequences]
 
     @server.tool(name="list_extensions", description="List the extensions installed in the database.")
     async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
@@ -177,9 +255,10 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="fuzzy_search",
         description=(
-            "Rank a text column's values by trigram similarity to a search "
-            "term, via the pg_trgm extension. Reports available=false if "
-            "pg_trgm is not installed."
+            "Rank a text column's values by pg_trgm trigram similarity to a "
+            "search term. mode='word' (default) matches fragments within "
+            "longer text; mode='full' compares whole strings. Reports "
+            "available=false if pg_trgm is not installed."
         ),
     )
     async def fuzzy_search(
@@ -188,11 +267,12 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         table: str,
         column: str,
         term: str,
+        mode: str = textsearch.DEFAULT_FUZZY_MODE,
         limit: int = textsearch.DEFAULT_LIMIT,
         threshold: float = textsearch.DEFAULT_THRESHOLD,
     ) -> dict[str, Any]:
         result = await textsearch.fuzzy_search(
-            _driver(ctx), schema, table, column, term, limit=limit, threshold=threshold
+            _driver(ctx), schema, table, column, term, mode=mode, limit=limit, threshold=threshold
         )
         return asdict(result)
 
@@ -260,6 +340,19 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_liveops(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="list_active_queries",
+        description=(
+            "List the queries currently running on the server, with each "
+            "backend's wait event, duration, and the PIDs blocking it."
+        ),
+    )
+    async def list_active_queries(ctx: _Ctx) -> list[dict[str, Any]]:
+        queries = await liveops.list_active_queries(_driver(ctx))
+        return [asdict(active) for active in queries]
+
+
 def _register_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="run_write",
@@ -271,6 +364,44 @@ def _register_write(server: FastMCP[AppContext]) -> None:
     )
     async def run_write(ctx: _Ctx, sql: str) -> dict[str, Any]:
         result = await write.run_write(_driver(ctx), sql)
+        return asdict(result)
+
+
+def _register_maintenance(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="run_maintenance",
+        description=(
+            "Run VACUUM or ANALYZE against one table (operation: vacuum, "
+            "analyze, or vacuum_analyze). Available only in unrestricted mode."
+        ),
+    )
+    async def run_maintenance(ctx: _Ctx, operation: str, schema: str, table: str) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await maintenance.run_maintenance(database, operation, schema, table)
+        return asdict(result)
+
+
+def _register_backend_control(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="cancel_query",
+        description=(
+            "Cancel the query running on a backend PID (pg_cancel_backend); "
+            "the connection stays open. Available only in unrestricted mode."
+        ),
+    )
+    async def cancel_query(ctx: _Ctx, pid: int) -> dict[str, Any]:
+        result = await liveops.cancel_query(_driver(ctx), pid)
+        return asdict(result)
+
+    @server.tool(
+        name="terminate_backend",
+        description=(
+            "Terminate a backend PID (pg_terminate_backend), closing its "
+            "connection. Available only in unrestricted mode."
+        ),
+    )
+    async def terminate_backend(ctx: _Ctx, pid: int) -> dict[str, Any]:
+        result = await liveops.terminate_backend(_driver(ctx), pid)
         return asdict(result)
 
 
@@ -312,7 +443,10 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_introspection(server)
         _register_query(server)
         _register_health(server)
+        _register_liveops(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
+        _register_maintenance(server)
+        _register_backend_control(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)

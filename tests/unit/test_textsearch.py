@@ -61,6 +61,32 @@ async def test_fuzzy_search_rejects_invalid_identifiers(bad: str) -> None:
         await fuzzy_search(driver, bad, "users", "name", "alice")  # type: ignore[arg-type]
 
 
+async def test_fuzzy_search_word_mode_uses_word_similarity_by_default() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}], "similarity": []})
+
+    await fuzzy_search(driver, "app", "users", "name", "alice")  # type: ignore[arg-type]
+
+    search_call = next(call for call in driver.calls if "ORDER BY" in call[0])
+    assert "word_similarity(" in search_call[0]
+
+
+async def test_fuzzy_search_full_mode_uses_whole_string_similarity() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}], "similarity": []})
+
+    await fuzzy_search(driver, "app", "users", "name", "alice", mode="full")  # type: ignore[arg-type]
+
+    search_call = next(call for call in driver.calls if "ORDER BY" in call[0])
+    assert "word_similarity" not in search_call[0]
+    assert "similarity(" in search_call[0]
+
+
+async def test_fuzzy_search_rejects_an_unknown_mode() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(SearchError, match="mode"):
+        await fuzzy_search(driver, "app", "users", "name", "alice", mode="bogus")  # type: ignore[arg-type]
+
+
 async def test_fuzzy_search_tool_is_callable_from_a_client() -> None:
     database = FakeDatabase(FakeRoutingDriver({"pg_extension": []}))
     server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]

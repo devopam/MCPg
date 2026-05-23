@@ -10,6 +10,8 @@ from mcpg.health import (
     check_database_health,
     check_dead_tuples,
     check_invalid_indexes,
+    check_replication_lag,
+    check_table_bloat,
 )
 from mcpg.server import create_server
 
@@ -58,6 +60,29 @@ async def test_check_invalid_indexes_warns_when_any_are_invalid() -> None:
     assert broken.status == "warning"
 
 
+async def test_check_replication_lag_is_ok_with_no_standbys() -> None:
+    result = await check_replication_lag(FakeDriver([{"standbys": 0, "max_lag_bytes": 0}]))
+
+    assert result.status == "ok"
+    assert "no replication standbys" in result.detail
+
+
+async def test_check_replication_lag_warns_on_a_lagging_standby() -> None:
+    healthy = await check_replication_lag(FakeDriver([{"standbys": 2, "max_lag_bytes": 4096}]))
+    lagging = await check_replication_lag(FakeDriver([{"standbys": 1, "max_lag_bytes": 256 * 1024 * 1024}]))
+
+    assert healthy.status == "ok"
+    assert lagging.status == "warning"
+
+
+async def test_check_table_bloat_warns_when_tables_are_bloated() -> None:
+    clean = await check_table_bloat(FakeDriver([{"bloated": 0}]))
+    bloated = await check_table_bloat(FakeDriver([{"bloated": 5}]))
+
+    assert clean.status == "ok"
+    assert bloated.status == "warning"
+
+
 # --- aggregate report ------------------------------------------------------
 
 _HEALTHY_ROUTES: dict[str, list[dict[str, object]]] = {
@@ -65,6 +90,8 @@ _HEALTHY_ROUTES: dict[str, list[dict[str, object]]] = {
     "pg_stat_database": [{"hits": 999, "reads": 1}],
     "pg_stat_user_tables": [{"bloated": 0}],
     "pg_index": [{"invalid": 0}],
+    "pg_stat_replication": [{"standbys": 0, "max_lag_bytes": 0}],
+    "table_stats": [{"bloated": 0}],
 }
 
 
@@ -77,6 +104,8 @@ async def test_check_database_health_reports_ok_when_all_checks_pass() -> None:
         "cache_hit_ratio",
         "dead_tuples",
         "invalid_indexes",
+        "replication_lag",
+        "table_bloat",
     }
 
 
