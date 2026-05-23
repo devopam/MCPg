@@ -58,8 +58,9 @@ async def run_maintenance(database: Database, operation: str, schema: str, table
         expected = ", ".join(sorted(_OPERATIONS))
         raise MaintenanceError(f"unknown operation {operation!r}; expected one of {expected}")
     target = f"{_quote_identifier(schema)}.{_quote_identifier(table)}"
+    label = f"{schema}.{table}"
     try:
         await database.run_unmanaged(f"{command} {target}")
     except Exception as exc:
-        raise MaintenanceError(str(exc)) from exc
-    return MaintenanceResult(operation=operation, target=f"{schema}.{table}")
+        raise MaintenanceError(f"{operation} on {label} failed: {exc}") from exc
+    return MaintenanceResult(operation=operation, target=label)

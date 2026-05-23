@@ -66,7 +66,9 @@ async def recommend_indexes(
     often by sequential scan than by index scan. For each, columns with
     GIN-friendly types yield an :class:`IndexSuggestion`. A flagged partition
     is rolled up to its partitioned parent, since an index belongs on the
-    parent; scan and row counts are summed across the partitions.
+    parent; scan and row counts are summed across the partitions. The
+    partitioned parent's own (empty) stats row is excluded from the
+    aggregation so partition stats are not double-counted.
 
     Args:
         driver: The SQL driver to query through.
@@ -77,6 +79,7 @@ async def recommend_indexes(
         "c.column_name, c.data_type, "
         "pn.nspname AS parent_schema, parent.relname AS parent_table "
         "FROM pg_stat_user_tables s "
+        "JOIN pg_class self ON self.oid = s.relid AND self.relkind <> 'p' "
         "JOIN information_schema.columns c "
         "  ON c.table_schema = s.schemaname AND c.table_name = s.relname "
         "LEFT JOIN pg_inherits inh ON inh.inhrelid = s.relid "

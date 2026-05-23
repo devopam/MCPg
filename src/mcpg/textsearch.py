@@ -147,10 +147,10 @@ async def fuzzy_search(
     Raises:
         SearchError: If an identifier is invalid or ``mode`` is unknown.
     """
-    if not await extension_installed(driver, "pg_trgm"):
-        return FuzzySearchResult(available=False, matches=[])
     if mode not in _FUZZY_MODES:
         raise SearchError(f"unknown fuzzy mode: {mode!r}")
+    if not await extension_installed(driver, "pg_trgm"):
+        return FuzzySearchResult(available=False, matches=[])
 
     relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
     col = _quoted(column, "column")

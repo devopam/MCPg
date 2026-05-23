@@ -59,6 +59,25 @@ async def test_recommend_indexes_groups_columns_into_one_table_recommendation() 
     ]
 
 
+async def test_recommend_indexes_deduplicates_suggestions_across_partitions() -> None:
+    # Both partitions expose the same GIN-friendly column. After roll-up, the
+    # parent should be flagged once with a single payload suggestion.
+    driver = FakeDriver(
+        [
+            _partition_row("event_2026", "event", "payload", "jsonb", seq_scan=4000, n_live_tup=120000),
+            _partition_row("event_2027", "event", "payload", "jsonb", seq_scan=3000, n_live_tup=90000),
+        ]
+    )
+
+    result = await recommend_indexes(driver)
+
+    assert len(result) == 1
+    assert result[0].table == "event"
+    assert result[0].suggestions == [
+        IndexSuggestion("payload", "gin", "GIN supports jsonb containment and key lookups")
+    ]
+
+
 async def test_recommend_indexes_rolls_partition_stats_up_to_the_parent() -> None:
     driver = FakeDriver(
         [
