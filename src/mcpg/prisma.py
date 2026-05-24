@@ -131,16 +131,10 @@ def _is_array_type(data_type: str) -> bool:
     return data_type.rstrip().endswith("[]")
 
 
-def _prisma_type(column: ColumnInfo, enum_names: set[str]) -> tuple[str, list[str]]:
-    """Map a ``ColumnInfo`` to a Prisma type token + the attribute list.
-
-    The attribute list is the inline ``@db.X`` modifiers (e.g.
-    ``@db.VarChar(255)``) that fine-tune the Prisma type back to the
-    original PG shape; empty when no modifier applies.
-    """
+def _prisma_type(column: ColumnInfo, enum_names: set[str]) -> str:
+    """Map a ``ColumnInfo`` to the Prisma type token (without ``?`` modifier)."""
     base = _strip_type_parameters(column.data_type)
     array = _is_array_type(column.data_type)
-    attrs: list[str] = []
     if base in enum_names:
         token = base
     elif base in _PRISMA_SCALAR_TYPES:
@@ -148,11 +142,14 @@ def _prisma_type(column: ColumnInfo, enum_names: set[str]) -> tuple[str, list[st
     else:
         # vector(384), custom domains, unmapped types — preserve the
         # full PG type so prisma generate emits the same Unsupported.
-        return (f'Unsupported("{column.data_type}")', [])
+        # Escape embedded double quotes so a pathological type name
+        # can't produce a syntactically broken Prisma string literal.
+        escaped = column.data_type.replace("\\", "\\\\").replace('"', '\\"')
+        return f'Unsupported("{escaped}")'
 
     if array:
         token = f"{token}[]"
-    return token, attrs
+    return token
 
 
 def _prisma_default(default: str | None) -> str | None:
@@ -183,14 +180,16 @@ def _render_field(
     column: ColumnInfo,
     *,
     pk_columns: set[str],
-    fk_columns_to_relation: dict[str, str],
     unique_columns: set[str],
     enum_names: set[str],
 ) -> str:
     _check_identifier(column.name, "column")
-    type_token, type_attrs = _prisma_type(column, enum_names)
+    type_token = _prisma_type(column, enum_names)
+    # Prisma treats SQL arrays as inherently optional: an empty array is
+    # equivalent to "no value", so the schema can't carry ``?`` on a list
+    # type even when the underlying column is nullable. Don't append it.
     nullable = "?" if column.nullable and not type_token.endswith("[]") else ""
-    attrs: list[str] = list(type_attrs)
+    attrs: list[str] = []
     if column.name in pk_columns and len(pk_columns) == 1:
         attrs.append("@id")
     if column.name in unique_columns:
@@ -203,12 +202,19 @@ def _render_field(
 
 
 def _render_relation_field(name: str, target_model: str, fk: ForeignKeyInfo) -> str:
+    # ``name`` and ``fk.name`` are both interpolated into Prisma text —
+    # validate them against the identifier allowlist so a constraint
+    # name with spaces or quotes can't produce broken Prisma.
+    _check_identifier(name, "relation field")
+    _check_identifier(fk.name, "relation name")
     fields = ", ".join(fk.from_columns)
     references = ", ".join(fk.to_columns)
     return f'  {name} {target_model} @relation("{fk.name}", fields: [{fields}], references: [{references}])'
 
 
 def _render_back_relation(name: str, source_model: str, fk_name: str) -> str:
+    _check_identifier(name, "back-relation field")
+    _check_identifier(fk_name, "relation name")
     return f'  {name} {source_model}[] @relation("{fk_name}")'
 
 
@@ -284,20 +290,20 @@ def _back_relations_by_target(
 
 
 def _disambiguate_relation_names(pairs: Iterable[tuple[str, ForeignKeyInfo]]) -> dict[str, str]:
-    """Build ``fk.name → field_name`` so duplicate sources get unique names."""
-    counts: dict[str, int] = {}
-    chosen: dict[str, str] = {}
-    materialised = list(pairs)
-    for source, _fk in materialised:
-        counts[source] = counts.get(source, 0) + 1
-    seen: dict[str, int] = {}
-    for source, fk in materialised:
-        seen[source] = seen.get(source, 0) + 1
-        if counts[source] == 1:
-            chosen[fk.name] = source
-        else:
-            chosen[fk.name] = f"{source}_{seen[source]}"
-    return chosen
+    """Build ``fk.name → field_name`` so duplicate sources get unique names.
+
+    Single pass: the first time we see a source we record the bare name;
+    subsequent appearances are suffixed with their ordinal index. Order
+    is preserved from the input iterable, which makes the chosen names
+    stable across runs.
+    """
+    names: dict[str, str] = {}
+    per_source: dict[str, int] = {}
+    for source, fk in pairs:
+        ordinal = per_source.get(source, 0) + 1
+        per_source[source] = ordinal
+        names[fk.name] = source if ordinal == 1 else f"{source}_{ordinal}"
+    return names
 
 
 async def generate_prisma_schema(driver: SqlDriver, schema: str) -> str:
@@ -341,7 +347,6 @@ async def generate_prisma_schema(driver: SqlDriver, schema: str) -> str:
                     composite_uniques.append(cols)
 
         outgoing_fks = fks_by_source.get(table.name, [])
-        fk_columns_to_relation = {fk.from_columns[0]: fk.name for fk in outgoing_fks if len(fk.from_columns) == 1}
 
         lines = [f"model {table.name} {{"]
         for column in columns:
@@ -349,7 +354,6 @@ async def generate_prisma_schema(driver: SqlDriver, schema: str) -> str:
                 _render_field(
                     column,
                     pk_columns=set(pk_columns),
-                    fk_columns_to_relation=fk_columns_to_relation,
                     unique_columns=single_column_uniques,
                     enum_names=enum_names,
                 )

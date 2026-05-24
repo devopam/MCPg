@@ -60,34 +60,48 @@ def _column(
 
 
 def test_prisma_type_maps_common_scalars() -> None:
-    assert _prisma_type(_column("a", "integer"), set()) == ("Int", [])
-    assert _prisma_type(_column("a", "bigint"), set()) == ("BigInt", [])
-    assert _prisma_type(_column("a", "text"), set()) == ("String", [])
-    assert _prisma_type(_column("a", "boolean"), set()) == ("Boolean", [])
-    assert _prisma_type(_column("a", "jsonb"), set()) == ("Json", [])
-    assert _prisma_type(_column("a", "timestamp with time zone"), set()) == ("DateTime", [])
-    assert _prisma_type(_column("a", "uuid"), set()) == ("String", [])
-    assert _prisma_type(_column("a", "bytea"), set()) == ("Bytes", [])
+    assert _prisma_type(_column("a", "integer"), set()) == "Int"
+    assert _prisma_type(_column("a", "bigint"), set()) == "BigInt"
+    assert _prisma_type(_column("a", "text"), set()) == "String"
+    assert _prisma_type(_column("a", "boolean"), set()) == "Boolean"
+    assert _prisma_type(_column("a", "jsonb"), set()) == "Json"
+    assert _prisma_type(_column("a", "timestamp with time zone"), set()) == "DateTime"
+    assert _prisma_type(_column("a", "uuid"), set()) == "String"
+    assert _prisma_type(_column("a", "bytea"), set()) == "Bytes"
 
 
 def test_prisma_type_strips_modifiers_for_lookup() -> None:
-    assert _prisma_type(_column("a", "character varying(255)"), set()) == ("String", [])
-    assert _prisma_type(_column("a", "numeric(10,2)"), set()) == ("Decimal", [])
+    assert _prisma_type(_column("a", "character varying(255)"), set()) == "String"
+    assert _prisma_type(_column("a", "numeric(10,2)"), set()) == "Decimal"
 
 
 def test_prisma_type_handles_array_suffix() -> None:
-    token, _ = _prisma_type(_column("tags", "text[]"), set())
-    assert token == "String[]"
+    assert _prisma_type(_column("tags", "text[]"), set()) == "String[]"
 
 
 def test_prisma_type_resolves_enum_columns_to_the_enum_name() -> None:
-    token, _ = _prisma_type(_column("status", "status"), {"status"})
-    assert token == "status"
+    assert _prisma_type(_column("status", "status"), {"status"}) == "status"
+
+
+def test_prisma_type_resolves_schema_qualified_enum_columns_to_the_bare_name() -> None:
+    # format_type emits qualified names when the type's schema isn't on
+    # the search_path — Prisma can only reference the bare enum name.
+    assert _prisma_type(_column("status", "mcpg_it.status"), {"status"}) == "status"
+
+
+def test_prisma_type_renders_enum_arrays_as_enum_lists() -> None:
+    assert _prisma_type(_column("tags", "status[]"), {"status"}) == "status[]"
 
 
 def test_prisma_type_falls_back_to_unsupported_for_unknown_pg_types() -> None:
-    token, _ = _prisma_type(_column("embedding", "vector(384)"), set())
-    assert token == 'Unsupported("vector(384)")'
+    assert _prisma_type(_column("embedding", "vector(384)"), set()) == 'Unsupported("vector(384)")'
+
+
+def test_prisma_type_escapes_embedded_quotes_in_unsupported_fallback() -> None:
+    # A pathological type name with quotes would otherwise break the
+    # generated Prisma string literal; ensure they're escaped.
+    rendered = _prisma_type(_column("x", 'weird"name'), set())
+    assert rendered == 'Unsupported("weird\\"name")'
 
 
 def test_prisma_default_maps_sequences_to_autoincrement() -> None:
@@ -222,6 +236,129 @@ async def test_generate_prisma_schema_emits_enum_blocks_and_uses_them_in_columns
     assert "status status" in out  # field references the enum type
     assert "enum status {" in out
     assert "  draft" in out and "  live" in out and "  archived" in out
+
+
+async def test_generate_prisma_schema_renders_single_column_unique_as_field_attribute() -> None:
+    # Single-column UNIQUE should fold into the field as ``@unique`` and
+    # NOT generate a separate ``@@unique([name])`` block.
+    routes: dict[tuple[str, tuple[Any, ...] | None], list[dict[str, Any]]] = {
+        (_LIST_TABLES, ("app",)): [{"name": "project", "relkind": "r", "is_partition": False}],
+        (_DESCRIBE, ("app", "project")): [
+            _column_row("id", "integer"),
+            _column_row("name", "text", type_name="text"),
+        ],
+        (_LIST_CONSTRAINTS, ("app", "project")): [
+            {"name": "project_pkey", "type_code": "p", "definition": "PRIMARY KEY (id)"},
+            {"name": "project_name_key", "type_code": "u", "definition": "UNIQUE (name)"},
+        ],
+        (_LIST_INDEXES, None): [],
+        (_LIST_FKS, ("app",)): [],
+        (_LIST_ENUMS, ("app",)): [],
+    }
+    driver = FakeParamRoutingDriver(routes)
+
+    out = await generate_prisma_schema(driver, "app")  # type: ignore[arg-type]
+
+    assert "name String @unique" in out
+    assert "@@unique([name])" not in out
+
+
+async def test_generate_prisma_schema_renders_nullable_array_without_optional_marker() -> None:
+    # Prisma's SQL data model treats arrays as inherently optional (empty
+    # == null), so even a nullable text[] column must render as
+    # ``String[]`` rather than ``String[]?`` — Prisma rejects the latter.
+    routes: dict[tuple[str, tuple[Any, ...] | None], list[dict[str, Any]]] = {
+        (_LIST_TABLES, ("app",)): [{"name": "post", "relkind": "r", "is_partition": False}],
+        (_DESCRIBE, ("app", "post")): [
+            _column_row("id", "integer"),
+            _column_row("tags", "text[]", nullable=True, type_name="text"),
+        ],
+        (_LIST_CONSTRAINTS, ("app", "post")): [
+            {"name": "post_pkey", "type_code": "p", "definition": "PRIMARY KEY (id)"}
+        ],
+        (_LIST_INDEXES, None): [],
+        (_LIST_FKS, ("app",)): [],
+        (_LIST_ENUMS, ("app",)): [],
+    }
+    driver = FakeParamRoutingDriver(routes)
+
+    out = await generate_prisma_schema(driver, "app")  # type: ignore[arg-type]
+
+    assert "tags String[]" in out
+    assert "String[]?" not in out
+
+
+async def test_generate_prisma_schema_skips_expression_indexes_and_emits_unique_secondary() -> None:
+    # _render_index should:
+    # - de-duplicate the PK-backing index (already covered above)
+    # - render a non-constraint UNIQUE INDEX as @@unique([cols])
+    # - skip an expression-based index (lower(name)) since the indexed
+    #   "column" isn't a bare identifier.
+    routes: dict[tuple[str, tuple[Any, ...] | None], list[dict[str, Any]]] = {
+        (_LIST_TABLES, ("app",)): [{"name": "widget", "relkind": "r", "is_partition": False}],
+        (_DESCRIBE, ("app", "widget")): [
+            _column_row("id", "integer"),
+            _column_row("name", "text", type_name="text"),
+        ],
+        (_LIST_CONSTRAINTS, ("app", "widget")): [
+            {"name": "widget_pkey", "type_code": "p", "definition": "PRIMARY KEY (id)"}
+        ],
+        (_LIST_INDEXES, ("app", "widget")): [
+            {
+                "name": "widget_name_key",
+                "method": "btree",
+                "relkind": "i",
+                "definition": "CREATE UNIQUE INDEX widget_name_key ON app.widget USING btree (name)",
+            },
+            {
+                "name": "widget_lower_name_idx",
+                "method": "btree",
+                "relkind": "i",
+                "definition": "CREATE INDEX widget_lower_name_idx ON app.widget USING btree (lower(name))",
+            },
+        ],
+        (_LIST_FKS, ("app",)): [],
+        (_LIST_ENUMS, ("app",)): [],
+    }
+    driver = FakeParamRoutingDriver(routes)
+
+    out = await generate_prisma_schema(driver, "app")  # type: ignore[arg-type]
+
+    assert "@@unique([name])" in out
+    # Expression index isn't representable as @@index — must be dropped.
+    assert "lower(name)" not in out
+    assert "@@index([lower" not in out
+
+
+async def test_generate_prisma_schema_rejects_foreign_key_constraint_with_invalid_name() -> None:
+    # FK constraint names are interpolated into Prisma text; an invalid
+    # one (spaces, quotes, etc.) must fail up-front instead of producing
+    # broken DSL.
+    routes: dict[tuple[str, tuple[Any, ...] | None], list[dict[str, Any]]] = {
+        (_LIST_TABLES, ("app",)): [
+            {"name": "widget", "relkind": "r", "is_partition": False},
+            {"name": "order_item", "relkind": "r", "is_partition": False},
+        ],
+        (_DESCRIBE, ("app", "widget")): [_column_row("id", "integer")],
+        (_DESCRIBE, ("app", "order_item")): [_column_row("id", "integer"), _column_row("widget_id", "integer")],
+        (_LIST_CONSTRAINTS, None): [],
+        (_LIST_INDEXES, None): [],
+        (_LIST_FKS, ("app",)): [
+            {
+                "name": "weird name with spaces",
+                "from_table": "order_item",
+                "to_schema": "app",
+                "to_table": "widget",
+                "from_columns": ["widget_id"],
+                "to_columns": ["id"],
+            }
+        ],
+        (_LIST_ENUMS, ("app",)): [],
+    }
+    driver = FakeParamRoutingDriver(routes)
+
+    with pytest.raises(PrismaError, match="invalid relation"):
+        await generate_prisma_schema(driver, "app")  # type: ignore[arg-type]
 
 
 async def test_generate_prisma_schema_renders_composite_pk_and_composite_unique() -> None:
