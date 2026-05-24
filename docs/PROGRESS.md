@@ -6,20 +6,18 @@
 
 ## Current state
 
-- **Phase:** 22 — pg_cron + pg_partman wrappers (Phases 0–18 + 22
-  complete; v0.3.0 cut)
-- **Last updated:** 2026-05-23
+- **Phase:** 23 — pgvector tuning (Phases 0–18 + 22–23 complete;
+  **Batch C done**)
+- **Last updated:** 2026-05-24
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 51
+- **Tool count:** 53
 
 ## Next action
 
-> Phase 22 (Batch C first half) complete — 6 new tools across pg_cron
-> and pg_partman, all gated on extension availability with graceful
-> degradation. Next: **Phase 23 — pgvector tuning**
-> (`tune_vector_index`, `vector_recall_at_k`) to finish Batch C, then
-> **Batch G (Phase 28 — `generate_prisma_schema`)** per the user's
-> sequencing direction.
+> Phase 23 complete — `tune_vector_index` and `vector_recall_at_k`
+> finish Batch C. Next per the agreed sequencing: **Batch G — the
+> Prisma USP** (Phase 28 `generate_prisma_schema`), then **Batch B**
+> (Advisors / lint + audit). Batches D, E, F remain ADR-gated.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -475,3 +473,23 @@
   integration tests gated on extension availability (CI image
   doesn't ship either extension — skip path verified). Phase 22
   complete (51 MCP tools total). 434 tests, 100% coverage.
+- 2026-05-23 — PR #8 review fix: Gemini flagged that partman tools
+  perform DDL (CREATE/DROP partitions) but were registered under
+  Capability.WRITE, bypassing the MCPG_ALLOW_DDL guardrail. Split
+  `_register_scheduling` into `_register_cron_write` (WRITE, cron
+  DML) and `_register_partman` (DDL, alongside run_ddl /
+  enable_extension). New unit test pins the gate.
+- 2026-05-23 — PR #8 merged to `main`; branch re-synced.
+- 2026-05-24 — Phase 23 (Batch C second half): new `mcpg.vector_tuning`
+  module adds `tune_vector_index` — recommends ivfflat/hnsw
+  parameters from row count (via pg_class.reltuples) and column
+  dimension, emits a ready-to-run CREATE INDEX statement — and
+  `vector_recall_at_k` which compares the ANN operator path
+  (`<->`/`<=>`/`<#>`, index-using) against the brute-force function
+  path (`l2_distance`/`cosine_distance`/`inner_product`, documented
+  by pgvector as non-indexed) to report mean recall over a row
+  sample. Both raise VectorTuningError when pgvector is absent.
+  21 new unit tests + 3 integration tests against a real pgvector
+  hnsw index (seeded with well-separated vectors → recall ~= 1.0).
+  **Batch C complete.** Phase 23 complete (53 MCP tools total).
+  456 tests, 100% coverage.
