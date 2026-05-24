@@ -16,6 +16,7 @@ from mcp.server.session import ServerSession
 from mcpg import (
     __version__,
     advisors,
+    audit_trail,
     cron,
     diagrams,
     extensions,
@@ -383,6 +384,20 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
         return asdict(report)
 
 
+def _register_audit_trail(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="list_audit_events",
+        description=(
+            "List recent rows from mcpg_audit.events (newest first). Returns an "
+            "empty list when MCPG_AUDIT_PERSIST has never been turned on (no "
+            "audit table yet). Optionally filter by tool name."
+        ),
+    )
+    async def list_audit_events(ctx: _Ctx, limit: int = 100, tool: str | None = None) -> list[dict[str, Any]]:
+        events = await audit_trail.list_audit_events(_driver(ctx), limit=limit, tool=tool)
+        return [asdict(event) for event in events]
+
+
 def _register_query(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="run_select",
@@ -657,11 +672,14 @@ def _register_write(server: FastMCP[AppContext]) -> None:
         description=(
             "Execute a single INSERT, UPDATE, or DELETE statement in a "
             "read-write transaction. Add a RETURNING clause to receive "
-            "affected rows. Available only in unrestricted access mode."
+            "affected rows. Available only in unrestricted access mode. "
+            "When MCPG_AUDIT_PERSIST is on, one row is appended to "
+            "mcpg_audit.events for every call."
         ),
     )
     async def run_write(ctx: _Ctx, sql: str) -> dict[str, Any]:
-        result = await write.run_write(_driver(ctx), sql)
+        app = ctx.request_context.lifespan_context
+        result = await write.run_write(_driver(ctx), sql, audit_persist=app.settings.audit_persist)
         return asdict(result)
 
 
@@ -708,11 +726,22 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
         name="run_ddl",
         description=(
             "Execute a single DDL statement (CREATE/ALTER/DROP and related). "
-            "Available only in unrestricted access mode with MCPG_ALLOW_DDL enabled."
+            "Available only in unrestricted access mode with MCPG_ALLOW_DDL "
+            "enabled. When schema+table hints are supplied, the result "
+            "includes a before/after column snapshot for that table. When "
+            "MCPG_AUDIT_PERSIST is on, one row is appended to "
+            "mcpg_audit.events for every call."
         ),
     )
-    async def run_ddl(ctx: _Ctx, sql: str) -> dict[str, Any]:
-        result = await write.run_ddl(_driver(ctx), sql)
+    async def run_ddl(ctx: _Ctx, sql: str, schema: str | None = None, table: str | None = None) -> dict[str, Any]:
+        app = ctx.request_context.lifespan_context
+        result = await write.run_ddl(
+            _driver(ctx),
+            sql,
+            audit_persist=app.settings.audit_persist,
+            schema=schema,
+            table=table,
+        )
         return asdict(result)
 
     @server.tool(
@@ -744,6 +773,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_vector_tuning(server)
         _register_prisma(server)
         _register_advisors(server)
+        _register_audit_trail(server)
         _register_query(server)
         _register_health(server)
         _register_liveops(server)

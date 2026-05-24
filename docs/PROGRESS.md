@@ -6,20 +6,22 @@
 
 ## Current state
 
-- **Phase:** 20 — Advisors / lint (Phases 0–18 + 20 + 22–23 + 28
-  complete; **Batch B first half done**)
+- **Phase:** 21 — Audit trail with semantic diff (Phases 0–18 + 20–23
+  + 28 complete; **Batch B done**)
 - **Last updated:** 2026-05-24
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 55
+- **Tool count:** 56
 
 ## Next action
 
-> Phase 20 (Batch B first half) complete — `run_advisors` ships four
-> catalog-driven lint rules (missing PK, unindexed FK, duplicate
-> indexes, nullable timestamp without TZ). Next: **Phase 21 — audit
-> trail with semantic diff** to close Batch B. Batch G follow-ons
-> (Drizzle, SQLAlchemy, sqlc exporters) and Batches D, E, F (ADR-
-> gated) come after.
+> Phase 21 complete — **Batch B closed**. SQL audit trail with optional
+> `mcpg_audit.events` persistence (`MCPG_AUDIT_PERSIST`), DDL semantic
+> diff via before/after column snapshots, and a new
+> `list_audit_events` read tool. PG 18 also added to the CI matrix.
+>
+> Next per the agreed sequencing: **Batch G follow-ons** (Drizzle /
+> SQLAlchemy / sqlc exporters under the `schema → ORM DSL` umbrella).
+> Then ADR-gated Batches D, E, F.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -537,3 +539,27 @@
   rule + aggregator; 1 integration test seeds one example violation
   per rule plus a clean control table against real PG. Phase 20
   complete (55 MCP tools total). 500 tests, 100% coverage.
+- 2026-05-24 — PR #11 review fix: Gemini flagged `_duplicate_indexes`
+  ignoring `indisunique`/`indpred`/`indclass`/`indoption`/`indexprs`,
+  which would have produced false positives an agent could act on
+  destructively. Tightened the join + new regression test pinning the
+  unique-vs-plain and partial-vs-plain non-duplication. Sourcery's
+  `indkey[0]` "always NULL" claim was incorrect (int2vector is 0-based
+  in SQL, unlike int2[]) — replied with the explanation.
+- 2026-05-24 — PR #11 merged to `main`; branch re-synced.
+- 2026-05-24 — Phase 21 (closes Batch B) + CI matrix: new
+  `mcpg.audit_trail` module exposes `list_audit_events` (read tool,
+  newest-first, optional tool-name filter) backed by an idempotent
+  `mcpg_audit.events` table. New `MCPG_AUDIT_PERSIST` env var (default
+  false) toggles per-call persistence in `run_write` / `run_ddl`;
+  arguments are credential-redacted before storage. `run_ddl` gains
+  optional `schema`/`table` hints — when both supplied, the call
+  snapshots the table's columns before and after the DDL and attaches
+  a `SchemaDiffSnapshot` to the result (and to the audit row). Audit-
+  persistence failures are swallowed so they never mask real write
+  outcomes. PG 18 added to the CI matrix (was 14-17; now 14-18). 11
+  new audit-trail unit tests + 5 new write-tests + 2 integration tests
+  cover persistence happy path, error path, schema-diff capture,
+  no-schema-no-capture, redaction, and the read tool's empty/filled
+  paths. Phase 21 complete (56 MCP tools total). 519 tests, 100%
+  coverage.

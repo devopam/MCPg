@@ -50,6 +50,7 @@ class Settings:
     http_port: int = 8000
     log_level: str = "INFO"
     allow_ddl: bool = False
+    audit_persist: bool = False
     pool_min_size: int = 1
     pool_max_size: int = 5
 
@@ -61,6 +62,7 @@ class Settings:
             f"transport={self.transport.value!r}, "
             f"http_host={self.http_host!r}, http_port={self.http_port}, "
             f"log_level={self.log_level!r}, allow_ddl={self.allow_ddl}, "
+            f"audit_persist={self.audit_persist}, "
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size})"
         )
 
@@ -138,6 +140,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if (raw := env.get("MCPG_ALLOW_DDL")) is not None:
         allow_ddl = _parse_bool("MCPG_ALLOW_DDL", raw)
 
+    audit_persist = False
+    if (raw := env.get("MCPG_AUDIT_PERSIST")) is not None:
+        audit_persist = _parse_bool("MCPG_AUDIT_PERSIST", raw)
+
     pool_min_size = 1
     if (raw := env.get("MCPG_POOL_MIN_SIZE")) is not None:
         pool_min_size = _parse_positive_int("MCPG_POOL_MIN_SIZE", raw)
@@ -157,6 +163,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_port=http_port,
         log_level=log_level,
         allow_ddl=allow_ddl,
+        audit_persist=audit_persist,
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
     )
