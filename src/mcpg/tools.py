@@ -475,7 +475,7 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
         return [asdict(job) for job in jobs]
 
 
-def _register_scheduling(server: FastMCP[AppContext]) -> None:
+def _register_cron_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="schedule_cron_job",
         description=(
@@ -499,12 +499,14 @@ def _register_scheduling(server: FastMCP[AppContext]) -> None:
         removed = await cron.unschedule_cron_job(_driver(ctx), name)
         return {"name": name, "removed": removed}
 
+
+def _register_partman(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="partman_create_parent",
         description=(
             "Register a partitioned table with pg_partman. ``partition_type`` "
-            "must be 'range', 'list', or 'native'. Available only in "
-            "unrestricted mode; requires pg_partman installed."
+            "must be 'range', 'list', or 'native'. Performs DDL — requires "
+            "unrestricted mode + MCPG_ALLOW_DDL; pg_partman installed."
         ),
     )
     async def partman_create_parent(
@@ -528,7 +530,8 @@ def _register_scheduling(server: FastMCP[AppContext]) -> None:
         description=(
             "Run pg_partman maintenance — add forward partitions and drop "
             "retired ones. Pass parent_table to scope to one parent; omit "
-            "to run for every managed parent. Unrestricted mode only."
+            "to run for every managed parent. Performs DDL — requires "
+            "unrestricted mode + MCPG_ALLOW_DDL."
         ),
     )
     async def partman_run_maintenance(ctx: _Ctx, parent_table: str | None = None) -> dict[str, Any]:
@@ -541,7 +544,8 @@ def _register_scheduling(server: FastMCP[AppContext]) -> None:
             "Drop pg_partman partitions older than ``retention``. Time-controlled "
             "parents take a PG interval (e.g. '30 days'); id-controlled parents "
             "take an integer-like string with control_is_time=false. Returns the "
-            "dropped partition names. Unrestricted mode only."
+            "dropped partition names. Performs DDL — requires unrestricted mode "
+            "+ MCPG_ALLOW_DDL."
         ),
     )
     async def partman_drop_partition(
@@ -656,6 +660,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_write(server)
         _register_maintenance(server)
         _register_backend_control(server)
-        _register_scheduling(server)
+        _register_cron_write(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
+        _register_partman(server)

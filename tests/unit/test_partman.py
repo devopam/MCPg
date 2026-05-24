@@ -14,7 +14,14 @@ from mcpg.partman import (
 )
 from mcpg.server import create_server
 
-_UNRESTRICTED = load_settings(
+_UNRESTRICTED_DDL = load_settings(
+    {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_ACCESS_MODE": "unrestricted",
+        "MCPG_ALLOW_DDL": "true",
+    }
+)
+_UNRESTRICTED_NO_DDL = load_settings(
     {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
 )
 _READ_ONLY = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
@@ -137,16 +144,28 @@ async def test_partman_drop_partition_raises_when_extension_absent() -> None:
 # --- tool wiring -----------------------------------------------------------
 
 
-async def test_partman_tools_require_unrestricted_mode() -> None:
+_PARTMAN_TOOLS = {"partman_create_parent", "partman_run_maintenance", "partman_drop_partition"}
+
+
+async def test_partman_tools_hidden_in_read_only_mode() -> None:
     server = create_server(_READ_ONLY, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
-    for name in ("partman_create_parent", "partman_run_maintenance", "partman_drop_partition"):
-        assert name not in listed
+    assert _PARTMAN_TOOLS.isdisjoint(listed)
 
 
-async def test_partman_tools_registered_in_unrestricted_mode() -> None:
-    server = create_server(_UNRESTRICTED, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+async def test_partman_tools_hidden_in_unrestricted_without_allow_ddl() -> None:
+    # Partman creates and drops partitions — DDL. Per project policy
+    # (run_ddl, enable_extension) DDL tools require MCPG_ALLOW_DDL even
+    # in unrestricted mode. This test locks the gating in.
+    server = create_server(_UNRESTRICTED_NO_DDL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
-    assert {"partman_create_parent", "partman_run_maintenance", "partman_drop_partition"} <= listed
+    assert _PARTMAN_TOOLS.isdisjoint(listed)
+
+
+async def test_partman_tools_registered_in_unrestricted_mode_with_allow_ddl() -> None:
+    server = create_server(_UNRESTRICTED_DDL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert _PARTMAN_TOOLS <= listed

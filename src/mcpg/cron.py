@@ -23,8 +23,11 @@ class CronError(Exception):
 class CronJob:
     """A scheduled pg_cron job.
 
-    ``jobname`` is the user-supplied label (PG 14+ only; ``None`` on
-    older servers). ``active`` is ``True`` when the job will run.
+    ``jobname`` is the user-supplied label, available from pg_cron 1.4
+    onwards (the column was added in that release). MCPg targets the
+    1.4+ schema; older pg_cron installations will surface as a query
+    error rather than silently filling ``None``. ``active`` is ``True``
+    when the job will run.
     """
 
     jobid: int
