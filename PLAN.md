@@ -347,18 +347,25 @@ opens its own feature branch and pull request.
 - **Phase 23** — pgvector tuning: `tune_vector_index`,
   `vector_recall_at_k`.
 
-### Batch D — Data movement (LARGE — gated on ADR-0004)
+### Batch D — Data movement (LARGE — policy in ADR-0004)
 - **Phase 24** — Export/import: `export_query`, `export_table`,
   `import_csv`/`import_json`, `dump_database`/`restore_database`,
   `copy_table_between_databases`. Subprocess execution is a new attack
-  surface; ADR-0004 must define the allowlist / opt-in / redaction
-  policy before any code is written.
+  surface; **ADR-0004 (accepted)** defines the policy: new
+  `Capability.SHELL` + `MCPG_ALLOW_SHELL` opt-in, allowlisted binary
+  set (`pg_dump`/`pg_restore`/`psql`), argv-only invocation via
+  `asyncio.create_subprocess_exec`, hard timeout and output cap, and
+  credentials passed through libpq env vars (never on the command line).
 
-### Batch E — Replication & event streams (LARGE — gated on ADR-0005)
+### Batch E — Replication & event streams (LARGE — policy in ADR-0005)
 - **Phase 25** — Logical replication management: replication slots and
   publication/subscription create+drop wrappers (write-gated).
-- **Phase 26** — `LISTEN`/`NOTIFY` bridge. ADR-0005 picks between a
-  polling model (recommended) and MCP notifications.
+- **Phase 26** — `LISTEN`/`NOTIFY` bridge. **ADR-0005 (accepted)**
+  picks the tool-poll model: a new `mcpg.listen` module owns
+  subscription state in process memory; `subscribe_channel` /
+  `poll_notifications` / `unsubscribe_channel` keep the MCP wire
+  request/response (no server-sent notifications). Gated behind
+  `Capability.LISTEN` + `MCPG_ALLOW_LISTEN`.
 
 ### Batch G — ORM bridges (USP)
 - **Phase 28** — `generate_prisma_schema`: read the PG catalog and emit a
@@ -368,13 +375,17 @@ opens its own feature branch and pull request.
   umbrella. Scope is deliberately narrow: catalog → DSL only, no
   `.prisma` → DDL parsing and no `prisma migrate` subprocess driving.
 
-### Batch F — Migrations with shadow workflow (LARGEST — gated on ADR-0006)
+### Batch F — Migrations with shadow workflow (LARGEST — policy in ADR-0006)
 - **Phase 27** — `prepare_migration`/`complete_migration` driven by the
-  Phase-18 schema diff. ADR-0006 picks between same-DB shadow schema
-  (Option 1, recommended) and side-channel `CREATE DATABASE ... TEMPLATE`
-  (Option 2, heavyweight).
+  Phase-18 schema diff. **ADR-0006 (accepted)** picks the same-DB
+  shadow-schema strategy (cheap; structural-only; reuses Phase-18
+  diff as the agent's review surface) over `CREATE DATABASE ...
+  TEMPLATE` so a 500 GB database doesn't pay full-clone cost per
+  staged migration. State lives in a new `mcpg_migrations.staged`
+  table; tools gate under `Capability.MIGRATE` + the existing
+  `MCPG_ALLOW_DDL` opt-in.
 
 Cadence: per-task TDD; 90% coverage gate (current 100%); ruff / mypy /
-PG 14–17 CI matrix must be green before each commit. Batches D, E, F
-require their ADR to be merged and signed off before implementation
-begins.
+PG 14–18 CI matrix must be green before each commit. Batch policy
+decisions live in their ADRs; implementation PRs reference them and
+focus on code.

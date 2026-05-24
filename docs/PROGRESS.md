@@ -6,22 +6,21 @@
 
 ## Current state
 
-- **Phase:** 21 — Audit trail with semantic diff (Phases 0–18 + 20–23
-  + 28 complete; **Batch B done**)
+- **Phase:** post-Phase-21 — ADR groundwork for Batches D / E / F
+  (Phases 0–18 + 20–23 + 28 complete; Batches A, B, C, G-first-cut
+  shipped)
 - **Last updated:** 2026-05-24
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 - **Tool count:** 56
 
 ## Next action
 
-> Phase 21 complete — **Batch B closed**. SQL audit trail with optional
-> `mcpg_audit.events` persistence (`MCPG_AUDIT_PERSIST`), DDL semantic
-> diff via before/after column snapshots, and a new
-> `list_audit_events` read tool. PG 18 also added to the CI matrix.
->
-> Next per the agreed sequencing: **Batch G follow-ons** (Drizzle /
-> SQLAlchemy / sqlc exporters under the `schema → ORM DSL` umbrella).
-> Then ADR-gated Batches D, E, F.
+> ADR-0004 (subprocess execution policy), ADR-0005 (LISTEN/NOTIFY
+> delivery model), and ADR-0006 (migration shadow strategy) accepted —
+> Batches D, E, F are no longer ADR-gated. Implementation order is the
+> user's call; recommend D first (subprocess gate also unblocks Phase
+> 27 if it later wants `pg_dump --schema-only`). Batch G follow-ons
+> (Drizzle / SQLAlchemy / sqlc exporters) remain available as filler.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -563,3 +562,33 @@
   no-schema-no-capture, redaction, and the read tool's empty/filled
   paths. Phase 21 complete (56 MCP tools total). 519 tests, 100%
   coverage.
+- 2026-05-24 — PR #12 review fix: Gemini caught two security-critical
+  issues (shallow `_redact` left credentials nested in `result`
+  unmasked; `result` payload was never run through `_redact` at all)
+  and one performance issue (`ensure_audit_table` ran two CREATE
+  round-trips per audited write). Recursive `_redact`, `result`
+  redaction at the record_audit call site, and a per-driver
+  `id(driver)`-keyed ensure cache fix all three; 4 new tests pin them.
+- 2026-05-24 — PR #12 merged to `main`; branch re-synced. Batch B
+  closed, PG 18 live in the matrix on every PR.
+- 2026-05-24 — ADR-0004 (subprocess execution policy for Batch D),
+  ADR-0005 (LISTEN/NOTIFY delivery model for Batch E), and ADR-0006
+  (migration shadow-workflow strategy for Batch F) drafted and
+  accepted. Each picks a specific implementation path and pins the
+  policy / gates / failure surface up front so the implementation
+  PRs can focus on code rather than re-litigation. Highlights:
+  ADR-0004 puts subprocess behind a new `Capability.SHELL` +
+  `MCPG_ALLOW_SHELL` opt-in alongside the existing `MCPG_ALLOW_DDL`
+  gate, with an allowlisted binary set, argv-only invocation, hard
+  timeout, output cap, and credential-env-var passing (never on the
+  command line). ADR-0005 picks the tool-poll model
+  (`subscribe_channel` + `poll_notifications`) over MCP-side
+  notifications, owning subscription state in a new `mcpg.listen`
+  module and gating writes behind `MCPG_ALLOW_LISTEN`. ADR-0006
+  picks the same-database shadow-schema strategy over `CREATE
+  DATABASE TEMPLATE` so a 500 GB database doesn't pay full-clone
+  cost on every staged migration; uses Phase-18 `compare_schemas` as
+  the agent's review surface and stores migration state in a new
+  `mcpg_migrations.staged` table alongside the existing
+  `mcpg_audit.events`. Batches D, E, F are no longer ADR-gated;
+  implementation order is open.
