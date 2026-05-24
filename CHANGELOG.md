@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `generate_prisma_schema` tool — read a PostgreSQL schema and emit a
+  valid Prisma `.prisma` schema string, mirroring `prisma db pull` but
+  driven by MCPg. Covers tables, columns, primary/foreign keys
+  (including composite), unique constraints, secondary indexes, and
+  enums; standard defaults (`nextval(...)` → `autoincrement()`, `now()`
+  → `now()`, `gen_random_uuid()` → `uuid()`, literals) and array types
+  are mapped; unmappable types (vectors, custom domains) fall back to
+  `Unsupported("...")` exactly like `prisma db pull`. Views, foreign
+  tables, partitions, triggers, functions, policies, and composite
+  types are out of scope for v1. **First USP-tier tool — no other PG
+  MCP server bridges to an ORM schema DSL.**
 - `tune_vector_index` tool — recommends an `ivfflat` or `hnsw`
   configuration for a pgvector column. Reads the live row count
   (`pg_class.reltuples`) and column dimension, applies the standard

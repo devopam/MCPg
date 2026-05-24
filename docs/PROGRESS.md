@@ -6,18 +6,20 @@
 
 ## Current state
 
-- **Phase:** 23 — pgvector tuning (Phases 0–18 + 22–23 complete;
-  **Batch C done**)
+- **Phase:** 28 — `generate_prisma_schema` (Phases 0–18 + 22–23 + 28
+  complete; **Batch G first cut done**)
 - **Last updated:** 2026-05-24
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 53
+- **Tool count:** 54
 
 ## Next action
 
-> Phase 23 complete — `tune_vector_index` and `vector_recall_at_k`
-> finish Batch C. Next per the agreed sequencing: **Batch G — the
-> Prisma USP** (Phase 28 `generate_prisma_schema`), then **Batch B**
-> (Advisors / lint + audit). Batches D, E, F remain ADR-gated.
+> Phase 28 (Batch G first cut) complete — `generate_prisma_schema`
+> ships the marketable USP move: no other PG MCP server bridges to an
+> ORM schema DSL. Next per the agreed sequencing: **Batch B** —
+> advisors / lint (Phase 20) + audit trail (Phase 21). Batch G
+> follow-ons (Drizzle, SQLAlchemy, sqlc exporters) and Batches D, E,
+> F (ADR-gated) come after.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -493,3 +495,27 @@
   hnsw index (seeded with well-separated vectors → recall ~= 1.0).
   **Batch C complete.** Phase 23 complete (53 MCP tools total).
   456 tests, 100% coverage.
+- 2026-05-24 — PR #9 review fix: Sourcery + Gemini flagged identifier
+  injection across 6 SQL sites in vector_tuning.py plus an unbounded
+  `sample_size` DoS in `vector_recall_at_k`. Added a local `_quoted`
+  helper (allowlist `[A-Za-z_][A-Za-z0-9_]*` + double-quote) and a
+  `_MAX_SAMPLE_SIZE = 100` cap. New tests pin the gates.
+- 2026-05-24 — PR #9 merged to `main`; branch re-synced. Batch C
+  closed.
+- 2026-05-24 — Phase 28 (Batch G first cut): new `mcpg.prisma` module
+  exposes `generate_prisma_schema` — read a PG schema and emit a valid
+  Prisma `.prisma` schema string. Mirrors `prisma db pull` for the
+  most-used surface: tables → models with PK/FK/composite-PK/composite-
+  unique/secondary indexes; enums → top-level Prisma enums; standard
+  defaults (`nextval(...)` → `autoincrement()`, `now()`/`CURRENT_
+  TIMESTAMP` → `now()`, `gen_random_uuid()` → `uuid()`, literals)
+  mapped; unmappable types (vectors, custom domains) fall back to
+  `Unsupported("...")`. Identifiers must match `[A-Za-z_][A-Za-z0-9_]*`
+  and the schema-qualified prefix is stripped for enum / scalar lookup.
+  19 new unit tests cover the type/default mapping, FK back-relations,
+  composite-PK + composite-unique rendering, index deduplication, and
+  the Unsupported fallback; 1 integration test end-to-ends a real
+  schema with serial PKs, an enum-typed column, an FK, and a secondary
+  index. **First USP-tier tool** — no other PG MCP server bridges to
+  an ORM schema DSL. Phase 28 complete (54 MCP tools total). 482
+  tests, 100% coverage.

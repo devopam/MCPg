@@ -24,6 +24,7 @@ from mcpg import (
     liveops,
     maintenance,
     partman,
+    prisma,
     query,
     schema_diff,
     textsearch,
@@ -349,6 +350,21 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             metric=metric,
         )
         return asdict(report)
+
+
+def _register_prisma(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="generate_prisma_schema",
+        description=(
+            "Read a PostgreSQL schema and emit a valid Prisma `.prisma` schema string "
+            "(mirrors `prisma db pull`). Covers tables, columns, primary/foreign keys, "
+            "unique constraints, indexes, and enums. Views, foreign tables, partitions, "
+            "triggers, functions, and policies are out of scope; unmappable types fall "
+            'back to `Unsupported("...")`.'
+        ),
+    )
+    async def generate_prisma_schema(ctx: _Ctx, schema: str) -> str:
+        return await prisma.generate_prisma_schema(_driver(ctx), schema)
 
 
 def _register_query(server: FastMCP[AppContext]) -> None:
@@ -710,6 +726,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_diagrams(server)
         _register_schema_diff(server)
         _register_vector_tuning(server)
+        _register_prisma(server)
         _register_query(server)
         _register_health(server)
         _register_liveops(server)
