@@ -15,6 +15,7 @@ from mcp.server.session import ServerSession
 
 from mcpg import (
     __version__,
+    advisors,
     cron,
     diagrams,
     extensions,
@@ -365,6 +366,21 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
     )
     async def generate_prisma_schema(ctx: _Ctx, schema: str) -> str:
         return await prisma.generate_prisma_schema(_driver(ctx), schema)
+
+
+def _register_advisors(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="run_advisors",
+        description=(
+            "Run a set of catalog-driven advisor rules against a schema and return "
+            "the aggregated findings. Rules cover missing primary keys, unindexed "
+            "foreign keys, duplicate indexes, and nullable timestamps without time "
+            "zone. Advisory only — no writes."
+        ),
+    )
+    async def run_advisors(ctx: _Ctx, schema: str) -> dict[str, Any]:
+        report = await advisors.run_advisors(_driver(ctx), schema)
+        return asdict(report)
 
 
 def _register_query(server: FastMCP[AppContext]) -> None:
@@ -727,6 +743,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_schema_diff(server)
         _register_vector_tuning(server)
         _register_prisma(server)
+        _register_advisors(server)
         _register_query(server)
         _register_health(server)
         _register_liveops(server)

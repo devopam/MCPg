@@ -6,20 +6,20 @@
 
 ## Current state
 
-- **Phase:** 28 — `generate_prisma_schema` (Phases 0–18 + 22–23 + 28
-  complete; **Batch G first cut done**)
+- **Phase:** 20 — Advisors / lint (Phases 0–18 + 20 + 22–23 + 28
+  complete; **Batch B first half done**)
 - **Last updated:** 2026-05-24
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 54
+- **Tool count:** 55
 
 ## Next action
 
-> Phase 28 (Batch G first cut) complete — `generate_prisma_schema`
-> ships the marketable USP move: no other PG MCP server bridges to an
-> ORM schema DSL. Next per the agreed sequencing: **Batch B** —
-> advisors / lint (Phase 20) + audit trail (Phase 21). Batch G
-> follow-ons (Drizzle, SQLAlchemy, sqlc exporters) and Batches D, E,
-> F (ADR-gated) come after.
+> Phase 20 (Batch B first half) complete — `run_advisors` ships four
+> catalog-driven lint rules (missing PK, unindexed FK, duplicate
+> indexes, nullable timestamp without TZ). Next: **Phase 21 — audit
+> trail with semantic diff** to close Batch B. Batch G follow-ons
+> (Drizzle, SQLAlchemy, sqlc exporters) and Batches D, E, F (ADR-
+> gated) come after.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -519,3 +519,21 @@
   index. **First USP-tier tool** — no other PG MCP server bridges to
   an ORM schema DSL. Phase 28 complete (54 MCP tools total). 482
   tests, 100% coverage.
+- 2026-05-24 — PR #10 review fix: 12 Sourcery + Gemini comments
+  collapsing to FK-name validation, Unsupported() quote escaping, dead
+  `fk_columns_to_relation`, `_prisma_type` simplification, FK-name
+  vs column-name collision detection, and three test-gap fills.
+  Resolved across `f231bc9` and `11dcb9d`.
+- 2026-05-24 — PR #10 merged to `main`; branch re-synced. Batch G
+  first cut closed.
+- 2026-05-24 — Phase 20 (Batch B first half): new `mcpg.advisors`
+  module exposes one read-only tool, `run_advisors`, that runs four
+  codified catalog-driven rules and aggregates findings:
+  `missing_primary_key`, `unindexed_foreign_key` (leading-column
+  heuristic via `pg_constraint.conkey[1]` vs `pg_index.indkey[0]`),
+  `duplicate_indexes` (matching `indkey` + same `relam`, deduplicated
+  via `indexrelid` inequality), and `nullable_timestamp_without_tz`
+  (catches the common TZ-coercion source). 9 unit tests cover each
+  rule + aggregator; 1 integration test seeds one example violation
+  per rule plus a clean control table against real PG. Phase 20
+  complete (55 MCP tools total). 500 tests, 100% coverage.

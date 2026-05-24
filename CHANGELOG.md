@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `run_advisors` tool — runs a set of codified, catalog-driven lint
+  rules against a schema and returns a typed report of findings. First
+  cut covers: `missing_primary_key`, `unindexed_foreign_key` (leading-
+  column heuristic), `duplicate_indexes` (same column-keys + access
+  method), and `nullable_timestamp_without_tz`. Each finding carries a
+  rule id, severity (`warning`/`info`), a qualified object name, and a
+  human-readable message. Advisory only — no writes.
 - `generate_prisma_schema` tool — read a PostgreSQL schema and emit a
   valid Prisma `.prisma` schema string, mirroring `prisma db pull` but
   driven by MCPg. Covers tables, columns, primary/foreign keys
