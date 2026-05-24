@@ -65,5 +65,39 @@ async def test_run_advisors_reports_every_seeded_violation(connected_database: D
     # nullable_timestamp_without_tz — legacy.created_at.
     assert any(f.object == f"{advisors_schema}.legacy.created_at" for f in by_rule[RULE_NULLABLE_TIMESTAMP_WITHOUT_TZ])
 
-    # The clean control table must not show up under any rule.
-    assert all(advisors_schema + ".control" not in f.object.split(" vs ")[0] for f in report.findings)
+    # The clean control table must not show up under any rule. Inspect
+    # every side of " vs " findings so duplicate-index reports get
+    # both indexes checked, not just the first.
+    control_prefix = f"{advisors_schema}.control"
+    assert all(not obj_part.startswith(control_prefix) for f in report.findings for obj_part in f.object.split(" vs "))
+
+
+async def test_run_advisors_does_not_flag_indexes_that_differ_in_uniqueness_or_predicate(
+    connected_database: Database, advisors_schema: str
+) -> None:
+    # Two indexes covering the same column but with different semantics
+    # (plain vs UNIQUE, plain vs partial) must NOT be reported as
+    # duplicates — dropping one would lose the uniqueness or the
+    # WHERE-filtered selectivity.
+    driver = connected_database.driver()
+    await driver.execute_query(
+        f"CREATE TABLE {advisors_schema}.with_unique (id integer PRIMARY KEY, code text NOT NULL)"
+    )
+    await driver.execute_query(f"CREATE INDEX with_unique_code_idx ON {advisors_schema}.with_unique (code)")
+    await driver.execute_query(f"CREATE UNIQUE INDEX with_unique_code_uq ON {advisors_schema}.with_unique (code)")
+    await driver.execute_query(
+        f"CREATE TABLE {advisors_schema}.with_partial (id integer PRIMARY KEY, active boolean NOT NULL)"
+    )
+    await driver.execute_query(f"CREATE INDEX with_partial_full_idx ON {advisors_schema}.with_partial (active)")
+    await driver.execute_query(
+        f"CREATE INDEX with_partial_filtered_idx ON {advisors_schema}.with_partial (active) WHERE active"
+    )
+
+    report = await run_advisors(connected_database.driver(), advisors_schema)
+
+    duplicates = [f for f in report.findings if f.rule == RULE_DUPLICATE_INDEXES]
+    for finding in duplicates:
+        # Neither the unique/non-unique pair nor the partial/non-partial
+        # pair should appear — only genuinely-identical indexes should.
+        assert "with_unique_code" not in finding.object, finding
+        assert "with_partial" not in finding.object, finding

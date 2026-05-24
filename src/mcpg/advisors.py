@@ -129,12 +129,23 @@ async def _duplicate_indexes(driver: SqlDriver, schema: str) -> list[Finding]:
         "JOIN pg_class i1 ON i1.oid = ix1.indexrelid "
         "JOIN pg_class c ON c.oid = ix1.indrelid "
         "JOIN pg_namespace n ON n.oid = c.relnamespace "
-        # Pair each index with every other index on the same table whose
-        # key vector matches and uses the same access method; the
-        # indexrelid inequality avoids reporting (a,b) and (b,a).
+        # Pair each index with every other index on the same table that
+        # is functionally identical — same column keys, same operator
+        # classes, same sort options, same uniqueness, same partial
+        # predicate, same expression set, and not a primary-key
+        # backing index. Without these, a UNIQUE / partial / expression
+        # index would be falsely flagged as a duplicate of a plain
+        # index over the same columns, and an agent acting on the
+        # report could drop a constraint-enforcing index by mistake.
         "JOIN pg_index ix2 ON ix2.indrelid = ix1.indrelid "
-        "  AND ix2.indkey = ix1.indkey "
         "  AND ix2.indexrelid > ix1.indexrelid "
+        "  AND ix2.indkey = ix1.indkey "
+        "  AND ix2.indclass = ix1.indclass "
+        "  AND ix2.indoption = ix1.indoption "
+        "  AND ix2.indisunique = ix1.indisunique "
+        "  AND ix2.indisprimary = ix1.indisprimary "
+        "  AND ix2.indpred::text IS NOT DISTINCT FROM ix1.indpred::text "
+        "  AND ix2.indexprs::text IS NOT DISTINCT FROM ix1.indexprs::text "
         "JOIN pg_class i2 ON i2.oid = ix2.indexrelid "
         "WHERE n.nspname = %s AND i1.relam = i2.relam "
         "ORDER BY c.relname, i1.relname, i2.relname",
