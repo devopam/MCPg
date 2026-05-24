@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `export_query` tool — run a read-only SQL query and serialise the
+  rows to CSV or JSON. Reuses the safety checks of `run_select` and
+  truncates at the supplied row limit with a `truncated` flag in the
+  result so callers can paginate.
+- `export_table` tool — serialise every row in a `schema.table` (up
+  to the supplied limit) to CSV or JSON. Identifier names must match
+  the plain SQL allowlist; anything that needs delimited-identifier
+  quoting is rejected.
 - `list_audit_events` tool — read recent rows from `mcpg_audit.events`
   (newest first). Returns an empty list when `MCPG_AUDIT_PERSIST` has
   never been turned on (no audit table yet). Optional tool-name filter.
