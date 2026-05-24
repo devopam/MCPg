@@ -6,24 +6,20 @@
 
 ## Current state
 
-- **Phase:** 18 — Schema diff (Phases 0–18 complete; **Batch A done**;
-  v0.3.0 cut)
+- **Phase:** 22 — pg_cron + pg_partman wrappers (Phases 0–18 + 22
+  complete; v0.3.0 cut)
 - **Last updated:** 2026-05-23
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 45
+- **Tool count:** 51
 
 ## Next action
 
-> **v0.3.0 cut** — Batch A delivered (catalog completeness →
-> visualisation → diff). Awaiting direction on the next batch:
->
-> - **Batch B** — Advisors / lint (Phase 20) + audit trail (Phase 21);
-> - **Batch C** — extension power-tools (`pg_cron`/`pg_partman`/pgvector);
-> - **Batch G (USP)** — `generate_prisma_schema` then sibling ORM
->   bridges (Drizzle, SQLAlchemy, sqlc).
->
-> Batches D, E, F still require their ADRs first (subprocess policy,
-> NOTIFY model, migration shadowing).
+> Phase 22 (Batch C first half) complete — 6 new tools across pg_cron
+> and pg_partman, all gated on extension availability with graceful
+> degradation. Next: **Phase 23 — pgvector tuning**
+> (`tune_vector_index`, `vector_recall_at_k`) to finish Batch C, then
+> **Batch G (Phase 28 — `generate_prisma_schema`)** per the user's
+> sequencing direction.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -464,3 +460,18 @@
   integration (real-PG smoke across the matrix) — closes the one
   trust gap a fake driver couldn't reach. PROGRESS tool counts
   corrected (Phases 16/17/18 were drifting low).
+- 2026-05-23 — PR #7 merged to `main` (v0.3.0 release); branch
+  re-synced. Local `v0.3.0` tag created on `1c74b04` but `git push`
+  to the sandboxed remote returned 403; GitHub release to be cut
+  manually from `docs/release-notes-0.3.0.md`.
+- 2026-05-23 — Phase 22 (Batch C, first half): new `mcpg.cron` module
+  adds `list_cron_jobs` (read; returns `[]` when pg_cron absent),
+  `schedule_cron_job` and `unschedule_cron_job` (write-gated). New
+  `mcpg.partman` module adds `partman_create_parent`,
+  `partman_run_maintenance` (single parent or all), and
+  `partman_drop_partition` (time- or id-controlled retention). Both
+  extensions added to `ENABLEABLE_EXTENSIONS`. Tests: 24 new unit
+  tests covering graceful degradation + tool wiring matrix; new
+  integration tests gated on extension availability (CI image
+  doesn't ship either extension — skip path verified). Phase 22
+  complete (51 MCP tools total). 434 tests, 100% coverage.
