@@ -27,6 +27,7 @@ from mcpg import (
     query,
     schema_diff,
     textsearch,
+    vector_tuning,
     workload,
     write,
 )
@@ -293,6 +294,61 @@ def _register_schema_diff(server: FastMCP[AppContext]) -> None:
     async def compare_schemas(ctx: _Ctx, left_schema: str, right_schema: str) -> dict[str, Any]:
         diff = await schema_diff.compare_schemas(_driver(ctx), left_schema, right_schema)
         return asdict(diff)
+
+
+def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="tune_vector_index",
+        description=(
+            "Recommend an ivfflat or hnsw configuration for a pgvector column. "
+            "Reads the live row count and column dimension, applies the standard "
+            "pgvector heuristics, and returns the parameters plus a ready-to-run "
+            "CREATE INDEX statement. Requires the vector extension."
+        ),
+    )
+    async def tune_vector_index(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        index_type: str = "hnsw",
+        metric: str = "l2",
+    ) -> dict[str, Any]:
+        result = await vector_tuning.tune_vector_index(
+            _driver(ctx), schema, table, column, index_type=index_type, metric=metric
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="vector_recall_at_k",
+        description=(
+            "Measure recall@k of an existing pgvector index against a brute-force "
+            "ground truth (function-form distance, which pgvector documents as "
+            "non-indexed). Returns the mean overlap over a sample of rows from the "
+            "table. Requires the vector extension."
+        ),
+    )
+    async def vector_recall_at_k(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        id_column: str,
+        k: int = 10,
+        sample_size: int = 20,
+        metric: str = "l2",
+    ) -> dict[str, Any]:
+        report = await vector_tuning.vector_recall_at_k(
+            _driver(ctx),
+            schema,
+            table,
+            column,
+            id_column,
+            k=k,
+            sample_size=sample_size,
+            metric=metric,
+        )
+        return asdict(report)
 
 
 def _register_query(server: FastMCP[AppContext]) -> None:
@@ -653,6 +709,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_introspection(server)
         _register_diagrams(server)
         _register_schema_diff(server)
+        _register_vector_tuning(server)
         _register_query(server)
         _register_health(server)
         _register_liveops(server)

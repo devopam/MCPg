@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `tune_vector_index` tool — recommends an `ivfflat` or `hnsw`
+  configuration for a pgvector column. Reads the live row count
+  (`pg_class.reltuples`) and column dimension, applies the standard
+  pgvector heuristics (lists ≈ rows/1000 or sqrt for ivfflat; m
+  scales with size, ef_construction with size for hnsw), and returns
+  the parameters plus a ready-to-run `CREATE INDEX` statement.
+- `vector_recall_at_k` tool — measures recall@k of an existing
+  pgvector index by comparing its top-k results against a brute-force
+  ground truth for the same query vectors. Uses pgvector's distance
+  functions (`l2_distance` / `cosine_distance` / `inner_product`) as
+  the non-indexed baseline; the operator form (`<->`, `<=>`, `<#>`)
+  triggers the ANN index.
 - `list_cron_jobs` tool — read pg_cron's `cron.job` catalog. Returns an
   empty list when pg_cron is not installed (graceful degradation).
 - `schedule_cron_job` and `unschedule_cron_job` tools (write-gated) —
