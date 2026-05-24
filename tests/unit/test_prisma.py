@@ -361,6 +361,39 @@ async def test_generate_prisma_schema_rejects_foreign_key_constraint_with_invali
         await generate_prisma_schema(driver, "app")  # type: ignore[arg-type]
 
 
+async def test_generate_prisma_schema_rejects_fk_name_colliding_with_a_column() -> None:
+    # If a FK constraint shares a name with an existing column in the
+    # same table, the relation field would shadow the scalar field —
+    # Prisma rejects models with duplicate field names. Surface it as a
+    # hard error so the agent renames the constraint.
+    routes: dict[tuple[str, tuple[Any, ...] | None], list[dict[str, Any]]] = {
+        (_LIST_TABLES, ("app",)): [
+            {"name": "widget", "relkind": "r", "is_partition": False},
+            {"name": "order_item", "relkind": "r", "is_partition": False},
+        ],
+        (_DESCRIBE, ("app", "widget")): [_column_row("id", "integer")],
+        (_DESCRIBE, ("app", "order_item")): [_column_row("id", "integer"), _column_row("widget_id", "integer")],
+        (_LIST_CONSTRAINTS, None): [],
+        (_LIST_INDEXES, None): [],
+        (_LIST_FKS, ("app",)): [
+            {
+                # Constraint name collides with the widget_id column.
+                "name": "widget_id",
+                "from_table": "order_item",
+                "to_schema": "app",
+                "to_table": "widget",
+                "from_columns": ["widget_id"],
+                "to_columns": ["id"],
+            }
+        ],
+        (_LIST_ENUMS, ("app",)): [],
+    }
+    driver = FakeParamRoutingDriver(routes)
+
+    with pytest.raises(PrismaError, match="collides with column"):
+        await generate_prisma_schema(driver, "app")  # type: ignore[arg-type]
+
+
 async def test_generate_prisma_schema_renders_composite_pk_and_composite_unique() -> None:
     routes: dict[tuple[str, tuple[Any, ...] | None], list[dict[str, Any]]] = {
         (_LIST_TABLES, ("app",)): [{"name": "shard", "relkind": "r", "is_partition": False}],

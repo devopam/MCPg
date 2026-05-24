@@ -359,12 +359,22 @@ async def generate_prisma_schema(driver: SqlDriver, schema: str) -> str:
                 )
             )
 
+        column_names = {column.name for column in columns}
+
         for fk in outgoing_fks:
             if fk.to_table not in entity_names:
                 # Cross-schema FK — Prisma can't model it cleanly; the
                 # scalar columns are already emitted.
                 continue
             relation_field = fk.name
+            if relation_field in column_names:
+                # A FK constraint named after an existing column would
+                # produce a duplicate-field Prisma model; surface it as
+                # a hard error rather than emit broken DSL.
+                raise PrismaError(
+                    f"foreign-key constraint {fk.name!r} on table {table.name!r} collides with column "
+                    f"of the same name; rename the constraint and re-run."
+                )
             lines.append(_render_relation_field(relation_field, fk.to_table, fk))
 
         if table.name in back_relations:
