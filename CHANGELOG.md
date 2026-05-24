@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `list_audit_events` tool — read recent rows from `mcpg_audit.events`
+  (newest first). Returns an empty list when `MCPG_AUDIT_PERSIST` has
+  never been turned on (no audit table yet). Optional tool-name filter.
+- New `MCPG_AUDIT_PERSIST` env var (bool, default `false`). When on,
+  every `run_write` / `run_ddl` call appends one row to
+  `mcpg_audit.events` containing redacted arguments, status, error, and
+  result. Persistence failures are swallowed so audit logging never
+  masks the real write outcome.
+- `run_ddl` gains optional `schema` / `table` hints. When both are
+  supplied, the call snapshots the table's columns before and after the
+  DDL and attaches the structured before/after lists to the result as a
+  `SchemaDiffSnapshot`. The snapshot is also stored in the persisted
+  audit row when `MCPG_AUDIT_PERSIST` is on.
+- PostgreSQL 18 added to the CI test matrix (was 14–17; now 14–18). The
+  integration suite runs against every supported version on every PR.
 - `run_advisors` tool — runs a set of codified, catalog-driven lint
   rules against a schema and returns a typed report of findings. First
   cut covers: `missing_primary_key`, `unindexed_foreign_key` (leading-

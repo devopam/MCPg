@@ -4,9 +4,17 @@ import pytest
 from _fakes import FakeDatabase, FakeDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
+from mcpg.audit_trail import _reset_audit_init_cache
 from mcpg.config import load_settings
 from mcpg.server import create_server
 from mcpg.write import WriteError, WriteResult, run_ddl, run_write
+
+
+@pytest.fixture(autouse=True)
+def _isolated_ensure_cache() -> None:
+    """Audit-trail per-driver ensure cache is process-scoped; reset per test."""
+    _reset_audit_init_cache()
+
 
 _UNRESTRICTED = load_settings(
     {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
@@ -119,3 +127,68 @@ async def test_run_ddl_tool_is_callable_when_ddl_is_allowed() -> None:
         result = await client.call_tool("run_ddl", {"sql": "CREATE TABLE widget (id int)"})
 
     assert result.isError is False
+
+
+# --- Phase 21: audit_persist + schema_diff capture -------------------------
+
+
+async def test_run_write_persists_an_audit_row_when_audit_persist_is_on() -> None:
+    driver = FakeDriver()
+
+    await run_write(driver, "INSERT INTO widget (id) VALUES (1)", audit_persist=True)
+
+    sqls = [call[0] for call in driver.calls]
+    assert any("INSERT INTO widget" in sql for sql in sqls)
+    assert any("CREATE SCHEMA IF NOT EXISTS mcpg_audit" in sql for sql in sqls)
+    assert any("INSERT INTO mcpg_audit.events" in sql for sql in sqls)
+
+
+async def test_run_write_does_not_touch_audit_table_when_persist_is_off() -> None:
+    driver = FakeDriver()
+
+    await run_write(driver, "INSERT INTO widget (id) VALUES (1)")
+
+    sqls = " ".join(call[0] for call in driver.calls)
+    assert "mcpg_audit" not in sqls
+
+
+async def test_run_write_audits_an_error_path_with_status_error() -> None:
+    # Statement is non-DML — _validate raises WriteError before execution.
+    driver = FakeDriver()
+
+    with pytest.raises(WriteError):
+        await run_write(driver, "SELECT 1", audit_persist=True)
+
+    audit_inserts = [call for call in driver.calls if "INSERT INTO mcpg_audit.events" in call[0]]
+    assert len(audit_inserts) == 1
+    params = audit_inserts[0][1]
+    assert params is not None
+    assert params[2] == "error"  # status
+    assert params[3] is not None  # error message
+    assert params[4] is None  # no result
+
+
+async def test_run_ddl_attaches_schema_diff_when_schema_and_table_supplied() -> None:
+    # FakeDriver returns the same row set for every query — both the
+    # "before" snapshot and the "after" snapshot read this list.
+    driver = FakeDriver(
+        [
+            {"name": "id", "data_type": "integer", "nullable": False, "default_value": None},
+        ]
+    )
+
+    result = await run_ddl(driver, "ALTER TABLE widget ADD COLUMN x int", schema="app", table="widget")
+
+    assert result.schema_diff is not None
+    assert result.schema_diff.schema == "app"
+    assert result.schema_diff.table == "widget"
+    assert len(result.schema_diff.columns_before) == 1
+    assert len(result.schema_diff.columns_after) == 1
+
+
+async def test_run_ddl_does_not_capture_diff_without_both_hints() -> None:
+    result = await run_ddl(FakeDriver(), "CREATE TABLE x ()", schema="app")
+    assert result.schema_diff is None
+
+    result = await run_ddl(FakeDriver(), "CREATE TABLE x ()", table="widget")
+    assert result.schema_diff is None
