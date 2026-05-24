@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -11,6 +12,7 @@ from mcpg.audit_trail import (
     AuditTrailEntry,
     SchemaDiffSnapshot,
     _redact,
+    _reset_audit_init_cache,
     capture_columns,
     ensure_audit_table,
     list_audit_events,
@@ -20,6 +22,12 @@ from mcpg.config import load_settings
 from mcpg.server import create_server
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+
+@pytest.fixture(autouse=True)
+def _isolated_ensure_cache() -> None:
+    """Reset the per-driver ensure cache before every test in this module."""
+    _reset_audit_init_cache()
 
 
 # --- _redact ---------------------------------------------------------------
@@ -40,10 +48,37 @@ def test_redact_obfuscates_connection_string_passwords_in_arbitrary_string_args(
     assert "hunter2" not in redacted["url"]
 
 
+def test_redact_walks_nested_dicts_lists_and_tuples() -> None:
+    # Sensitive data hiding inside a RETURNING payload must be masked
+    # too — Gemini's security-critical PR #12 finding.
+    payload = {
+        "rows": [
+            {"id": 1, "password": "hunter2", "name": "alice"},
+            {"id": 2, "token": "tk_abc", "name": "bob"},
+        ],
+        "schema_diff": {
+            "columns_before": (),
+            "columns_after": ({"name": "secret", "default": "'tk_def'::text"},),
+        },
+    }
+
+    redacted = _redact(payload)
+
+    # Top-level structure is preserved.
+    assert isinstance(redacted, dict)
+    assert {row["name"] for row in redacted["rows"]} == {"alice", "bob"}
+    # Sensitive keys are masked everywhere they appear, however deep.
+    assert redacted["rows"][0]["password"] == "****"
+    assert redacted["rows"][1]["token"] == "****"
+    # Lists and tuples both get walked and types preserved.
+    assert isinstance(redacted["schema_diff"]["columns_after"], tuple)
+
+
 # --- ensure_audit_table ----------------------------------------------------
 
 
 async def test_ensure_audit_table_runs_two_idempotent_creates() -> None:
+    _reset_audit_init_cache()
     driver = FakeDriver()
 
     await ensure_audit_table(driver)  # type: ignore[arg-type]
@@ -53,6 +88,36 @@ async def test_ensure_audit_table_runs_two_idempotent_creates() -> None:
     assert any("CREATE TABLE IF NOT EXISTS" in sql and AUDIT_TABLE in sql for sql in sql_run)
     # Writes are not read-only.
     assert all(call[2] is False for call in driver.calls)
+
+
+async def test_ensure_audit_table_is_cached_per_driver_and_skips_repeat_creates() -> None:
+    # Performance fix (Gemini PR #12): every write was paying for two
+    # CREATE round-trips even though the table already existed. After
+    # the first ensure on a driver, subsequent ensures are no-ops.
+    _reset_audit_init_cache()
+    driver = FakeDriver()
+
+    await ensure_audit_table(driver)  # type: ignore[arg-type]
+    first_call_count = len(driver.calls)
+    await ensure_audit_table(driver)  # type: ignore[arg-type]
+    await ensure_audit_table(driver)  # type: ignore[arg-type]
+
+    # No additional DB round-trips were made on the second + third call.
+    assert len(driver.calls) == first_call_count
+
+
+async def test_ensure_audit_table_re_runs_for_a_distinct_driver_instance() -> None:
+    # The cache is keyed by id(driver) so a different driver always
+    # gets its own ensure pass.
+    _reset_audit_init_cache()
+    first = FakeDriver()
+    second = FakeDriver()
+
+    await ensure_audit_table(first)  # type: ignore[arg-type]
+    await ensure_audit_table(second)  # type: ignore[arg-type]
+
+    assert len(first.calls) > 0
+    assert len(second.calls) > 0
 
 
 # --- record_audit ----------------------------------------------------------
@@ -82,7 +147,31 @@ async def test_record_audit_inserts_redacted_arguments_and_serialises_jsonb() ->
     assert params[4] is not None and "row_count" in params[4]  # result jsonb
 
 
+async def test_record_audit_redacts_nested_credentials_inside_the_result_payload() -> None:
+    # Gemini PR #12 security-critical: a RETURNING * over a credentials
+    # table would have written plaintext into the audit log. The result
+    # payload now goes through _redact too.
+    _reset_audit_init_cache()
+    driver = FakeDriver()
+
+    await record_audit(  # type: ignore[arg-type]
+        driver,
+        tool="run_write",
+        arguments={"sql": "INSERT ... RETURNING *"},
+        status="ok",
+        result={"rows": [{"id": 1, "password": "hunter2", "name": "alice"}], "row_count": 1},
+    )
+
+    insert_calls = [call for call in driver.calls if "INSERT INTO mcpg_audit.events" in call[0]]
+    params = insert_calls[0][1]
+    assert params is not None
+    # The persisted result jsonb must NOT contain the plaintext credential.
+    assert "hunter2" not in params[4]
+    assert "****" in params[4]
+
+
 async def test_record_audit_persists_a_null_result_when_caller_supplies_none() -> None:
+    _reset_audit_init_cache()
     driver = FakeDriver()
 
     await record_audit(driver, tool="run_ddl", arguments={"sql": "DROP TABLE x"}, status="error", error="boom")  # type: ignore[arg-type]

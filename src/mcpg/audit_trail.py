@@ -55,25 +55,51 @@ class SchemaDiffSnapshot:
     columns_after: list[dict[str, Any]]
 
 
-def _redact(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of ``arguments`` with credentials masked."""
-    safe: dict[str, Any] = {}
-    for key, value in arguments.items():
-        if key.lower() in _SECRET_KEYS:
-            safe[key] = _MASK
-        elif isinstance(value, str):
-            safe[key] = obfuscate_password(value)
-        else:
-            safe[key] = value
-    return safe
+def _redact(value: Any) -> Any:
+    """Recursively mask credentials in dicts, lists, and strings.
+
+    Mapping keys named like a credential have their value masked
+    wholesale. String leaves are passed through ``obfuscate_password``
+    so an embedded connection-string credential — even nested deep in a
+    ``RETURNING`` payload — never reaches the audit table in plain text.
+    Non-string scalars (ints, bools, None) pass through unchanged.
+    """
+    if isinstance(value, dict):
+        return {k: _MASK if k.lower() in _SECRET_KEYS else _redact(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact(item) for item in value)
+    if isinstance(value, str):
+        return obfuscate_password(value)
+    return value
+
+
+# Drivers that have already had ensure_audit_table run successfully.
+# Keyed by id(driver) so the cache doesn't pin drivers in memory or
+# survive test teardown (each test builds a fresh driver instance,
+# which gets its own id).
+_ENSURED_DRIVER_IDS: set[int] = set()
+
+
+def _reset_audit_init_cache() -> None:
+    """Forget which drivers have had the audit table ensured.
+
+    Test-only escape hatch; production code should never call this.
+    """
+    _ENSURED_DRIVER_IDS.clear()
 
 
 async def ensure_audit_table(driver: SqlDriver) -> None:
     """Create the ``mcpg_audit.events`` schema/table if it doesn't exist.
 
-    The CREATEs are idempotent (``IF NOT EXISTS``) so this is cheap to
-    call before every write.
+    The CREATEs are idempotent (``IF NOT EXISTS``) but each round-trip
+    still costs catalog locks and a network hop. We cache per-driver so
+    every subsequent call on the same driver instance is a no-op —
+    after the first write, audit recording costs one INSERT per call.
     """
+    if id(driver) in _ENSURED_DRIVER_IDS:
+        return
     await driver.execute_query(
         f"CREATE SCHEMA IF NOT EXISTS {AUDIT_SCHEMA}",
         force_readonly=False,
@@ -90,6 +116,7 @@ async def ensure_audit_table(driver: SqlDriver) -> None:
         ")",
         force_readonly=False,
     )
+    _ENSURED_DRIVER_IDS.add(id(driver))
 
 
 async def record_audit(
@@ -103,12 +130,14 @@ async def record_audit(
 ) -> None:
     """Append one audit row to ``mcpg_audit.events``.
 
-    Credentials in ``arguments`` are masked via :func:`_redact` before
-    persisting. ``result`` is the structured result a caller wants
-    audited; ``None`` is stored as SQL NULL.
+    Credentials in both ``arguments`` and ``result`` are masked
+    recursively via :func:`_redact` before persisting — a run_write
+    with a ``RETURNING password`` clause must never leak plaintext into
+    the audit table. ``None`` ``result`` is stored as SQL NULL.
     """
     await ensure_audit_table(driver)
     safe_args = _redact(arguments)
+    safe_result = _redact(result) if result is not None else None
     await driver.execute_query(
         f"INSERT INTO {_QUALIFIED} (tool, arguments, status, error, result) VALUES (%s, %s::jsonb, %s, %s, %s::jsonb)",
         params=[
@@ -116,7 +145,7 @@ async def record_audit(
             json.dumps(safe_args, default=str),
             status,
             error,
-            json.dumps(result, default=str) if result is not None else None,
+            json.dumps(safe_result, default=str) if safe_result is not None else None,
         ],
         force_readonly=False,
     )

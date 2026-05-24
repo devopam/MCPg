@@ -4,9 +4,17 @@ import pytest
 from _fakes import FakeDatabase, FakeDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
+from mcpg.audit_trail import _reset_audit_init_cache
 from mcpg.config import load_settings
 from mcpg.server import create_server
 from mcpg.write import WriteError, WriteResult, run_ddl, run_write
+
+
+@pytest.fixture(autouse=True)
+def _isolated_ensure_cache() -> None:
+    """Audit-trail per-driver ensure cache is process-scoped; reset per test."""
+    _reset_audit_init_cache()
+
 
 _UNRESTRICTED = load_settings(
     {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
