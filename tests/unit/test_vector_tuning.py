@@ -39,6 +39,16 @@ def test_recommend_ivfflat_uses_sqrt_above_one_million() -> None:
     assert "sqrt" in rationale
 
 
+def test_recommend_ivfflat_boundary_at_exactly_one_million() -> None:
+    # row_count == 1M sits on the "<=" branch — rows/1000 = 1000 lists.
+    params, _ = _recommend_ivfflat(1_000_000)
+    assert params == {"lists": 1000}
+    # The first row above the boundary flips to the sqrt branch.
+    params_above, rationale_above = _recommend_ivfflat(1_000_001)
+    assert params_above["lists"] == int(1_000_001**0.5)
+    assert "sqrt" in rationale_above
+
+
 def test_recommend_hnsw_uses_baseline_under_one_million() -> None:
     params, rationale = _recommend_hnsw(500_000)
     assert params == {"m": 16, "ef_construction": 128}  # 500k > 100k → ef bumped
@@ -53,6 +63,24 @@ def test_recommend_hnsw_denser_graph_for_large_tables() -> None:
 def test_recommend_hnsw_default_ef_for_tiny_tables() -> None:
     params, _ = _recommend_hnsw(10_000)
     assert params == {"m": 16, "ef_construction": 64}
+
+
+def test_recommend_hnsw_boundary_at_exactly_100k_rows() -> None:
+    # row_count == 100k sits on the "<=" branch — ef_construction stays at 64.
+    params, _ = _recommend_hnsw(100_000)
+    assert params == {"m": 16, "ef_construction": 64}
+    # First row above flips the construction bump.
+    params_above, _ = _recommend_hnsw(100_001)
+    assert params_above == {"m": 16, "ef_construction": 128}
+
+
+def test_recommend_hnsw_boundary_at_exactly_one_million_rows() -> None:
+    # row_count == 1M sits on the "<=" branch — m stays at 16.
+    params, _ = _recommend_hnsw(1_000_000)
+    assert params == {"m": 16, "ef_construction": 128}
+    # First row above flips m to 24.
+    params_above, _ = _recommend_hnsw(1_000_001)
+    assert params_above == {"m": 24, "ef_construction": 128}
 
 
 # --- tune_vector_index -----------------------------------------------------
@@ -237,6 +265,34 @@ async def test_vector_recall_at_k_rejects_non_positive_arguments() -> None:
     driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
     with pytest.raises(VectorTuningError, match="must be positive"):
         await vector_recall_at_k(driver, "app", "docs", "embedding", "id", k=0)  # type: ignore[arg-type]
+    with pytest.raises(VectorTuningError, match="must be positive"):
+        await vector_recall_at_k(driver, "app", "docs", "embedding", "id", sample_size=0)  # type: ignore[arg-type]
+
+
+async def test_vector_recall_at_k_caps_sample_size_to_prevent_dos() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    with pytest.raises(VectorTuningError, match="sample_size cannot exceed"):
+        await vector_recall_at_k(driver, "app", "docs", "embedding", "id", sample_size=101)  # type: ignore[arg-type]
+
+
+async def test_tune_vector_index_rejects_invalid_identifier_characters() -> None:
+    # Identifier injection guard — anything not matching the [A-Za-z_][...]
+    # allowlist is rejected before the SQL is built.
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "GREATEST(c.reltuples": [{"estimate": 1000}],
+            "format_type(a.atttypid": [_vector_column_row("embedding", 3)],
+        }
+    )
+    with pytest.raises(VectorTuningError, match="invalid schema name"):
+        await tune_vector_index(driver, 'app"; DROP TABLE x; --', "docs", "embedding")  # type: ignore[arg-type]
+
+
+async def test_vector_recall_at_k_rejects_invalid_identifier_characters() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}], "WHERE": []})
+    with pytest.raises(VectorTuningError, match="invalid id_column name"):
+        await vector_recall_at_k(driver, "app", "docs", "embedding", 'id"; DROP TABLE x; --')  # type: ignore[arg-type]
 
 
 # --- tool wiring -----------------------------------------------------------

@@ -16,6 +16,7 @@ when it is absent.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 
 from mcpg._vendor.sql import SqlDriver
@@ -32,9 +33,26 @@ _DISTANCE_FUNCTIONS = {"l2": "l2_distance", "cosine": "cosine_distance", "inner_
 # Their operator counterparts trigger the ANN index when one exists.
 _DISTANCE_OPERATORS = {"l2": "<->", "cosine": "<=>", "inner_product": "<#>"}
 
+# Recall sampling triggers 2N+1 queries per call; cap N to prevent
+# accidental DoS via a runaway sample_size argument.
+_MAX_SAMPLE_SIZE = 100
+
+# Plain unquoted PostgreSQL identifier — letters, digits, underscores,
+# starting with a letter or underscore. We refuse anything that requires
+# quoting at the catalog level (delimited identifiers, case-sensitive
+# names) rather than try to parse them out of an agent's string.
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
 
 class VectorTuningError(Exception):
     """Raised when a pgvector tuning operation cannot complete."""
+
+
+def _quoted(name: str, kind: str) -> str:
+    """Validate a SQL identifier against the allowlist and return it double-quoted."""
+    if not _IDENTIFIER.match(name):
+        raise VectorTuningError(f"invalid {kind} name: {name!r}")
+    return f'"{name}"'
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +83,9 @@ async def _ensure_installed(driver: SqlDriver) -> None:
 
 
 async def _row_count(driver: SqlDriver, schema: str, table: str) -> int:
+    # schema/table are matched against the catalog via parameters, so no
+    # quoting is needed here — _quoted is applied only where identifiers
+    # are interpolated into SQL text.
     rows = await driver.execute_query(
         # Catalog estimate from pg_class.reltuples — accurate enough for
         # tuning heuristics and orders of magnitude faster than COUNT(*).
@@ -117,7 +138,9 @@ def _format_create_index(
     index_type: str, schema: str, table: str, column: str, ops: str, parameters: dict[str, int]
 ) -> str:
     params_text = ", ".join(f"{name} = {value}" for name, value in parameters.items())
-    return f"CREATE INDEX ON {schema}.{table} USING {index_type} ({column} {ops}) WITH ({params_text});"
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    col = _quoted(column, "column")
+    return f"CREATE INDEX ON {relation} USING {index_type} ({col} {ops}) WITH ({params_text});"
 
 
 _DEFAULT_OPS_FOR_METRIC = {"l2": "vector_l2_ops", "cosine": "vector_cosine_ops", "inner_product": "vector_ip_ops"}
@@ -198,13 +221,19 @@ async def vector_recall_at_k(
         raise VectorTuningError(f"unknown metric {metric!r}; expected l2, cosine, or inner_product")
     if k <= 0 or sample_size <= 0:
         raise VectorTuningError("k and sample_size must be positive")
+    if sample_size > _MAX_SAMPLE_SIZE:
+        # Each probed row triggers two extra catalog queries; cap to
+        # keep an over-eager caller from accidentally DoSing the DB.
+        raise VectorTuningError(f"sample_size cannot exceed {_MAX_SAMPLE_SIZE}")
 
     operator = _DISTANCE_OPERATORS[metric]
     function = _DISTANCE_FUNCTIONS[metric]
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    col = _quoted(column, "column")
+    id_col = _quoted(id_column, "id_column")
 
     sample_rows = await driver.execute_query(
-        f"SELECT {id_column} AS id, {column}::text AS vec FROM {schema}.{table} "
-        f"WHERE {column} IS NOT NULL ORDER BY {id_column} LIMIT %s",
+        f"SELECT {id_col} AS id, {col}::text AS vec FROM {relation} WHERE {col} IS NOT NULL ORDER BY {id_col} LIMIT %s",
         params=[sample_size],
         force_readonly=True,
     )
@@ -216,12 +245,12 @@ async def vector_recall_at_k(
     for sample in samples:
         query_vec = sample.cells["vec"]
         ann_rows = await driver.execute_query(
-            f"SELECT {id_column} AS id FROM {schema}.{table} ORDER BY {column} {operator} %s::vector LIMIT %s",
+            f"SELECT {id_col} AS id FROM {relation} ORDER BY {col} {operator} %s::vector LIMIT %s",
             params=[query_vec, k],
             force_readonly=True,
         )
         truth_rows = await driver.execute_query(
-            f"SELECT {id_column} AS id FROM {schema}.{table} ORDER BY {function}({column}, %s::vector) LIMIT %s",
+            f"SELECT {id_col} AS id FROM {relation} ORDER BY {function}({col}, %s::vector) LIMIT %s",
             params=[query_vec, k],
             force_readonly=True,
         )
