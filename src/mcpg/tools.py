@@ -18,6 +18,7 @@ from mcpg import (
     advisors,
     audit_trail,
     cron,
+    data_movement,
     diagrams,
     extensions,
     health,
@@ -382,6 +383,39 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     async def run_advisors(ctx: _Ctx, schema: str) -> dict[str, Any]:
         report = await advisors.run_advisors(_driver(ctx), schema)
         return asdict(report)
+
+
+def _register_data_movement(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="export_query",
+        description=(
+            "Run a read-only SQL query and serialise its rows to CSV or JSON. "
+            "Reuses the SQL-safety checks of run_select. Truncates at `limit` "
+            "rows and flags it in the result so callers can paginate."
+        ),
+    )
+    async def export_query(
+        ctx: _Ctx, sql: str, format: str = "csv", limit: int = data_movement.DEFAULT_EXPORT_LIMIT
+    ) -> dict[str, Any]:
+        result = await data_movement.export_query(_driver(ctx), sql, format=format, limit=limit)
+        return asdict(result)
+
+    @server.tool(
+        name="export_table",
+        description=(
+            "Serialise every row in schema.table (up to `limit`) to CSV or JSON. "
+            "Schema and table names must be plain identifiers."
+        ),
+    )
+    async def export_table(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        format: str = "csv",
+        limit: int = data_movement.DEFAULT_EXPORT_LIMIT,
+    ) -> dict[str, Any]:
+        result = await data_movement.export_table(_driver(ctx), schema, table, format=format, limit=limit)
+        return asdict(result)
 
 
 def _register_audit_trail(server: FastMCP[AppContext]) -> None:
@@ -773,6 +807,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_vector_tuning(server)
         _register_prisma(server)
         _register_advisors(server)
+        _register_data_movement(server)
         _register_audit_trail(server)
         _register_query(server)
         _register_health(server)

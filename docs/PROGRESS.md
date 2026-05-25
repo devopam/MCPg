@@ -6,21 +6,21 @@
 
 ## Current state
 
-- **Phase:** post-Phase-21 — ADR groundwork for Batches D / E / F
-  (Phases 0–18 + 20–23 + 28 complete; Batches A, B, C, G-first-cut
-  shipped)
+- **Phase:** 24a — In-process CSV/JSON export (Batch D first slice;
+  subprocess tools per ADR-0004 follow)
 - **Last updated:** 2026-05-24
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 56
+- **Tool count:** 58
 
 ## Next action
 
-> ADR-0004 (subprocess execution policy), ADR-0005 (LISTEN/NOTIFY
-> delivery model), and ADR-0006 (migration shadow strategy) accepted —
-> Batches D, E, F are no longer ADR-gated. Implementation order is the
-> user's call; recommend D first (subprocess gate also unblocks Phase
-> 27 if it later wants `pg_dump --schema-only`). Batch G follow-ons
-> (Drizzle / SQLAlchemy / sqlc exporters) remain available as filler.
+> Phase 24a done — `export_query` and `export_table` ship the
+> read-only half of Batch D in-process (no subprocess, no new attack
+> surface). Next slices: **Phase 24b** subprocess infrastructure +
+> `dump_database` / `restore_database` per ADR-0004; **Phase 24c**
+> imports (`import_csv` / `import_json`) once the COPY ... FROM STDIN
+> plumbing is in place; **Phase 24d** `copy_table_between_databases`
+> using the Phase 24b infrastructure.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -592,3 +592,21 @@
   `mcpg_migrations.staged` table alongside the existing
   `mcpg_audit.events`. Batches D, E, F are no longer ADR-gated;
   implementation order is open.
+- 2026-05-24 — PR #13 (ADRs) merged to `main`; branch re-synced.
+- 2026-05-24 — Phase 24a (Batch D first slice): new
+  `mcpg.data_movement` module exposes `export_query` (runs SQL
+  through the existing `run_select` safety checks, serialises rows
+  to CSV or JSON) and `export_table` (SELECT * FROM schema.table
+  with the identifier allowlist). Both are read-only, no subprocess,
+  no new attack surface — ADR-0004's subprocess gate isn't needed
+  yet. `truncated` flag in the result lets agents paginate without
+  silently losing rows. CSV writer quotes commas + stringifies
+  non-scalar values (datetime / UUID / Decimal) so the output is
+  always parseable; JSON serialiser passes `default=str` for the
+  same reason. 15 new unit tests cover the format helpers
+  (`_rows_to_csv` / `_rows_to_json`), every error path (unsupported
+  format, non-positive limit, non-SELECT SQL, invalid identifier),
+  the truncation flag, and the MCP tool wiring. 3 integration
+  tests build a real schema with a row containing a comma in its
+  text value and assert the CSV/JSON round-trip. Phase 24a complete
+  (58 MCP tools total). 541 tests, 100% coverage.
