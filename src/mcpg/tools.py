@@ -418,6 +418,31 @@ def _register_data_movement(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="dump_database",
+        description=(
+            "Run pg_dump against the connected database and return the SQL dump "
+            "as a string (for `format='plain'`) or base64-encoded bytes (for "
+            "`custom`/`tar`). Credentials pass through libpq env vars, never on "
+            "the command line. The result includes `output_truncated` and "
+            "`timed_out` flags so the caller can re-run with a higher cap or a "
+            "narrower scope. Performs subprocess execution — requires "
+            "unrestricted mode + MCPG_ALLOW_SHELL."
+        ),
+    )
+    async def dump_database(ctx: _Ctx, format: str = "plain", schema_only: bool = False) -> dict[str, Any]:
+        app = ctx.request_context.lifespan_context
+        result = await data_movement.dump_database(
+            app.settings.database_url,
+            timeout_sec=app.settings.shell_timeout_sec,
+            max_output_bytes=app.settings.shell_max_output_bytes,
+            format=format,
+            schema_only=schema_only,
+        )
+        return asdict(result)
+
+
 def _register_audit_trail(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="list_audit_events",
@@ -820,3 +845,5 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)
+    if is_permitted(settings.access_mode, Capability.SHELL) and settings.allow_shell:
+        _register_data_movement_shell(server)

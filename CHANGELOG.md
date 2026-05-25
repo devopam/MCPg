@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `dump_database` tool — wraps `pg_dump` to capture the connected
+  database's schema (and optionally data) as a plain-SQL string or
+  base64-encoded binary archive. Implements the ADR-0004 subprocess
+  policy: argv-only invocation, allowlisted binaries, hard timeout,
+  output cap with truncation flag, credentials passed via libpq env
+  vars (never on the command line). Gated behind a new
+  `Capability.SHELL` + `MCPG_ALLOW_SHELL` opt-in on top of
+  unrestricted access mode.
+- New `MCPG_ALLOW_SHELL` env var (bool, default `false`) toggling the
+  whole subprocess-tool surface. Two companion knobs:
+  `MCPG_SHELL_TIMEOUT_SEC` (default 60) and `MCPG_SHELL_MAX_OUTPUT_BYTES`
+  (default 64 MiB).
+- `Capability.SHELL` added to the policy table; required for any tool
+  that invokes an external binary.
 - `export_query` tool — run a read-only SQL query and serialise the
   rows to CSV or JSON. Reuses the safety checks of `run_select` and
   truncates at the supplied row limit with a `truncated` flag in the
