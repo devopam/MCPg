@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from mcpg.data_movement import dump_database, export_query, export_table
+from mcpg.data_movement import dump_database, export_query, export_table, restore_database
 from mcpg.database import Database
 
 _SCHEMA = "mcpg_data_movement_it"
@@ -102,3 +102,44 @@ async def test_dump_database_runs_real_pg_dump_against_a_live_schema(
     assert "PostgreSQL database dump" in result.content
     # The widget table we seeded earlier should appear in the schema dump.
     assert "widget" in result.content
+
+
+async def test_dump_then_restore_round_trip_against_real_pg(connected_database: Database, export_schema: str) -> None:
+    if shutil.which("pg_dump") is None or shutil.which("psql") is None:
+        pytest.skip("pg_dump / psql not on PATH on this runner")
+
+    settings = connected_database._settings
+    # Dump the seeded test schema (--schema-only is enough; data isn't
+    # the point of the round-trip).
+    dump = await dump_database(
+        settings.database_url,
+        timeout_sec=settings.shell_timeout_sec,
+        max_output_bytes=settings.shell_max_output_bytes,
+        format="plain",
+        schema_only=True,
+    )
+    assert dump.exit_code == 0
+    assert "widget" in dump.content
+
+    # Drop the schema, then restore from the dump.
+    driver = connected_database.driver()
+    await driver.execute_query(f"DROP SCHEMA IF EXISTS {export_schema} CASCADE")
+
+    restored = await restore_database(
+        settings.database_url,
+        dump.content,
+        timeout_sec=settings.shell_timeout_sec,
+        max_output_bytes=settings.shell_max_output_bytes,
+        format="plain",
+    )
+    assert restored.exit_code == 0
+    assert restored.timed_out is False
+
+    # The widget table should be back; the data was dropped with the
+    # schema but the structure has been re-created.
+    rows = await driver.execute_query(
+        f"SELECT count(*) AS n FROM {export_schema}.widget",
+        force_readonly=True,
+    )
+    assert rows is not None
+    assert rows[0].cells["n"] == 0

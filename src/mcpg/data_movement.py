@@ -270,3 +270,96 @@ async def dump_database(
         binary=result.binary,
         argv=result.argv,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class RestoreResult:
+    """The outcome of a ``pg_restore`` or ``psql`` invocation."""
+
+    exit_code: int
+    output_bytes: int
+    output_truncated: bool
+    timed_out: bool
+    stderr_tail: str
+    binary: str
+    argv: list[str]
+
+
+_PG_RESTORE_FORMATS = frozenset({"plain", "custom", "tar"})
+
+
+async def restore_database(
+    database_url: str,
+    content: str,
+    *,
+    timeout_sec: int,
+    max_output_bytes: int,
+    format: str = "plain",
+) -> RestoreResult:
+    """Restore a dump into the database in ``database_url``.
+
+    ``format='plain'`` pipes ``content`` (SQL text) into ``psql``;
+    ``custom`` and ``tar`` base64-decode ``content`` and pipe the bytes
+    into ``pg_restore``. ``--single-transaction`` + ``ON_ERROR_STOP``
+    are set for psql so a syntax error rolls the whole restore back
+    rather than half-applying. Credentials reach the binary via libpq
+    env vars (PGPASSWORD), never on the command line.
+
+    Raises:
+        ShellError: pg_restore/psql not on the allowlist or PATH, the
+            URL is unparseable, the format is unsupported, or the
+            subprocess fails to spawn.
+    """
+    if format not in _PG_RESTORE_FORMATS:
+        raise ShellError(f"unsupported restore format {format!r}; expected one of {sorted(_PG_RESTORE_FORMATS)}")
+    env = _libpq_env_from_url(database_url)
+    if "PGDATABASE" not in env:
+        raise ShellError("database_url must specify a database name")
+
+    if format == "plain":
+        binary = "psql"
+        argv = [
+            "--quiet",
+            "--single-transaction",
+            "--set=ON_ERROR_STOP=on",
+            "--file=-",  # read from stdin
+        ]
+        stdin = content.encode("utf-8")
+    else:
+        import base64
+
+        binary = "pg_restore"
+        argv = [
+            "--no-owner",
+            "--no-privileges",
+            "--single-transaction",
+            "--exit-on-error",
+            f"--format={format}",
+        ]
+        try:
+            stdin = base64.b64decode(content, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise ShellError(f"content is not valid base64 for {format!r} format: {exc}") from exc
+
+    result = await run_pg_binary(
+        binary,
+        *argv,
+        env=env,
+        timeout_sec=timeout_sec,
+        max_output_bytes=max_output_bytes,
+        stdin=stdin,
+    )
+
+    stderr_tail = result.stderr.decode("utf-8", errors="replace")
+    if len(stderr_tail) > 4096:
+        stderr_tail = stderr_tail[-4096:]
+
+    return RestoreResult(
+        exit_code=result.exit_code,
+        output_bytes=result.output_bytes,
+        output_truncated=result.output_truncated,
+        timed_out=result.timed_out,
+        stderr_tail=stderr_tail,
+        binary=result.binary,
+        argv=result.argv,
+    )

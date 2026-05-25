@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `restore_database` tool — restore a dump into the connected database
+  via the ADR-0004 subprocess gate. `format='plain'` pipes SQL text
+  through `psql --single-transaction --set=ON_ERROR_STOP=on` so a
+  syntax error rolls back the whole restore; `format='custom'`/`'tar'`
+  base64-decode the payload and pipe the binary archive into
+  `pg_restore --single-transaction --exit-on-error`. Credentials reach
+  the binary via libpq env vars; the dump bytes flow through stdin and
+  are never interpolated into argv. Gated on unrestricted mode +
+  `MCPG_ALLOW_SHELL`.
+
+### Fixed
+
+- `mcpg.shell.run_pg_binary` now writes the optional `stdin` payload
+  concurrently with the stdout/stderr drain. The previous "write
+  stdin after wait()" ordering would have deadlocked any subprocess
+  that consumes stdin (`pg_restore`, `psql -f -`); no shipped tool
+  used stdin yet, but the bug blocked `restore_database` from working.
+
 - `dump_database` tool — wraps `pg_dump` to capture the connected
   database's schema (and optionally data) as a plain-SQL string or
   base64-encoded binary archive. Implements the ADR-0004 subprocess

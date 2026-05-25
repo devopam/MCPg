@@ -172,6 +172,9 @@ async def run_pg_binary(
     truncated = False
     output_bytes_seen = 0
     stdout_chunks: list[bytes] = []
+    # Initialise so an unexpected exception path doesn't leave this
+    # name unbound when we build the SubprocessResult.
+    stderr_bytes: bytes = b""
 
     async def _read_capped() -> None:
         nonlocal output_bytes_seen, truncated
@@ -194,10 +197,37 @@ async def run_pg_binary(
                         stdout_chunks.append(chunk[:keep])
                     truncated = True
 
+    async def _write_stdin() -> None:
+        # The child may exit early on a SQL error (psql) or invalid
+        # archive (pg_restore) while we're still writing. That closes
+        # the pipe and raises BrokenPipeError / ConnectionResetError
+        # here — if those propagate through asyncio.gather, we never
+        # return the real exit code or stderr, and the agent loses
+        # the diagnostic. Swallow them and let process.wait() +
+        # stderr_task surface the actual failure cause.
+        if stdin is None or process.stdin is None:
+            return
+        try:
+            process.stdin.write(stdin)
+            await process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        try:
+            process.stdin.close()
+            # Wait for the OS-level close to land so the child sees EOF
+            # before we wait() on it.
+            await process.stdin.wait_closed()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     try:
         async with asyncio.timeout(timeout_sec):
             stderr_task = asyncio.create_task(process.stderr.read())  # type: ignore[union-attr]
-            await asyncio.gather(_read_capped(), stderr_task, process.wait())
+            # stdin is written concurrently with stdout/stderr draining
+            # — pg_restore (and any consumer) only starts producing
+            # stdout/stderr after it begins reading stdin, so the
+            # earlier "write stdin after wait" ordering would deadlock.
+            await asyncio.gather(_write_stdin(), _read_capped(), stderr_task, process.wait())
             stderr_bytes = stderr_task.result()
     except TimeoutError:
         timed_out = True
@@ -212,16 +242,6 @@ async def run_pg_binary(
             stderr_bytes = await process.stderr.read() if process.stderr else b""
         except Exception:
             stderr_bytes = b""
-
-    # ``stdin`` is written then closed before reading begins for
-    # simplicity (small payloads only — large restores stream their
-    # archive via temp file, which is a Phase 24c concern).
-    if stdin is not None and process.stdin is not None:
-        try:
-            process.stdin.write(stdin)
-            await process.stdin.drain()
-        finally:
-            process.stdin.close()
 
     stdout_bytes = b"".join(stdout_chunks)
     return SubprocessResult(

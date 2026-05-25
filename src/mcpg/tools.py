@@ -442,6 +442,28 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
         )
         return asdict(result)
 
+    @server.tool(
+        name="restore_database",
+        description=(
+            "Restore a dump into the connected database. `format='plain'` pipes "
+            "the SQL text in `content` through psql with --single-transaction + "
+            "ON_ERROR_STOP; `custom`/`tar` base64-decode `content` and pipe the "
+            "bytes through pg_restore. Credentials pass through libpq env vars, "
+            "never on the command line. Performs subprocess execution — requires "
+            "unrestricted mode + MCPG_ALLOW_SHELL."
+        ),
+    )
+    async def restore_database(ctx: _Ctx, content: str, format: str = "plain") -> dict[str, Any]:
+        app = ctx.request_context.lifespan_context
+        result = await data_movement.restore_database(
+            app.settings.database_url,
+            content,
+            timeout_sec=app.settings.shell_timeout_sec,
+            max_output_bytes=app.settings.shell_max_output_bytes,
+            format=format,
+        )
+        return asdict(result)
+
 
 def _register_audit_trail(server: FastMCP[AppContext]) -> None:
     @server.tool(
