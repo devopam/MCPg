@@ -38,6 +38,21 @@ jobs:
         postgres: ["14", "15", "16", "17", "18"]
     steps:
       - uses: actions/checkout@v4
+      # The ubuntu-latest runner ships an older PostgreSQL client by
+      # default; `pg_dump` refuses to dump from a newer server (PG 17 /
+      # 18 in this matrix). Install the matching client tools from the
+      # pgdg apt repo so `pg_dump` matches the matrix server version
+      # exactly. Required by the Phase-24 subprocess integration tests
+      # (mcpg.shell + dump_database); harmless for the older versions.
+      - name: Install PostgreSQL ${{ matrix.postgres }} client tools
+        run: |
+          sudo apt-get install -y wget gnupg lsb-release ca-certificates
+          wget --quiet -O- https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-${{ matrix.postgres }}
       # A custom image (pgvector + PostGIS) so the integration suite can test
       # vector and geospatial features against a real database. It is built
       # and run as a step because GitHub `services:` cannot build images.
