@@ -1,5 +1,7 @@
 """Tests for the in-process data-movement export tools."""
 
+import csv
+import io
 import json
 
 import pytest
@@ -42,6 +44,42 @@ def test_rows_to_csv_stringifies_non_scalar_cell_values() -> None:
 
     out = _rows_to_csv([{"created": datetime(2026, 5, 24, 12, 0, 0)}])
     assert "2026-05-24" in out
+
+
+def test_rows_to_csv_emits_empty_string_for_none_not_the_literal_none() -> None:
+    # CSV NULL convention is an empty field. Passing None to DictWriter
+    # would otherwise write the literal "None" — bad for downstream
+    # consumers that try to load the file with a typed reader.
+    out = _rows_to_csv([{"id": 1, "name": None}])
+    lines = out.splitlines()
+    # Header + one data row.
+    assert lines[0] == "id,name"
+    # Row is ``1,`` — the trailing field is empty, not the string "None".
+    assert lines[1] == "1,"
+    assert "None" not in out
+
+
+def test_rows_to_csv_serialises_dicts_and_lists_as_json_strings() -> None:
+    # psycopg returns jsonb columns as Python dicts/lists. Calling str()
+    # on them would produce Python repr (single quotes, ``True`` not
+    # ``true``); json.dumps gives a valid JSON cell a JSON reader can
+    # parse on the round-trip.
+    out = _rows_to_csv([{"id": 1, "config": {"a": 1, "b": True}, "tags": [1, 2, 3]}])
+
+    # Round-trip through DictReader so the CSV quoting is interpreted
+    # correctly (don't hand-roll comma splitting on a field that
+    # itself contains commas).
+    parsed_rows = list(csv.DictReader(io.StringIO(out)))
+    assert len(parsed_rows) == 1
+    row = parsed_rows[0]
+    assert row["id"] == "1"
+    # The jsonb-shaped cells round-trip cleanly through json.loads —
+    # they are valid JSON strings, not Python repr.
+    assert json.loads(row["config"]) == {"a": 1, "b": True}
+    assert json.loads(row["tags"]) == [1, 2, 3]
+    # No Python repr leaked into the raw CSV text.
+    assert " True" not in out  # JSON form is lowercase ``true``
+    assert "'a'" not in out
 
 
 def test_rows_to_json_serialises_with_default_str_for_non_native_types() -> None:

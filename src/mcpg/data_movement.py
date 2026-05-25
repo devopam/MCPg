@@ -58,6 +58,31 @@ def _check_identifier(name: str, kind: str) -> None:
         raise ExportError(f"invalid {kind} name: {name!r}")
 
 
+def _csv_cell(value: Any) -> Any:
+    """Coerce a row cell to a CSV-safe value.
+
+    - ``None`` becomes the empty string, the standard CSV NULL marker;
+      passing ``None`` straight to ``DictWriter`` would emit the literal
+      ``"None"``.
+    - ``dict`` / ``list`` (the shape psycopg hands back for ``jsonb`` /
+      ``json`` columns) are re-serialised as JSON so the cell holds a
+      valid JSON string a downstream consumer can parse. Plain ``str()``
+      would produce Python repr — single quotes, ``True`` instead of
+      ``true`` — which no JSON reader will accept.
+    - Plain scalars (``str``, ``int``, ``float``, ``bool``) pass through.
+    - Everything else (datetime, UUID, Decimal, custom types) is
+      ``str()``'d so the CSV is always readable, with round-tripping
+      left to the consumer.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, default=str)
+    return str(value)
+
+
 def _rows_to_csv(rows: list[dict[str, Any]]) -> str:
     """Serialise dict rows to CSV with a header row taken from the first row."""
     if not rows:
@@ -66,15 +91,7 @@ def _rows_to_csv(rows: list[dict[str, Any]]) -> str:
     writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()))
     writer.writeheader()
     for row in rows:
-        # Coerce any non-trivial values (datetimes, UUIDs, JSON dicts)
-        # to strings so the CSV is round-trippable. Plain scalars pass
-        # through unchanged so they survive in a SQL-typed reader.
-        writer.writerow(
-            {
-                key: value if isinstance(value, (str, int, float, bool)) or value is None else str(value)
-                for key, value in row.items()
-            }
-        )
+        writer.writerow({key: _csv_cell(value) for key, value in row.items()})
     return buffer.getvalue()
 
 
