@@ -6,30 +6,32 @@
 
 ## Current state
 
-- **Phase:** 27 — staged-migration workflow (Batch F, ADR-0006) —
-  same-database shadow schema strategy; four new tools wired up;
-  introspection-driven DDL replay (no `pg_dump` shell-out)
+- **Phase:** 28b/c/d — Batch G ORM bridges shipped (Drizzle,
+  SQLAlchemy 2.0, sqlc). Tool surface 71 → 74. **All planned
+  batches A–G are now closed.**
 - **Last updated:** 2026-05-25
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 71
+- **Tool count:** 74
 
 ## Next action
 
-> Phase 27 shipped — `prepare_migration` clones a target schema's
-> structure into a `mcpg_shadow_<id>` schema via introspection
-> (tables/columns + PK/UNIQUE/CHECK/FK constraints + indexes), applies
-> a candidate SQL statement against the shadow with `SET LOCAL
-> search_path` so unqualified identifiers resolve there, then runs
-> `compare_schemas(target, shadow)` so the agent can review the
-> structural diff. `complete_migration` applies the original
-> candidate to the target and drops the shadow; `cancel_migration`
-> drops the shadow without applying. State persists in a new
-> `mcpg_migrations.staged` table (auto-created on first call).
-> Gated under unrestricted mode + the existing `MCPG_ALLOW_DDL`
-> opt-in via new `Capability.MIGRATE`. **Batch F is closed** —
-> all three roadmap-blocking ADRs (D / E / F) are now shipped.
-> Remaining open: **Batch G** follow-ons (Drizzle / SQLAlchemy /
-> sqlc exporters under the schema→ORM-DSL umbrella).
+> Batch G follow-ons shipped — three new exporters sit alongside the
+> existing `generate_prisma_schema` under the schema→DSL umbrella.
+> `generate_drizzle_schema` emits a `drizzle-orm/pg-core` TS file
+> (tables + columns + single-column FK `.references()` + enums via
+> `pgEnum` + serial detection from `nextval` defaults). The
+> helper-import line is computed from what was actually emitted so
+> unused imports don't clutter the output.
+> `generate_sqlalchemy_models` emits a 2.0-style declarative file
+> (`DeclarativeBase` + `Mapped[T]` + `mapped_column`, jsonb via the
+> PG dialect, enum types as Python `enum.Enum` classes, composite
+> uniques in `__table_args__`). `generate_sqlc_schema` emits a clean
+> replayable `schema.sql` (CREATE SCHEMA → CREATE TYPE → CREATE
+> TABLE → ALTER TABLE ADD CONSTRAINT in PK→FK order → CREATE
+> INDEX), no subprocess needed. All three are read-only.
+> **Roadmap status: A–G all closed.** Next direction is open —
+> release prep (v0.2.0 cut from this branch with all post-1.0
+> features), additional Batch-G exporters, or new feature work.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -785,3 +787,37 @@
   already-completed ids. **Batch F closed** — all three roadmap-
   blocking ADRs (D / E / F) are now shipped. Phase 27 complete
   (71 MCP tools total). 656 tests, 97% coverage.
+- 2026-05-25 — Batch G follow-ons (Phase 28b/c/d): three new ORM
+  exporters sit alongside the existing `generate_prisma_schema` and
+  close out the schema→DSL umbrella. `mcpg.drizzle` emits a
+  `drizzle-orm/pg-core` TypeScript schema with pgTable consts,
+  PG-native helpers (integer / bigint / varchar with length /
+  timestamp with `withTimezone: true` / jsonb / etc.), `pgEnum`
+  consts for enum columns, `serial`/`bigserial` detected from
+  `nextval()` defaults, single-column FKs as column-level
+  `.references(() => target.col)`, composite PK/unique/index in the
+  extras callback, and a stripped import line computed from what
+  was actually emitted (chain methods like `.primaryKey()` are NOT
+  picked up — only top-level helpers). `mcpg.sqlalchemy_export`
+  emits a 2.0-style declarative file with `DeclarativeBase` +
+  `Mapped[T]` + `mapped_column`, PG types from both core and the
+  PG dialect (jsonb), `ForeignKey("schema.table.col")` for
+  single-column FKs, `UniqueConstraint` in `__table_args__` for
+  composites, Python `enum.Enum` classes for PG enums, and
+  `server_default=text(...)` / `func.now()` for defaults; the
+  output compiles cleanly under `compile()` so syntax errors can
+  never reach the agent. `mcpg.sqlc` emits plain DDL ordered for
+  replay against an empty database (CREATE SCHEMA → CREATE TYPE
+  enums → CREATE TABLE columns-only → ALTER TABLE ADD CONSTRAINT
+  in PK/unique/check/FK order → CREATE INDEX for non-constraint
+  indexes). All three tools are read-only — no new capability or
+  opt-in needed. 41 new unit tests across three test files cover
+  helper composition (camelCase / PascalCase / type maps / default
+  rendering / nextval detection / enum resolution including
+  schema-qualified types / FK chain rendering) and tool
+  registration. 6 new integration tests round-trip each exporter
+  against a real PG schema with FKs + uniques + enum + jsonb;
+  SQLAlchemy output is verified to `compile()` cleanly, and the
+  sqlc output is verified to order PK before FK so the file
+  replays clean. **Batches A–G are all closed.** Phase 28b/c/d
+  complete (74 MCP tools total). 698 tests, 96% coverage.

@@ -8,6 +8,33 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- ORM-bridge exporters — Batch G follow-ons (Phase 28b/c/d). Three
+  new MCP tools sit alongside the existing `generate_prisma_schema`
+  under the schema→DSL umbrella:
+  - `generate_drizzle_schema` — emit a Drizzle ORM TypeScript schema
+    (`drizzle-orm/pg-core`) covering tables, columns with PG-native
+    types (incl. `serial`/`bigserial` from `nextval` defaults, length
+    on varchar, `withTimezone` on timestamptz), single-column FKs as
+    column-level `.references(() => ...)`, primary/unique/check
+    constraints, indexes, defaults, and enums via `pgEnum`. The
+    helper-import line is computed from what was actually emitted, so
+    unused helpers don't clutter the output.
+  - `generate_sqlalchemy_models` — emit a SQLAlchemy 2.0 declarative
+    models file (`DeclarativeBase` + `Mapped[T]` + `mapped_column`)
+    with PG types from both `sqlalchemy` core and
+    `sqlalchemy.dialects.postgresql` (jsonb), single-column FKs via
+    `ForeignKey("schema.table.col")`, composite uniques in
+    `__table_args__`, enum types emitted as Python `enum.Enum`
+    classes, and `server_default=text(...)` / `func.now()` for
+    defaults. Composite FKs are a documented v1 gap.
+  - `generate_sqlc_schema` — emit a sqlc-friendly `schema.sql` (plain
+    DDL) ordered for clean replay: `CREATE SCHEMA` → `CREATE TYPE`
+    enums → `CREATE TABLE` (columns only) → `ALTER TABLE ADD
+    CONSTRAINT` (PK / unique / check / FK in that order) → `CREATE
+    INDEX` for non-constraint indexes. In-process — no
+    `MCPG_ALLOW_SHELL` needed.
+  All three are read-only; gated by the standard READ capability.
+
 - Staged-migration workflow — Batch F (Phase 27), per ADR-0006. New
   `mcpg.migrations` module implements Neon-style "branch the schema,
   test the migration, merge" with same-database shadow schemas (no

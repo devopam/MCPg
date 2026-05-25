@@ -20,6 +20,7 @@ from mcpg import (
     cron,
     data_movement,
     diagrams,
+    drizzle,
     extensions,
     health,
     indexing,
@@ -31,6 +32,8 @@ from mcpg import (
     prisma,
     query,
     schema_diff,
+    sqlalchemy_export,
+    sqlc,
     textsearch,
     vector_tuning,
     workload,
@@ -369,6 +372,50 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
     )
     async def generate_prisma_schema(ctx: _Ctx, schema: str) -> str:
         return await prisma.generate_prisma_schema(_driver(ctx), schema)
+
+    @server.tool(
+        name="generate_drizzle_schema",
+        description=(
+            "Read a PostgreSQL schema and emit a Drizzle ORM TypeScript schema "
+            "string (drizzle-orm/pg-core). Covers tables, columns with PG-native "
+            "types, primary/foreign keys, unique constraints, indexes, defaults, "
+            "and enums. Single-column FKs emit column-level .references(); "
+            "composite FKs are a documented v1 gap. Views, foreign tables, "
+            "partitions, triggers, and functions are out of scope."
+        ),
+    )
+    async def generate_drizzle_schema(ctx: _Ctx, schema: str) -> str:
+        return await drizzle.generate_drizzle_schema(_driver(ctx), schema)
+
+    @server.tool(
+        name="generate_sqlalchemy_models",
+        description=(
+            "Read a PostgreSQL schema and emit a SQLAlchemy 2.0 declarative "
+            "models file (DeclarativeBase + Mapped[T] + mapped_column). Covers "
+            "tables, columns with PG-native types (incl. jsonb via "
+            "sqlalchemy.dialects.postgresql.JSONB), primary keys, single-column "
+            "FKs via ForeignKey(), unique constraints (column-level + composite "
+            "via __table_args__), defaults, and enums (emitted as Python "
+            "enum.Enum classes). Composite FKs are a documented v1 gap."
+        ),
+    )
+    async def generate_sqlalchemy_models(ctx: _Ctx, schema: str) -> str:
+        return await sqlalchemy_export.generate_sqlalchemy_models(_driver(ctx), schema)
+
+    @server.tool(
+        name="generate_sqlc_schema",
+        description=(
+            "Read a PostgreSQL schema and emit a sqlc-friendly schema.sql "
+            "(plain DDL). Order: CREATE SCHEMA, CREATE TYPE for each enum, "
+            "CREATE TABLE statements (columns only), ALTER TABLE ADD "
+            "CONSTRAINT (PK / unique / check / foreign key in that order), "
+            "then CREATE INDEX for non-constraint indexes. The file replays "
+            "cleanly against an empty database so FKs land after all "
+            "referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed."
+        ),
+    )
+    async def generate_sqlc_schema(ctx: _Ctx, schema: str) -> str:
+        return await sqlc.generate_sqlc_schema(_driver(ctx), schema)
 
 
 def _register_advisors(server: FastMCP[AppContext]) -> None:
