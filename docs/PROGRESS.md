@@ -6,23 +6,27 @@
 
 ## Current state
 
-- **Phase:** 24c — `restore_database` (full dump/restore round-trip
-  via the shell gate)
+- **Phase:** 24e — `import_csv` / `import_json` (bulk loads via in-process
+  `COPY FROM STDIN` and parametrised `executemany`)
 - **Last updated:** 2026-05-25
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 60
+- **Tool count:** 62
 
 ## Next action
 
-> Phase 24c shipped — `restore_database` completes the dump/restore
-> symmetry, and the integration test now exercises a real end-to-end
-> `pg_dump` → drop schema → `psql` restore against every PG version
-> in the matrix. Also fixed a latent `stdin` ordering bug in
-> `mcpg.shell` that would have deadlocked any subprocess consuming
-> stdin (no tool relied on it yet). Next slices: **Phase 24d**
-> `copy_table_between_databases`; **Phase 24e** `import_csv` /
-> `import_json` once `COPY ... FROM STDIN` plumbing lands. Batch G
-> follow-ons and Batches E and F also remain open.
+> Phase 24e shipped — `import_csv` loads raw CSV content through
+> `COPY ... FROM STDIN`, and `import_json` parses a JSON array into a
+> parametrised `INSERT ... executemany`. Both are in-process (no
+> subprocess, no `MCPG_ALLOW_SHELL` needed), gated under unrestricted
+> mode like the other write tools, with the same identifier allowlist
+> the rest of `mcpg.data_movement` uses. Two new helpers on
+> `Database` (`copy_from_stdin`, `execute_many`) expose the raw
+> connection access the vendored `SqlDriver` doesn't, and
+> `FakeDatabase` grows matching recorders so unit tests don't need a
+> live server. Next slices: **Phase 24d**
+> `copy_table_between_databases` (pipe pg_dump on one URL into
+> pg_restore on another via the shell runner). Batch G follow-ons
+> and Batches E and F also remain open.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -660,3 +664,26 @@
   a real dump → drop schema → restore round-trip against every PG
   version in the CI matrix. Phase 24c complete (60 MCP tools total).
   576 tests, 100% coverage.
+- 2026-05-25 — Phase 24e (bulk imports): two new write tools land
+  the import half of Batch D. `import_csv` pipes raw CSV content
+  into `COPY "schema"."table" [(cols)] FROM STDIN WITH (FORMAT csv,
+  HEADER ?, DELIMITER ?)` — header / delimiter / explicit-columns
+  all configurable, with the delimiter restricted to a single
+  non-newline non-quote character so it cannot terminate the COPY
+  options list. `import_json` parses a JSON array of objects,
+  derives the column list from the first row's keys (or an explicit
+  `columns` arg), and runs `INSERT INTO ... VALUES (%s, ...)` via
+  `executemany`; nested dict/list values are JSON-serialised so they
+  survive into a jsonb column, missing keys bind as NULL. Both
+  gated under unrestricted mode (WRITE capability) — no subprocess,
+  no `MCPG_ALLOW_SHELL`. Vendored `SqlDriver` doesn't expose COPY
+  or executemany, so two new helpers (`Database.copy_from_stdin`,
+  `Database.execute_many`) wrap raw pool-connection access;
+  `FakeDatabase` grew matching recorders so unit tests don't need a
+  live server. 19 new unit tests cover SQL composition, identifier
+  rejection, delimiter validation, empty-input no-op, error
+  wrapping, negative-rowcount fallback, and the WRITE-gate tool
+  wiring matrix. 2 new integration tests round-trip real CSV +
+  JSON loads against every PG version in the CI matrix (including a
+  `jsonb` column on the JSON path). Phase 24e complete (62 MCP
+  tools total). 599 tests, 98% coverage.

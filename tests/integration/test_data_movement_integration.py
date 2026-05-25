@@ -6,7 +6,14 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from mcpg.data_movement import dump_database, export_query, export_table, restore_database
+from mcpg.data_movement import (
+    dump_database,
+    export_query,
+    export_table,
+    import_csv,
+    import_json,
+    restore_database,
+)
 from mcpg.database import Database
 
 _SCHEMA = "mcpg_data_movement_it"
@@ -102,6 +109,64 @@ async def test_dump_database_runs_real_pg_dump_against_a_live_schema(
     assert "PostgreSQL database dump" in result.content
     # The widget table we seeded earlier should appear in the schema dump.
     assert "widget" in result.content
+
+
+@pytest.fixture
+async def empty_import_schema(connected_database: Database) -> AsyncIterator[str]:
+    """A fresh table the import tests can fill, isolated from the export fixture."""
+    schema = "mcpg_data_movement_imp_it"
+    driver = connected_database.driver()
+    await driver.execute_query(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+    await driver.execute_query(f"CREATE SCHEMA {schema}")
+    await driver.execute_query(
+        f"CREATE TABLE {schema}.widget (id integer PRIMARY KEY, name text NOT NULL, config jsonb, tags text[])"
+    )
+    try:
+        yield schema
+    finally:
+        await driver.execute_query(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+
+
+async def test_import_csv_loads_rows_via_copy_from_stdin(
+    connected_database: Database, empty_import_schema: str
+) -> None:
+    payload = "id,name\n1,alpha\n2,beta\n3,gamma\n"
+    result = await import_csv(connected_database, empty_import_schema, "widget", payload, columns=["id", "name"])
+
+    assert result.rows_imported == 3
+
+    rows = await connected_database.driver().execute_query(
+        f"SELECT id, name FROM {empty_import_schema}.widget ORDER BY id",
+        force_readonly=True,
+    )
+    assert rows is not None
+    assert [(r.cells["id"], r.cells["name"]) for r in rows] == [(1, "alpha"), (2, "beta"), (3, "gamma")]
+
+
+async def test_import_json_loads_rows_with_nested_jsonb_via_executemany(
+    connected_database: Database, empty_import_schema: str
+) -> None:
+    payload = json.dumps(
+        [
+            {"id": 1, "name": "alpha", "config": {"weight": 5}},
+            {"id": 2, "name": "beta", "config": {"weight": 7}},
+        ]
+    )
+    result = await import_json(
+        connected_database, empty_import_schema, "widget", payload, columns=["id", "name", "config"]
+    )
+
+    assert result.rows_imported == 2
+
+    rows = await connected_database.driver().execute_query(
+        f"SELECT id, name, config FROM {empty_import_schema}.widget ORDER BY id",
+        force_readonly=True,
+    )
+    assert rows is not None
+    assert rows[0].cells["name"] == "alpha"
+    # The jsonb column survived the round-trip as a dict, not a stringified payload.
+    assert rows[0].cells["config"] == {"weight": 5}
+    assert rows[1].cells["config"] == {"weight": 7}
 
 
 async def test_dump_then_restore_round_trip_against_real_pg(connected_database: Database, export_schema: str) -> None:

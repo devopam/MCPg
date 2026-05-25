@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+from typing import Any
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
@@ -14,12 +15,16 @@ from mcpg.data_movement import (
     EXPORT_FORMATS,
     ExportError,
     ExportResult,
+    ImportDataError,
+    ImportResult,
     _libpq_env_from_url,
     _rows_to_csv,
     _rows_to_json,
     dump_database,
     export_query,
     export_table,
+    import_csv,
+    import_json,
     restore_database,
 )
 from mcpg.server import create_server
@@ -481,3 +486,206 @@ async def test_restore_database_tool_registered_with_allow_shell() -> None:
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "restore_database" in listed
+
+
+# --- import_csv / import_json --------------------------------------------
+
+
+async def test_import_csv_issues_copy_from_stdin_with_safe_identifiers_and_options() -> None:
+    db = FakeDatabase(FakeDriver(), copy_rowcount=3)
+    csv_payload = "id,name\n1,alpha\n2,beta\n3,gamma\n"
+
+    result = await import_csv(db, "app", "widget", csv_payload)  # type: ignore[arg-type]
+
+    assert isinstance(result, ImportResult)
+    assert result.schema == "app"
+    assert result.table == "widget"
+    assert result.format == "csv"
+    assert result.rows_imported == 3
+    # One COPY call was made; the SQL quotes identifiers + sets the right options.
+    assert len(db.copy_calls) == 1
+    sql, data = db.copy_calls[0]
+    assert 'COPY "app"."widget"' in sql
+    assert "FORMAT csv" in sql
+    assert "HEADER true" in sql
+    assert "DELIMITER ','" in sql
+    assert data == csv_payload.encode("utf-8")
+
+
+async def test_import_csv_threads_explicit_columns_into_copy_sql() -> None:
+    db = FakeDatabase(FakeDriver(), copy_rowcount=1)
+    await import_csv(db, "app", "widget", "1,alpha\n", header=False, columns=["id", "name"])  # type: ignore[arg-type]
+
+    sql, _ = db.copy_calls[0]
+    assert '("id", "name")' in sql
+    assert "HEADER false" in sql
+
+
+async def test_import_csv_rejects_empty_column_list() -> None:
+    with pytest.raises(ImportDataError, match="must not be empty"):
+        await import_csv(FakeDatabase(FakeDriver()), "app", "widget", "x\n", columns=[])  # type: ignore[arg-type]
+
+
+async def test_import_csv_rejects_unsafe_identifiers() -> None:
+    db = FakeDatabase(FakeDriver())
+    with pytest.raises(ImportDataError, match="invalid schema name"):
+        await import_csv(db, "app; DROP", "widget", "x\n")  # type: ignore[arg-type]
+    with pytest.raises(ImportDataError, match="invalid table name"):
+        await import_csv(db, "app", 'widget"; --', "x\n")  # type: ignore[arg-type]
+    with pytest.raises(ImportDataError, match="invalid column name"):
+        await import_csv(db, "app", "widget", "x\n", columns=["bad name"])  # type: ignore[arg-type]
+
+
+async def test_import_csv_rejects_dangerous_delimiters() -> None:
+    db = FakeDatabase(FakeDriver())
+    # Multi-char delimiter — would break COPY syntax.
+    with pytest.raises(ImportDataError, match="invalid delimiter"):
+        await import_csv(db, "app", "widget", "x\n", delimiter=",,")  # type: ignore[arg-type]
+    # Quote / newline — could close the options list early.
+    with pytest.raises(ImportDataError, match="invalid delimiter"):
+        await import_csv(db, "app", "widget", "x\n", delimiter="'")  # type: ignore[arg-type]
+    with pytest.raises(ImportDataError, match="invalid delimiter"):
+        await import_csv(db, "app", "widget", "x\n", delimiter="\n")  # type: ignore[arg-type]
+
+
+async def test_import_csv_wraps_underlying_copy_failures() -> None:
+    class _BoomDatabase(FakeDatabase):
+        async def copy_from_stdin(self, sql: str, data: bytes) -> int:
+            raise RuntimeError("connection lost")
+
+    db = _BoomDatabase(FakeDriver())
+    with pytest.raises(ImportDataError, match="COPY failed"):
+        await import_csv(db, "app", "widget", "1\n")  # type: ignore[arg-type]
+
+
+async def test_import_csv_clamps_negative_rowcount_to_zero() -> None:
+    db = FakeDatabase(FakeDriver(), copy_rowcount=-1)
+    result = await import_csv(db, "app", "widget", "x\n")  # type: ignore[arg-type]
+    assert result.rows_imported == 0
+
+
+async def test_import_json_derives_columns_and_runs_parametrised_insert() -> None:
+    db = FakeDatabase(FakeDriver())
+    payload = json.dumps([{"id": 1, "name": "alpha"}, {"id": 2, "name": "beta"}])
+
+    result = await import_json(db, "app", "widget", payload)  # type: ignore[arg-type]
+
+    assert isinstance(result, ImportResult)
+    assert result.format == "json"
+    assert result.rows_imported == 2
+    sql, rows = db.execute_many_calls[0]
+    assert 'INSERT INTO "app"."widget" ("id", "name") VALUES (%s, %s)' == sql
+    assert rows == [(1, "alpha"), (2, "beta")]
+
+
+async def test_import_json_uses_explicit_columns_when_supplied() -> None:
+    db = FakeDatabase(FakeDriver())
+    payload = json.dumps([{"id": 1, "name": "a", "extra": "ignored"}])
+
+    await import_json(db, "app", "widget", payload, columns=["id", "name"])  # type: ignore[arg-type]
+
+    sql, rows = db.execute_many_calls[0]
+    assert "INSERT" in sql
+    assert '"id", "name"' in sql
+    assert "extra" not in sql
+    assert rows == [(1, "a")]
+
+
+async def test_import_json_serialises_nested_dicts_and_lists_for_jsonb() -> None:
+    db = FakeDatabase(FakeDriver())
+    payload = json.dumps([{"id": 1, "config": {"a": 1}, "tags": ["x", "y"]}])
+
+    await import_json(db, "app", "widget", payload)  # type: ignore[arg-type]
+
+    _, rows = db.execute_many_calls[0]
+    assert rows[0][0] == 1
+    # Nested values are sent as JSON strings, not Python repr.
+    assert json.loads(rows[0][1]) == {"a": 1}
+    assert json.loads(rows[0][2]) == ["x", "y"]
+
+
+async def test_import_json_binds_missing_keys_as_null() -> None:
+    db = FakeDatabase(FakeDriver())
+    payload = json.dumps([{"id": 1, "name": "alpha"}, {"id": 2}])
+
+    await import_json(db, "app", "widget", payload)  # type: ignore[arg-type]
+
+    _, rows = db.execute_many_calls[0]
+    assert rows == [(1, "alpha"), (2, None)]
+
+
+async def test_import_json_empty_array_is_a_no_op() -> None:
+    db = FakeDatabase(FakeDriver())
+    result = await import_json(db, "app", "widget", "[]")  # type: ignore[arg-type]
+    assert result.rows_imported == 0
+    # No SQL was issued at all — empty input doesn't touch the database.
+    assert db.execute_many_calls == []
+
+
+async def test_import_json_rejects_non_array_payloads() -> None:
+    db = FakeDatabase(FakeDriver())
+    with pytest.raises(ImportDataError, match="must be a JSON array"):
+        await import_json(db, "app", "widget", json.dumps({"id": 1}))  # type: ignore[arg-type]
+
+
+async def test_import_json_rejects_invalid_json() -> None:
+    db = FakeDatabase(FakeDriver())
+    with pytest.raises(ImportDataError, match="not valid JSON"):
+        await import_json(db, "app", "widget", "{not-json")  # type: ignore[arg-type]
+
+
+async def test_import_json_rejects_non_object_rows() -> None:
+    db = FakeDatabase(FakeDriver())
+    with pytest.raises(ImportDataError, match=r"every row .* must be an object"):
+        await import_json(db, "app", "widget", json.dumps([[1, 2], [3, 4]]))  # type: ignore[arg-type]
+
+
+async def test_import_json_rejects_unsafe_identifiers() -> None:
+    db = FakeDatabase(FakeDriver())
+    with pytest.raises(ImportDataError, match="invalid schema name"):
+        await import_json(db, "app; DROP", "widget", "[]")  # type: ignore[arg-type]
+
+
+async def test_import_json_falls_back_to_input_length_when_rowcount_is_negative() -> None:
+    # psycopg's executemany sometimes reports -1; the helper compensates.
+    db = FakeDatabase(FakeDriver(), execute_many_rowcount=-1)
+    await import_json(db, "app", "widget", json.dumps([{"id": 1}, {"id": 2}, {"id": 3}]))  # type: ignore[arg-type]
+    # We don't assert on the result directly here; the executemany_rowcount
+    # forces the fallback path and the call was recorded.
+    assert len(db.execute_many_calls) == 1
+
+
+async def test_import_json_wraps_underlying_insert_failures() -> None:
+    class _BoomDatabase(FakeDatabase):
+        async def execute_many(self, sql: str, params_seq: Any) -> int:
+            raise RuntimeError("PK collision")
+
+    db = _BoomDatabase(FakeDriver())
+    with pytest.raises(ImportDataError, match="INSERT failed"):
+        await import_json(db, "app", "widget", json.dumps([{"id": 1}]))  # type: ignore[arg-type]
+
+
+# --- tool wiring: import_csv / import_json gated under WRITE -------------
+
+
+async def test_import_tools_hidden_in_read_only_mode() -> None:
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "import_csv" not in listed
+    assert "import_json" not in listed
+
+
+async def test_import_tools_registered_in_unrestricted_mode() -> None:
+    server = create_server(_UNRESTRICTED_NO_SHELL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert {"import_csv", "import_json"} <= listed
+
+        result = await client.call_tool(
+            "import_csv",
+            {"schema": "app", "table": "widget", "content": "id\n1\n2\n"},
+        )
+        assert result.isError is False
+        assert result.structuredContent is not None
+        assert result.structuredContent["format"] == "csv"

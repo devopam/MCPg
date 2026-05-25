@@ -95,11 +95,23 @@ class FakeParamRoutingDriver:
 class FakeDatabase:
     """Stand-in for Database whose driver() returns a supplied FakeDriver."""
 
-    def __init__(self, driver: FakeDriver, *, unmanaged_fail: bool = False) -> None:
+    def __init__(
+        self,
+        driver: FakeDriver,
+        *,
+        unmanaged_fail: bool = False,
+        copy_rowcount: int | None = None,
+        execute_many_rowcount: int | None = None,
+    ) -> None:
         self._driver = driver
         self.is_connected = False
         self.unmanaged_fail = unmanaged_fail
         self.unmanaged: list[str] = []
+        # Recorders for the COPY / executemany code paths.
+        self.copy_calls: list[tuple[str, bytes]] = []
+        self.execute_many_calls: list[tuple[str, list[tuple[Any, ...]]]] = []
+        self._copy_rowcount = copy_rowcount
+        self._execute_many_rowcount = execute_many_rowcount
 
     async def connect(self) -> None:
         self.is_connected = True
@@ -114,6 +126,17 @@ class FakeDatabase:
         self.unmanaged.append(sql)
         if self.unmanaged_fail:
             raise RuntimeError("maintenance failed")
+
+    async def copy_from_stdin(self, sql: str, data: bytes) -> int:
+        self.copy_calls.append((sql, data))
+        # Default: count newlines in payload (matches a plain CSV row count
+        # for the common case; tests can override via the ctor arg).
+        return self._copy_rowcount if self._copy_rowcount is not None else data.count(b"\n")
+
+    async def execute_many(self, sql: str, params_seq: Any) -> int:
+        rows = [tuple(p) for p in params_seq]
+        self.execute_many_calls.append((sql, rows))
+        return self._execute_many_rowcount if self._execute_many_rowcount is not None else len(rows)
 
     async def __aenter__(self) -> FakeDatabase:
         await self.connect()

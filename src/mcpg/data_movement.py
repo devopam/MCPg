@@ -1,14 +1,21 @@
-"""Data-movement tools — in-process export to CSV and JSON.
+"""Data-movement tools — exports, dumps, restores, and bulk imports.
 
-This module covers the read-only half of Batch D (Phase 24): two tools
-that serialise SQL query results or full tables to a string an agent
-can inspect or write to a file.
+Read-only half (no subprocess, no new attack surface):
 
-The subprocess-driven half (``dump_database``, ``restore_database``,
-``copy_table_between_databases``) follows ADR-0004 and lives in a
-separate PR. Imports (``import_csv`` / ``import_json``) need
-``COPY ... FROM STDIN`` plumbing that the vendored driver doesn't
-expose yet; they're tracked as Phase 24c.
+- :func:`export_query`, :func:`export_table` — serialise SELECT
+  results to CSV / JSON in-process.
+
+Subprocess-driven half (ADR-0004; gated behind ``MCPG_ALLOW_SHELL``):
+
+- :func:`dump_database` — ``pg_dump``.
+- :func:`restore_database` — ``psql`` / ``pg_restore``.
+
+Bulk imports (in-process, no subprocess; gated behind ``WRITE``
+capability — unrestricted access mode):
+
+- :func:`import_csv` — ``COPY ... FROM STDIN`` with raw CSV content.
+- :func:`import_json` — parametrised ``INSERT`` from a JSON array of
+  objects.
 """
 
 from __future__ import annotations
@@ -22,6 +29,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from mcpg._vendor.sql import SqlDriver
+from mcpg.database import Database
 from mcpg.query import QueryError, run_select
 from mcpg.shell import ShellError, run_pg_binary
 
@@ -363,3 +371,184 @@ async def restore_database(
         binary=result.binary,
         argv=result.argv,
     )
+
+
+# --- bulk imports (in-process; gated behind WRITE) -----------------------
+
+
+class ImportDataError(Exception):
+    """Raised when an import call is rejected or fails.
+
+    Named ``ImportDataError`` so it does not shadow the builtin
+    ``ImportError`` for callers who do ``from mcpg.data_movement
+    import *``.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class ImportResult:
+    """The outcome of an import call.
+
+    ``rows_imported`` is the row count the server reports — useful for
+    confirming the agent wrote what it expected. ``format`` echoes the
+    input format so a result inspected without its call context is
+    self-describing.
+    """
+
+    schema: str
+    table: str
+    format: str
+    rows_imported: int
+
+
+def _build_copy_sql(schema: str, table: str, columns: list[str] | None, *, header: bool, delimiter: str) -> str:
+    """Compose a ``COPY ... FROM STDIN`` statement with safe identifiers.
+
+    The schema, table, and (optional) column names are validated against
+    the plain-identifier allowlist before this is called; delimited
+    quoting still applies so reserved words don't break the statement.
+    The delimiter is restricted to a single non-newline character so it
+    can't terminate the COPY options list early.
+    """
+    column_clause = ""
+    if columns:
+        joined = ", ".join(f'"{col}"' for col in columns)
+        column_clause = f" ({joined})"
+    options = [
+        "FORMAT csv",
+        f"HEADER {'true' if header else 'false'}",
+        f"DELIMITER '{delimiter}'",
+    ]
+    return f'COPY "{schema}"."{table}"{column_clause} FROM STDIN WITH ({", ".join(options)})'
+
+
+async def import_csv(
+    database: Database,
+    schema: str,
+    table: str,
+    content: str,
+    *,
+    header: bool = True,
+    delimiter: str = ",",
+    columns: list[str] | None = None,
+) -> ImportResult:
+    """Bulk-load CSV ``content`` into ``schema.table`` via ``COPY FROM STDIN``.
+
+    The CSV text is sent verbatim; the caller is responsible for its
+    correctness (matching column count, proper quoting). ``header=True``
+    tells PostgreSQL to skip the first line.
+
+    Args:
+        database: The connected MCPg ``Database``.
+        schema: Target schema; must be a plain identifier.
+        table: Target table; must be a plain identifier.
+        content: CSV text to load. Encoded as UTF-8 on the wire.
+        header: When true, the first CSV row is treated as a header
+            and skipped by COPY.
+        delimiter: One-character field separator. Newlines and quote
+            characters are rejected to keep the COPY options safe.
+        columns: Optional explicit column list. When supplied, each
+            name must be a plain identifier; rows are loaded into the
+            named columns in order, with any unlisted columns taking
+            their default. When omitted, COPY uses the table's
+            declared column order.
+
+    Raises:
+        ImportError: When an identifier fails validation, the delimiter
+            is illegal, or the underlying COPY fails.
+    """
+    _check_identifier_for_import(schema, "schema")
+    _check_identifier_for_import(table, "table")
+    if columns is not None:
+        if not columns:
+            raise ImportDataError("columns, if supplied, must not be empty")
+        for col in columns:
+            _check_identifier_for_import(col, "column")
+    if len(delimiter) != 1 or delimiter in "\n\r\"'":
+        raise ImportDataError(f"invalid delimiter {delimiter!r}; must be a single non-newline, non-quote character")
+
+    copy_sql = _build_copy_sql(schema, table, columns, header=header, delimiter=delimiter)
+    try:
+        rowcount = await database.copy_from_stdin(copy_sql, content.encode("utf-8"))
+    except Exception as exc:  # psycopg / DatabaseError / OS error
+        raise ImportDataError(f"COPY failed: {exc}") from exc
+    return ImportResult(schema=schema, table=table, format="csv", rows_imported=max(rowcount, 0))
+
+
+async def import_json(
+    database: Database,
+    schema: str,
+    table: str,
+    content: str,
+    *,
+    columns: list[str] | None = None,
+) -> ImportResult:
+    """Bulk-load a JSON array of objects into ``schema.table``.
+
+    Parses ``content`` as a JSON array, derives the column list from
+    ``columns`` (when supplied) or from the keys of the first row
+    (otherwise), then executes a parametrised
+    ``INSERT INTO "schema"."table" (col, ...) VALUES (%s, ...)`` once
+    per row via ``executemany``. Values are bound — never spliced into
+    SQL — so they cannot inject statements.
+
+    Missing keys in a later row are bound as ``NULL``; nested
+    ``dict`` / ``list`` values are JSON-serialised so they round-trip
+    into a ``jsonb`` column.
+
+    Raises:
+        ImportError: When ``content`` is not a JSON array of objects,
+            an identifier fails validation, or the INSERT fails.
+    """
+    _check_identifier_for_import(schema, "schema")
+    _check_identifier_for_import(table, "table")
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ImportDataError(f"content is not valid JSON: {exc}") from exc
+    if not isinstance(parsed, list):
+        raise ImportDataError("content must be a JSON array of objects")
+    if not parsed:
+        return ImportResult(schema=schema, table=table, format="json", rows_imported=0)
+    if not all(isinstance(row, dict) for row in parsed):
+        raise ImportDataError("every row in the JSON array must be an object")
+
+    if columns is None:
+        columns = list(parsed[0].keys())
+    if not columns:
+        raise ImportDataError("could not derive a column list from the JSON rows")
+    for col in columns:
+        _check_identifier_for_import(col, "column")
+
+    placeholders = ", ".join(["%s"] * len(columns))
+    column_clause = ", ".join(f'"{col}"' for col in columns)
+    sql = f'INSERT INTO "{schema}"."{table}" ({column_clause}) VALUES ({placeholders})'
+    params_seq = [tuple(_json_cell(row.get(col)) for col in columns) for row in parsed]
+    try:
+        rowcount = await database.execute_many(sql, params_seq)
+    except Exception as exc:
+        raise ImportDataError(f"INSERT failed: {exc}") from exc
+    # psycopg's executemany sometimes reports -1 for the rowcount on certain
+    # backends. Fall back to the number of rows we sent.
+    if rowcount < 0:
+        rowcount = len(params_seq)
+    return ImportResult(schema=schema, table=table, format="json", rows_imported=rowcount)
+
+
+def _check_identifier_for_import(name: str, kind: str) -> None:
+    if not _IDENTIFIER.match(name):
+        raise ImportDataError(f"invalid {kind} name: {name!r}")
+
+
+def _json_cell(value: Any) -> Any:
+    """Coerce a JSON cell to a psycopg-friendly bound value.
+
+    Nested ``dict`` / ``list`` become JSON strings so they survive
+    insertion into a ``jsonb`` column without a round-trip through
+    Python ``repr``. Scalars pass through; the psycopg adapter handles
+    them natively.
+    """
+    if isinstance(value, (dict, list)):
+        return json.dumps(value)
+    return value

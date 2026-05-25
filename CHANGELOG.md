@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `import_csv` tool — bulk-load CSV content into `schema.table` via
+  `COPY ... FROM STDIN`. CSV text is sent verbatim; `header` toggles
+  header-row skipping; optional `columns` restricts loading to named
+  columns (each validated against the plain-identifier allowlist).
+  Delimiter is restricted to a single non-newline, non-quote character
+  so it cannot terminate the COPY options list early. Returns the
+  server-reported row count. Gated under unrestricted mode (WRITE
+  capability) — no subprocess, no `MCPG_ALLOW_SHELL` needed.
+- `import_json` tool — bulk-load a JSON array of objects into
+  `schema.table` via parametrised `INSERT ... executemany`. Columns
+  are derived from the first row's keys (or supplied explicitly);
+  nested `dict`/`list` values are JSON-serialised so they round-trip
+  into `jsonb` columns; missing keys in later rows bind as `NULL`.
+  Values are bound — never spliced into SQL — so they cannot inject
+  statements. Gated under unrestricted mode (WRITE capability).
+- `Database.copy_from_stdin` and `Database.execute_many` helpers —
+  in-process plumbing for COPY FROM STDIN and `executemany`, used by
+  the new import tools. The vendored `SqlDriver` exposes neither, so
+  imports go through the `Database` wrapper for raw connection access.
+
 - `restore_database` tool — restore a dump into the connected database
   via the ADR-0004 subprocess gate. `format='plain'` pipes SQL text
   through `psql --single-transaction --set=ON_ERROR_STOP=on` so a

@@ -418,6 +418,64 @@ def _register_data_movement(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="import_csv",
+        description=(
+            "Bulk-load CSV content into schema.table via COPY ... FROM STDIN. "
+            "The CSV text is sent verbatim — the caller is responsible for "
+            "correctness (matching column count, proper quoting). `header=true` "
+            "skips the first line. Optional `columns` restricts loading to the "
+            "named columns in order; unlisted columns take their default. "
+            "Performs writes — requires unrestricted mode."
+        ),
+    )
+    async def import_csv(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        content: str,
+        header: bool = True,
+        delimiter: str = ",",
+        columns: list[str] | None = None,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await data_movement.import_csv(
+            database,
+            schema,
+            table,
+            content,
+            header=header,
+            delimiter=delimiter,
+            columns=columns,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="import_json",
+        description=(
+            "Bulk-load a JSON array of objects into schema.table. Parses the "
+            "array, derives column names from the first row (or from `columns` "
+            "when given), and runs a parametrised INSERT once per row. Nested "
+            "dict/list values are JSON-serialised so they round-trip into jsonb "
+            "columns. Missing keys in later rows bind as NULL. Performs writes "
+            "— requires unrestricted mode."
+        ),
+    )
+    async def import_json(
+        ctx: _Ctx, schema: str, table: str, content: str, columns: list[str] | None = None
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await data_movement.import_json(
+            database,
+            schema,
+            table,
+            content,
+            columns=columns,
+        )
+        return asdict(result)
+
+
 def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="dump_database",
@@ -864,6 +922,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_maintenance(server)
         _register_backend_control(server)
         _register_cron_write(server)
+        _register_data_movement_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)
