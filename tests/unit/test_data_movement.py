@@ -14,12 +14,15 @@ from mcpg.data_movement import (
     EXPORT_FORMATS,
     ExportError,
     ExportResult,
+    _libpq_env_from_url,
     _rows_to_csv,
     _rows_to_json,
+    dump_database,
     export_query,
     export_table,
 )
 from mcpg.server import create_server
+from mcpg.shell import ShellError, SubprocessResult
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
@@ -191,3 +194,157 @@ async def test_export_tools_are_registered_and_callable_in_read_mode() -> None:
     assert payload is not None
     assert payload["format"] == "csv"
     assert payload["row_count"] == 1
+
+
+# --- dump_database (subprocess gate, ADR-0004) ----------------------------
+
+
+def test_libpq_env_from_url_extracts_pg_env_vars() -> None:
+    env = _libpq_env_from_url("postgresql://user:secret@db.host:5433/mydb?sslmode=require")
+    assert env["PGHOST"] == "db.host"
+    assert env["PGPORT"] == "5433"
+    assert env["PGUSER"] == "user"
+    assert env["PGPASSWORD"] == "secret"
+    assert env["PGDATABASE"] == "mydb"
+
+
+def test_libpq_env_from_url_url_decodes_credentials() -> None:
+    # A password with URL-reserved characters arrives percent-encoded
+    # in the URL but must reach PGPASSWORD decoded.
+    env = _libpq_env_from_url("postgresql://u%40org:p%23s%24@h/d")
+    assert env["PGUSER"] == "u@org"
+    assert env["PGPASSWORD"] == "p#s$"
+
+
+def test_libpq_env_from_url_omits_keys_for_missing_url_parts() -> None:
+    env = _libpq_env_from_url("postgresql:///mydb")
+    assert "PGHOST" not in env
+    assert "PGUSER" not in env
+    assert env["PGDATABASE"] == "mydb"
+
+
+async def test_dump_database_invokes_pg_dump_with_libpq_env_and_format_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_run(binary: str, *argv: str, **kwargs: object) -> SubprocessResult:
+        captured["binary"] = binary
+        captured["argv"] = list(argv)
+        captured["env"] = kwargs.get("env")
+        return SubprocessResult(
+            binary=binary,
+            argv=list(argv),
+            exit_code=0,
+            stdout=b"-- PostgreSQL database dump\nSELECT 1;\n",
+            stderr=b"",
+            output_bytes=39,
+            output_truncated=False,
+            timed_out=False,
+            env_redacted={"PGPASSWORD": "****"},
+        )
+
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", fake_run)
+
+    result = await dump_database(
+        "postgresql://u:p@h:5432/db",
+        timeout_sec=10,
+        max_output_bytes=1024,
+    )
+
+    assert captured["binary"] == "pg_dump"
+    assert "--format=plain" in captured["argv"]  # type: ignore[operator]
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["PGHOST"] == "h"
+    assert env["PGDATABASE"] == "db"
+    # Password is in the env passed to the subprocess; the runner does
+    # the redaction for audit logging, not the dump_database helper.
+    assert env["PGPASSWORD"] == "p"
+
+    assert result.exit_code == 0
+    assert "PostgreSQL database dump" in result.content
+    assert result.output_truncated is False
+
+
+async def test_dump_database_base64_encodes_binary_format_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import base64
+
+    async def fake_run(binary: str, *argv: str, **kwargs: object) -> SubprocessResult:
+        return SubprocessResult(
+            binary=binary,
+            argv=list(argv),
+            exit_code=0,
+            stdout=b"\x00\x01\x02binary\xff",  # not valid utf-8 — must be base64'd
+            stderr=b"",
+            output_bytes=9,
+            output_truncated=False,
+            timed_out=False,
+            env_redacted={},
+        )
+
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", fake_run)
+
+    result = await dump_database(
+        "postgresql://u@h/db",
+        timeout_sec=10,
+        max_output_bytes=1024,
+        format="custom",
+    )
+    decoded = base64.b64decode(result.content)
+    assert decoded == b"\x00\x01\x02binary\xff"
+
+
+async def test_dump_database_rejects_unsupported_format() -> None:
+    with pytest.raises(ShellError, match="unsupported pg_dump format"):
+        await dump_database("postgresql://u@h/db", timeout_sec=10, max_output_bytes=1024, format="bogus")
+
+
+async def test_dump_database_rejects_directory_format_as_v1_unsupported() -> None:
+    with pytest.raises(ShellError, match=r"directory.*not supported"):
+        await dump_database("postgresql://u@h/db", timeout_sec=10, max_output_bytes=1024, format="directory")
+
+
+async def test_dump_database_requires_a_database_name_in_the_url() -> None:
+    with pytest.raises(ShellError, match="must specify a database"):
+        await dump_database("postgresql://user@host:5432/", timeout_sec=10, max_output_bytes=1024)
+
+
+# --- tool wiring: dump_database is shell-gated ----------------------------
+
+
+_UNRESTRICTED_NO_SHELL = load_settings(
+    {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
+)
+_UNRESTRICTED_SHELL = load_settings(
+    {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_ACCESS_MODE": "unrestricted",
+        "MCPG_ALLOW_SHELL": "true",
+    }
+)
+
+
+async def test_dump_database_tool_hidden_without_unrestricted_mode() -> None:
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "dump_database" not in listed
+
+
+async def test_dump_database_tool_hidden_in_unrestricted_without_allow_shell() -> None:
+    # Same defence-in-depth pattern as partman vs MCPG_ALLOW_DDL —
+    # unrestricted alone must not expose subprocess tools.
+    server = create_server(_UNRESTRICTED_NO_SHELL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "dump_database" not in listed
+
+
+async def test_dump_database_tool_registered_in_unrestricted_with_allow_shell() -> None:
+    server = create_server(_UNRESTRICTED_SHELL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "dump_database" in listed

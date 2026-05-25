@@ -1,11 +1,12 @@
 """Integration tests for in-process CSV/JSON export against real PG."""
 
 import json
+import shutil
 from collections.abc import AsyncIterator
 
 import pytest
 
-from mcpg.data_movement import export_query, export_table
+from mcpg.data_movement import dump_database, export_query, export_table
 from mcpg.database import Database
 
 _SCHEMA = "mcpg_data_movement_it"
@@ -72,3 +73,32 @@ async def test_export_query_truncates_at_limit_against_a_large_real_result(
     assert result.truncated is True
     # The header + 2 data rows == 3 lines.
     assert len(result.content.splitlines()) == 3
+
+
+# --- dump_database (real pg_dump via the ADR-0004 subprocess gate) -------
+
+
+async def test_dump_database_runs_real_pg_dump_against_a_live_schema(
+    connected_database: Database, export_schema: str
+) -> None:
+    if shutil.which("pg_dump") is None:
+        pytest.skip("pg_dump is not on PATH on this runner")
+
+    settings = connected_database._settings
+    result = await dump_database(
+        settings.database_url,
+        timeout_sec=settings.shell_timeout_sec,
+        max_output_bytes=settings.shell_max_output_bytes,
+        format="plain",
+        schema_only=True,
+    )
+
+    assert result.exit_code == 0
+    assert result.timed_out is False
+    assert result.output_truncated is False
+    # pg_dump's plain SQL preamble always contains this comment; if it
+    # made it into our output, the subprocess + env-var path works end-
+    # to-end against a real PG.
+    assert "PostgreSQL database dump" in result.content
+    # The widget table we seeded earlier should appear in the schema dump.
+    assert "widget" in result.content

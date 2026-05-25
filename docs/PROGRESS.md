@@ -6,21 +6,24 @@
 
 ## Current state
 
-- **Phase:** 24a — In-process CSV/JSON export (Batch D first slice;
-  subprocess tools per ADR-0004 follow)
-- **Last updated:** 2026-05-24
+- **Phase:** 24b — Subprocess infrastructure + `dump_database`
+  (ADR-0004 shell gate live)
+- **Last updated:** 2026-05-25
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 58
+- **Tool count:** 59
 
 ## Next action
 
-> Phase 24a done — `export_query` and `export_table` ship the
-> read-only half of Batch D in-process (no subprocess, no new attack
-> surface). Next slices: **Phase 24b** subprocess infrastructure +
-> `dump_database` / `restore_database` per ADR-0004; **Phase 24c**
-> imports (`import_csv` / `import_json`) once the COPY ... FROM STDIN
-> plumbing is in place; **Phase 24d** `copy_table_between_databases`
-> using the Phase 24b infrastructure.
+> Phase 24b shipped — new `mcpg.shell` module enforces the ADR-0004
+> subprocess policy (allowlisted binaries, argv-only invocation, hard
+> timeout, output cap, libpq env-var credentials), `Capability.SHELL`
+> + `MCPG_ALLOW_SHELL` opt-in gate is live, and `dump_database` is
+> the first consumer. Next slices: **Phase 24c** `restore_database`
+> (uses the same gate with `stdin` piping); **Phase 24d**
+> `copy_table_between_databases`; **Phase 24e** `import_csv` /
+> `import_json` once `COPY ... FROM STDIN` plumbing lands. Batch G
+> follow-ons (Drizzle / SQLAlchemy / sqlc) and Batches E and F also
+> remain open.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -610,3 +613,27 @@
   tests build a real schema with a row containing a comma in its
   text value and assert the CSV/JSON round-trip. Phase 24a complete
   (58 MCP tools total). 541 tests, 100% coverage.
+- 2026-05-25 — PR #14 (Phase 24a) merged to `main`; branch re-synced.
+  Gemini's CSV-correctness catch (`None` → empty, `dict`/`list` →
+  JSON, not Python repr) and accompanying regression tests landed
+  with the merge.
+- 2026-05-25 — Phase 24b (subprocess infrastructure + first shell
+  tool): new `mcpg.shell` module is the only place in MCPg that
+  invokes external binaries, enforcing the ADR-0004 policy in one
+  place — allowlisted binary set (`pg_dump` / `pg_restore` / `psql`),
+  `asyncio.create_subprocess_exec(binary, *argv)` invocation, hard
+  timeout (kills + flags `timed_out`), stdout cap (drops tail + flags
+  `output_truncated`), libpq env-var credentials filtered to an
+  allowlist (PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE/PGSSLMODE/...),
+  and `PGPASSWORD` redacted in the result for audit. New
+  `Capability.SHELL` enum entry; new env vars `MCPG_ALLOW_SHELL`
+  (default false), `MCPG_SHELL_TIMEOUT_SEC` (default 60),
+  `MCPG_SHELL_MAX_OUTPUT_BYTES` (default 64 MiB). New `dump_database`
+  tool in `mcpg.data_movement` is the first consumer: parses the
+  configured database URL into the libpq env, invokes `pg_dump`
+  through the shell runner, returns the dump as text (plain format)
+  or base64 (custom/tar). 13 new shell unit tests + 14 new
+  `dump_database` unit tests + 1 real-`pg_dump` integration test
+  cover allowlist / env filtering / redaction / truncation / timeout
+  / URL parsing / format selection / tool-wiring gate. Phase 24b
+  complete (59 MCP tools total). 568 tests, 100% coverage.

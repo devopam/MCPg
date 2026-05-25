@@ -19,9 +19,11 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from mcpg._vendor.sql import SqlDriver
 from mcpg.query import QueryError, run_select
+from mcpg.shell import ShellError, run_pg_binary
 
 # Same identifier allowlist as mcpg.textsearch / mcpg.prisma / mcpg.vector_tuning —
 # refuse names that need delimited-identifier quoting, accept plain ones.
@@ -147,3 +149,124 @@ async def export_table(
     _check_identifier(table, "table")
     sql = f'SELECT * FROM "{schema}"."{table}"'
     return await export_query(driver, sql, format=format, limit=limit)
+
+
+# --- subprocess-driven half (ADR-0004) ------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class DumpResult:
+    """The outcome of a ``pg_dump`` invocation.
+
+    ``content`` is the captured stdout as a UTF-8 string for
+    ``format="plain"`` (the default; SQL text). ``stderr_tail`` is the
+    last few KiB of stderr — useful for surfacing warnings and errors
+    without flooding the result. ``output_truncated`` is ``True`` when
+    the dump exceeded ``max_output_bytes``; the caller should re-run
+    with a higher cap or dump in narrower chunks.
+    """
+
+    exit_code: int
+    content: str
+    output_bytes: int
+    output_truncated: bool
+    timed_out: bool
+    stderr_tail: str
+    binary: str
+    argv: list[str]
+
+
+def _libpq_env_from_url(database_url: str) -> dict[str, str]:
+    """Parse a ``postgresql://...`` URL into the libpq ``PG*`` env vars.
+
+    Returns only the env vars implied by the URL — anything the caller
+    wants to add (PGOPTIONS, PGSSLMODE) layers on top via the env arg
+    to :func:`mcpg.shell.run_pg_binary`. Credentials land in
+    ``PGPASSWORD`` (env), never on the command line.
+    """
+    parsed = urlparse(database_url)
+    env: dict[str, str] = {}
+    if parsed.hostname:
+        env["PGHOST"] = parsed.hostname
+    if parsed.port:
+        env["PGPORT"] = str(parsed.port)
+    if parsed.username:
+        env["PGUSER"] = unquote(parsed.username)
+    if parsed.password:
+        env["PGPASSWORD"] = unquote(parsed.password)
+    if parsed.path and parsed.path != "/":
+        env["PGDATABASE"] = parsed.path.lstrip("/")
+    return env
+
+
+_PG_DUMP_FORMATS = frozenset({"plain", "custom", "directory", "tar"})
+
+
+async def dump_database(
+    database_url: str,
+    *,
+    timeout_sec: int,
+    max_output_bytes: int,
+    format: str = "plain",
+    schema_only: bool = False,
+) -> DumpResult:
+    """Run ``pg_dump`` against the database in ``database_url`` and capture stdout.
+
+    Credentials are extracted from the URL and passed to ``pg_dump``
+    via the libpq env vars (PGHOST/PGUSER/PGPASSWORD/...), never on
+    the command line. The dump shape is controlled by ``format`` (only
+    ``plain`` returns parseable text; the binary formats land as
+    base64-stringified bytes in the result and need a corresponding
+    ``pg_restore`` call to consume them).
+
+    Raises:
+        ShellError: ``pg_dump`` is not on the allowlist or PATH, the
+            URL is unparseable, the format is not supported, or the
+            subprocess fails to spawn.
+    """
+    if format not in _PG_DUMP_FORMATS:
+        raise ShellError(f"unsupported pg_dump format {format!r}; expected one of {sorted(_PG_DUMP_FORMATS)}")
+    env = _libpq_env_from_url(database_url)
+    if "PGDATABASE" not in env:
+        raise ShellError("database_url must specify a database name")
+
+    argv = [f"--format={format}"]
+    if schema_only:
+        argv.append("--schema-only")
+    # Always pipe to stdout (the default for plain/custom/tar; directory
+    # writes to disk and isn't supported in v1).
+    if format == "directory":
+        raise ShellError("pg_dump format 'directory' writes to disk; not supported in v1")
+
+    result = await run_pg_binary(
+        "pg_dump",
+        *argv,
+        env=env,
+        timeout_sec=timeout_sec,
+        max_output_bytes=max_output_bytes,
+    )
+
+    # For plain format the stdout is SQL text; decode as UTF-8. For
+    # custom/tar it's a binary archive — return a base64 representation
+    # so the result is JSON-transportable.
+    if format == "plain":
+        content = result.stdout.decode("utf-8", errors="replace")
+    else:
+        import base64
+
+        content = base64.b64encode(result.stdout).decode("ascii")
+
+    stderr_tail = result.stderr.decode("utf-8", errors="replace")
+    if len(stderr_tail) > 4096:
+        stderr_tail = stderr_tail[-4096:]
+
+    return DumpResult(
+        exit_code=result.exit_code,
+        content=content,
+        output_bytes=result.output_bytes,
+        output_truncated=result.output_truncated,
+        timed_out=result.timed_out,
+        stderr_tail=stderr_tail,
+        binary=result.binary,
+        argv=result.argv,
+    )

@@ -50,6 +50,9 @@ class Settings:
     http_port: int = 8000
     log_level: str = "INFO"
     allow_ddl: bool = False
+    allow_shell: bool = False
+    shell_timeout_sec: int = 60
+    shell_max_output_bytes: int = 64 * 1024 * 1024
     audit_persist: bool = False
     pool_min_size: int = 1
     pool_max_size: int = 5
@@ -62,6 +65,9 @@ class Settings:
             f"transport={self.transport.value!r}, "
             f"http_host={self.http_host!r}, http_port={self.http_port}, "
             f"log_level={self.log_level!r}, allow_ddl={self.allow_ddl}, "
+            f"allow_shell={self.allow_shell}, "
+            f"shell_timeout_sec={self.shell_timeout_sec}, "
+            f"shell_max_output_bytes={self.shell_max_output_bytes}, "
             f"audit_persist={self.audit_persist}, "
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size})"
         )
@@ -140,6 +146,18 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if (raw := env.get("MCPG_ALLOW_DDL")) is not None:
         allow_ddl = _parse_bool("MCPG_ALLOW_DDL", raw)
 
+    allow_shell = False
+    if (raw := env.get("MCPG_ALLOW_SHELL")) is not None:
+        allow_shell = _parse_bool("MCPG_ALLOW_SHELL", raw)
+
+    shell_timeout_sec = 60
+    if (raw := env.get("MCPG_SHELL_TIMEOUT_SEC")) is not None:
+        shell_timeout_sec = _parse_positive_int("MCPG_SHELL_TIMEOUT_SEC", raw)
+
+    shell_max_output_bytes = 64 * 1024 * 1024
+    if (raw := env.get("MCPG_SHELL_MAX_OUTPUT_BYTES")) is not None:
+        shell_max_output_bytes = _parse_positive_int("MCPG_SHELL_MAX_OUTPUT_BYTES", raw)
+
     audit_persist = False
     if (raw := env.get("MCPG_AUDIT_PERSIST")) is not None:
         audit_persist = _parse_bool("MCPG_AUDIT_PERSIST", raw)
@@ -163,6 +181,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_port=http_port,
         log_level=log_level,
         allow_ddl=allow_ddl,
+        allow_shell=allow_shell,
+        shell_timeout_sec=shell_timeout_sec,
+        shell_max_output_bytes=shell_max_output_bytes,
         audit_persist=audit_persist,
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
