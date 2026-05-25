@@ -6,32 +6,30 @@
 
 ## Current state
 
-- **Phase:** 26 — LISTEN/NOTIFY bridge (Batch E, ADR-0005) — four
-  new tools wired into the server lifespan; tool-poll model with
-  per-subscription bounded queues and drop-count reporting
+- **Phase:** 27 — staged-migration workflow (Batch F, ADR-0006) —
+  same-database shadow schema strategy; four new tools wired up;
+  introspection-driven DDL replay (no `pg_dump` shell-out)
 - **Last updated:** 2026-05-25
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 67
+- **Tool count:** 71
 
 ## Next action
 
-> Phase 26 shipped — new `mcpg.listen` module owns server-lifetime
-> subscription state. `subscribe_channel` opens a PG `LISTEN` on a
-> dedicated connection (separate from the request pool, opened
-> lazily on first subscribe) and returns a subscription id;
-> `poll_notifications` drains a bounded per-subscription queue with
-> an optional wait timeout; `unsubscribe_channel` removes the
-> subscription and issues `UNLISTEN` when the last subscriber on a
-> channel goes away; `list_notification_subscriptions` reports
-> active subs for visibility. New `Capability.LISTEN` +
-> `MCPG_ALLOW_LISTEN` opt-in (plus `MCPG_LISTEN_QUEUE_MAX` knob).
-> The reader uses a short polling timeout on `notifies()` so
-> subscribe/unsubscribe `execute()` calls can land between
-> iterations (psycopg's connection lock would otherwise deadlock
-> concurrent admin commands). Queue overflow drops oldest +
-> reports `dropped_count` on the next poll. Next batches still
-> open: **F** (migration shadow workflow, ADR-0006). Batch G
-> follow-ons (Drizzle / SQLAlchemy / sqlc) also remain.
+> Phase 27 shipped — `prepare_migration` clones a target schema's
+> structure into a `mcpg_shadow_<id>` schema via introspection
+> (tables/columns + PK/UNIQUE/CHECK/FK constraints + indexes), applies
+> a candidate SQL statement against the shadow with `SET LOCAL
+> search_path` so unqualified identifiers resolve there, then runs
+> `compare_schemas(target, shadow)` so the agent can review the
+> structural diff. `complete_migration` applies the original
+> candidate to the target and drops the shadow; `cancel_migration`
+> drops the shadow without applying. State persists in a new
+> `mcpg_migrations.staged` table (auto-created on first call).
+> Gated under unrestricted mode + the existing `MCPG_ALLOW_DDL`
+> opt-in via new `Capability.MIGRATE`. **Batch F is closed** —
+> all three roadmap-blocking ADRs (D / E / F) are now shipped.
+> Remaining open: **Batch G** follow-ons (Drizzle / SQLAlchemy /
+> sqlc exporters under the schema→ORM-DSL umbrella).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -751,3 +749,39 @@
   a real `SELECT pg_notify(...)` from one connection to the
   listener and verify unsubscribe halts delivery. Phase 26 complete
   (67 MCP tools total). 635 tests, 97% coverage.
+- 2026-05-25 — Phase 27 (closes Batch F, staged-migration workflow):
+  new `mcpg.migrations` module implements ADR-0006's
+  same-database shadow strategy. `prepare_migration` creates a fresh
+  `mcpg_shadow_<id>` schema, replays the target schema's structure
+  into it via introspection (tables + columns, PK / UNIQUE / CHECK
+  / FK constraints, indexes; intra-schema FKs are rewritten to
+  point at the shadow, cross-schema FKs documented as remaining-
+  pointed-at-original per ADR), applies the candidate SQL with
+  `SET LOCAL search_path` so unqualified identifiers resolve in the
+  shadow, runs `compare_schemas(target, shadow)`, and persists the
+  staged row in `mcpg_migrations.staged`. `complete_migration` runs
+  the same candidate against the target schema (same SET LOCAL
+  treatment) and drops the shadow; `cancel_migration` drops the
+  shadow without applying (idempotent). `list_pending_migrations`
+  sweeps expired prepared rows before listing. New
+  `Capability.MIGRATE` gates the four tools under unrestricted mode
+  + the existing `MCPG_ALLOW_DDL` opt-in (the underlying ops are
+  DDL). Discovery during smoke testing: the vendored `SqlDriver`
+  gives a fresh pool connection per `execute_query` call, so a
+  standalone `SET search_path` would only affect that one call.
+  Fix: a `_execute_in_schema` helper reaches through the driver to
+  the underlying pool, opens one connection, and runs SET LOCAL +
+  the candidate SQL together in one transaction. Second discovery:
+  `TableInfo.type` comes from `information_schema` as `BASE TABLE`
+  not `table`; the replay filter had to match. 16 new unit tests
+  cover the pure helpers (identifier check, migration-id derivation,
+  shadow naming, column clause builder, FK + index schema rewriting),
+  input validation in `prepare_migration`, and the three-mode tool-
+  wiring gate. 5 new integration tests round-trip a real
+  prepare → complete (column landed on target, shadow gone),
+  prepare → cancel (shadow gone, target untouched), bad SQL
+  rolls back the shadow without orphaning it, the pending list
+  reflects cancellations, and complete refuses unknown or
+  already-completed ids. **Batch F closed** — all three roadmap-
+  blocking ADRs (D / E / F) are now shipped. Phase 27 complete
+  (71 MCP tools total). 656 tests, 97% coverage.

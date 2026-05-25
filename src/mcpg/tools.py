@@ -26,6 +26,7 @@ from mcpg import (
     introspection,
     liveops,
     maintenance,
+    migrations,
     partman,
     prisma,
     query,
@@ -474,6 +475,90 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
             columns=columns,
         )
         return asdict(result)
+
+
+def _register_migrations(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="prepare_migration",
+        description=(
+            "Stage a candidate migration against a shadow clone of `target_schema`. "
+            "Replicates the target schema's structure into mcpg_shadow_<id>, applies "
+            "`candidate_sql` there, then runs compare_schemas(target, shadow) so the "
+            "agent can review the structural diff before completing. Returns the "
+            "migration id, shadow schema name, TTL, and the diff. Performs DDL — "
+            "requires unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def prepare_migration(
+        ctx: _Ctx, name: str, target_schema: str, candidate_sql: str, ttl_minutes: int = 60
+    ) -> dict[str, Any]:
+        result = await migrations.prepare_migration(
+            _driver(ctx),
+            name=name,
+            target_schema=target_schema,
+            candidate_sql=candidate_sql,
+            ttl_minutes=ttl_minutes,
+        )
+        return {
+            "id": result.id,
+            "target_schema": result.target_schema,
+            "shadow_schema": result.shadow_schema,
+            "ttl_expires_at": result.ttl_expires_at.isoformat(),
+            "diff": asdict(result.diff),
+        }
+
+    @server.tool(
+        name="complete_migration",
+        description=(
+            "Apply a prepared migration's candidate SQL to its target schema. "
+            "Refuses if the migration is not in 'prepared' status or its TTL "
+            "has expired. Drops the shadow on success and marks the row "
+            "completed. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def complete_migration(ctx: _Ctx, migration_id: str) -> dict[str, Any]:
+        result = await migrations.complete_migration(_driver(ctx), migration_id)
+        return {
+            "id": result.id,
+            "target_schema": result.target_schema,
+            "completed_at": result.completed_at.isoformat(),
+            "statements_run": result.statements_run,
+        }
+
+    @server.tool(
+        name="cancel_migration",
+        description=(
+            "Drop a prepared migration's shadow schema and mark it cancelled. "
+            "Idempotent — calling cancel on a non-existent or already-completed "
+            "migration returns shadow_dropped=false without raising."
+        ),
+    )
+    async def cancel_migration(ctx: _Ctx, migration_id: str) -> dict[str, Any]:
+        result = await migrations.cancel_migration(_driver(ctx), migration_id)
+        return {"id": result.id, "shadow_dropped": result.shadow_dropped}
+
+    @server.tool(
+        name="list_pending_migrations",
+        description=(
+            "List migrations currently in 'prepared' status, newest first. Sweeps "
+            "expired entries (drops their shadows, flips status to 'expired') "
+            "before listing."
+        ),
+    )
+    async def list_pending_migrations(ctx: _Ctx) -> list[dict[str, Any]]:
+        records = await migrations.list_pending_migrations(_driver(ctx))
+        return [
+            {
+                "id": r.id,
+                "prepared_at": r.prepared_at.isoformat(),
+                "target_schema": r.target_schema,
+                "shadow_schema": r.shadow_schema,
+                "status": r.status,
+                "ttl_expires_at": r.ttl_expires_at.isoformat(),
+                "candidate_sql_preview": r.candidate_sql[:200],
+            }
+            for r in records
+        ]
 
 
 def _register_listen(server: FastMCP[AppContext]) -> None:
@@ -1021,6 +1106,8 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)
+    if is_permitted(settings.access_mode, Capability.MIGRATE) and settings.allow_ddl:
+        _register_migrations(server)
     if is_permitted(settings.access_mode, Capability.SHELL) and settings.allow_shell:
         _register_data_movement_shell(server)
     if is_permitted(settings.access_mode, Capability.LISTEN) and settings.allow_listen:

@@ -8,6 +8,39 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Staged-migration workflow — Batch F (Phase 27), per ADR-0006. New
+  `mcpg.migrations` module implements Neon-style "branch the schema,
+  test the migration, merge" with same-database shadow schemas (no
+  `pg_dump` shell-out, no cross-batch dependency on Batch D). Four
+  new MCP tools:
+  - `prepare_migration(name, target_schema, candidate_sql,
+    ttl_minutes=60)` clones the target schema's structure into a
+    fresh `mcpg_shadow_<id>` schema via introspection-driven DDL
+    replay (tables + columns, PK / UNIQUE / CHECK / FK constraints,
+    indexes), applies `candidate_sql` against the shadow with
+    `SET LOCAL search_path` so unqualified identifiers resolve there,
+    runs `compare_schemas(target, shadow)`, and persists the staged
+    row in `mcpg_migrations.staged`. Returns the migration id +
+    shadow schema name + TTL + structural diff for review.
+  - `complete_migration(id)` applies the candidate SQL to the
+    target schema and drops the shadow. Refuses if status is not
+    `prepared` or TTL has expired.
+  - `cancel_migration(id)` drops the shadow and marks the row
+    `cancelled`. Idempotent.
+  - `list_pending_migrations()` lists prepared migrations newest
+    first; sweeps any expired prepared rows before listing.
+  Intra-schema FK references are rewritten to point at the shadow;
+  cross-schema FKs are left pointing at the original and surface in
+  the diff as removed (documented limitation per ADR-0006).
+- New `Capability.MIGRATE` enum entry; the migration tools register
+  under unrestricted mode + the existing `MCPG_ALLOW_DDL` opt-in
+  (the underlying ops are DDL).
+- New `mcpg_migrations` schema + `staged` table created idempotently
+  on first migration call. State columns: `id`, `prepared_at`,
+  `target_schema`, `shadow_schema`, `candidate_sql`, `status`
+  (`prepared` / `completed` / `cancelled` / `expired`),
+  `ttl_expires_at`, `completed_at`.
+
 - LISTEN/NOTIFY bridge — Batch E first slice, per ADR-0005. New
   `mcpg.listen` module owns the server-lifetime subscription state.
   Four new MCP tools:
