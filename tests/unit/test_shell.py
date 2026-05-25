@@ -206,3 +206,46 @@ async def test_run_pg_binary_flags_timeout_and_kills_the_process(
     # timeout_sec=0 triggers asyncio.timeout(0) which fires immediately.
     assert result.timed_out is True
     assert process._killed is True
+
+
+class _BrokenStdin:
+    """A stdin pipe stand-in whose write/drain/close raise BrokenPipeError."""
+
+    def write(self, _data: bytes) -> None:
+        raise BrokenPipeError("child closed stdin early")
+
+    async def drain(self) -> None:
+        raise BrokenPipeError("child closed stdin early")
+
+    def close(self) -> None:
+        raise BrokenPipeError("child closed stdin early")
+
+    async def wait_closed(self) -> None:
+        raise BrokenPipeError("child closed stdin early")
+
+
+async def test_run_pg_binary_surfaces_exit_code_when_child_closes_stdin_early(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Simulates `psql` exiting on a SQL error before the parent finishes
+    # writing the dump. The previous implementation would propagate
+    # BrokenPipeError through asyncio.gather and lose the exit code +
+    # stderr. After the fix, the broken pipe is swallowed and the real
+    # exit code and stderr surface in the result.
+    process = _FakeProcess(stdout=[], stderr=b"ERROR: syntax", returncode=3)
+    process.stdin = _BrokenStdin()  # type: ignore[assignment]
+    _patch_exec(monkeypatch, process)
+
+    result = await run_pg_binary(
+        "psql",
+        "--file=-",
+        timeout_sec=10,
+        max_output_bytes=1024,
+        stdin=b"BAD SQL HERE;",
+    )
+
+    # No exception bubbled up — the agent gets the real diagnostic
+    # instead of an opaque BrokenPipeError.
+    assert result.exit_code == 3
+    assert result.stderr == b"ERROR: syntax"
+    assert result.timed_out is False

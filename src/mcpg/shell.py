@@ -172,6 +172,9 @@ async def run_pg_binary(
     truncated = False
     output_bytes_seen = 0
     stdout_chunks: list[bytes] = []
+    # Initialise so an unexpected exception path doesn't leave this
+    # name unbound when we build the SubprocessResult.
+    stderr_bytes: bytes = b""
 
     async def _read_capped() -> None:
         nonlocal output_bytes_seen, truncated
@@ -195,16 +198,27 @@ async def run_pg_binary(
                     truncated = True
 
     async def _write_stdin() -> None:
+        # The child may exit early on a SQL error (psql) or invalid
+        # archive (pg_restore) while we're still writing. That closes
+        # the pipe and raises BrokenPipeError / ConnectionResetError
+        # here — if those propagate through asyncio.gather, we never
+        # return the real exit code or stderr, and the agent loses
+        # the diagnostic. Swallow them and let process.wait() +
+        # stderr_task surface the actual failure cause.
         if stdin is None or process.stdin is None:
             return
         try:
             process.stdin.write(stdin)
             await process.stdin.drain()
-        finally:
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        try:
             process.stdin.close()
             # Wait for the OS-level close to land so the child sees EOF
             # before we wait() on it.
             await process.stdin.wait_closed()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     try:
         async with asyncio.timeout(timeout_sec):
