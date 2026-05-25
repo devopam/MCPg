@@ -194,10 +194,26 @@ async def run_pg_binary(
                         stdout_chunks.append(chunk[:keep])
                     truncated = True
 
+    async def _write_stdin() -> None:
+        if stdin is None or process.stdin is None:
+            return
+        try:
+            process.stdin.write(stdin)
+            await process.stdin.drain()
+        finally:
+            process.stdin.close()
+            # Wait for the OS-level close to land so the child sees EOF
+            # before we wait() on it.
+            await process.stdin.wait_closed()
+
     try:
         async with asyncio.timeout(timeout_sec):
             stderr_task = asyncio.create_task(process.stderr.read())  # type: ignore[union-attr]
-            await asyncio.gather(_read_capped(), stderr_task, process.wait())
+            # stdin is written concurrently with stdout/stderr draining
+            # — pg_restore (and any consumer) only starts producing
+            # stdout/stderr after it begins reading stdin, so the
+            # earlier "write stdin after wait" ordering would deadlock.
+            await asyncio.gather(_write_stdin(), _read_capped(), stderr_task, process.wait())
             stderr_bytes = stderr_task.result()
     except TimeoutError:
         timed_out = True
@@ -212,16 +228,6 @@ async def run_pg_binary(
             stderr_bytes = await process.stderr.read() if process.stderr else b""
         except Exception:
             stderr_bytes = b""
-
-    # ``stdin`` is written then closed before reading begins for
-    # simplicity (small payloads only — large restores stream their
-    # archive via temp file, which is a Phase 24c concern).
-    if stdin is not None and process.stdin is not None:
-        try:
-            process.stdin.write(stdin)
-            await process.stdin.drain()
-        finally:
-            process.stdin.close()
 
     stdout_bytes = b"".join(stdout_chunks)
     return SubprocessResult(

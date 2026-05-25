@@ -20,6 +20,7 @@ from mcpg.data_movement import (
     dump_database,
     export_query,
     export_table,
+    restore_database,
 )
 from mcpg.server import create_server
 from mcpg.shell import ShellError, SubprocessResult
@@ -348,3 +349,135 @@ async def test_dump_database_tool_registered_in_unrestricted_with_allow_shell() 
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "dump_database" in listed
+
+
+# --- restore_database -----------------------------------------------------
+
+
+async def test_restore_database_plain_format_uses_psql_and_pipes_sql_to_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_run(binary: str, *argv: str, **kwargs: object) -> SubprocessResult:
+        captured["binary"] = binary
+        captured["argv"] = list(argv)
+        captured["stdin"] = kwargs.get("stdin")
+        captured["env"] = kwargs.get("env")
+        return SubprocessResult(
+            binary=binary,
+            argv=list(argv),
+            exit_code=0,
+            stdout=b"",
+            stderr=b"",
+            output_bytes=0,
+            output_truncated=False,
+            timed_out=False,
+            env_redacted={},
+        )
+
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", fake_run)
+
+    sql = "CREATE TABLE w (id integer);"
+    result = await restore_database(
+        "postgresql://u:p@h/db",
+        sql,
+        timeout_sec=10,
+        max_output_bytes=1024,
+    )
+
+    assert captured["binary"] == "psql"
+    # Single-transaction and ON_ERROR_STOP keep partial-restore footguns away.
+    assert "--single-transaction" in captured["argv"]  # type: ignore[operator]
+    assert "--set=ON_ERROR_STOP=on" in captured["argv"]  # type: ignore[operator]
+    assert "--file=-" in captured["argv"]  # type: ignore[operator]
+    # The SQL must be piped through stdin, not interpolated into argv.
+    assert captured["stdin"] == sql.encode("utf-8")
+    assert result.exit_code == 0
+
+
+async def test_restore_database_custom_format_base64_decodes_content_and_invokes_pg_restore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import base64
+
+    captured: dict[str, object] = {}
+
+    async def fake_run(binary: str, *argv: str, **kwargs: object) -> SubprocessResult:
+        captured["binary"] = binary
+        captured["argv"] = list(argv)
+        captured["stdin"] = kwargs.get("stdin")
+        return SubprocessResult(
+            binary=binary,
+            argv=list(argv),
+            exit_code=0,
+            stdout=b"",
+            stderr=b"",
+            output_bytes=0,
+            output_truncated=False,
+            timed_out=False,
+            env_redacted={},
+        )
+
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", fake_run)
+
+    raw = b"\x00\x01PGDMP\xff binary archive"
+    encoded = base64.b64encode(raw).decode("ascii")
+    await restore_database(
+        "postgresql://u@h/db",
+        encoded,
+        timeout_sec=10,
+        max_output_bytes=1024,
+        format="custom",
+    )
+
+    assert captured["binary"] == "pg_restore"
+    assert "--format=custom" in captured["argv"]  # type: ignore[operator]
+    # The base64-decoded raw bytes must be piped through stdin verbatim.
+    assert captured["stdin"] == raw
+
+
+async def test_restore_database_rejects_unsupported_format() -> None:
+    with pytest.raises(ShellError, match="unsupported restore format"):
+        await restore_database(
+            "postgresql://u@h/db",
+            "noop",
+            timeout_sec=10,
+            max_output_bytes=1024,
+            format="bogus",
+        )
+
+
+async def test_restore_database_rejects_invalid_base64_for_binary_formats() -> None:
+    with pytest.raises(ShellError, match="not valid base64"):
+        await restore_database(
+            "postgresql://u@h/db",
+            "!!!not-base64!!!",
+            timeout_sec=10,
+            max_output_bytes=1024,
+            format="custom",
+        )
+
+
+async def test_restore_database_requires_a_database_name_in_the_url() -> None:
+    with pytest.raises(ShellError, match="must specify a database"):
+        await restore_database(
+            "postgresql://user@host:5432/",
+            "noop",
+            timeout_sec=10,
+            max_output_bytes=1024,
+        )
+
+
+async def test_restore_database_tool_hidden_without_allow_shell() -> None:
+    server = create_server(_UNRESTRICTED_NO_SHELL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "restore_database" not in listed
+
+
+async def test_restore_database_tool_registered_with_allow_shell() -> None:
+    server = create_server(_UNRESTRICTED_SHELL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "restore_database" in listed

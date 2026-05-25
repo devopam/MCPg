@@ -6,24 +6,23 @@
 
 ## Current state
 
-- **Phase:** 24b — Subprocess infrastructure + `dump_database`
-  (ADR-0004 shell gate live)
+- **Phase:** 24c — `restore_database` (full dump/restore round-trip
+  via the shell gate)
 - **Last updated:** 2026-05-25
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 59
+- **Tool count:** 60
 
 ## Next action
 
-> Phase 24b shipped — new `mcpg.shell` module enforces the ADR-0004
-> subprocess policy (allowlisted binaries, argv-only invocation, hard
-> timeout, output cap, libpq env-var credentials), `Capability.SHELL`
-> + `MCPG_ALLOW_SHELL` opt-in gate is live, and `dump_database` is
-> the first consumer. Next slices: **Phase 24c** `restore_database`
-> (uses the same gate with `stdin` piping); **Phase 24d**
+> Phase 24c shipped — `restore_database` completes the dump/restore
+> symmetry, and the integration test now exercises a real end-to-end
+> `pg_dump` → drop schema → `psql` restore against every PG version
+> in the matrix. Also fixed a latent `stdin` ordering bug in
+> `mcpg.shell` that would have deadlocked any subprocess consuming
+> stdin (no tool relied on it yet). Next slices: **Phase 24d**
 > `copy_table_between_databases`; **Phase 24e** `import_csv` /
 > `import_json` once `COPY ... FROM STDIN` plumbing lands. Batch G
-> follow-ons (Drizzle / SQLAlchemy / sqlc) and Batches E and F also
-> remain open.
+> follow-ons and Batches E and F also remain open.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -637,3 +636,27 @@
   cover allowlist / env filtering / redaction / truncation / timeout
   / URL parsing / format selection / tool-wiring gate. Phase 24b
   complete (59 MCP tools total). 568 tests, 100% coverage.
+- 2026-05-25 — PR #15 review fix: PG 17/18 CI failed because the
+  ubuntu-latest runner ships an older pg_dump that refuses to dump
+  from a newer server. Workflow now installs the matching
+  postgresql-client-N from the pgdg apt repo before each test job,
+  so pg_dump always matches the matrix server version. PG 14-18
+  all green after the fix; PR #15 merged.
+- 2026-05-25 — Phase 24c (restore half of Batch D dump/restore
+  symmetry): new `restore_database` tool pipes a dump back into the
+  connected database — `format='plain'` through psql with
+  `--single-transaction --set=ON_ERROR_STOP=on`, `custom`/`tar`
+  through `pg_restore --single-transaction --exit-on-error`.
+  Base64-decodes binary payloads; rejects malformed base64 with
+  ShellError. Audit trail integration is identical to dump_database.
+  Fixed a latent `mcpg.shell` bug: `stdin` was written AFTER
+  `process.wait()` returned, which would deadlock any consumer of
+  stdin (no shipped tool exercised stdin yet so it didn't bite, but
+  it blocked restore_database from working). Now writes stdin
+  concurrently with the stdout/stderr drain. 7 new unit tests cover
+  plain → psql wiring, custom → pg_restore wiring + base64 decoding,
+  unsupported format / invalid base64 / missing-database rejection,
+  and the shell-gate tool-wiring matrix. 1 new integration test runs
+  a real dump → drop schema → restore round-trip against every PG
+  version in the CI matrix. Phase 24c complete (60 MCP tools total).
+  576 tests, 100% coverage.
