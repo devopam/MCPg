@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `copy_table_between_databases` tool — copy a single table from one
+  database to another by piping `pg_dump --format=custom --table=...`
+  (source) into `pg_restore --format=custom --single-transaction
+  --exit-on-error` (destination). Both legs run through the ADR-0004
+  shell runner with separate libpq env dicts derived from the source
+  and destination URLs; credentials never appear on argv. `include_schema`
+  and `include_data` flags are required (no implicit default) so the
+  caller can't accidentally copy the wrong half. If the captured
+  pg_dump archive exceeds `MCPG_SHELL_MAX_OUTPUT_BYTES`, the tool
+  raises before invoking pg_restore — a truncated custom-format archive
+  would either fail obscurely or partially restore. A failed pg_dump
+  short-circuits the same way, returning the dump stderr_tail with
+  `restore_exit_code=-1` as a sentinel. Gated under unrestricted mode
+  + `MCPG_ALLOW_SHELL`.
+
 - `import_csv` tool — bulk-load CSV content into `schema.table` via
   `COPY ... FROM STDIN`. CSV text is sent verbatim; `header` toggles
   header-row skipping; optional `columns` restricts loading to named

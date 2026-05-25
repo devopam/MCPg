@@ -13,6 +13,7 @@ from mcpg.config import load_settings
 from mcpg.data_movement import (
     DEFAULT_EXPORT_LIMIT,
     EXPORT_FORMATS,
+    CopyTableResult,
     ExportError,
     ExportResult,
     ImportDataError,
@@ -20,6 +21,7 @@ from mcpg.data_movement import (
     _libpq_env_from_url,
     _rows_to_csv,
     _rows_to_json,
+    copy_table_between_databases,
     dump_database,
     export_query,
     export_table,
@@ -486,6 +488,312 @@ async def test_restore_database_tool_registered_with_allow_shell() -> None:
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "restore_database" in listed
+
+
+# --- copy_table_between_databases ----------------------------------------
+
+
+class _FakeRunRecorder:
+    """Stand-in for ``run_pg_binary`` that scripts a sequence of responses."""
+
+    def __init__(self, responses: list[SubprocessResult]) -> None:
+        self._responses = list(responses)
+        self.calls: list[dict[str, Any]] = []
+
+    async def __call__(self, binary: str, *argv: str, **kwargs: Any) -> SubprocessResult:
+        self.calls.append({"binary": binary, "argv": list(argv), **kwargs})
+        return self._responses.pop(0)
+
+
+def _ok(binary: str, argv: list[str], stdout: bytes = b"", stderr: bytes = b"") -> SubprocessResult:
+    return SubprocessResult(
+        binary=binary,
+        argv=argv,
+        exit_code=0,
+        stdout=stdout,
+        stderr=stderr,
+        output_bytes=len(stdout),
+        output_truncated=False,
+        timed_out=False,
+        env_redacted={},
+    )
+
+
+async def test_copy_table_pipes_pg_dump_into_pg_restore_with_separate_envs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archive = b"PGDMP-binary-archive"
+    runner = _FakeRunRecorder(
+        [
+            _ok("pg_dump", ["--format=custom", "--table=app.widget"], stdout=archive),
+            _ok("pg_restore", ["--format=custom"]),
+        ]
+    )
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", runner)
+
+    result = await copy_table_between_databases(
+        "postgresql://srcuser:srcpw@srchost/srcdb",
+        "postgresql://dstuser:dstpw@dsthost/dstdb",
+        "app",
+        "widget",
+        include_schema=True,
+        include_data=True,
+        timeout_sec=10,
+        max_output_bytes=4096,
+    )
+
+    assert isinstance(result, CopyTableResult)
+    assert result.dump_exit_code == 0
+    assert result.restore_exit_code == 0
+    assert result.timed_out is False
+
+    # Each leg got its own URL's env. Credentials live in env, never argv.
+    dump_call, restore_call = runner.calls
+    assert dump_call["binary"] == "pg_dump"
+    assert dump_call["env"]["PGHOST"] == "srchost"
+    assert dump_call["env"]["PGDATABASE"] == "srcdb"
+    assert dump_call["env"]["PGPASSWORD"] == "srcpw"
+    assert "--table=app.widget" in dump_call["argv"]
+    # The archive bytes flow into pg_restore's stdin verbatim.
+    assert restore_call["binary"] == "pg_restore"
+    assert restore_call["env"]["PGHOST"] == "dsthost"
+    assert restore_call["env"]["PGDATABASE"] == "dstdb"
+    assert restore_call["stdin"] == archive
+    assert "--single-transaction" in restore_call["argv"]
+    assert "--exit-on-error" in restore_call["argv"]
+
+
+async def test_copy_table_schema_only_passes_schema_only_to_both_legs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _FakeRunRecorder(
+        [
+            _ok("pg_dump", [], stdout=b"x"),
+            _ok("pg_restore", []),
+        ]
+    )
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", runner)
+
+    await copy_table_between_databases(
+        "postgresql://u@h/src",
+        "postgresql://u@h/dst",
+        "app",
+        "widget",
+        include_schema=True,
+        include_data=False,
+        timeout_sec=10,
+        max_output_bytes=4096,
+    )
+
+    assert "--schema-only" in runner.calls[0]["argv"]
+    assert "--schema-only" in runner.calls[1]["argv"]
+
+
+async def test_copy_table_data_only_passes_data_only_to_both_legs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _FakeRunRecorder(
+        [
+            _ok("pg_dump", [], stdout=b"x"),
+            _ok("pg_restore", []),
+        ]
+    )
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", runner)
+
+    await copy_table_between_databases(
+        "postgresql://u@h/src",
+        "postgresql://u@h/dst",
+        "app",
+        "widget",
+        include_schema=False,
+        include_data=True,
+        timeout_sec=10,
+        max_output_bytes=4096,
+    )
+
+    assert "--data-only" in runner.calls[0]["argv"]
+    assert "--data-only" in runner.calls[1]["argv"]
+
+
+async def test_copy_table_rejects_when_neither_schema_nor_data_requested() -> None:
+    with pytest.raises(ShellError, match="include_schema or include_data"):
+        await copy_table_between_databases(
+            "postgresql://u@h/src",
+            "postgresql://u@h/dst",
+            "app",
+            "widget",
+            include_schema=False,
+            include_data=False,
+            timeout_sec=10,
+            max_output_bytes=4096,
+        )
+
+
+async def test_copy_table_rejects_unsafe_identifiers() -> None:
+    with pytest.raises(ShellError, match="invalid schema name"):
+        await copy_table_between_databases(
+            "postgresql://u@h/src",
+            "postgresql://u@h/dst",
+            "app; DROP",
+            "widget",
+            include_schema=True,
+            include_data=True,
+            timeout_sec=10,
+            max_output_bytes=4096,
+        )
+    with pytest.raises(ShellError, match="invalid table name"):
+        await copy_table_between_databases(
+            "postgresql://u@h/src",
+            "postgresql://u@h/dst",
+            "app",
+            'widget"; --',
+            include_schema=True,
+            include_data=True,
+            timeout_sec=10,
+            max_output_bytes=4096,
+        )
+
+
+async def test_copy_table_requires_database_in_both_urls() -> None:
+    with pytest.raises(ShellError, match="source_url must specify"):
+        await copy_table_between_databases(
+            "postgresql://u@h/",
+            "postgresql://u@h/dst",
+            "app",
+            "widget",
+            include_schema=True,
+            include_data=True,
+            timeout_sec=10,
+            max_output_bytes=4096,
+        )
+    with pytest.raises(ShellError, match="dest_url must specify"):
+        await copy_table_between_databases(
+            "postgresql://u@h/src",
+            "postgresql://u@h/",
+            "app",
+            "widget",
+            include_schema=True,
+            include_data=True,
+            timeout_sec=10,
+            max_output_bytes=4096,
+        )
+
+
+async def test_copy_table_refuses_to_restore_a_truncated_dump(monkeypatch: pytest.MonkeyPatch) -> None:
+    truncated_dump = SubprocessResult(
+        binary="pg_dump",
+        argv=[],
+        exit_code=0,
+        stdout=b"only-the-first-bytes",
+        stderr=b"",
+        output_bytes=10_000_000,  # what the child actually wrote, before our cap
+        output_truncated=True,
+        timed_out=False,
+        env_redacted={},
+    )
+    runner = _FakeRunRecorder([truncated_dump])
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", runner)
+
+    with pytest.raises(ShellError, match="exceeded max_output_bytes"):
+        await copy_table_between_databases(
+            "postgresql://u@h/src",
+            "postgresql://u@h/dst",
+            "app",
+            "widget",
+            include_schema=True,
+            include_data=True,
+            timeout_sec=10,
+            max_output_bytes=128,
+        )
+    # pg_restore was never invoked — only the dump call was recorded.
+    assert len(runner.calls) == 1
+
+
+async def test_copy_table_returns_dump_failure_without_invoking_restore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failed_dump = SubprocessResult(
+        binary="pg_dump",
+        argv=[],
+        exit_code=1,
+        stdout=b"",
+        stderr=b"pg_dump: error: connection refused",
+        output_bytes=0,
+        output_truncated=False,
+        timed_out=False,
+        env_redacted={},
+    )
+    runner = _FakeRunRecorder([failed_dump])
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", runner)
+
+    result = await copy_table_between_databases(
+        "postgresql://u@h/src",
+        "postgresql://u@h/dst",
+        "app",
+        "widget",
+        include_schema=True,
+        include_data=True,
+        timeout_sec=10,
+        max_output_bytes=4096,
+    )
+
+    assert result.dump_exit_code == 1
+    # Sentinel — restore was skipped.
+    assert result.restore_exit_code == -1
+    assert "connection refused" in result.dump_stderr_tail
+    assert result.restore_argv == []
+    assert len(runner.calls) == 1
+
+
+async def test_copy_table_surfaces_restore_timeout_in_the_combined_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    timed_out_restore = SubprocessResult(
+        binary="pg_restore",
+        argv=[],
+        exit_code=-9,
+        stdout=b"",
+        stderr=b"",
+        output_bytes=0,
+        output_truncated=False,
+        timed_out=True,
+        env_redacted={},
+    )
+    runner = _FakeRunRecorder(
+        [
+            _ok("pg_dump", [], stdout=b"PGDMP"),
+            timed_out_restore,
+        ]
+    )
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", runner)
+
+    result = await copy_table_between_databases(
+        "postgresql://u@h/src",
+        "postgresql://u@h/dst",
+        "app",
+        "widget",
+        include_schema=False,
+        include_data=True,
+        timeout_sec=1,
+        max_output_bytes=4096,
+    )
+
+    assert result.timed_out is True
+    assert result.restore_exit_code == -9
+
+
+async def test_copy_table_tool_hidden_without_allow_shell() -> None:
+    server = create_server(_UNRESTRICTED_NO_SHELL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "copy_table_between_databases" not in listed
+
+
+async def test_copy_table_tool_registered_with_allow_shell() -> None:
+    server = create_server(_UNRESTRICTED_SHELL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "copy_table_between_databases" in listed
 
 
 # --- import_csv / import_json --------------------------------------------

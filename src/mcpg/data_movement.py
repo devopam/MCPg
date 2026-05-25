@@ -373,9 +373,187 @@ async def restore_database(
     )
 
 
+# --- cross-database table copy (subprocess; gated behind MCPG_ALLOW_SHELL) --
+
+
+@dataclass(frozen=True, slots=True)
+class CopyTableResult:
+    """The outcome of a cross-database ``copy_table_between_databases`` call.
+
+    Both legs (``pg_dump`` on the source, ``pg_restore`` on the dest) are
+    recorded. ``timed_out`` is true when either leg hit its time limit.
+    ``schema_copied`` / ``data_copied`` echo the input flags so a result
+    inspected without its call context is self-describing.
+    """
+
+    schema: str
+    table: str
+    schema_copied: bool
+    data_copied: bool
+    dump_exit_code: int
+    restore_exit_code: int
+    dump_output_bytes: int
+    restore_output_bytes: int
+    dump_stderr_tail: str
+    restore_stderr_tail: str
+    dump_argv: list[str]
+    restore_argv: list[str]
+    timed_out: bool
+
+
+async def copy_table_between_databases(
+    source_url: str,
+    dest_url: str,
+    schema: str,
+    table: str,
+    *,
+    include_schema: bool,
+    include_data: bool,
+    timeout_sec: int,
+    max_output_bytes: int,
+) -> CopyTableResult:
+    """Copy ``schema.table`` from ``source_url`` into ``dest_url``.
+
+    Runs ``pg_dump --format=custom --table=schema.table`` against the
+    source, captures the binary archive in memory, then pipes it into
+    ``pg_restore --format=custom --single-transaction --exit-on-error``
+    against the destination. Credentials reach both binaries via libpq
+    env vars (``PGPASSWORD`` etc.), never on the command line.
+
+    Args:
+        source_url: ``postgresql://...`` URL of the source database;
+            must specify a database name.
+        dest_url: ``postgresql://...`` URL of the destination database;
+            must specify a database name.
+        schema: Schema name; must be a plain identifier.
+        table: Table name; must be a plain identifier.
+        include_schema: Copy the table's ``CREATE TABLE`` (schema). The
+            target table must NOT exist when this is true and
+            ``include_data`` is false (pg_restore --single-transaction
+            aborts on duplicate-table errors).
+        include_data: Copy the table's rows. At least one of
+            ``include_schema`` / ``include_data`` must be true.
+        timeout_sec: Hard wall-clock limit on EACH leg of the copy
+            (dump and restore are timed separately).
+        max_output_bytes: Cap on the captured pg_dump archive. Exceeding
+            the cap raises :class:`ShellError` BEFORE pg_restore runs —
+            we never feed a truncated custom-format archive to
+            pg_restore, since the result would be a half-restored
+            table that's hard to roll back.
+
+    Raises:
+        ShellError: When inputs fail validation, the pg_dump output
+            exceeds ``max_output_bytes``, or either subprocess fails
+            to spawn. A non-zero exit from either binary is NOT raised
+            here — it's returned in the result so the caller can see
+            both legs' stderr_tail in one place.
+    """
+    if not include_schema and not include_data:
+        raise ShellError("copy_table_between_databases requires include_schema or include_data (or both)")
+    _check_identifier_for_copy(schema, "schema")
+    _check_identifier_for_copy(table, "table")
+
+    source_env = _libpq_env_from_url(source_url)
+    if "PGDATABASE" not in source_env:
+        raise ShellError("source_url must specify a database name")
+    dest_env = _libpq_env_from_url(dest_url)
+    if "PGDATABASE" not in dest_env:
+        raise ShellError("dest_url must specify a database name")
+
+    # pg_dump's --table pattern accepts a literal schema-qualified name
+    # since we've already validated both halves against the plain-
+    # identifier allowlist (no wildcard chars).
+    dump_argv = ["--format=custom", f"--table={schema}.{table}"]
+    if not include_data:
+        dump_argv.append("--schema-only")
+    if not include_schema:
+        dump_argv.append("--data-only")
+
+    dump = await run_pg_binary(
+        "pg_dump",
+        *dump_argv,
+        env=source_env,
+        timeout_sec=timeout_sec,
+        max_output_bytes=max_output_bytes,
+    )
+    if dump.output_truncated:
+        raise ShellError(
+            f"pg_dump output exceeded max_output_bytes ({max_output_bytes}); refusing to restore a truncated archive"
+        )
+    # Refuse to restore if the dump itself failed — pg_restore on an
+    # incomplete custom archive will either error obscurely or, worse,
+    # silently restore a partial table.
+    if dump.exit_code != 0 or dump.timed_out:
+        return CopyTableResult(
+            schema=schema,
+            table=table,
+            schema_copied=include_schema,
+            data_copied=include_data,
+            dump_exit_code=dump.exit_code,
+            restore_exit_code=-1,
+            dump_output_bytes=dump.output_bytes,
+            restore_output_bytes=0,
+            dump_stderr_tail=_tail(dump.stderr),
+            restore_stderr_tail="",
+            dump_argv=dump.argv,
+            restore_argv=[],
+            timed_out=dump.timed_out,
+        )
+
+    # pg_restore requires --dbname even with PGDATABASE set: without -d
+    # it switches to "convert to SQL script" mode and demands -f. Pass
+    # an empty libpq URI as the dbname; libpq fills user/host/password/
+    # dbname from the PG* env vars we already set, so credentials still
+    # never appear on argv.
+    restore_argv = [
+        "--format=custom",
+        "--dbname=postgresql:///",
+        "--single-transaction",
+        "--exit-on-error",
+        "--no-owner",
+        "--no-privileges",
+    ]
+    if not include_schema:
+        restore_argv.append("--data-only")
+    if not include_data:
+        restore_argv.append("--schema-only")
+    restore = await run_pg_binary(
+        "pg_restore",
+        *restore_argv,
+        env=dest_env,
+        timeout_sec=timeout_sec,
+        max_output_bytes=max_output_bytes,
+        stdin=dump.stdout,
+    )
+
+    return CopyTableResult(
+        schema=schema,
+        table=table,
+        schema_copied=include_schema,
+        data_copied=include_data,
+        dump_exit_code=dump.exit_code,
+        restore_exit_code=restore.exit_code,
+        dump_output_bytes=dump.output_bytes,
+        restore_output_bytes=restore.output_bytes,
+        dump_stderr_tail=_tail(dump.stderr),
+        restore_stderr_tail=_tail(restore.stderr),
+        dump_argv=dump.argv,
+        restore_argv=restore.argv,
+        timed_out=dump.timed_out or restore.timed_out,
+    )
+
+
+def _check_identifier_for_copy(name: str, kind: str) -> None:
+    if not _IDENTIFIER.match(name):
+        raise ShellError(f"invalid {kind} name: {name!r}")
+
+
+def _tail(buf: bytes, *, max_bytes: int = 4096) -> str:
+    text = buf.decode("utf-8", errors="replace")
+    return text if len(text) <= max_bytes else text[-max_bytes:]
+
+
 # --- bulk imports (in-process; gated behind WRITE) -----------------------
-
-
 class ImportDataError(Exception):
     """Raised when an import call is rejected or fails.
 

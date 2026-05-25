@@ -6,27 +6,26 @@
 
 ## Current state
 
-- **Phase:** 24e — `import_csv` / `import_json` (bulk loads via in-process
-  `COPY FROM STDIN` and parametrised `executemany`)
+- **Phase:** 24d — `copy_table_between_databases` (closes Batch D
+  data-movement story; cross-DB table copy via shell pipeline)
 - **Last updated:** 2026-05-25
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 62
+- **Tool count:** 63
 
 ## Next action
 
-> Phase 24e shipped — `import_csv` loads raw CSV content through
-> `COPY ... FROM STDIN`, and `import_json` parses a JSON array into a
-> parametrised `INSERT ... executemany`. Both are in-process (no
-> subprocess, no `MCPG_ALLOW_SHELL` needed), gated under unrestricted
-> mode like the other write tools, with the same identifier allowlist
-> the rest of `mcpg.data_movement` uses. Two new helpers on
-> `Database` (`copy_from_stdin`, `execute_many`) expose the raw
-> connection access the vendored `SqlDriver` doesn't, and
-> `FakeDatabase` grows matching recorders so unit tests don't need a
-> live server. Next slices: **Phase 24d**
-> `copy_table_between_databases` (pipe pg_dump on one URL into
-> pg_restore on another via the shell runner). Batch G follow-ons
-> and Batches E and F also remain open.
+> Phase 24d shipped — `copy_table_between_databases` pipes
+> `pg_dump --format=custom --table=schema.table` (source URL) into
+> `pg_restore --format=custom --single-transaction --exit-on-error`
+> (destination URL) through the existing shell runner, with
+> separate libpq env dicts on each leg so credentials never reach
+> argv. `include_schema` / `include_data` are required parameters
+> (no implicit default); a truncated dump or a non-zero dump exit
+> short-circuits before pg_restore runs. **Batch D is closed** —
+> export, dump, restore, bulk import, and cross-DB copy are all
+> shipped. Next batches still open: **E** (LISTEN/NOTIFY bridge,
+> ADR-0005) and **F** (migration shadow workflow, ADR-0006). Batch
+> G follow-ons (Drizzle / SQLAlchemy / sqlc) also remain.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -687,3 +686,32 @@
   JSON loads against every PG version in the CI matrix (including a
   `jsonb` column on the JSON path). Phase 24e complete (62 MCP
   tools total). 599 tests, 98% coverage.
+- 2026-05-25 — Phase 24d (closes Batch D): new
+  `copy_table_between_databases` tool runs
+  `pg_dump --format=custom --table=schema.table` against a caller-
+  supplied source URL, captures the binary archive in memory, then
+  pipes it through `pg_restore --format=custom --single-transaction
+  --exit-on-error --no-owner --no-privileges` against the configured
+  destination URL. Both legs go through the existing
+  `mcpg.shell.run_pg_binary` runner with separate libpq env dicts so
+  credentials never reach argv on either side. pg_restore needs
+  `--dbname` even with PGDATABASE set (without `-d` it switches to
+  script-output mode), so the argv carries `--dbname=postgresql:///`
+  — an empty libpq URI that makes libpq fall back to PG* env for
+  every connection parameter. `include_schema` and `include_data`
+  are required (no defaults) per design feedback. A truncated dump
+  raises `ShellError` BEFORE pg_restore runs (a partial custom-
+  format archive cannot be safely restored); a non-zero dump exit
+  short-circuits and returns the dump stderr_tail with
+  `restore_exit_code=-1`. 11 new unit tests cover the two-leg
+  pipeline (separate envs, stdin handoff), schema-only / data-only
+  argv composition, both-flags-off rejection, identifier rejection
+  on each side, both-URL database-name requirement, truncation
+  refusal, dump-failure short-circuit, restore-timeout flag
+  surfacing, and the `MCPG_ALLOW_SHELL` tool-wiring gate. 1 new
+  integration test spins up a fresh target database via
+  `run_unmanaged`, pre-creates the schema there (pg_dump --table
+  doesn't include `CREATE SCHEMA`), copies the seeded widget table
+  across, and verifies the rows arrived. **Batch D closed** — export,
+  dump, restore, bulk import, and cross-DB copy are all shipped.
+  Phase 24d complete (63 MCP tools total). 611 tests, 98% coverage.

@@ -522,6 +522,42 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
         )
         return asdict(result)
 
+    @server.tool(
+        name="copy_table_between_databases",
+        description=(
+            "Copy a single table from one database to another by piping "
+            "pg_dump (source) into pg_restore (destination). The source URL "
+            "is the caller-supplied source_url; the destination is the "
+            "configured database URL. Specify at least one of include_schema "
+            "/ include_data. Credentials pass through libpq env vars on each "
+            "leg, never on the command line. If the captured pg_dump archive "
+            "would exceed MCPG_SHELL_MAX_OUTPUT_BYTES, the tool errors BEFORE "
+            "pg_restore runs (a truncated custom-format archive cannot be "
+            "safely restored). Performs subprocess execution — requires "
+            "unrestricted mode + MCPG_ALLOW_SHELL."
+        ),
+    )
+    async def copy_table_between_databases(
+        ctx: _Ctx,
+        source_url: str,
+        schema: str,
+        table: str,
+        include_schema: bool,
+        include_data: bool,
+    ) -> dict[str, Any]:
+        app = ctx.request_context.lifespan_context
+        result = await data_movement.copy_table_between_databases(
+            source_url,
+            app.settings.database_url,
+            schema,
+            table,
+            include_schema=include_schema,
+            include_data=include_data,
+            timeout_sec=app.settings.shell_timeout_sec,
+            max_output_bytes=app.settings.shell_max_output_bytes,
+        )
+        return asdict(result)
+
 
 def _register_audit_trail(server: FastMCP[AppContext]) -> None:
     @server.tool(
