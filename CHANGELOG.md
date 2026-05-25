@@ -8,6 +8,39 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- LISTEN/NOTIFY bridge — Batch E first slice, per ADR-0005. New
+  `mcpg.listen` module owns the server-lifetime subscription state.
+  Four new MCP tools:
+  - `subscribe_channel(channel)` opens a PostgreSQL `LISTEN` on the
+    given channel (validated against the standard plain-identifier
+    allowlist) and returns a subscription id. Notifications buffer
+    in a per-subscription bounded queue.
+  - `poll_notifications(subscription_id, timeout_ms, max_messages)`
+    drains up to `max_messages` from the queue, waiting at most
+    `timeout_ms` for the first one when the queue is empty. Each
+    `{channel, payload, delivered_at, dropped_count}` notification
+    surfaces drop count only on the first message after an overflow
+    so the caller is informed exactly once.
+  - `unsubscribe_channel(subscription_id)` removes a subscription;
+    `UNLISTEN` fires when the last subscription on a channel is gone.
+  - `list_notification_subscriptions()` reports the active
+    `{subscription_id, channel}` pairs for visibility.
+  A single dedicated PostgreSQL connection (separate from the request
+  pool) holds every active LISTEN, opened lazily on first subscribe.
+  A background `asyncio.Task` drains psycopg's notifies generator
+  with a short polling timeout so subscribe/unsubscribe `execute()`
+  calls can land between iterations (the psycopg connection lock
+  would otherwise deadlock concurrent admin commands). Queue overflow
+  drops the oldest message and surfaces `dropped_count` on the next
+  poll.
+- New `Capability.LISTEN` enum entry. Two new env vars:
+  `MCPG_ALLOW_LISTEN` (bool, default `false`) toggling the
+  subscription tool surface; `MCPG_LISTEN_QUEUE_MAX` (default 1000)
+  capping per-subscription buffer size.
+- `AppContext.listen_manager` exposes the manager to every tool;
+  `create_server` accepts an optional `listen_manager` keyword arg so
+  tests can inject a fake connection factory.
+
 - `copy_table_between_databases` tool — copy a single table from one
   database to another by piping `pg_dump --format=custom --table=...`
   (source) into `pg_restore --format=custom --single-transaction

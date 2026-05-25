@@ -31,5 +31,5 @@ def test_ddl_capability_is_permitted_only_in_unrestricted_mode() -> None:
 
 def test_unrestricted_mode_permits_all_capabilities() -> None:
     assert permitted_capabilities(AccessMode.UNRESTRICTED) == frozenset(
-        {Capability.READ, Capability.WRITE, Capability.DDL, Capability.SHELL}
+        {Capability.READ, Capability.WRITE, Capability.DDL, Capability.SHELL, Capability.LISTEN}
     )

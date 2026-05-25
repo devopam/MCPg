@@ -476,6 +476,65 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_listen(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="subscribe_channel",
+        description=(
+            "Open a PostgreSQL LISTEN on `channel` and return a subscription "
+            "id. Notifications buffer in process memory; poll for them via "
+            "poll_notifications. Channel name must match [A-Za-z_][A-Za-z0-9_]*. "
+            "Subscriptions are lost on server restart. Requires unrestricted "
+            "mode + MCPG_ALLOW_LISTEN."
+        ),
+    )
+    async def subscribe_channel(ctx: _Ctx, channel: str) -> dict[str, Any]:
+        manager = ctx.request_context.lifespan_context.listen_manager
+        sub_id = await manager.subscribe(channel)
+        return {"subscription_id": sub_id, "channel": channel}
+
+    @server.tool(
+        name="poll_notifications",
+        description=(
+            "Drain up to `max_messages` notifications from `subscription_id`. "
+            "When the queue is empty, waits at most `timeout_ms` for the first "
+            "notification (0 = return immediately). Each notification carries "
+            "{channel, payload, delivered_at, dropped_count}; dropped_count is "
+            "non-zero only on the first message after a queue overflow."
+        ),
+    )
+    async def poll_notifications(
+        ctx: _Ctx, subscription_id: str, timeout_ms: int = 0, max_messages: int = 100
+    ) -> list[dict[str, Any]]:
+        manager = ctx.request_context.lifespan_context.listen_manager
+        notifications = await manager.poll(subscription_id, timeout_ms=timeout_ms, max_messages=max_messages)
+        return [asdict(n) for n in notifications]
+
+    @server.tool(
+        name="unsubscribe_channel",
+        description=(
+            "Remove a subscription. Returns true if it existed. The underlying "
+            "LISTEN is dropped when the last subscription on the channel goes "
+            "away. Requires unrestricted mode + MCPG_ALLOW_LISTEN."
+        ),
+    )
+    async def unsubscribe_channel(ctx: _Ctx, subscription_id: str) -> dict[str, Any]:
+        manager = ctx.request_context.lifespan_context.listen_manager
+        removed = await manager.unsubscribe(subscription_id)
+        return {"removed": removed}
+
+    @server.tool(
+        name="list_notification_subscriptions",
+        description=(
+            "List active LISTEN subscriptions in this server process as "
+            "{subscription_id, channel} pairs. Subscriptions are process-local "
+            "and lost on restart."
+        ),
+    )
+    async def list_notification_subscriptions(ctx: _Ctx) -> list[dict[str, str]]:
+        manager = ctx.request_context.lifespan_context.listen_manager
+        return [{"subscription_id": sub_id, "channel": ch} for sub_id, ch in manager.active_subscriptions()]
+
+
 def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="dump_database",
@@ -964,3 +1023,5 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_partman(server)
     if is_permitted(settings.access_mode, Capability.SHELL) and settings.allow_shell:
         _register_data_movement_shell(server)
+    if is_permitted(settings.access_mode, Capability.LISTEN) and settings.allow_listen:
+        _register_listen(server)

@@ -6,26 +6,32 @@
 
 ## Current state
 
-- **Phase:** 24d — `copy_table_between_databases` (closes Batch D
-  data-movement story; cross-DB table copy via shell pipeline)
+- **Phase:** 26 — LISTEN/NOTIFY bridge (Batch E, ADR-0005) — four
+  new tools wired into the server lifespan; tool-poll model with
+  per-subscription bounded queues and drop-count reporting
 - **Last updated:** 2026-05-25
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 63
+- **Tool count:** 67
 
 ## Next action
 
-> Phase 24d shipped — `copy_table_between_databases` pipes
-> `pg_dump --format=custom --table=schema.table` (source URL) into
-> `pg_restore --format=custom --single-transaction --exit-on-error`
-> (destination URL) through the existing shell runner, with
-> separate libpq env dicts on each leg so credentials never reach
-> argv. `include_schema` / `include_data` are required parameters
-> (no implicit default); a truncated dump or a non-zero dump exit
-> short-circuits before pg_restore runs. **Batch D is closed** —
-> export, dump, restore, bulk import, and cross-DB copy are all
-> shipped. Next batches still open: **E** (LISTEN/NOTIFY bridge,
-> ADR-0005) and **F** (migration shadow workflow, ADR-0006). Batch
-> G follow-ons (Drizzle / SQLAlchemy / sqlc) also remain.
+> Phase 26 shipped — new `mcpg.listen` module owns server-lifetime
+> subscription state. `subscribe_channel` opens a PG `LISTEN` on a
+> dedicated connection (separate from the request pool, opened
+> lazily on first subscribe) and returns a subscription id;
+> `poll_notifications` drains a bounded per-subscription queue with
+> an optional wait timeout; `unsubscribe_channel` removes the
+> subscription and issues `UNLISTEN` when the last subscriber on a
+> channel goes away; `list_notification_subscriptions` reports
+> active subs for visibility. New `Capability.LISTEN` +
+> `MCPG_ALLOW_LISTEN` opt-in (plus `MCPG_LISTEN_QUEUE_MAX` knob).
+> The reader uses a short polling timeout on `notifies()` so
+> subscribe/unsubscribe `execute()` calls can land between
+> iterations (psycopg's connection lock would otherwise deadlock
+> concurrent admin commands). Queue overflow drops oldest +
+> reports `dropped_count` on the next poll. Next batches still
+> open: **F** (migration shadow workflow, ADR-0006). Batch G
+> follow-ons (Drizzle / SQLAlchemy / sqlc) also remain.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -715,3 +721,33 @@
   across, and verifies the rows arrived. **Batch D closed** — export,
   dump, restore, bulk import, and cross-DB copy are all shipped.
   Phase 24d complete (63 MCP tools total). 611 tests, 98% coverage.
+- 2026-05-25 — Phase 26 (Batch E first slice, LISTEN/NOTIFY bridge):
+  new `mcpg.listen` module implements the ADR-0005 tool-poll model.
+  `ListenManager` owns server-lifetime subscription state behind an
+  asyncio.Lock; subscriptions get individual bounded `asyncio.Queue`s
+  and overflow drops oldest while bumping a per-sub drop counter that
+  surfaces in the next poll's first message (then resets). A
+  dedicated PG connection (lazy — opened only on first subscribe,
+  separate from the request pool) holds every active LISTEN; a
+  background `asyncio.Task` drains psycopg's `notifies()` generator.
+  Discovery during integration testing: psycopg's connection lock is
+  held while `notifies()` waits on the socket, so a `timeout=None`
+  iteration would deadlock concurrent UNLISTEN execute() calls. Fixed
+  by iterating with `timeout=0.5` and yielding between iterations so
+  the lock is released periodically. Four new tools land:
+  `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`,
+  `list_notification_subscriptions`. New `Capability.LISTEN` +
+  `MCPG_ALLOW_LISTEN` opt-in (defence-in-depth: must be
+  unrestricted AND opt-in). New `MCPG_LISTEN_QUEUE_MAX` knob
+  (default 1000). `AppContext` grew a `listen_manager` field;
+  `create_server` accepts an injectable `listen_manager` so unit
+  tests can pass a fake connection factory. Server lifespan
+  enters/exits the manager via `async with`, so subscriptions
+  cannot outlive the server. 20 new unit tests cover subscribe /
+  unsubscribe lifecycle, LISTEN/UNLISTEN reference counting per
+  channel, queue overflow + dropped_count semantics, poll
+  validation, channel-name allowlist, close idempotency, and the
+  three-mode tool-wiring gate. 2 new integration tests round-trip
+  a real `SELECT pg_notify(...)` from one connection to the
+  listener and verify unsubscribe halts delivery. Phase 26 complete
+  (67 MCP tools total). 635 tests, 97% coverage.
