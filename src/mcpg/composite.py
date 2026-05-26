@@ -110,9 +110,9 @@ async def _fetch_table_stats(driver: SqlDriver, schema: str, table: str) -> Tabl
     rows = await driver.execute_query(
         "SELECT "
         "  COALESCE(c.reltuples, 0)::bigint AS estimated_row_count, "
-        "  pg_total_relation_size(c.oid) AS total_size_bytes, "
-        "  pg_table_size(c.oid) AS table_size_bytes, "
-        "  pg_indexes_size(c.oid) AS indexes_size_bytes, "
+        "  COALESCE(pg_total_relation_size(c.oid), 0) AS total_size_bytes, "
+        "  COALESCE(pg_table_size(c.oid), 0) AS table_size_bytes, "
+        "  COALESCE(pg_indexes_size(c.oid), 0) AS indexes_size_bytes, "
         "  COALESCE(s.seq_scan, 0) AS seq_scans, "
         "  COALESCE(s.idx_scan, 0) AS index_scans, "
         "  s.last_vacuum::text AS last_vacuum, "

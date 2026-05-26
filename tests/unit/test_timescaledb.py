@@ -137,7 +137,9 @@ async def test_create_hypertable_calls_timescale_function_when_extension_present
     assert result.available is True
     # The SQL got issued — fake driver records every call.
     create_call = next(call for call in driver.calls if "create_hypertable" in call[0])
-    assert "public.metrics" in create_call[0]
+    # Identifiers are double-quoted inside the SQL string literal so a
+    # mixed-case relation name survives the regclass cast unchanged.
+    assert '"public"."metrics"' in create_call[0]
     assert "INTERVAL '7 days'" in create_call[0]
     assert "if_not_exists => TRUE" in create_call[0]
 

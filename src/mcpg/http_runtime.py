@@ -103,7 +103,7 @@ class _BearerAuthMiddleware:
             await _send_401(send, "missing Authorization: Bearer header")
             return
 
-        presented = auth_header[len(b"Bearer ") :].decode("ascii", errors="ignore").strip()
+        presented = auth_header[len(b"Bearer ") :].decode("utf-8", errors="ignore").strip()
         if not hmac.compare_digest(presented, self._token):
             await _send_401(send, "invalid bearer token")
             return

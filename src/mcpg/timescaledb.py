@@ -198,8 +198,11 @@ async def create_hypertable(
             available=False, function="create_hypertable", details="timescaledb extension is not installed"
         )
     inex = "TRUE" if if_not_exists else "FALSE"
+    # Double-quote inside the string literal so a mixed-case relation
+    # name reaches regclass with its case preserved — unquoted identifiers
+    # passed to functions that cast to regclass are folded to lowercase.
     sql = (
-        f"SELECT create_hypertable('{schema}.{table}', '{time_column}', "
+        f"SELECT create_hypertable('\"{schema}\".\"{table}\"', '{time_column}', "
         f"chunk_time_interval => INTERVAL '{chunk_time_interval}', "
         f"if_not_exists => {inex}) AS result"
     )
@@ -231,7 +234,7 @@ async def add_compression_policy(
         )
     await driver.execute_query(f'ALTER TABLE "{schema}"."{table}" SET (timescaledb.compress = TRUE)')
     rows = await driver.execute_query(
-        f"SELECT add_compression_policy('{schema}.{table}', INTERVAL '{compress_after}') AS job_id"
+        f"SELECT add_compression_policy('\"{schema}\".\"{table}\"', INTERVAL '{compress_after}') AS job_id"
     )
     detail = f"job_id={rows[0].cells['job_id']}" if rows else "policy added"
     return TimescaleWriteResult(available=True, function="add_compression_policy", details=detail)
@@ -253,7 +256,7 @@ async def add_retention_policy(
             available=False, function="add_retention_policy", details="timescaledb extension is not installed"
         )
     rows = await driver.execute_query(
-        f"SELECT add_retention_policy('{schema}.{table}', INTERVAL '{drop_after}') AS job_id"
+        f"SELECT add_retention_policy('\"{schema}\".\"{table}\"', INTERVAL '{drop_after}') AS job_id"
     )
     detail = f"job_id={rows[0].cells['job_id']}" if rows else "policy added"
     return TimescaleWriteResult(available=True, function="add_retention_policy", details=detail)

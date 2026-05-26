@@ -508,11 +508,15 @@ def _fuse_rrf(
             row=existing.row,
         )
 
+    # Strip BOTH the vector and text columns from the per-row key on
+    # every branch — the _row_key fallback (sorted cell tuple) only
+    # merges the two halves if their key inputs are identical.
     for row in vec_rows:
         cells = dict(row.cells)
         rank = cells.pop("mcpg_rank")
         distance = cells.pop("mcpg_distance")
         cells.pop(vector_column, None)
+        cells.pop(text_column, None)
         key = _row_key(cells)
         merge(key, cells, vec_rank=int(rank), fts_rank=None, vec_distance=distance, fts_score=None)
 
@@ -521,8 +525,6 @@ def _fuse_rrf(
         rank = cells.pop("mcpg_rank")
         score = cells.pop("mcpg_rank_score")
         cells.pop(text_column, None)
-        # Don't strip vector_column from FTS-only rows; it stays in the
-        # payload so the caller can re-rank later if they want.
         cells.pop(vector_column, None)
         key = _row_key(cells)
         merge(key, cells, vec_rank=None, fts_rank=int(rank), vec_distance=None, fts_score=score)

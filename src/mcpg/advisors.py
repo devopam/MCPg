@@ -304,7 +304,7 @@ async def find_unused_objects(driver: SqlDriver, schema: str) -> UnusedObjectsRe
     index_rows = await driver.execute_query(
         "SELECT s.relname AS table_name, "
         "       s.indexrelname AS index_name, "
-        "       pg_relation_size(s.indexrelid) AS size_bytes, "
+        "       COALESCE(pg_relation_size(s.indexrelid), 0) AS size_bytes, "
         "       pg_get_indexdef(s.indexrelid) AS definition "
         "FROM pg_stat_user_indexes s "
         "JOIN pg_index i ON i.indexrelid = s.indexrelid "
