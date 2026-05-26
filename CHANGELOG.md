@@ -8,6 +8,44 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Tier-A milestone closed** — three picks from
+  `docs/feature-shortlist.md` shipped together. Tool surface 84 → 90.
+  - **HTTP transport bearer-token auth** (shortlist 1.1). New
+    `mcpg.http_runtime` module wraps FastMCP's `streamable_http_app()`
+    / `sse_app()` with an ASGI `_BearerAuthMiddleware`. When
+    `MCPG_HTTP_AUTH_TOKEN` is set, every request needs
+    `Authorization: Bearer <token>` (constant-time compared via
+    `hmac.compare_digest`); missing / wrong tokens get a 401 with
+    `WWW-Authenticate: Bearer realm="mcpg"`. `/metrics`, `/healthz`,
+    and `/readyz` are exempt so a Prometheus scraper / load-balancer
+    probe doesn't need the MCP token. New settings field
+    `Settings.http_auth_token`. The `stdio` transport is unaffected
+    (no HTTP surface). The runtime logs a WARNING when an HTTP
+    transport starts without a token.
+  - **Prometheus `/metrics` endpoint + `get_metrics_exposition` tool**
+    (shortlist 2.1). New `mcpg.observability` module records every
+    `call_tool` invocation in an in-process `Metrics` store and
+    renders the standard text-exposition format (v0.0.4) — zero
+    runtime dependency. Three series: `mcpg_tool_calls_total{tool,
+    status}` (counter), `mcpg_tool_duration_seconds_bucket{tool,le}`
+    (histogram with default Prometheus buckets + 30s/60s overflow),
+    `mcpg_tool_duration_seconds_sum/_count{tool}`. `AuditedFastMCP`
+    times every tool call and records (`ok` | `error`) +
+    wall-clock seconds. The new `get_metrics_exposition` MCP tool
+    returns the same payload over the MCP protocol for stdio
+    transports where `/metrics` isn't reachable.
+  - **TimescaleDB hypertable wrappers** (shortlist 4.2). New
+    `mcpg.timescaledb` module adds five tools — two read-only
+    (`list_hypertables`, `list_chunks`) plus three DDL-gated writes
+    (`create_hypertable`, `add_compression_policy`,
+    `add_retention_policy`). Every interval / identifier is
+    allowlist-validated before being inlined into SQL (TimescaleDB's
+    management functions take interval expressions as positional
+    args, not bound params). Each tool degrades to
+    `available=False` when the `timescaledb` extension is missing —
+    same pattern as the existing pg_trgm / pgvector / postgis
+    integrations.
+
 - Three new agent-UX-focused tools (more Tier-A picks). Tool surface
   81 → 84. All read-only.
   - **`summarize_table`** — one-stop snapshot of a table: columns,

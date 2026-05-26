@@ -58,6 +58,12 @@ class Settings:
     audit_persist: bool = False
     pool_min_size: int = 1
     pool_max_size: int = 5
+    # HTTP-transport bearer token. When set and the active transport is
+    # streamable-http or sse, every request must carry
+    # ``Authorization: Bearer <token>``; missing/wrong token returns 401.
+    # When unset, the HTTP transport runs without auth (current
+    # behaviour). stdio is never gated.
+    http_auth_token: str | None = None
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -73,7 +79,8 @@ class Settings:
             f"shell_max_output_bytes={self.shell_max_output_bytes}, "
             f"listen_queue_max={self.listen_queue_max}, "
             f"audit_persist={self.audit_persist}, "
-            f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size})"
+            f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size}, "
+            f"http_auth_token={'set' if self.http_auth_token else 'unset'!r})"
         )
 
 
@@ -185,6 +192,13 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if pool_max_size < pool_min_size:
         raise ConfigError(f"MCPG_POOL_MAX_SIZE ({pool_max_size}) must be >= MCPG_POOL_MIN_SIZE ({pool_min_size})")
 
+    http_auth_token: str | None = None
+    if (raw := env.get("MCPG_HTTP_AUTH_TOKEN")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_HTTP_AUTH_TOKEN must not be blank when set")
+        http_auth_token = stripped
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -201,4 +215,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         audit_persist=audit_persist,
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
+        http_auth_token=http_auth_token,
     )

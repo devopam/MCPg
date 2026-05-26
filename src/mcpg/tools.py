@@ -40,6 +40,7 @@ from mcpg import (
     sqlalchemy_export,
     sqlc,
     textsearch,
+    timescaledb,
     vector_tuning,
     workload,
     write,
@@ -85,6 +86,23 @@ def _register_server_info(server: FastMCP[AppContext]) -> None:
     )
     async def get_server_info(ctx: _Ctx) -> dict[str, Any]:
         return asdict(build_server_info(ctx.request_context.lifespan_context))
+
+    @server.tool(
+        name="get_metrics_exposition",
+        description=(
+            "Return the in-process Prometheus-format metrics for this MCPg "
+            "server. Three series: mcpg_tool_calls_total (counter by tool / "
+            "status), mcpg_tool_duration_seconds (histogram by tool with "
+            "sum and count). Useful when the HTTP transport's /metrics "
+            "endpoint is unreachable (e.g. running over stdio) or to fetch "
+            "via the MCP protocol itself."
+        ),
+    )
+    async def get_metrics_exposition(ctx: _Ctx) -> str:
+        del ctx  # context unused; tool reads from process-wide singleton
+        from mcpg.observability import render_prometheus
+
+        return render_prometheus()
 
 
 def _register_introspection(server: FastMCP[AppContext]) -> None:
@@ -734,6 +752,90 @@ def _register_migrations(server: FastMCP[AppContext]) -> None:
         ]
 
 
+def _register_timescaledb_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="list_hypertables",
+        description=(
+            "List every TimescaleDB hypertable visible to the current "
+            "role, with chunk count, compression flag, and total size. "
+            "Reports available=false when the timescaledb extension is "
+            "not installed."
+        ),
+    )
+    async def list_hypertables(ctx: _Ctx) -> dict[str, Any]:
+        result = await timescaledb.list_hypertables(_driver(ctx))
+        return asdict(result)
+
+    @server.tool(
+        name="list_chunks",
+        description=(
+            "List the chunks of a TimescaleDB hypertable with each chunk's "
+            "range_start / range_end and whether it has been compressed. "
+            "Empty list when the table is not a hypertable."
+        ),
+    )
+    async def list_chunks(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
+        result = await timescaledb.list_chunks(_driver(ctx), schema, table)
+        return asdict(result)
+
+
+def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="create_hypertable",
+        description=(
+            "Convert an existing table into a TimescaleDB hypertable on "
+            "`time_column`. Validates schema / table / column names against "
+            "the plain-identifier allowlist and the chunk interval against "
+            "a TimescaleDB-style pattern (e.g. '7 days', '1 hour'). "
+            "Requires unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def create_hypertable(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        time_column: str,
+        chunk_time_interval: str = "7 days",
+        if_not_exists: bool = True,
+    ) -> dict[str, Any]:
+        result = await timescaledb.create_hypertable(
+            _driver(ctx),
+            schema,
+            table,
+            time_column,
+            chunk_time_interval=chunk_time_interval,
+            if_not_exists=if_not_exists,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="add_compression_policy",
+        description=(
+            "Enable TimescaleDB column-store compression on a hypertable and "
+            "schedule a policy that compresses chunks older than "
+            "`compress_after` (e.g. '7 days'). Requires unrestricted mode "
+            "+ MCPG_ALLOW_DDL."
+        ),
+    )
+    async def add_compression_policy(
+        ctx: _Ctx, schema: str, table: str, compress_after: str = "7 days"
+    ) -> dict[str, Any]:
+        result = await timescaledb.add_compression_policy(_driver(ctx), schema, table, compress_after=compress_after)
+        return asdict(result)
+
+    @server.tool(
+        name="add_retention_policy",
+        description=(
+            "Schedule a TimescaleDB retention policy that drops hypertable "
+            "chunks older than `drop_after` (e.g. '30 days'). Requires "
+            "unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def add_retention_policy(ctx: _Ctx, schema: str, table: str, drop_after: str = "30 days") -> dict[str, Any]:
+        result = await timescaledb.add_retention_policy(_driver(ctx), schema, table, drop_after=drop_after)
+        return asdict(result)
+
+
 def _register_listen(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="subscribe_channel",
@@ -1362,6 +1464,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_query(server)
         _register_health(server)
         _register_liveops(server)
+        _register_timescaledb_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -1371,6 +1474,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)
+        _register_timescaledb_writes(server)
     if is_permitted(settings.access_mode, Capability.MIGRATE) and settings.allow_ddl:
         _register_migrations(server)
     if is_permitted(settings.access_mode, Capability.SHELL) and settings.allow_shell:

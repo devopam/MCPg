@@ -52,8 +52,16 @@ def test_run_dispatches_stdio_transport(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_run_dispatches_streamable_http_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    # HTTP transports route through mcpg.http_runtime.run_http (which
+    # owns the /metrics endpoint + optional bearer auth + uvicorn loop).
     seen: list[str] = []
-    monkeypatch.setattr(FastMCP, "run", lambda self, transport: seen.append(transport))
+    import mcpg.http_runtime as http_runtime
+
+    monkeypatch.setattr(
+        http_runtime,
+        "run_http",
+        lambda _server, _settings, *, kind: seen.append(kind),
+    )
 
     run(_settings_with(Transport.STREAMABLE_HTTP))
 
@@ -62,7 +70,13 @@ def test_run_dispatches_streamable_http_transport(monkeypatch: pytest.MonkeyPatc
 
 def test_run_dispatches_sse_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[str] = []
-    monkeypatch.setattr(FastMCP, "run", lambda self, transport: seen.append(transport))
+    import mcpg.http_runtime as http_runtime
+
+    monkeypatch.setattr(
+        http_runtime,
+        "run_http",
+        lambda _server, _settings, *, kind: seen.append(kind),
+    )
 
     run(_settings_with(Transport.SSE))
 

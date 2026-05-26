@@ -8,6 +8,7 @@ mutable global state.
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
@@ -20,6 +21,7 @@ from mcpg.config import Settings, Transport
 from mcpg.context import AppContext
 from mcpg.database import Database
 from mcpg.listen import ListenManager
+from mcpg.observability import get_metrics
 from mcpg.tools import register_tools
 
 SERVER_NAME = "mcpg"
@@ -34,12 +36,18 @@ class AuditedFastMCP(FastMCP[AppContext]):
     """A FastMCP server that records an audit event for every tool call."""
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[ContentBlock] | dict[str, Any]:
+        metrics = get_metrics()
+        start = time.monotonic()
         try:
             result = await super().call_tool(name, arguments)
         except Exception as exc:
+            duration = time.monotonic() - start
             audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(exc)))
+            metrics.record_call(name, "error", duration)
             raise
+        duration = time.monotonic() - start
         audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="ok"))
+        metrics.record_call(name, "ok", duration)
         return result
 
 
@@ -96,12 +104,21 @@ def create_server(
 
 
 def run(settings: Settings) -> None:
-    """Create and run the server using the transport from ``settings``."""
+    """Create and run the server using the transport from ``settings``.
+
+    HTTP transports (``streamable-http`` and ``sse``) go through
+    :mod:`mcpg.http_runtime` so the ``/metrics`` endpoint and optional
+    bearer-token auth attach to the served app.
+    """
     server = create_server(settings)
     match settings.transport:
         case Transport.STDIO:
             server.run(transport="stdio")
         case Transport.STREAMABLE_HTTP:
-            server.run(transport="streamable-http")
+            from mcpg.http_runtime import run_http
+
+            run_http(server, settings, kind="streamable-http")
         case Transport.SSE:
-            server.run(transport="sse")
+            from mcpg.http_runtime import run_http
+
+            run_http(server, settings, kind="sse")

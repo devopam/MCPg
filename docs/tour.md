@@ -4,7 +4,7 @@ A compact one-page tour of every tool MCPg exposes, organised by
 **what an agent typically wants to do**. Use this as a discovery surface;
 the full reference is in [`tools.md`](tools.md).
 
-**84 tools.** Numbers in `()` after each tool show roughly how parameters
+**90 tools.** Numbers in `()` after each tool show roughly how parameters
 land — required ones first, common defaults afterwards.
 
 ## "What's in this database?"
@@ -186,11 +186,22 @@ partman.run_maintenance()
 partman.drop_partition_time(parent_table, retention)
 ```
 
+## "Manage TimescaleDB hypertables" (`unrestricted` + `MCPG_ALLOW_DDL=true` + timescaledb installed)
+
+```
+list_hypertables()                                          # read-only — every mode
+list_chunks(schema, table)                                  # read-only — every mode
+create_hypertable(schema, table, time_column, chunk_time_interval='7 days', if_not_exists=true)
+add_compression_policy(schema, table, compress_after='7 days')
+add_retention_policy(schema, table, drop_after='30 days')
+```
+
 ## "Who did what?"
 
 ```
 list_audit_events(limit=100, tool=null)              # MCPG_AUDIT_PERSIST=true required
 get_server_info()                                    # version, mode, transport, DB state
+get_metrics_exposition()                             # Prometheus text-format snapshot
 ```
 
 ## Reading more

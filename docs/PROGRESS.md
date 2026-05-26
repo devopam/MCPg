@@ -6,12 +6,12 @@
 
 ## Current state
 
-- **Phase:** post-v0.4.0 — Batch G follow-on exporters + doc pass +
-  Tier-A pgvector tools + Tier-A composite tools
-  (summarize_table / why_is_this_slow / find_unused_objects).
+- **Phase:** post-v0.4.0 — Tier-A milestone complete (observability,
+  TimescaleDB, HTTP bearer auth on top of Batch G exporters,
+  pgvector tools, and composite tools).
 - **Last updated:** 2026-05-26
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 84
+- **Tool count:** 90
 
 ## Next action
 
@@ -922,3 +922,25 @@
   tests + 4 new integration tests against real PG (creates a real
   schema with extra unused indexes and verifies the composite
   shapes). Tool surface 81 → 84. 831 tests pass / 3 skipped.
+- 2026-05-26 — **Tier-A milestone closed** — three picks from
+  `docs/feature-shortlist.md` shipped in one branch. (1.1) HTTP
+  transport bearer-token auth via a new `mcpg.http_runtime` ASGI
+  middleware: when `MCPG_HTTP_AUTH_TOKEN` is set, every request to
+  the streamable-http / sse transport needs `Authorization: Bearer
+  <token>` (constant-time compared via `hmac.compare_digest`).
+  `/metrics`, `/healthz`, `/readyz` are exempted so a Prometheus
+  scraper / load-balancer probe can hit them without holding the MCP
+  token. (2.1) In-process Prometheus metrics — new `mcpg.observability`
+  emits `mcpg_tool_calls_total{tool,status}` and
+  `mcpg_tool_duration_seconds_*` (histogram + sum + count) via a
+  zero-dep text-exposition renderer. `AuditedFastMCP.call_tool`
+  records every invocation; the same payload is exposed as the
+  `get_metrics_exposition` MCP tool for stdio transports. (4.2)
+  TimescaleDB hypertable wrappers — new `mcpg.timescaledb` adds five
+  tools (`list_hypertables`, `list_chunks`, `create_hypertable`,
+  `add_compression_policy`, `add_retention_policy`); every interval
+  / identifier is allowlisted before being inlined into SQL, and
+  each tool degrades to `available=False` when the extension is
+  missing. 33 new unit tests pin the wiring (`test_observability.py`,
+  `test_http_runtime.py`, `test_timescaledb.py`). Tool surface 84 →
+  90.
