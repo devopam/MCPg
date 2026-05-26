@@ -8,6 +8,36 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Three new pgvector tools (Tier-A picks from the feature shortlist).
+  Tool surface 78 → 81. All read-only; all extend `mcpg.textsearch`
+  alongside the existing `vector_search` / `recommend_vector_index`
+  family.
+  - **`hybrid_search`** — fuses vector and full-text ranking via
+    reciprocal-rank fusion (RRF). Pulls `candidate_pool` candidates
+    from each source (vector k-NN on `vector_column`, FTS via
+    `websearch_to_tsquery` on `text_column`), then merges them with
+    `score = Σ 1/(rrf_k + rank)`. Each match carries `vector_rank`,
+    `fts_rank`, the fused `rrf_score`, and the original distance +
+    ts_rank values. Tunables: `metric`, `text_config`,
+    `candidate_pool` (default 50), `rrf_k` (default 60), `limit`.
+    Closes the biggest unmet need in agentic RAG: pure vector
+    misses keyword/identifier matches, pure FTS misses semantic
+    synonyms.
+  - **`vector_range_search`** — finds every row within
+    `max_distance` of a query vector (not top-k). Useful for
+    de-duplication, similarity gating, clustering pre-passes.
+    Results still ordered by distance and capped at `limit` so a
+    too-loose threshold cannot pull the whole table.
+  - **`recommend_vector_quantization`** — scans a schema for
+    `vector(N)` columns whose storage could shrink by switching to
+    pgvector v0.7+'s `halfvec(N)` (16-bit float). Returns
+    per-column current vs suggested bytes, the savings ratio, and a
+    rationale. Skips columns that are already non-`vector` and
+    small tables where the absolute saving wouldn't justify the
+    migration. Catalog query uses `pg_attribute.atttypmod` + a
+    `t.typname IN ('vector','halfvec','sparsevec')` filter so PG's
+    built-in `bit(N)` doesn't false-positive.
+
 - Four more catalog → DSL exporters under the same Batch G umbrella.
   Tool surface 74 → 78. All read-only, no new capability or env-var
   gates. Coverage matches the existing exporters (Prisma / Drizzle /

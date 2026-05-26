@@ -250,6 +250,450 @@ async def vector_search(
     return VectorSearchResult(available=True, matches=matches)
 
 
+# --- pgvector range search (Phase 11.2) ----------------------------------
+
+
+async def vector_range_search(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    column: str,
+    query_vector: list[float],
+    max_distance: float,
+    *,
+    metric: str = DEFAULT_VECTOR_METRIC,
+    limit: int = DEFAULT_LIMIT,
+) -> VectorSearchResult:
+    """Return every row within ``max_distance`` of ``query_vector``.
+
+    A different query shape than :func:`vector_search` (top-k). Useful for
+    de-duplication ("find duplicates within ε"), similarity gating
+    ("only surface results closer than 0.3"), and clustering pre-passes.
+
+    Results are still ordered by distance ascending and capped at
+    ``limit`` so a too-loose threshold doesn't pull the entire table —
+    a callee that hits ``limit`` should tighten the threshold rather
+    than scroll. The same per-metric semantics apply as
+    :func:`vector_search`: cosine returns 1 - cos(theta), l2 is euclidean
+    distance, inner_product is negated dot product (smaller = closer).
+
+    Raises:
+        SearchError: If an identifier is invalid, the metric is unknown,
+            ``query_vector`` contains a non-finite value, or
+            ``max_distance`` is negative.
+    """
+    if not await extension_installed(driver, "vector"):
+        return VectorSearchResult(available=False, matches=[])
+    if metric not in _VECTOR_METRICS:
+        raise SearchError(f"unknown vector metric: {metric!r}")
+    if not all(math.isfinite(value) for value in query_vector):
+        raise SearchError("query_vector must contain only finite numbers")
+    if not math.isfinite(max_distance) or max_distance < 0:
+        raise SearchError("max_distance must be a non-negative finite number")
+
+    operator = _VECTOR_METRICS[metric]
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    col = _quoted(column, "column")
+    literal = "[" + ",".join(str(float(value)) for value in query_vector) + "]"
+    rows = await driver.execute_query(
+        f"SELECT *, {col} {operator} %s::vector AS mcpg_distance "
+        f"FROM {relation} WHERE {col} {operator} %s::vector <= %s "
+        f"ORDER BY {col} {operator} %s::vector LIMIT %s",
+        params=[literal, literal, max_distance, literal, limit],
+        force_readonly=True,
+    )
+    matches: list[VectorMatch] = []
+    for row in rows or []:
+        cells = dict(row.cells)
+        distance = cells.pop("mcpg_distance")
+        cells.pop(column, None)
+        matches.append(VectorMatch(distance=distance, row=cells))
+    return VectorSearchResult(available=True, matches=matches)
+
+
+# --- hybrid search (Phase 11.1) ------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class HybridMatch:
+    """One hybrid-search hit with the per-source ranks and fused score.
+
+    ``vector_rank`` / ``fts_rank`` are 1-indexed positions in each
+    source's ranking, or ``None`` when the row didn't appear there.
+    ``rrf_score`` is the reciprocal-rank-fusion score
+    (Σ 1/(k+rank)) used to order results.
+    """
+
+    rrf_score: float
+    vector_rank: int | None
+    fts_rank: int | None
+    vector_distance: float | None
+    fts_rank_score: float | None
+    row: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class HybridSearchResult:
+    """The outcome of a hybrid search.
+
+    ``available`` is false when the ``vector`` extension isn't installed
+    (the full-text half alone is always available since PG's tsvector is
+    built in, but a hybrid call without pgvector is degenerate and the
+    caller should know).
+    """
+
+    available: bool
+    matches: list[HybridMatch]
+
+
+# RRF's standard "k=60" smoothing constant — high enough that rank-1
+# vs rank-2 isn't a huge gap, low enough to still differentiate.
+_HYBRID_RRF_K = 60
+
+
+async def hybrid_search(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    vector_column: str,
+    text_column: str,
+    query_vector: list[float],
+    text_query: str,
+    *,
+    metric: str = DEFAULT_VECTOR_METRIC,
+    text_config: str = DEFAULT_TEXT_CONFIG,
+    limit: int = DEFAULT_LIMIT,
+    candidate_pool: int = 50,
+    rrf_k: int = _HYBRID_RRF_K,
+) -> HybridSearchResult:
+    """Combine vector and full-text ranking via reciprocal-rank fusion.
+
+    Pulls ``candidate_pool`` candidates from each source (vector k-NN
+    on ``vector_column`` and ``websearch_to_tsquery`` on
+    ``text_column``), fuses them with RRF
+    (score = Σ 1/(``rrf_k`` + rank)), and returns the top ``limit``.
+    Rows present in only one source are still included; their score
+    just comes from one term.
+
+    This is the biggest unmet need for agentic RAG: pure vector search
+    misses keyword matches (proper nouns, identifiers, numbers); pure
+    full-text misses semantic synonyms. RRF is the well-studied,
+    parameter-free way to combine them.
+
+    Raises:
+        SearchError: When an identifier / metric / config is invalid,
+            ``query_vector`` contains a non-finite value, or
+            ``candidate_pool`` / ``rrf_k`` are non-positive.
+    """
+    if not await extension_installed(driver, "vector"):
+        return HybridSearchResult(available=False, matches=[])
+    if metric not in _VECTOR_METRICS:
+        raise SearchError(f"unknown vector metric: {metric!r}")
+    if not all(math.isfinite(value) for value in query_vector):
+        raise SearchError("query_vector must contain only finite numbers")
+    if candidate_pool < 1:
+        raise SearchError("candidate_pool must be at least 1")
+    if rrf_k < 1:
+        raise SearchError("rrf_k must be at least 1")
+
+    operator = _VECTOR_METRICS[metric]
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    vcol = _quoted(vector_column, "column")
+    tcol = _quoted(text_column, "column")
+    cfg = f"'{_checked(text_config, 'text-search config')}'"
+    literal = "[" + ",".join(str(float(value)) for value in query_vector) + "]"
+
+    # Pull the vector candidates with their distance + rank.
+    vec_rows = await driver.execute_query(
+        f"SELECT *, {vcol} {operator} %s::vector AS mcpg_distance, "
+        f"row_number() OVER (ORDER BY {vcol} {operator} %s::vector) AS mcpg_rank "
+        f"FROM {relation} ORDER BY {vcol} {operator} %s::vector LIMIT %s",
+        params=[literal, literal, literal, candidate_pool],
+        force_readonly=True,
+    )
+    # Pull the FTS candidates with their ts_rank + rank.
+    vector = f"to_tsvector({cfg}, {tcol})"
+    tsquery = f"websearch_to_tsquery({cfg}, %s)"
+    fts_rows = await driver.execute_query(
+        f"SELECT *, ts_rank({vector}, {tsquery}) AS mcpg_rank_score, "
+        f"row_number() OVER (ORDER BY ts_rank({vector}, {tsquery}) DESC) AS mcpg_rank "
+        f"FROM {relation} WHERE {vector} @@ {tsquery} "
+        f"ORDER BY mcpg_rank_score DESC LIMIT %s",
+        params=[text_query, text_query, text_query, candidate_pool],
+        force_readonly=True,
+    )
+
+    return _fuse_rrf(
+        vec_rows or [],
+        fts_rows or [],
+        vector_column,
+        text_column,
+        rrf_k=rrf_k,
+        limit=limit,
+    )
+
+
+def _row_key(cells: dict[str, Any]) -> tuple[Any, ...] | str:
+    """Pick a stable key for matching a row across the two candidate sets.
+
+    Prefer a single ``id`` column, then any ``*_id``-named column, then
+    fall back to the frozenset of the row's items. The fallback should
+    rarely fire because most pgvector tables carry a primary key.
+    """
+    if "id" in cells:
+        return ("id", cells["id"])
+    for name in cells:
+        if name.endswith("_id"):
+            return (name, cells[name])
+    return tuple(sorted((str(k), str(v)) for k, v in cells.items()))
+
+
+def _fuse_rrf(
+    vec_rows: list[Any],
+    fts_rows: list[Any],
+    vector_column: str,
+    text_column: str,
+    *,
+    rrf_k: int,
+    limit: int,
+) -> HybridSearchResult:
+    """Combine two candidate lists by reciprocal-rank fusion."""
+
+    by_key: dict[Any, HybridMatch] = {}
+
+    def merge(
+        key: Any,
+        cells: dict[str, Any],
+        *,
+        vec_rank: int | None,
+        fts_rank: int | None,
+        vec_distance: float | None,
+        fts_score: float | None,
+    ) -> None:
+        existing = by_key.get(key)
+        if existing is None:
+            score = 0.0
+            if vec_rank is not None:
+                score += 1.0 / (rrf_k + vec_rank)
+            if fts_rank is not None:
+                score += 1.0 / (rrf_k + fts_rank)
+            by_key[key] = HybridMatch(
+                rrf_score=score,
+                vector_rank=vec_rank,
+                fts_rank=fts_rank,
+                vector_distance=vec_distance,
+                fts_rank_score=fts_score,
+                row=cells,
+            )
+            return
+        score = existing.rrf_score
+        new_vec_rank = existing.vector_rank
+        new_fts_rank = existing.fts_rank
+        new_vec_dist = existing.vector_distance
+        new_fts_score = existing.fts_rank_score
+        if vec_rank is not None and existing.vector_rank is None:
+            score += 1.0 / (rrf_k + vec_rank)
+            new_vec_rank = vec_rank
+            new_vec_dist = vec_distance
+        if fts_rank is not None and existing.fts_rank is None:
+            score += 1.0 / (rrf_k + fts_rank)
+            new_fts_rank = fts_rank
+            new_fts_score = fts_score
+        by_key[key] = HybridMatch(
+            rrf_score=score,
+            vector_rank=new_vec_rank,
+            fts_rank=new_fts_rank,
+            vector_distance=new_vec_dist,
+            fts_rank_score=new_fts_score,
+            row=existing.row,
+        )
+
+    for row in vec_rows:
+        cells = dict(row.cells)
+        rank = cells.pop("mcpg_rank")
+        distance = cells.pop("mcpg_distance")
+        cells.pop(vector_column, None)
+        key = _row_key(cells)
+        merge(key, cells, vec_rank=int(rank), fts_rank=None, vec_distance=distance, fts_score=None)
+
+    for row in fts_rows:
+        cells = dict(row.cells)
+        rank = cells.pop("mcpg_rank")
+        score = cells.pop("mcpg_rank_score")
+        cells.pop(text_column, None)
+        # Don't strip vector_column from FTS-only rows; it stays in the
+        # payload so the caller can re-rank later if they want.
+        cells.pop(vector_column, None)
+        key = _row_key(cells)
+        merge(key, cells, vec_rank=None, fts_rank=int(rank), vec_distance=None, fts_score=score)
+
+    fused = sorted(by_key.values(), key=lambda m: m.rrf_score, reverse=True)[:limit]
+    return HybridSearchResult(available=True, matches=fused)
+
+
+# --- vector-quantization advisor (Phase 11.3) ----------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class QuantizationRecommendation:
+    """Advice for converting a vector column to a more compact type.
+
+    Per-column estimates of current bytes vs the alternative, plus the
+    rough cost saving and a one-line rationale.
+    """
+
+    schema: str
+    table: str
+    column: str
+    dimension: int
+    row_count: int
+    current_type: str
+    current_bytes: int
+    suggested_type: str
+    suggested_bytes: int
+    savings_ratio: float
+    rationale: str
+
+
+# pgvector storage per element:
+#   vector(N)   → 4 bytes per element (float4)
+#   halfvec(N)  → 2 bytes per element (float16) — pgvector v0.7+
+#   bit(N)      → 1 bit per element (vector of 0/1)
+_TYPE_BYTES_PER_ELEMENT: dict[str, float] = {
+    "vector": 4.0,
+    "halfvec": 2.0,
+    "bit": 1.0 / 8,
+}
+# Tuple-overhead per row in bytes — header + length prefix for the
+# varlena. Doesn't change between types so we omit it from the savings
+# calc, but document the assumption.
+
+
+def _suggest_quantization(
+    *,
+    schema: str,
+    table: str,
+    column: str,
+    current_type: str,
+    dimension: int,
+    row_count: int,
+) -> QuantizationRecommendation | None:
+    """Decide whether to recommend a more compact vector type.
+
+    The thresholds are intentionally conservative — quantization trades
+    storage for a small recall hit, so we only flag the column when
+    the win is large enough to justify the migration cost. v1
+    heuristic:
+
+    - Already non-``vector`` (halfvec / bit) → no recommendation; the
+      user already picked something compact.
+    - Estimated table footprint < 100 MiB → low value; skip.
+    - Dimension ≥ 768 → recommend ``halfvec`` (2x saving with minimal
+      recall loss for high-dim embeddings).
+    - Dimension < 768 and row_count x dimension x 4B ≥ 500 MiB →
+      recommend ``halfvec`` too; the absolute saving justifies it.
+    - ``bit`` is suggested only when the user opts into a much higher
+      recall hit (we leave it as a documented advanced option and do
+      not auto-recommend in v1).
+    """
+    if current_type not in {"vector"}:
+        return None  # already quantized; nothing to do
+    current_bytes_per_row = dimension * _TYPE_BYTES_PER_ELEMENT["vector"]
+    current_bytes = int(current_bytes_per_row * row_count)
+    if current_bytes < 100 * 1024 * 1024 and not (dimension >= 768 and row_count >= 10_000):
+        return None
+    # Recommend halfvec.
+    suggested_bytes_per_row = dimension * _TYPE_BYTES_PER_ELEMENT["halfvec"]
+    suggested_bytes = int(suggested_bytes_per_row * row_count)
+    savings_ratio = 1 - suggested_bytes / current_bytes if current_bytes else 0.0
+    rationale = (
+        f"halfvec halves storage with negligible recall loss for d={dimension} "
+        f"embeddings; saves ~{savings_ratio * 100:.0f}% on this column. "
+        "Requires pgvector v0.7+."
+    )
+    return QuantizationRecommendation(
+        schema=schema,
+        table=table,
+        column=column,
+        dimension=dimension,
+        row_count=row_count,
+        current_type=current_type,
+        current_bytes=current_bytes,
+        suggested_type="halfvec",
+        suggested_bytes=suggested_bytes,
+        savings_ratio=savings_ratio,
+        rationale=rationale,
+    )
+
+
+async def recommend_vector_quantization(
+    driver: SqlDriver,
+    schema: str,
+) -> list[QuantizationRecommendation]:
+    """Scan ``schema`` for ``vector(N)`` columns whose storage could shrink.
+
+    Returns one recommendation per column where switching to a more
+    compact pgvector type (``halfvec`` in v1) would yield a meaningful
+    saving on the table's estimated footprint. Skips columns that are
+    already non-``vector`` and small tables where the absolute saving
+    doesn't justify the migration.
+
+    Requires ``vector`` (pgvector) installed; when absent, returns
+    an empty list. Schema name is validated; only plain identifiers
+    accepted.
+    """
+    _checked(schema, "schema")
+    if not await extension_installed(driver, "vector"):
+        return []
+
+    # Find every (table, column) whose type matches the pgvector family.
+    # Restrict the base type via the typname so we don't pick up PG's
+    # built-in ``bit(N)`` type (which is unrelated to pgvector). pgvector's
+    # types are ``vector`` / ``halfvec`` / ``sparsevec``. atttypmod carries
+    # the dimension directly — pgvector stores it un-adjusted (no -4
+    # varlena header subtraction).
+    rows = await driver.execute_query(
+        "SELECT c.table_name, c.column_name, "
+        "       t.typname AS base_type, "
+        "       a.atttypmod AS dimension "
+        "FROM information_schema.columns c "
+        "JOIN pg_catalog.pg_attribute a ON a.attname = c.column_name "
+        "JOIN pg_catalog.pg_class cls ON cls.oid = a.attrelid AND cls.relname = c.table_name "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = cls.relnamespace AND n.nspname = c.table_schema "
+        "JOIN pg_catalog.pg_type t ON t.oid = a.atttypid "
+        "WHERE c.table_schema = %s "
+        "AND t.typname IN ('vector', 'halfvec', 'sparsevec') "
+        "AND a.atttypmod > 0 "
+        "ORDER BY c.table_name, c.column_name",
+        params=[schema],
+        force_readonly=True,
+    )
+    recommendations: list[QuantizationRecommendation] = []
+    for row in rows or []:
+        table = str(row.cells["table_name"])
+        column = str(row.cells["column_name"])
+        base_type = str(row.cells["base_type"])
+        dimension = int(row.cells["dimension"])
+        # Live row count for the table (no estimates — small price for
+        # accurate advice).
+        count_rows = await driver.execute_query(
+            f"SELECT count(*) AS n FROM {_quoted(schema, 'schema')}.{_quoted(table, 'table')}",
+            force_readonly=True,
+        )
+        row_count = int(count_rows[0].cells["n"]) if count_rows else 0
+        rec = _suggest_quantization(
+            schema=schema,
+            table=table,
+            column=column,
+            current_type=base_type,
+            dimension=dimension,
+            row_count=row_count,
+        )
+        if rec is not None:
+            recommendations.append(rec)
+    return recommendations
+
+
 async def geo_search(
     driver: SqlDriver,
     schema: str,

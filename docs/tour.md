@@ -72,6 +72,9 @@ list_active_queries()                                # who's running what right 
 fuzzy_search(schema, table, column, query)           # pg_trgm trigram
 full_text_search(schema, table, column, query)       # tsvector / tsquery
 vector_search(schema, table, column, query_vector, k=10, operator="<->")  # pgvector k-NN
+vector_range_search(schema, table, column, query_vector, max_distance)    # pgvector threshold
+hybrid_search(schema, table, vector_col, text_col, query_vector, text_query)
+                                                     # vector + FTS fused via RRF
 geo_search(schema, table, column, lon, lat, k=10)    # PostGIS k-NN
 ```
 
@@ -79,6 +82,7 @@ geo_search(schema, table, column, lon, lat, k=10)    # PostGIS k-NN
 
 ```
 recommend_vector_index(schema, table, column)        # HNSW vs IVFFlat heuristics
+recommend_vector_quantization(schema)                # vector -> halfvec storage advisor
 analyze_vector_search(schema, table, column, query_vector)
 analyze_vector_table(schema, table)
 ```

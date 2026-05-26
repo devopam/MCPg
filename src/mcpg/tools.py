@@ -978,6 +978,97 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
     @server.tool(
+        name="vector_range_search",
+        description=(
+            "Return every row within `max_distance` of a query vector (a "
+            "threshold-based query rather than top-k). Useful for de-dup, "
+            "similarity gating, and clustering pre-passes. Still ordered by "
+            "distance and capped at `limit` to avoid pulling huge result "
+            "sets. Reports available=false if the pgvector extension is "
+            "not installed."
+        ),
+    )
+    async def vector_range_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        query_vector: list[float],
+        max_distance: float,
+        metric: str = textsearch.DEFAULT_VECTOR_METRIC,
+        limit: int = textsearch.DEFAULT_LIMIT,
+    ) -> dict[str, Any]:
+        result = await textsearch.vector_range_search(
+            _driver(ctx),
+            schema,
+            table,
+            column,
+            query_vector,
+            max_distance,
+            metric=metric,
+            limit=limit,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="hybrid_search",
+        description=(
+            "Combine vector and full-text ranking via reciprocal-rank fusion "
+            "(RRF) — pulls candidates from each source, then fuses them so "
+            "rows ranked highly in EITHER source surface. Closes the gap "
+            "between pure vector (misses keyword/identifier matches) and "
+            "pure full-text (misses semantic synonyms). Parameters: "
+            "vector_column, text_column, query_vector, text_query, plus "
+            "metric / text_config / limit / candidate_pool / rrf_k tunables. "
+            "Each match carries vector_rank, fts_rank, the fused rrf_score, "
+            "and (when present) the original distance + ts_rank values."
+        ),
+    )
+    async def hybrid_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        vector_column: str,
+        text_column: str,
+        query_vector: list[float],
+        text_query: str,
+        metric: str = textsearch.DEFAULT_VECTOR_METRIC,
+        text_config: str = textsearch.DEFAULT_TEXT_CONFIG,
+        limit: int = textsearch.DEFAULT_LIMIT,
+        candidate_pool: int = 50,
+    ) -> dict[str, Any]:
+        result = await textsearch.hybrid_search(
+            _driver(ctx),
+            schema,
+            table,
+            vector_column,
+            text_column,
+            query_vector,
+            text_query,
+            metric=metric,
+            text_config=text_config,
+            limit=limit,
+            candidate_pool=candidate_pool,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="recommend_vector_quantization",
+        description=(
+            "Scan a schema for `vector(N)` columns whose storage could be "
+            "halved by switching to pgvector v0.7+'s `halfvec(N)` type "
+            "(16-bit float). Returns one recommendation per qualifying "
+            "column with current vs suggested bytes, the savings ratio, "
+            "and a one-line rationale. Skips columns that are already "
+            "non-`vector` and small tables where the absolute saving "
+            "wouldn't justify the migration."
+        ),
+    )
+    async def recommend_vector_quantization(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        recommendations = await textsearch.recommend_vector_quantization(_driver(ctx), schema)
+        return [asdict(rec) for rec in recommendations]
+
+    @server.tool(
         name="geo_search",
         description=(
             "Find the rows nearest to a lon/lat point by PostGIS distance. "

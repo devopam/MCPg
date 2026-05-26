@@ -6,12 +6,12 @@
 
 ## Current state
 
-- **Phase:** post-v0.4.0 — Batch G follow-on exporters shipped
-  (Diesel / jOOQ / Ent / Ecto) + documentation pass (tool tour,
-  tools.md refresh, user-guide post-0.3.0 sections).
+- **Phase:** post-v0.4.0 — Batch G follow-on exporters + doc pass +
+  Tier-A pgvector tools (hybrid_search / vector_range_search /
+  recommend_vector_quantization).
 - **Last updated:** 2026-05-26
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 78
+- **Tool count:** 81
 
 ## Next action
 
@@ -886,3 +886,22 @@
   CONCURRENTLY-in-migrations error). README capability surface
   refreshed to list all eight ORM exporters and link the new tour
   doc. No code changes.
+- 2026-05-26 — Tier-A pgvector tools shipped (Phase 11.1 / 11.2 /
+  11.3 from `docs/feature-shortlist.md`). Three new tools land in
+  `mcpg.textsearch` alongside the existing pgvector family.
+  `hybrid_search` does reciprocal-rank fusion of vector k-NN and
+  full-text ranking — the canonical fix for the "vector misses
+  keywords / FTS misses synonyms" gap in agentic RAG; each match
+  carries per-source rank + the fused score so the agent can see
+  WHY a result surfaced. `vector_range_search` is the
+  threshold-rather-than-top-k counterpart to `vector_search`,
+  useful for de-dup / similarity gating; still ordered by distance
+  and capped at `limit` so a too-loose threshold can't blow up.
+  `recommend_vector_quantization` scans a schema for `vector(N)`
+  columns whose storage could halve by switching to pgvector
+  v0.7+'s `halfvec(N)`; the catalog query joins `pg_type` and
+  filters on `typname IN ('vector','halfvec','sparsevec')` so
+  PG's built-in `bit(N)` doesn't false-positive. 26 new unit tests
+  + 3 new integration tests pin the wiring, including a real-PG
+  smoke test that creates 10001 768-dim rows and verifies the
+  advisor fires. Tool surface 78 → 81. 806 tests pass / 3 skipped.
