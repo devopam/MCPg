@@ -4,7 +4,7 @@ A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
 server for **PostgreSQL** — letting AI agents safely inspect, query, operate,
 and tune a Postgres database.
 
-> **Status:** v0.4.0 released; trunk at **81 MCP tools**. Covers deep catalog
+> **Status:** v0.4.0 released; trunk at **84 MCP tools**. Covers deep catalog
 > introspection, index intelligence, full-text/trigram/vector/geospatial
 > search, live ops, gated maintenance, Mermaid ER diagrams, structural
 > schema diff, **subprocess-driven data movement (pg_dump/pg_restore/psql),

@@ -7,11 +7,11 @@
 ## Current state
 
 - **Phase:** post-v0.4.0 — Batch G follow-on exporters + doc pass +
-  Tier-A pgvector tools (hybrid_search / vector_range_search /
-  recommend_vector_quantization).
+  Tier-A pgvector tools + Tier-A composite tools
+  (summarize_table / why_is_this_slow / find_unused_objects).
 - **Last updated:** 2026-05-26
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 81
+- **Tool count:** 84
 
 ## Next action
 
@@ -905,3 +905,20 @@
   + 3 new integration tests pin the wiring, including a real-PG
   smoke test that creates 10001 768-dim rows and verifies the
   advisor fires. Tool surface 78 → 81. 806 tests pass / 3 skipped.
+- 2026-05-26 — Tier-A composite tools shipped (Phase 5.2 / 8.2 /
+  10.1 from `docs/feature-shortlist.md`). Three agent-UX tools that
+  compose existing primitives so an agent doesn't have to issue
+  4-5 round trips for common queries. New `mcpg.composite` module
+  holds `summarize_table` (columns + constraints + FKs + indexes +
+  storage / vacuum stats + optional sample, all in one) and
+  `why_is_this_slow` (EXPLAIN + plan analysis + active-query +
+  blocking-lock + cache-hit snapshot + categorised suggestions —
+  safe by design because EXPLAIN does NOT execute the query).
+  `mcpg.advisors` grew `find_unused_objects` — scans
+  `pg_stat_user_tables` / `pg_stat_user_indexes` for tables with
+  zero scans + zero writes and user indexes with zero scans
+  (excluding PRIMARY KEY / UNIQUE indexes since PG needs them
+  regardless). Documented as a SIGNAL not a verdict. 25 new unit
+  tests + 4 new integration tests against real PG (creates a real
+  schema with extra unused indexes and verifies the composite
+  shapes). Tool surface 81 → 84. 831 tests pass / 3 skipped.

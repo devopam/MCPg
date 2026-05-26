@@ -17,6 +17,7 @@ from mcpg import (
     __version__,
     advisors,
     audit_trail,
+    composite,
     cron,
     data_movement,
     diagrams,
@@ -507,6 +508,55 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     async def run_advisors(ctx: _Ctx, schema: str) -> dict[str, Any]:
         report = await advisors.run_advisors(_driver(ctx), schema)
         return asdict(report)
+
+    @server.tool(
+        name="find_unused_objects",
+        description=(
+            "Find tables and indexes with zero scans since pg_stat was last "
+            "reset — a strong signal of dead code, but NOT a verdict. Tables "
+            "report seq+idx scan counts, write counts, and estimated row "
+            "count; indexes report size and definition. Excludes PRIMARY KEY "
+            "and UNIQUE indexes (PG needs those regardless of scans). Run "
+            "this after the database has been hot for a meaningful period — "
+            "fresh stats produce false positives."
+        ),
+    )
+    async def find_unused_objects(ctx: _Ctx, schema: str) -> dict[str, Any]:
+        report = await advisors.find_unused_objects(_driver(ctx), schema)
+        return asdict(report)
+
+
+def _register_composite(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="summarize_table",
+        description=(
+            "Return a one-stop snapshot of a table: columns, primary key, "
+            "foreign keys, every other constraint, indexes, storage + "
+            "row-count + last-vacuum/analyze stats, and (optionally) a "
+            "short sample of rows. Replaces what would otherwise be 4-5 "
+            "individual tool calls. Set sample_rows=0 on wide / jsonb-"
+            "heavy tables where the sample isn't useful."
+        ),
+    )
+    async def summarize_table(ctx: _Ctx, schema: str, table: str, sample_rows: int = 5) -> dict[str, Any]:
+        result = await composite.summarize_table(_driver(ctx), schema, table, sample_rows=sample_rows)
+        return asdict(result)
+
+    @server.tool(
+        name="why_is_this_slow",
+        description=(
+            "Diagnose why a SQL query might be slow, in one call. Runs "
+            "EXPLAIN (FORMAT JSON) — does NOT execute the query — walks the "
+            "plan tree, snapshots concurrent active queries + blocking "
+            "lock pairs, reads the cluster-wide cache hit ratio, and "
+            "produces categorised suggestions (plan / contention / cache / "
+            "maintenance). Read-only; safe to run on a statement the agent "
+            "doesn't want to materialise yet."
+        ),
+    )
+    async def why_is_this_slow(ctx: _Ctx, sql: str) -> dict[str, Any]:
+        result = await composite.why_is_this_slow(_driver(ctx), sql)
+        return asdict(result)
 
 
 def _register_data_movement(server: FastMCP[AppContext]) -> None:
@@ -1306,6 +1356,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_vector_tuning(server)
         _register_prisma(server)
         _register_advisors(server)
+        _register_composite(server)
         _register_data_movement(server)
         _register_audit_trail(server)
         _register_query(server)

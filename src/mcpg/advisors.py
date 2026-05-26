@@ -204,3 +204,127 @@ async def run_advisors(driver: SqlDriver, schema: str) -> AdvisorReport:
     findings.extend(await _duplicate_indexes(driver, schema))
     findings.extend(await _nullable_timestamps_without_tz(driver, schema))
     return AdvisorReport(schema=schema, rules_run=list(_RULES), findings=findings)
+
+
+# --- unused-objects finder (Phase 8.2) -----------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class UnusedTable:
+    """A table that has had zero scans since pg_stat was last reset.
+
+    Zero scans is a strong signal — even an idle table normally
+    receives an occasional scan from `ANALYZE` or a one-off query.
+    But it is a SIGNAL, not a proof: the table may have been
+    created recently or stats may have been reset. Tools surface
+    the seq_scan + idx_scan + ins+upd+del counts so the agent can
+    decide for itself.
+    """
+
+    schema: str
+    table: str
+    seq_scans: int
+    index_scans: int
+    rows_modified: int
+    estimated_row_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class UnusedIndex:
+    """A user-defined index that has been scanned zero times.
+
+    Excludes indexes backing PRIMARY KEY / UNIQUE constraints — PG
+    needs those for integrity enforcement regardless of scan counts.
+    """
+
+    schema: str
+    table: str
+    index: str
+    size_bytes: int
+    definition: str
+
+
+@dataclass(frozen=True, slots=True)
+class UnusedObjectsReport:
+    """The result of :func:`find_unused_objects`.
+
+    ``tables`` and ``indexes`` are sorted by name (deterministic) so
+    repeated runs produce identical output and the diff is reviewable.
+    """
+
+    schema: str
+    tables: list[UnusedTable]
+    indexes: list[UnusedIndex]
+
+
+async def find_unused_objects(driver: SqlDriver, schema: str) -> UnusedObjectsReport:
+    """Find tables and indexes with zero scans since stats were reset.
+
+    Tables: zero combined sequential + index scans AND zero writes
+    (the row never moved). A genuinely cold table.
+
+    Indexes: zero index scans. Indexes backing PRIMARY KEY or UNIQUE
+    constraints are excluded — PG needs those for enforcement even if
+    no query reads through them.
+
+    Both lists report alongside enough context (size, definition,
+    write count) for the agent to decide whether the object is safe
+    to drop. **This is a SIGNAL, not a verdict** — recent stats
+    resets, or tables only touched during deploys, can produce
+    false positives.
+    """
+    table_rows = await driver.execute_query(
+        "SELECT s.relname AS table_name, "
+        "       COALESCE(s.seq_scan, 0) AS seq_scans, "
+        "       COALESCE(s.idx_scan, 0) AS index_scans, "
+        "       (COALESCE(s.n_tup_ins, 0) + COALESCE(s.n_tup_upd, 0) + COALESCE(s.n_tup_del, 0)) AS rows_modified, "
+        "       COALESCE(c.reltuples, 0)::bigint AS estimated_row_count "
+        "FROM pg_stat_user_tables s "
+        "JOIN pg_class c ON c.oid = s.relid "
+        "WHERE s.schemaname = %s "
+        "AND COALESCE(s.seq_scan, 0) = 0 "
+        "AND COALESCE(s.idx_scan, 0) = 0 "
+        "AND (COALESCE(s.n_tup_ins, 0) + COALESCE(s.n_tup_upd, 0) + COALESCE(s.n_tup_del, 0)) = 0 "
+        "ORDER BY s.relname",
+        params=[schema],
+        force_readonly=True,
+    )
+    unused_tables = [
+        UnusedTable(
+            schema=schema,
+            table=str(row.cells["table_name"]),
+            seq_scans=int(row.cells["seq_scans"]),
+            index_scans=int(row.cells["index_scans"]),
+            rows_modified=int(row.cells["rows_modified"]),
+            estimated_row_count=int(row.cells["estimated_row_count"]),
+        )
+        for row in table_rows or []
+    ]
+
+    index_rows = await driver.execute_query(
+        "SELECT s.relname AS table_name, "
+        "       s.indexrelname AS index_name, "
+        "       pg_relation_size(s.indexrelid) AS size_bytes, "
+        "       pg_get_indexdef(s.indexrelid) AS definition "
+        "FROM pg_stat_user_indexes s "
+        "JOIN pg_index i ON i.indexrelid = s.indexrelid "
+        "WHERE s.schemaname = %s "
+        "AND COALESCE(s.idx_scan, 0) = 0 "
+        "AND NOT i.indisprimary "
+        "AND NOT i.indisunique "
+        "ORDER BY s.relname, s.indexrelname",
+        params=[schema],
+        force_readonly=True,
+    )
+    unused_indexes = [
+        UnusedIndex(
+            schema=schema,
+            table=str(row.cells["table_name"]),
+            index=str(row.cells["index_name"]),
+            size_bytes=int(row.cells["size_bytes"]),
+            definition=str(row.cells["definition"]),
+        )
+        for row in index_rows or []
+    ]
+
+    return UnusedObjectsReport(schema=schema, tables=unused_tables, indexes=unused_indexes)

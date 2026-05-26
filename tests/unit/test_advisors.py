@@ -166,3 +166,59 @@ async def test_run_advisors_tool_is_registered_and_callable() -> None:
     assert result.structuredContent["schema"] == "public"
     assert result.structuredContent["findings"] == []
     assert len(result.structuredContent["rules_run"]) == 4
+
+
+# --- find_unused_objects -----------------------------------------------
+
+
+async def test_find_unused_objects_routes_table_and_index_queries_independently() -> None:
+    from mcpg.advisors import find_unused_objects
+
+    driver = FakeRoutingDriver(
+        {
+            "pg_stat_user_tables": [
+                {
+                    "table_name": "audit",
+                    "seq_scans": 0,
+                    "index_scans": 0,
+                    "rows_modified": 0,
+                    "estimated_row_count": 1234,
+                },
+            ],
+            "pg_stat_user_indexes": [
+                {
+                    "table_name": "orders",
+                    "index_name": "idx_orders_unused",
+                    "size_bytes": 1024 * 1024,
+                    "definition": "CREATE INDEX idx_orders_unused ON public.orders USING btree (customer_id)",
+                },
+            ],
+        }
+    )
+
+    report = await find_unused_objects(driver, "public")  # type: ignore[arg-type]
+
+    assert len(report.tables) == 1
+    assert report.tables[0].table == "audit"
+    assert report.tables[0].estimated_row_count == 1234
+    assert len(report.indexes) == 1
+    assert report.indexes[0].index == "idx_orders_unused"
+    assert report.indexes[0].size_bytes == 1024 * 1024
+
+
+async def test_find_unused_objects_returns_empty_when_no_zero_scan_objects_exist() -> None:
+    from mcpg.advisors import find_unused_objects
+
+    driver = FakeRoutingDriver({"pg_stat_user_tables": [], "pg_stat_user_indexes": []})
+
+    report = await find_unused_objects(driver, "public")  # type: ignore[arg-type]
+
+    assert report.tables == []
+    assert report.indexes == []
+
+
+async def test_find_unused_objects_tool_is_registered() -> None:
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "find_unused_objects" in listed

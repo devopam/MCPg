@@ -8,6 +8,30 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Three new agent-UX-focused tools (more Tier-A picks). Tool surface
+  81 → 84. All read-only.
+  - **`summarize_table`** — one-stop snapshot of a table: columns,
+    primary key, foreign keys, every other constraint, indexes,
+    storage / row-count / last-vacuum/analyze stats, and an optional
+    short row sample. Replaces what would otherwise be 4-5
+    individual tool calls. Lives in new module `mcpg.composite`.
+  - **`why_is_this_slow`** — one-call diagnosis: runs
+    `EXPLAIN (FORMAT JSON)` (does NOT execute the query), walks the
+    plan tree, snapshots concurrent active queries and blocking
+    lock pairs, reads the cluster-wide cache hit ratio, and
+    produces categorised suggestions (plan / contention / cache /
+    maintenance). Safe to run on a statement the agent doesn't
+    want to materialise yet. Lives in `mcpg.composite`.
+  - **`find_unused_objects`** — scans `pg_stat_user_tables` and
+    `pg_stat_user_indexes` for tables/indexes with zero scans since
+    stats were last reset. Tables also need zero writes (the row
+    never moved) to qualify; indexes backing PRIMARY KEY / UNIQUE
+    constraints are excluded since PG needs them for enforcement.
+    Returns context (scan + write counts, size, definition) so the
+    agent can decide whether the object is safe to drop. Documented
+    as a SIGNAL not a verdict — recent stats resets produce false
+    positives. Lives in `mcpg.advisors` alongside `run_advisors`.
+
 - Three new pgvector tools (Tier-A picks from the feature shortlist).
   Tool surface 78 → 81. All read-only; all extend `mcpg.textsearch`
   alongside the existing `vector_search` / `recommend_vector_index`

@@ -4,7 +4,7 @@ A compact one-page tour of every tool MCPg exposes, organised by
 **what an agent typically wants to do**. Use this as a discovery surface;
 the full reference is in [`tools.md`](tools.md).
 
-**78 tools.** Numbers in `()` after each tool show roughly how parameters
+**84 tools.** Numbers in `()` after each tool show roughly how parameters
 land — required ones first, common defaults afterwards.
 
 ## "What's in this database?"
@@ -62,8 +62,16 @@ analyze_query_plan(sql)                              # walks the EXPLAIN tree
 check_database_health()                              # connections + cache + dead tuples + invalid indexes + replication lag + bloat
 analyze_workload(top_n=10)                           # slow queries from pg_stat_statements
 recommend_indexes()                                  # missing-index heuristics
-run_advisors()                                       # aggregate of the above
+run_advisors(schema)                                 # aggregate of the above (per schema)
+find_unused_objects(schema)                          # zero-scan tables and user indexes
 list_active_queries()                                # who's running what right now
+```
+
+## "Tell me everything about this table / why is this query slow"
+
+```
+summarize_table(schema, table, sample_rows=5)        # columns + PK + FKs + indexes + stats + sample, one call
+why_is_this_slow(sql)                                # EXPLAIN + plan analysis + locks + cache + suggestions, one call
 ```
 
 ## "Search for something"
