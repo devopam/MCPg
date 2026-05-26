@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 
 from mcpg.config import Settings
 from mcpg.observability import render_prometheus
+from mcpg.tenancy import TenancyError, current_role, validate_role
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -111,6 +112,89 @@ class _BearerAuthMiddleware:
         await self._app(scope, receive, send)  # type: ignore[operator]
 
 
+class _TenantRoleMiddleware:
+    """ASGI middleware that parses ``X-MCPG-Role`` into a ContextVar.
+
+    Per-request multi-tenancy: when the header is present, validate it
+    against the allowlist (when one is configured) and set
+    :data:`mcpg.tenancy.current_role`. The
+    :class:`mcpg.tenancy.TenantSqlDriver` then issues
+    ``SET LOCAL ROLE`` inside every query's transaction so the role
+    auto-resets when the transaction ends.
+
+    Skips non-HTTP scopes and the same exempt paths as
+    :class:`_BearerAuthMiddleware` so probes don't try to acquire a
+    role they don't need.
+    """
+
+    def __init__(
+        self,
+        app: object,
+        *,
+        allowed_roles: tuple[str, ...] = (),
+        exempt_paths: frozenset[str] = _AUTH_EXEMPT_PATHS,
+    ) -> None:
+        self._app = app
+        self._allowed = frozenset(allowed_roles)
+        self._exempt = exempt_paths
+
+    async def __call__(self, scope: dict[str, object], receive: object, send: object) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        path = str(scope.get("path", ""))
+        if path in self._exempt:
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        headers: list[tuple[bytes, bytes]] = scope.get("headers", [])  # type: ignore[assignment]
+        role_header: bytes | None = None
+        for key, value in headers:
+            if key.lower() == b"x-mcpg-role":
+                role_header = value
+                break
+
+        if role_header is None:
+            # No per-request override; the driver will fall back to
+            # the static default_role from Settings.
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        role = role_header.decode("utf-8", errors="ignore").strip()
+        try:
+            validate_role(role)
+        except TenancyError:
+            await _send_403(send, "X-MCPG-Role contains an invalid identifier")
+            return
+
+        if self._allowed and role not in self._allowed:
+            await _send_403(send, "X-MCPG-Role is not in the allowed-roles list")
+            return
+
+        token = current_role.set(role)
+        try:
+            await self._app(scope, receive, send)  # type: ignore[operator]
+        finally:
+            current_role.reset(token)
+
+
+async def _send_403(send: object, reason: str) -> None:
+    """Emit a minimal 403 response."""
+    body = f'{{"error": "forbidden", "reason": "{reason}"}}\n'.encode()
+    await send(  # type: ignore[operator]
+        {
+            "type": "http.response.start",
+            "status": 403,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})  # type: ignore[operator]
+
+
 async def _send_401(send: object, reason: str) -> None:
     """Emit a minimal 401 response without leaking server internals."""
     body = f'{{"error": "unauthorized", "reason": "{reason}"}}\n'.encode()
@@ -156,6 +240,13 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
     # subclassing.
     app.router.routes.append(Route("/metrics", _metrics_response_factory(), methods=["GET"]))
     app.router.routes.append(Route("/healthz", _health_response_factory(), methods=["GET"]))
+
+    # The tenant-role middleware sits ABOVE bearer auth in the stack so
+    # an unauthenticated request never reaches the role parser; Starlette
+    # applies the most-recently-added middleware first, so we add the
+    # bearer-auth layer LAST.
+    if settings.default_role is not None or settings.allowed_roles:
+        app.add_middleware(_TenantRoleMiddleware, allowed_roles=settings.allowed_roles)
 
     if settings.http_auth_token is not None:
         # Starlette's add_middleware appends to the middleware stack

@@ -7,12 +7,18 @@ mutating the process environment.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from os import environ
 
 from mcpg._vendor.sql import obfuscate_password
+
+# PG role names must be safe identifiers — we inline them into
+# ``SET ROLE "<name>"`` so anything outside ``[A-Za-z_][A-Za-z0-9_]*``
+# is rejected up front rather than allowed to inject.
+_ROLE_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 _TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
@@ -64,6 +70,13 @@ class Settings:
     # When unset, the HTTP transport runs without auth (current
     # behaviour). stdio is never gated.
     http_auth_token: str | None = None
+    # Multi-tenancy via PG roles. ``default_role`` is applied to every
+    # query when set. HTTP requests can override per-request by sending
+    # ``X-MCPG-Role: <role>``; when ``allowed_roles`` is set the header
+    # value must appear in it (otherwise a 403 is returned). Role names
+    # are validated against ``[A-Za-z_][A-Za-z0-9_]*`` regardless.
+    default_role: str | None = None
+    allowed_roles: tuple[str, ...] = ()
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -80,8 +93,15 @@ class Settings:
             f"listen_queue_max={self.listen_queue_max}, "
             f"audit_persist={self.audit_persist}, "
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size}, "
-            f"http_auth_token={'set' if self.http_auth_token else 'unset'!r})"
+            f"http_auth_token={'set' if self.http_auth_token else 'unset'!r}, "
+            f"default_role={self.default_role!r}, "
+            f"allowed_roles={self.allowed_roles!r})"
         )
+
+
+def _validate_role_identifier(var: str, value: str) -> None:
+    if not _ROLE_IDENTIFIER.match(value):
+        raise ConfigError(f"{var} role name {value!r} must match [A-Za-z_][A-Za-z0-9_]* (no quotes / spaces / dashes)")
 
 
 def _parse_enum[E: StrEnum](var: str, raw: str, enum: type[E]) -> E:
@@ -199,6 +219,25 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             raise ConfigError("MCPG_HTTP_AUTH_TOKEN must not be blank when set")
         http_auth_token = stripped
 
+    default_role: str | None = None
+    if (raw := env.get("MCPG_DEFAULT_ROLE")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_DEFAULT_ROLE must not be blank when set")
+        _validate_role_identifier("MCPG_DEFAULT_ROLE", stripped)
+        default_role = stripped
+
+    allowed_roles: tuple[str, ...] = ()
+    if (raw := env.get("MCPG_ALLOWED_ROLES")) is not None:
+        roles = tuple(r.strip() for r in raw.split(",") if r.strip())
+        for role in roles:
+            _validate_role_identifier("MCPG_ALLOWED_ROLES", role)
+        allowed_roles = roles
+        if default_role is not None and default_role not in allowed_roles:
+            raise ConfigError(
+                f"MCPG_DEFAULT_ROLE ({default_role!r}) is not in MCPG_ALLOWED_ROLES ({list(allowed_roles)!r})"
+            )
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -216,4 +255,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
         http_auth_token=http_auth_token,
+        default_role=default_role,
+        allowed_roles=allowed_roles,
     )

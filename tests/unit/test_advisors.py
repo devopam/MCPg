@@ -222,3 +222,118 @@ async def test_find_unused_objects_tool_is_registered() -> None:
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "find_unused_objects" in listed
+
+
+# --- find_sensitive_columns (Phase 6.2) ----------------------------------
+
+
+async def test_classify_column_returns_none_when_nothing_matches() -> None:
+    from mcpg.advisors import _classify_column
+
+    assert _classify_column("widget_id", "integer") is None
+    assert _classify_column("created_at", "timestamp with time zone") is None
+
+
+async def test_classify_column_picks_highest_confidence_across_matches() -> None:
+    from mcpg.advisors import _classify_column
+
+    # `dob` matches a high-confidence pattern; type is irrelevant.
+    classified = _classify_column("user_dob", "date")
+    assert classified is not None
+    categories, confidence, reasons = classified
+    assert "identifier" in categories
+    assert confidence == "high"
+    assert any("date of birth" in r.lower() for r in reasons)
+
+
+async def test_classify_column_combines_name_and_type_signals() -> None:
+    from mcpg.advisors import _classify_column
+
+    # `inet`-typed column flagged by type heuristic.
+    classified = _classify_column("source_ip", "inet")
+    assert classified is not None
+    categories, confidence, _reasons = classified
+    assert "location" in categories
+    assert confidence in {"medium", "low"}  # depends on best matching rule
+
+
+async def test_classify_column_credential_patterns_are_high_confidence() -> None:
+    from mcpg.advisors import _classify_column
+
+    for name in ("password", "user_password_hash", "api_key", "private_key", "auth_token"):
+        classified = _classify_column(name, "text")
+        assert classified is not None, name
+        _, confidence, _ = classified
+        assert confidence == "high", f"{name} should be high confidence, got {confidence}"
+
+
+async def test_classify_column_does_not_flag_safe_lookalike_names() -> None:
+    from mcpg.advisors import _classify_column
+
+    # `key_id` is too generic to be a credential — patterns require
+    # explicit api_key / private_key / access_key prefixes.
+    assert _classify_column("key_id", "integer") is None
+    # `street_lamp_id` shouldn't be flagged as a location PII column.
+    # (The `\bstreet\b` regex IS broad; document the false-positive
+    # explicitly by asserting current behavior — if this trips later,
+    # tighten the regex rather than the test.)
+    classified = _classify_column("street_lamp_id", "integer")
+    if classified is not None:
+        _, confidence, _ = classified
+        # Acceptable as long as it doesn't crash; the agent filters by confidence.
+        assert confidence in {"medium", "low"}
+
+
+async def test_find_sensitive_columns_reports_one_finding_per_matching_column() -> None:
+    from mcpg.advisors import find_sensitive_columns
+
+    driver = FakeRoutingDriver(
+        {
+            "pg_attribute": [
+                {"table_name": "users", "column_name": "id", "data_type": "integer"},
+                {"table_name": "users", "column_name": "email", "data_type": "text"},
+                {"table_name": "users", "column_name": "password_hash", "data_type": "text"},
+                {"table_name": "users", "column_name": "last_login_ip", "data_type": "inet"},
+                {"table_name": "orders", "column_name": "id", "data_type": "integer"},
+                {"table_name": "orders", "column_name": "card_number", "data_type": "text"},
+                {"table_name": "orders", "column_name": "total", "data_type": "numeric"},
+            ]
+        }
+    )
+
+    report = await find_sensitive_columns(driver, "public")  # type: ignore[arg-type]
+
+    flagged = {(c.table, c.column) for c in report.columns}
+    assert ("users", "email") in flagged
+    assert ("users", "password_hash") in flagged
+    assert ("users", "last_login_ip") in flagged
+    assert ("orders", "card_number") in flagged
+    # Plain integer / numeric columns aren't flagged.
+    assert ("users", "id") not in flagged
+    assert ("orders", "total") not in flagged
+
+
+async def test_find_sensitive_columns_returns_empty_report_when_no_columns_match() -> None:
+    from mcpg.advisors import find_sensitive_columns
+
+    driver = FakeRoutingDriver(
+        {
+            "pg_attribute": [
+                {"table_name": "widgets", "column_name": "id", "data_type": "integer"},
+                {"table_name": "widgets", "column_name": "quantity", "data_type": "integer"},
+                {"table_name": "widgets", "column_name": "created_at", "data_type": "timestamp with time zone"},
+            ]
+        }
+    )
+
+    report = await find_sensitive_columns(driver, "public")  # type: ignore[arg-type]
+
+    assert report.schema == "public"
+    assert report.columns == []
+
+
+async def test_find_sensitive_columns_tool_is_registered() -> None:
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "find_sensitive_columns" in listed

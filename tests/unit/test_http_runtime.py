@@ -9,8 +9,14 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from mcpg.config import load_settings
-from mcpg.http_runtime import _AUTH_EXEMPT_PATHS, _BearerAuthMiddleware, build_http_app
+from mcpg.http_runtime import (
+    _AUTH_EXEMPT_PATHS,
+    _BearerAuthMiddleware,
+    _TenantRoleMiddleware,
+    build_http_app,
+)
 from mcpg.observability import get_metrics, reset_metrics
+from mcpg.tenancy import current_role
 
 
 @pytest.fixture(autouse=True)
@@ -220,3 +226,174 @@ def test_build_http_app_with_token_blocks_unauthenticated_requests() -> None:
         # /metrics still works without a token.
         response = client.get("/metrics")
         assert response.status_code == 200
+
+
+# --- per-request role multi-tenancy (Phase 1.4) --------------------------
+
+
+def test_tenant_role_middleware_sets_contextvar_for_the_inner_app() -> None:
+    """A request with X-MCPG-Role binds the ContextVar for the inner app."""
+    observed_roles: list[str | None] = []
+
+    async def inner(_scope: object, _receive: object, send_fn: object) -> None:
+        observed_roles.append(current_role.get())
+        await send_fn(  # type: ignore[operator]
+            {"type": "http.response.start", "status": 200, "headers": []}
+        )
+        await send_fn({"type": "http.response.body", "body": b""})  # type: ignore[operator]
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b""}
+
+    async def send(_message: dict[str, object]) -> None:
+        pass
+
+    middleware = _TenantRoleMiddleware(inner, allowed_roles=("tenant_a", "tenant_b"))
+    scope = {
+        "type": "http",
+        "path": "/",
+        "headers": [(b"x-mcpg-role", b"tenant_a")],
+    }
+
+    import asyncio
+
+    asyncio.run(middleware(scope, receive, send))
+
+    assert observed_roles == ["tenant_a"]
+    # ContextVar is reset on exit so the next request starts clean.
+    assert current_role.get() is None
+
+
+def test_tenant_role_middleware_returns_403_when_role_is_not_in_allowlist() -> None:
+    sent_messages: list[dict[str, object]] = []
+
+    async def inner(_scope: object, _receive: object, _send: object) -> None:
+        raise AssertionError("inner app should not be invoked")
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b""}
+
+    async def send(message: dict[str, object]) -> None:
+        sent_messages.append(message)
+
+    middleware = _TenantRoleMiddleware(inner, allowed_roles=("tenant_a",))
+    scope = {
+        "type": "http",
+        "path": "/",
+        "headers": [(b"x-mcpg-role", b"tenant_zzz")],
+    }
+
+    import asyncio
+
+    asyncio.run(middleware(scope, receive, send))
+
+    assert sent_messages[0]["status"] == 403
+
+
+def test_tenant_role_middleware_returns_403_when_role_has_invalid_characters() -> None:
+    sent_messages: list[dict[str, object]] = []
+
+    async def inner(_scope: object, _receive: object, _send: object) -> None:
+        raise AssertionError("inner app should not be invoked")
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b""}
+
+    async def send(message: dict[str, object]) -> None:
+        sent_messages.append(message)
+
+    middleware = _TenantRoleMiddleware(inner)
+    scope = {
+        "type": "http",
+        "path": "/",
+        "headers": [(b"x-mcpg-role", b'"; DROP USER alice; --')],
+    }
+
+    import asyncio
+
+    asyncio.run(middleware(scope, receive, send))
+
+    assert sent_messages[0]["status"] == 403
+
+
+def test_tenant_role_middleware_passes_through_when_header_is_absent() -> None:
+    observed_roles: list[str | None] = []
+
+    async def inner(_scope: object, _receive: object, send_fn: object) -> None:
+        observed_roles.append(current_role.get())
+        await send_fn(  # type: ignore[operator]
+            {"type": "http.response.start", "status": 200, "headers": []}
+        )
+        await send_fn({"type": "http.response.body", "body": b""})  # type: ignore[operator]
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b""}
+
+    async def send(_message: dict[str, object]) -> None:
+        pass
+
+    middleware = _TenantRoleMiddleware(inner)
+    scope = {"type": "http", "path": "/", "headers": []}
+
+    import asyncio
+
+    asyncio.run(middleware(scope, receive, send))
+
+    # No header → driver falls back to static default_role.
+    assert observed_roles == [None]
+
+
+def test_tenant_role_middleware_exempts_health_paths() -> None:
+    """A probe to /healthz doesn't need the X-MCPG-Role header."""
+    inner_invoked = False
+
+    async def inner(_scope: object, _receive: object, send_fn: object) -> None:
+        nonlocal inner_invoked
+        inner_invoked = True
+        await send_fn(  # type: ignore[operator]
+            {"type": "http.response.start", "status": 200, "headers": []}
+        )
+        await send_fn({"type": "http.response.body", "body": b""})  # type: ignore[operator]
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b""}
+
+    async def send(_message: dict[str, object]) -> None:
+        pass
+
+    # Allowlist set but no header → would normally pass through;
+    # explicitly verify /healthz is exempt before that.
+    middleware = _TenantRoleMiddleware(inner, allowed_roles=("tenant_a",))
+    scope = {"type": "http", "path": "/healthz", "headers": []}
+
+    import asyncio
+
+    asyncio.run(middleware(scope, receive, send))
+
+    assert inner_invoked
+
+
+def test_build_http_app_with_tenant_role_returns_403_for_unknown_role() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_DEFAULT_ROLE": "tenant_a",
+            "MCPG_ALLOWED_ROLES": "tenant_a,tenant_b",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    with TestClient(wrapped) as client:
+        # No header → default_role kicks in, request succeeds.
+        response = client.get("/")
+        assert response.status_code == 200
+        # Allowed role → 200.
+        response = client.get("/", headers={"X-MCPG-Role": "tenant_b"})
+        assert response.status_code == 200
+        # Unknown role → 403.
+        response = client.get("/", headers={"X-MCPG-Role": "tenant_zzz"})
+        assert response.status_code == 403

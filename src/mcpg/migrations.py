@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -90,6 +91,39 @@ class CancelResult:
 
     id: str
     shadow_dropped: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TableSampleStat:
+    """Per-table sampling stats for a validation run.
+
+    ``rows_before`` is the count in the sampled shadow before the
+    candidate SQL ran; ``rows_after`` is the count after. A drop is
+    not by itself a failure (DELETE can be intentional), but a large
+    unexpected drop is worth surfacing — agents diff the two.
+    """
+
+    table: str
+    rows_before: int
+    rows_after: int
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationResult:
+    """The outcome of :func:`validate_migration`.
+
+    Reports whether the candidate SQL applied cleanly to a sampled
+    copy of ``target_schema``'s rows and how each table's row count
+    moved. ``error`` is non-empty iff the candidate raised — the
+    transient shadow has already been dropped.
+    """
+
+    target_schema: str
+    sample_rows_per_table: int
+    tables_sampled: int
+    table_stats: list[TableSampleStat]
+    candidate_applied: bool
+    error: str | None
 
 
 # --- table bootstrap -------------------------------------------------
@@ -485,6 +519,154 @@ def _row_to_record(cells: dict[str, Any]) -> MigrationRecord:
         status=cells["status"],
         ttl_expires_at=cells["ttl_expires_at"],
         completed_at=cells["completed_at"],
+    )
+
+
+# --- validate_migration (Phase 9.2) --------------------------------------
+
+
+# Default sample size — small enough to keep the validation cheap on a
+# large table, large enough that constraint violations on common data
+# shapes have a chance to surface. Tunable per call.
+DEFAULT_VALIDATION_SAMPLE_ROWS = 100
+
+
+def _validation_shadow_name() -> str:
+    """Generate a transient shadow name for a validation run.
+
+    Distinct from ``_shadow_name_for`` so a concurrent prepare and a
+    validation can't collide on the same shadow.
+    """
+    suffix = uuid.uuid4().hex[:12]
+    return f"mcpg_validate_{suffix}"
+
+
+async def _count_rows(driver: SqlDriver, schema: str, table: str) -> int:
+    """Read the live row count of ``schema.table``. Schema + table are
+    pre-validated by the caller (no untrusted identifier reaches this
+    function), so the inline interpolation is safe."""
+    rows = await driver.execute_query(
+        f'SELECT COUNT(*) AS n FROM "{schema}"."{table}"',
+        force_readonly=True,
+    )
+    if not rows:
+        return 0
+    return int(rows[0].cells["n"])
+
+
+async def validate_migration(
+    driver: SqlDriver,
+    *,
+    target_schema: str,
+    candidate_sql: str,
+    sample_rows_per_table: int = DEFAULT_VALIDATION_SAMPLE_ROWS,
+) -> ValidationResult:
+    """Apply ``candidate_sql`` to a transient sample of ``target_schema``.
+
+    Unlike :func:`prepare_migration` (which clones structure only and
+    persists the shadow under a TTL), this validates the candidate
+    against actual rows: a transient shadow is created, up to
+    ``sample_rows_per_table`` rows are copied from each base table in
+    the target, the candidate SQL is applied, and per-table row counts
+    are captured. The shadow is **always** dropped before returning —
+    success or failure — so the function leaves no persistent state.
+
+    Use this to catch the classes of failures a structural diff misses:
+
+    * adding ``NOT NULL`` to a column with existing NULLs,
+    * tightening a CHECK constraint that some live rows already violate,
+    * type narrowings (text → integer) that fail on real values,
+    * triggers whose body errors against actual data.
+
+    Result reports per-table ``rows_before`` and ``rows_after`` so a
+    DELETE-shaped candidate's effect is visible. When the candidate
+    fails, ``error`` carries the database error message and
+    ``candidate_applied`` is ``False``.
+    """
+    _check_identifier(target_schema, "target_schema")
+    if not candidate_sql.strip():
+        raise MigrationError("candidate_sql must not be empty")
+    if sample_rows_per_table < 0:
+        raise MigrationError("sample_rows_per_table must be >= 0")
+
+    shadow_schema = _validation_shadow_name()
+    _check_identifier(shadow_schema, "shadow_schema")
+
+    table_stats: list[TableSampleStat] = []
+    candidate_applied = False
+    error: str | None = None
+
+    try:
+        await driver.execute_query(f'CREATE SCHEMA "{shadow_schema}"')
+        await _replay_target_into_shadow(driver, target_schema, shadow_schema)
+
+        # Sample rows. We iterate the base tables in dependency-light
+        # order (the structure replay already created them) but skip
+        # FK-cascade ordering — the candidate SQL is what we're testing,
+        # so insertion-order mismatches that violate FKs are themselves
+        # a finding the agent should see.
+        tables = await list_tables(driver, target_schema)
+        plain_tables = [t for t in tables if t.type == "BASE TABLE" and not t.is_partition]
+        for table in plain_tables:
+            _check_identifier(table.name, "table")
+            if sample_rows_per_table == 0:
+                continue
+            # INSERT INTO shadow.table SELECT * FROM target.table LIMIT N.
+            # We catch FK-violation errors per-table so one bad table
+            # doesn't abort the whole validation — the agent gets a
+            # complete picture instead.
+            try:
+                await driver.execute_query(
+                    f'INSERT INTO "{shadow_schema}"."{table.name}" '
+                    f'SELECT * FROM "{target_schema}"."{table.name}" LIMIT %s',
+                    params=[sample_rows_per_table],
+                )
+            except Exception:
+                # Sampling failure (FK violation, etc.) is recorded as
+                # zero rows for that table; the validation continues.
+                pass
+
+        # Snapshot counts before the candidate runs.
+        before_counts: dict[str, int] = {}
+        for table in plain_tables:
+            before_counts[table.name] = await _count_rows(driver, shadow_schema, table.name)
+
+        # Apply the candidate. _execute_in_schema sets search_path so
+        # unqualified identifiers resolve against the shadow.
+        try:
+            await _execute_in_schema(driver, shadow_schema, candidate_sql)
+            candidate_applied = True
+        except Exception as exc:
+            error = str(exc)
+
+        # Snapshot after, regardless of candidate outcome — the agent
+        # may want to see counts even on failure (partial application).
+        for table in plain_tables:
+            try:
+                after = await _count_rows(driver, shadow_schema, table.name)
+            except Exception:
+                # Table may have been dropped by the candidate.
+                after = 0
+            table_stats.append(
+                TableSampleStat(
+                    table=table.name,
+                    rows_before=before_counts.get(table.name, 0),
+                    rows_after=after,
+                )
+            )
+    finally:
+        try:
+            await driver.execute_query(f'DROP SCHEMA IF EXISTS "{shadow_schema}" CASCADE')
+        except Exception:
+            pass
+
+    return ValidationResult(
+        target_schema=target_schema,
+        sample_rows_per_table=sample_rows_per_table,
+        tables_sampled=len(table_stats),
+        table_stats=table_stats,
+        candidate_applied=candidate_applied,
+        error=error,
     )
 
 

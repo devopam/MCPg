@@ -130,6 +130,7 @@ async def test_migration_tools_registered_with_unrestricted_and_allow_ddl() -> N
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert {
         "prepare_migration",
+        "validate_migration",
         "complete_migration",
         "cancel_migration",
         "list_pending_migrations",
@@ -185,6 +186,43 @@ async def test_prepare_migration_rejects_unsafe_target_schema() -> None:
             name="bad",
             target_schema='app"; DROP TABLE x; --',
             candidate_sql="ALTER TABLE w ADD c int",
+        )
+
+
+# --- validate_migration (Phase 9.2) -------------------------------
+
+
+async def test_validate_migration_rejects_blank_candidate_sql() -> None:
+    from mcpg.migrations import validate_migration
+
+    with pytest.raises(MigrationError, match="candidate_sql"):
+        await validate_migration(
+            FakeDriver(),  # type: ignore[arg-type]
+            target_schema="app",
+            candidate_sql="",
+        )
+
+
+async def test_validate_migration_rejects_unsafe_target_schema() -> None:
+    from mcpg.migrations import validate_migration
+
+    with pytest.raises(MigrationError, match="invalid target_schema"):
+        await validate_migration(
+            FakeDriver(),  # type: ignore[arg-type]
+            target_schema='app"; DROP TABLE x; --',
+            candidate_sql="ALTER TABLE w ADD c int",
+        )
+
+
+async def test_validate_migration_rejects_negative_sample_size() -> None:
+    from mcpg.migrations import validate_migration
+
+    with pytest.raises(MigrationError, match="sample_rows_per_table"):
+        await validate_migration(
+            FakeDriver(),  # type: ignore[arg-type]
+            target_schema="app",
+            candidate_sql="ALTER TABLE w ADD c int",
+            sample_rows_per_table=-1,
         )
 
 

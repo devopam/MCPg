@@ -23,6 +23,7 @@ reviewer flag this?" rather than "is this provably wrong?".
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from mcpg._vendor.sql import SqlDriver
@@ -328,3 +329,234 @@ async def find_unused_objects(driver: SqlDriver, schema: str) -> UnusedObjectsRe
     ]
 
     return UnusedObjectsReport(schema=schema, tables=unused_tables, indexes=unused_indexes)
+
+
+# --- sensitive-column heuristic (Phase 6.2) ------------------------------
+
+SENSITIVITY_CREDENTIAL = "credential"
+SENSITIVITY_FINANCIAL = "financial"
+SENSITIVITY_CONTACT = "contact"
+SENSITIVITY_IDENTIFIER = "identifier"
+SENSITIVITY_HEALTH = "health"
+SENSITIVITY_GOVERNMENT_ID = "government_id"
+SENSITIVITY_LOCATION = "location"
+
+
+# Each token below is wrapped with letter-only lookarounds (NOT \b),
+# because Python's \b treats `_` as a word character, so \bpassword\b
+# would fail to match `password_hash`. The lookarounds let underscores
+# and digits act as token boundaries while still preventing
+# `repassword` or `passworded` from matching.
+def _word(*tokens: str) -> str:
+    # Each token may itself contain alternatives, e.g. "passwor?d".
+    body = "|".join(tokens)
+    return rf"(?<![A-Za-z])(?:{body})(?![A-Za-z])"
+
+
+_SENSITIVE_PATTERNS: tuple[tuple[str, str, str, str], ...] = (
+    # (pattern, category, confidence, reason)
+    (_word("password", "passwd", "pwd"), SENSITIVITY_CREDENTIAL, "high", "stores authentication credentials"),
+    (
+        _word("secret", "api[_-]?key", "access[_-]?key", "private[_-]?key"),
+        SENSITIVITY_CREDENTIAL,
+        "high",
+        "looks like a secret / API key",
+    ),
+    (
+        _word("token", "auth[_-]?token", "bearer", "refresh[_-]?token"),
+        SENSITIVITY_CREDENTIAL,
+        "high",
+        "looks like an auth token",
+    ),
+    (
+        _word("session[_-]?id", "session[_-]?key"),
+        SENSITIVITY_CREDENTIAL,
+        "medium",
+        "session identifier — can hijack a logged-in user",
+    ),
+    (
+        _word("ssn", "social[_-]?security", "tin", "tax[_-]?id"),
+        SENSITIVITY_GOVERNMENT_ID,
+        "high",
+        "government identifier",
+    ),
+    (
+        _word("passport", "drivers?[_-]?license", "national[_-]?id"),
+        SENSITIVITY_GOVERNMENT_ID,
+        "high",
+        "government identifier",
+    ),
+    (
+        _word("credit[_-]?card", "card[_-]?number", "ccnum", "pan"),
+        SENSITIVITY_FINANCIAL,
+        "high",
+        "stores a payment-card number (PCI scope)",
+    ),
+    (
+        _word("cvv", "cvc", "card[_-]?verif[a-z]*"),
+        SENSITIVITY_FINANCIAL,
+        "high",
+        "card verification value (PCI scope, never persist)",
+    ),
+    (
+        _word("bank[_-]?account", "iban", "swift", "routing[_-]?number"),
+        SENSITIVITY_FINANCIAL,
+        "high",
+        "bank-account identifier",
+    ),
+    (_word("salary", "compensation", "income"), SENSITIVITY_FINANCIAL, "medium", "financial compensation data"),
+    (_word("email", "email[_-]?address", "e[_-]?mail"), SENSITIVITY_CONTACT, "medium", "personal email address"),
+    (_word("phone", "mobile", "telephone", "cell[_-]?number"), SENSITIVITY_CONTACT, "medium", "personal phone number"),
+    (
+        _word("address", "street", "zip", "zipcode", "postal[_-]?code", "postcode"),
+        SENSITIVITY_LOCATION,
+        "medium",
+        "postal address fragment",
+    ),
+    (_word("latitude", "longitude", "geo[_-]?location"), SENSITIVITY_LOCATION, "low", "geographic coordinate"),
+    (
+        _word("date[_-]?of[_-]?birth", "dob", "birth[_-]?date", "birthday"),
+        SENSITIVITY_IDENTIFIER,
+        "high",
+        "date of birth (PII)",
+    ),
+    (
+        _word("full[_-]?name", "first[_-]?name", "last[_-]?name", "given[_-]?name", "surname"),
+        SENSITIVITY_IDENTIFIER,
+        "low",
+        "personal name",
+    ),
+    (_word("gender", "ethnicity", "nationality"), SENSITIVITY_IDENTIFIER, "medium", "demographic identifier"),
+    (
+        _word("diagnos[a-z]*", "medication", "prescription", "icd[_-]?10", "icd[_-]?9"),
+        SENSITIVITY_HEALTH,
+        "high",
+        "health record (HIPAA scope)",
+    ),
+    (_word("medical", "patient"), SENSITIVITY_HEALTH, "medium", "health-related data"),
+)
+
+# Types that are PII-shaped almost regardless of column name.
+_SENSITIVE_TYPES: tuple[tuple[str, str, str, str], ...] = (
+    # `inet` columns almost always carry IP addresses, which most
+    # privacy regimes treat as personal data.
+    ("inet", SENSITIVITY_LOCATION, "medium", "INET column — IP addresses are personal data under most privacy regimes"),
+    ("cidr", SENSITIVITY_LOCATION, "low", "CIDR column — may contain network ranges that identify a household / org"),
+)
+
+_COMPILED_NAME_PATTERNS = tuple(
+    (re.compile(p, re.IGNORECASE), cat, conf, reason) for p, cat, conf, reason in _SENSITIVE_PATTERNS
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SensitiveColumn:
+    """One column that one or more heuristics flagged as potentially sensitive.
+
+    ``categories`` is a deduplicated list — a column named ``user_email``
+    can match the contact heuristic; a column named ``patient_dob``
+    matches both health and identifier. ``confidence`` is the highest
+    confidence of any matching heuristic (high > medium > low).
+    """
+
+    schema: str
+    table: str
+    column: str
+    data_type: str
+    categories: list[str]
+    confidence: str
+    reasons: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class SensitiveColumnsReport:
+    """Aggregate result of :func:`find_sensitive_columns`.
+
+    Sorted by ``(table, column)`` so repeated runs produce identical
+    output and the diff is reviewable.
+    """
+
+    schema: str
+    columns: list[SensitiveColumn]
+
+
+_CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1}
+
+
+def _classify_column(name: str, data_type: str) -> tuple[list[str], str, list[str]] | None:
+    """Apply every heuristic to one column.
+
+    Returns ``None`` when nothing matches. Otherwise returns
+    ``(unique_categories, highest_confidence, unique_reasons)``.
+    """
+    categories: list[str] = []
+    reasons: list[str] = []
+    confidence_rank = 0
+    for pattern, category, conf, reason in _COMPILED_NAME_PATTERNS:
+        if pattern.search(name):
+            if category not in categories:
+                categories.append(category)
+            if reason not in reasons:
+                reasons.append(reason)
+            confidence_rank = max(confidence_rank, _CONFIDENCE_RANK[conf])
+    for type_match, category, conf, reason in _SENSITIVE_TYPES:
+        if data_type.lower() == type_match:
+            if category not in categories:
+                categories.append(category)
+            if reason not in reasons:
+                reasons.append(reason)
+            confidence_rank = max(confidence_rank, _CONFIDENCE_RANK[conf])
+    if not categories:
+        return None
+    confidence = next(c for c, rank in _CONFIDENCE_RANK.items() if rank == confidence_rank)
+    return categories, confidence, reasons
+
+
+async def find_sensitive_columns(driver: SqlDriver, schema: str) -> SensitiveColumnsReport:
+    """Flag columns that look like they hold sensitive data (PII / secrets).
+
+    Uses a name- and type-pattern heuristic — no row sampling, no
+    introspection of actual values. Designed as a SIGNAL for review,
+    not a verdict: a column called ``email_template_id`` will match
+    the email heuristic but isn't itself an email address.
+
+    Categories: ``credential``, ``financial``, ``contact``,
+    ``identifier``, ``health``, ``government_id``, ``location``.
+    Confidence: ``high`` (very specific name), ``medium`` (common
+    pattern), ``low`` (broad pattern). Use the confidence to filter
+    output for an initial review pass.
+    """
+    rows = await driver.execute_query(
+        "SELECT c.relname AS table_name, "
+        "       a.attname AS column_name, "
+        "       format_type(a.atttypid, a.atttypmod) AS data_type "
+        "FROM pg_attribute a "
+        "JOIN pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s "
+        "AND c.relkind IN ('r', 'p', 'v', 'm') "
+        "AND a.attnum > 0 AND NOT a.attisdropped "
+        "ORDER BY c.relname, a.attnum",
+        params=[schema],
+        force_readonly=True,
+    )
+    columns: list[SensitiveColumn] = []
+    for row in rows or []:
+        name = str(row.cells["column_name"])
+        data_type = str(row.cells["data_type"])
+        classified = _classify_column(name, data_type)
+        if classified is None:
+            continue
+        categories, confidence, reasons = classified
+        columns.append(
+            SensitiveColumn(
+                schema=schema,
+                table=str(row.cells["table_name"]),
+                column=name,
+                data_type=data_type,
+                categories=categories,
+                confidence=confidence,
+                reasons=reasons,
+            )
+        )
+    return SensitiveColumnsReport(schema=schema, columns=columns)

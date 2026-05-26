@@ -13,6 +13,7 @@ from typing import Any
 
 from mcpg._vendor.sql import DbConnPool, SqlDriver, obfuscate_password
 from mcpg.config import Settings
+from mcpg.tenancy import TenantSqlDriver
 
 
 class DatabaseError(Exception):
@@ -62,11 +63,19 @@ class Database:
     def driver(self) -> SqlDriver:
         """Return a SQL driver bound to the pool.
 
+        When ``settings.default_role`` is set OR the per-request
+        ``X-MCPG-Role`` ContextVar could be set by the HTTP transport,
+        a :class:`mcpg.tenancy.TenantSqlDriver` is returned so every
+        query runs inside ``SET LOCAL ROLE "<role>"``. Otherwise the
+        bare upstream driver is returned (zero overhead path).
+
         Raises:
             DatabaseError: If called before :meth:`connect`.
         """
         if not self._connected:
             raise DatabaseError("database is not connected; call connect() first")
+        if self._settings.default_role is not None or self._settings.allowed_roles:
+            return TenantSqlDriver(conn=self._pool, default_role=self._settings.default_role)
         return SqlDriver(conn=self._pool)
 
     async def copy_from_stdin(self, sql: str, data: bytes) -> int:
