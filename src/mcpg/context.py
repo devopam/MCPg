@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mcpg.config import Settings
+from mcpg.cursors import CursorManager
 from mcpg.database import Database
 from mcpg.listen import ListenManager
 
@@ -16,3 +17,4 @@ class AppContext:
     settings: Settings
     database: Database
     listen_manager: ListenManager
+    cursor_manager: CursorManager

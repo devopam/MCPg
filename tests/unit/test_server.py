@@ -5,6 +5,7 @@ from _fakes import FakePool
 from mcp.server.fastmcp import FastMCP
 
 from mcpg.config import Settings, Transport, load_settings
+from mcpg.cursors import CursorManager
 from mcpg.database import Database
 from mcpg.listen import ListenManager
 from mcpg.server import SERVER_NAME, AppContext, create_server, make_lifespan, run
@@ -28,13 +29,15 @@ async def test_lifespan_connects_database_and_yields_app_context() -> None:
     pool = FakePool()
     db = Database(_SETTINGS, pool=pool)  # type: ignore[arg-type]
     lm = ListenManager(database_url=_SETTINGS.database_url)
-    lifespan = make_lifespan(_SETTINGS, db, lm)
+    cm = CursorManager(database_url=_SETTINGS.database_url)
+    lifespan = make_lifespan(_SETTINGS, db, lm, cm)
 
     async with lifespan(create_server(_SETTINGS)) as ctx:
         assert isinstance(ctx, AppContext)
         assert ctx.settings is _SETTINGS
         assert ctx.database is db
         assert ctx.listen_manager is lm
+        assert ctx.cursor_manager is cm
         assert pool.connect_calls == 1
         assert db.is_connected is True
 

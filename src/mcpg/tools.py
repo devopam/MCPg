@@ -19,6 +19,7 @@ from mcpg import (
     audit_trail,
     composite,
     cron,
+    cursors,
     data_movement,
     diagrams,
     diesel,
@@ -1173,6 +1174,68 @@ def _register_query(server: FastMCP[AppContext]) -> None:
             parallel_limit=parallel_limit,
         )
         return asdict(result)
+
+    @server.tool(
+        name="open_cursor",
+        description=(
+            "Open a server-side cursor for a SELECT query. The cursor "
+            "holds the result set on the server side so an agent can "
+            "page through millions of rows without loading them all. "
+            "SQL is validated by the same safety allowlist as "
+            "run_select. Returns the cursor_id; fetch the rows with "
+            "fetch_cursor and close with close_cursor (or let the "
+            "5-minute TTL clean up). Hard cap of 16 concurrent cursors."
+        ),
+    )
+    async def open_cursor(ctx: _Ctx, sql: str) -> dict[str, Any]:
+        manager = ctx.request_context.lifespan_context.cursor_manager
+        info = await manager.open(_driver(ctx), sql)
+        return asdict(info)
+
+    @server.tool(
+        name="fetch_cursor",
+        description=(
+            "Fetch the next batch from an open server-side cursor. "
+            "exhausted=true means the FETCH returned fewer rows than "
+            "requested — stop polling. batch_size defaults to 100; "
+            "hard cap is 10000 per call."
+        ),
+    )
+    async def fetch_cursor(
+        ctx: _Ctx,
+        cursor_id: str,
+        batch_size: int = cursors.DEFAULT_FETCH_BATCH,
+    ) -> dict[str, Any]:
+        manager = ctx.request_context.lifespan_context.cursor_manager
+        result = await manager.fetch(cursor_id, batch_size=batch_size)
+        return asdict(result)
+
+    @server.tool(
+        name="close_cursor",
+        description=(
+            "Close a server-side cursor and release its dedicated "
+            "connection. Idempotent — returns closed=false when the "
+            "cursor was not open (already closed, expired, or never "
+            "existed)."
+        ),
+    )
+    async def close_cursor(ctx: _Ctx, cursor_id: str) -> dict[str, Any]:
+        manager = ctx.request_context.lifespan_context.cursor_manager
+        closed = await manager.close(cursor_id)
+        return {"cursor_id": cursor_id, "closed": closed}
+
+    @server.tool(
+        name="list_cursors",
+        description=(
+            "List every currently-open server-side cursor with its SQL, "
+            "rows_returned so far, age in seconds, and the TTL after "
+            "which it'll be auto-closed."
+        ),
+    )
+    async def list_cursors(ctx: _Ctx) -> list[dict[str, Any]]:
+        manager = ctx.request_context.lifespan_context.cursor_manager
+        infos = await manager.list_open()
+        return [asdict(info) for info in infos]
 
     @server.tool(
         name="explain_query",

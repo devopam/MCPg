@@ -7,6 +7,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcpg import __version__
 from mcpg.config import AccessMode, load_settings
 from mcpg.context import AppContext
+from mcpg.cursors import CursorManager
 from mcpg.database import Database
 from mcpg.listen import ListenManager
 from mcpg.server import create_server
@@ -55,8 +56,21 @@ def _listen_manager() -> ListenManager:
     return ListenManager(database_url=_SETTINGS.database_url)
 
 
+def _cursor_manager() -> CursorManager:
+    # Real CursorManager — stays idle until open() is called, no
+    # connection opens at construction time.
+    return CursorManager(database_url=_SETTINGS.database_url)
+
+
 def test_build_server_info_reports_static_facts() -> None:
-    info = build_server_info(AppContext(settings=_SETTINGS, database=_database(), listen_manager=_listen_manager()))
+    info = build_server_info(
+        AppContext(
+            settings=_SETTINGS,
+            database=_database(),
+            listen_manager=_listen_manager(),
+            cursor_manager=_cursor_manager(),
+        )
+    )
 
     assert info == ServerInfo(
         mcpg_version=__version__,
@@ -70,7 +84,14 @@ async def test_build_server_info_reflects_database_connection() -> None:
     db = _database()
     await db.connect()
 
-    info = build_server_info(AppContext(settings=_SETTINGS, database=db, listen_manager=_listen_manager()))
+    info = build_server_info(
+        AppContext(
+            settings=_SETTINGS,
+            database=db,
+            listen_manager=_listen_manager(),
+            cursor_manager=_cursor_manager(),
+        )
+    )
 
     assert info.database_connected is True
 
