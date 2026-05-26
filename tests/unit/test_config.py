@@ -141,3 +141,48 @@ def test_repr_does_not_leak_the_password() -> None:
     rendered = repr(settings)
     assert "secret" not in rendered
     assert "****" in rendered
+
+
+# --- multi-tenancy: MCPG_DEFAULT_ROLE / MCPG_ALLOWED_ROLES (Phase 1.4) ---
+
+
+def test_default_role_defaults_to_none_and_parses_when_set() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.default_role is None
+
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_DEFAULT_ROLE": "app_reader"})
+    assert settings.default_role == "app_reader"
+
+
+def test_default_role_rejects_unsafe_identifiers() -> None:
+    with pytest.raises(ConfigError, match="MCPG_DEFAULT_ROLE"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_DEFAULT_ROLE": '"; DROP USER alice'})
+
+
+def test_default_role_rejects_blank_string() -> None:
+    with pytest.raises(ConfigError, match="MCPG_DEFAULT_ROLE"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_DEFAULT_ROLE": "   "})
+
+
+def test_allowed_roles_defaults_to_empty_tuple_and_parses_comma_list() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.allowed_roles == ()
+
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOWED_ROLES": "tenant_a, tenant_b , tenant_c"})
+    assert settings.allowed_roles == ("tenant_a", "tenant_b", "tenant_c")
+
+
+def test_allowed_roles_rejects_unsafe_identifiers_in_the_list() -> None:
+    with pytest.raises(ConfigError, match="MCPG_ALLOWED_ROLES"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOWED_ROLES": "tenant_a, bad-name"})
+
+
+def test_default_role_must_appear_in_allowed_roles_when_both_set() -> None:
+    with pytest.raises(ConfigError, match="MCPG_DEFAULT_ROLE"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_DEFAULT_ROLE": "tenant_z",
+                "MCPG_ALLOWED_ROLES": "tenant_a,tenant_b",
+            }
+        )
