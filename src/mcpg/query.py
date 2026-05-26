@@ -8,6 +8,7 @@ and other unsafe statements are rejected.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -157,3 +158,74 @@ async def analyze_query_plan(
         node_types=node_types,
         sequential_scans=sequential_scans,
     )
+
+
+# --- parallel-select helper (Phase 3.4) ----------------------------------
+
+# Default cap on how many statements one parallel call can dispatch.
+# A pool of 5 is the documented default; we leave headroom so other
+# in-flight tools don't starve.
+DEFAULT_PARALLEL_LIMIT = 8
+
+
+@dataclass(frozen=True, slots=True)
+class ParallelQueryOutcome:
+    """One slot in :class:`ParallelQueryResult`.
+
+    Either ``result`` is set and ``error`` is ``None``, or vice versa.
+    ``index`` is the position of this query in the input list so the
+    caller can correlate without relying on ordering (we preserve
+    input order, but agents asking via the MCP layer get JSON so the
+    explicit index avoids a class of bugs).
+    """
+
+    index: int
+    success: bool
+    result: QueryResult | None
+    error: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ParallelQueryResult:
+    """Aggregate result of :func:`run_select_parallel`."""
+
+    outcomes: list[ParallelQueryOutcome]
+
+
+async def run_select_parallel(
+    driver: SqlDriver,
+    statements: list[str],
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    max_rows: int = DEFAULT_MAX_ROWS,
+    parallel_limit: int = DEFAULT_PARALLEL_LIMIT,
+) -> ParallelQueryResult:
+    """Run up to ``parallel_limit`` read-only SELECTs concurrently.
+
+    Each statement is validated by the same safety allowlist as
+    :func:`run_select`. One bad query does not abort the others — its
+    error is captured in its own :class:`ParallelQueryOutcome` and
+    the remaining slots are still populated.
+
+    Raises:
+        QueryError: When ``statements`` is empty, exceeds
+            ``parallel_limit``, or contains a blank entry.
+    """
+    if not statements:
+        raise QueryError("statements must not be empty")
+    if len(statements) > parallel_limit:
+        raise QueryError(f"too many statements ({len(statements)}); parallel_limit is {parallel_limit}")
+    if any(not s.strip() for s in statements):
+        raise QueryError("statements must not contain blank entries")
+
+    async def _run_one(index: int, sql: str) -> ParallelQueryOutcome:
+        try:
+            result = await run_select(driver, sql, timeout=timeout, max_rows=max_rows)
+        except QueryError as exc:
+            return ParallelQueryOutcome(index=index, success=False, result=None, error=str(exc))
+        except Exception as exc:
+            return ParallelQueryOutcome(index=index, success=False, result=None, error=str(exc))
+        return ParallelQueryOutcome(index=index, success=True, result=result, error=None)
+
+    outcomes = await asyncio.gather(*[_run_one(i, sql) for i, sql in enumerate(statements)])
+    return ParallelQueryResult(outcomes=list(outcomes))

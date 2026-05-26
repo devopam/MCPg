@@ -1148,6 +1148,33 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
     @server.tool(
+        name="run_select_parallel",
+        description=(
+            "Run up to parallel_limit read-only SELECTs concurrently. Each "
+            "statement is validated by the same safety allowlist as "
+            "run_select; one bad query does not abort the others — its "
+            "error is captured in its own outcome slot. Useful for "
+            "dashboard-style fan-out where round-trip latency dominates "
+            "(e.g. fetching counters / aggregates from several tables at "
+            "once). Each outcome includes an index so the caller can "
+            "correlate results without relying on ordering."
+        ),
+    )
+    async def run_select_parallel(
+        ctx: _Ctx,
+        statements: list[str],
+        max_rows: int = query.DEFAULT_MAX_ROWS,
+        parallel_limit: int = query.DEFAULT_PARALLEL_LIMIT,
+    ) -> dict[str, Any]:
+        result = await query.run_select_parallel(
+            _driver(ctx),
+            statements,
+            max_rows=max_rows,
+            parallel_limit=parallel_limit,
+        )
+        return asdict(result)
+
+    @server.tool(
         name="explain_query",
         description=(
             "Return the PostgreSQL execution plan for a query without running "
