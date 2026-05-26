@@ -543,6 +543,24 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
         report = await advisors.find_unused_objects(_driver(ctx), schema)
         return asdict(report)
 
+    @server.tool(
+        name="find_sensitive_columns",
+        description=(
+            "Flag columns whose names or types look like they hold sensitive "
+            "data (passwords, tokens, PII, financial info, health records). "
+            "Pure heuristic — no row sampling, no value introspection. "
+            "Categories: credential, financial, contact, identifier, "
+            "health, government_id, location. Each finding carries a "
+            "confidence (high / medium / low) so an agent can filter for "
+            "a first review pass. Treat as a SIGNAL, not a verdict — "
+            "a column named email_template_id matches the email pattern "
+            "but isn't itself an email address."
+        ),
+    )
+    async def find_sensitive_columns(ctx: _Ctx, schema: str) -> dict[str, Any]:
+        report = await advisors.find_sensitive_columns(_driver(ctx), schema)
+        return asdict(report)
+
 
 def _register_composite(server: FastMCP[AppContext]) -> None:
     @server.tool(
@@ -697,6 +715,37 @@ def _register_migrations(server: FastMCP[AppContext]) -> None:
             "ttl_expires_at": result.ttl_expires_at.isoformat(),
             "diff": asdict(result.diff),
         }
+
+    @server.tool(
+        name="validate_migration",
+        description=(
+            "Apply candidate_sql to a TRANSIENT shadow of target_schema "
+            "that's pre-populated with up to sample_rows_per_table rows "
+            "copied from each base table. The shadow is dropped before "
+            "returning regardless of outcome. Catches failure modes a "
+            "pure structural diff misses: NOT NULL added to a column "
+            "with existing NULLs, CHECK constraints violated by live "
+            "rows, type narrowings that fail on real values, triggers "
+            "that error against actual data. Reports per-table "
+            "rows_before / rows_after so the effect of a "
+            "DELETE-shaped candidate is visible. error is non-null "
+            "iff the candidate raised. Performs DDL — requires "
+            "unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def validate_migration(
+        ctx: _Ctx,
+        target_schema: str,
+        candidate_sql: str,
+        sample_rows_per_table: int = migrations.DEFAULT_VALIDATION_SAMPLE_ROWS,
+    ) -> dict[str, Any]:
+        result = await migrations.validate_migration(
+            _driver(ctx),
+            target_schema=target_schema,
+            candidate_sql=candidate_sql,
+            sample_rows_per_table=sample_rows_per_table,
+        )
+        return asdict(result)
 
     @server.tool(
         name="complete_migration",
@@ -1049,6 +1098,37 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     )
     async def analyze_workload(ctx: _Ctx, limit: int = workload.DEFAULT_LIMIT) -> dict[str, Any]:
         report = await workload.analyze_workload(_driver(ctx), limit=limit)
+        return asdict(report)
+
+    @server.tool(
+        name="detect_n_plus_one",
+        description=(
+            "Surface query templates in pg_stat_statements that look like "
+            "an N+1 loop: hundreds of calls, each returning at most a row "
+            "or two, with meaningful total wall-clock time spent. Returns "
+            "the candidates sorted by total time descending so the worst "
+            "offender appears first. Thresholds (min_calls, "
+            "max_rows_per_call, min_total_ms) are tunable. Treat results "
+            "as candidates for investigation, NOT verdicts — a hot "
+            "cache-miss pattern on a primary-key lookup can trip the same "
+            "shape. Reports availability=false if pg_stat_statements is "
+            "not installed."
+        ),
+    )
+    async def detect_n_plus_one(
+        ctx: _Ctx,
+        min_calls: int = workload.DEFAULT_MIN_CALLS,
+        max_rows_per_call: float = workload.DEFAULT_MAX_ROWS_PER_CALL,
+        min_total_ms: float = workload.DEFAULT_MIN_TOTAL_MS,
+        limit: int = workload.DEFAULT_NPLUSONE_LIMIT,
+    ) -> dict[str, Any]:
+        report = await workload.detect_n_plus_one(
+            _driver(ctx),
+            min_calls=min_calls,
+            max_rows_per_call=max_rows_per_call,
+            min_total_ms=min_total_ms,
+            limit=limit,
+        )
         return asdict(report)
 
     @server.tool(
