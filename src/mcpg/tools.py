@@ -35,6 +35,7 @@ from mcpg import (
     locks,
     maintenance,
     migrations,
+    naming,
     partman,
     prisma,
     query,
@@ -618,6 +619,23 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     )
     async def find_sensitive_columns(ctx: _Ctx, schema: str) -> dict[str, Any]:
         report = await advisors.find_sensitive_columns(_driver(ctx), schema)
+        return asdict(report)
+
+    @server.tool(
+        name="lint_naming_conventions",
+        description=(
+            "Lint table / column / index naming in a schema. Detects "
+            "the majority case style (snake_case / camelCase / "
+            "PascalCase / SCREAMING_SNAKE) per schema and per table, "
+            "then flags outliers. Also flags indexes whose names do "
+            "not start with a conventional prefix (idx_, ix_, pk_, "
+            "uq_, fk_ by default). Findings carry the offender's style "
+            "and the detected majority — agents can use the style "
+            "field to filter for renames vs accept-as-is. Pure read."
+        ),
+    )
+    async def lint_naming_conventions(ctx: _Ctx, schema: str) -> dict[str, Any]:
+        report = await naming.lint_naming_conventions(_driver(ctx), schema)
         return asdict(report)
 
 
