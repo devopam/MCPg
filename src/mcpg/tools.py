@@ -371,6 +371,23 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
     async def generate_schema_diagram(ctx: _Ctx, schema: str, include_partitions: bool = False) -> str:
         return await diagrams.generate_schema_diagram(_driver(ctx), schema, include_partitions=include_partitions)
 
+    @server.tool(
+        name="generate_fk_cascade_graph",
+        description=(
+            "Build a Mermaid graph LR of foreign-key cascade chains in a "
+            "schema. Each edge runs from the referencing table to the "
+            "referenced table, labelled with the cascade action(s) on "
+            "DELETE / UPDATE. By default only FKs with at least one "
+            "CASCADE / SET NULL / SET DEFAULT action are included — "
+            "those are the ones that produce a write blast radius. Pass "
+            "include_all=true to include NO ACTION / RESTRICT FKs too "
+            "(full FK topology view). Cross-schema FK targets are "
+            "rendered as separate nodes prefixed with their schema."
+        ),
+    )
+    async def generate_fk_cascade_graph(ctx: _Ctx, schema: str, include_all: bool = False) -> str:
+        return await diagrams.generate_fk_cascade_graph(_driver(ctx), schema, include_all=include_all)
+
 
 def _register_schema_diff(server: FastMCP[AppContext]) -> None:
     @server.tool(
