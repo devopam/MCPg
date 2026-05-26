@@ -6,13 +6,12 @@
 
 ## Current state
 
-- **Phase:** v0.4.0 release prep — version bumped 0.3.0 → 0.4.0,
-  CHANGELOG converted, release notes written, README capability
-  surface refreshed. Tool surface 74. **All planned batches A–G
-  are now closed.**
+- **Phase:** post-v0.4.0 — Tier-A milestone complete (observability,
+  TimescaleDB, HTTP bearer auth on top of Batch G exporters,
+  pgvector tools, and composite tools).
 - **Last updated:** 2026-05-26
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 74
+- **Tool count:** 90
 
 ## Next action
 
@@ -842,3 +841,106 @@
   data movement + LISTEN/NOTIFY + staged migrations + ORM bridges
   highlighted). No code changes — release prep only. Tagging /
   publishing awaits explicit user sign-off.
+- 2026-05-26 — v0.4.0 tagged and released on GitHub
+  (https://github.com/devopam/MCPg/releases/tag/v0.4.0). PR #17
+  merged. Branch fast-forwarded to main (`77970f2`).
+- 2026-05-26 — Post-0.4.0 Batch G follow-ons shipped: four more
+  catalog→DSL exporters alongside the existing Prisma / Drizzle /
+  SQLAlchemy 2.0 / sqlc ones. `mcpg.diesel` emits Diesel ORM (Rust)
+  `schema.rs` with `table!` macros, `Nullable<T>` for nullable
+  columns, `joinable!` for single-column intra-schema FKs, an
+  `allow_tables_to_appear_in_same_query!` macro, and Text-backed
+  wrapper enums in a `pg_enum` module so output works without
+  `diesel_derive_enum`. `mcpg.jooq` emits a `jooq-codegen`
+  configuration XML pointing at the live database — unlike other
+  exporters, jOOQ generates Java code itself at build time, so the
+  artefact is the config file (with explicit `<includes>` regex,
+  `<excludes>` for MCPg's bookkeeping schemas, and `<forcedType>`
+  entries for json / jsonb columns → org.jooq.JSON / .JSONB).
+  `mcpg.ent` emits Ent (Go) Schema struct files — one `.go` per
+  table, with `field.X(...)` calls, `edge.To(...)` for FKs, and
+  `field.Enum().Values()` for enum columns. `mcpg.ecto` emits
+  Ecto (Elixir) schema modules — one `.ex` per table, named after
+  the singularised table (Phoenix convention), with `@primary_key`
+  declared, `field` per column, `belongs_to` for single-column
+  FKs, and `timestamps()` when both `inserted_at` and `updated_at`
+  exist. Configurable `app_module` arg. All four tools are
+  read-only — no new capability or opt-in. 49 new unit tests
+  (helper functions, FK / enum handling, default mapping, tool
+  registration) + 5 new integration tests round-trip each exporter
+  against real PG. **Tool surface 74 → 78.** 772 tests pass / 9
+  skipped; coverage maintained.
+- 2026-05-26 — Documentation pass: refreshed `docs/tools.md` to
+  cover all 78 tools (was at 45 from the v0.3.0 era) with a
+  capability-gate matrix and a tool-index table at the top of the
+  page, plus new sections for data movement (read / write / shell),
+  LISTEN/NOTIFY bridge, staged migrations, audit trail, ORM-DSL
+  exporters (including the four follow-ons), pg_cron, pg_partman.
+  New `docs/tour.md` — a one-page tool-tour organised by what an
+  agent typically wants to do ("what's in this database?", "move
+  data in/out", "react to events", "generate code for my ORM",
+  etc.) for fast discovery without reading the source. Updated
+  `docs/user-guide.md` with post-0.3.0 sections (data movement,
+  LISTEN/NOTIFY, staged migrations, ORM bridges, persistent audit)
+  + extended troubleshooting (new opt-in env vars,
+  CONCURRENTLY-in-migrations error). README capability surface
+  refreshed to list all eight ORM exporters and link the new tour
+  doc. No code changes.
+- 2026-05-26 — Tier-A pgvector tools shipped (Phase 11.1 / 11.2 /
+  11.3 from `docs/feature-shortlist.md`). Three new tools land in
+  `mcpg.textsearch` alongside the existing pgvector family.
+  `hybrid_search` does reciprocal-rank fusion of vector k-NN and
+  full-text ranking — the canonical fix for the "vector misses
+  keywords / FTS misses synonyms" gap in agentic RAG; each match
+  carries per-source rank + the fused score so the agent can see
+  WHY a result surfaced. `vector_range_search` is the
+  threshold-rather-than-top-k counterpart to `vector_search`,
+  useful for de-dup / similarity gating; still ordered by distance
+  and capped at `limit` so a too-loose threshold can't blow up.
+  `recommend_vector_quantization` scans a schema for `vector(N)`
+  columns whose storage could halve by switching to pgvector
+  v0.7+'s `halfvec(N)`; the catalog query joins `pg_type` and
+  filters on `typname IN ('vector','halfvec','sparsevec')` so
+  PG's built-in `bit(N)` doesn't false-positive. 26 new unit tests
+  + 3 new integration tests pin the wiring, including a real-PG
+  smoke test that creates 10001 768-dim rows and verifies the
+  advisor fires. Tool surface 78 → 81. 806 tests pass / 3 skipped.
+- 2026-05-26 — Tier-A composite tools shipped (Phase 5.2 / 8.2 /
+  10.1 from `docs/feature-shortlist.md`). Three agent-UX tools that
+  compose existing primitives so an agent doesn't have to issue
+  4-5 round trips for common queries. New `mcpg.composite` module
+  holds `summarize_table` (columns + constraints + FKs + indexes +
+  storage / vacuum stats + optional sample, all in one) and
+  `why_is_this_slow` (EXPLAIN + plan analysis + active-query +
+  blocking-lock + cache-hit snapshot + categorised suggestions —
+  safe by design because EXPLAIN does NOT execute the query).
+  `mcpg.advisors` grew `find_unused_objects` — scans
+  `pg_stat_user_tables` / `pg_stat_user_indexes` for tables with
+  zero scans + zero writes and user indexes with zero scans
+  (excluding PRIMARY KEY / UNIQUE indexes since PG needs them
+  regardless). Documented as a SIGNAL not a verdict. 25 new unit
+  tests + 4 new integration tests against real PG (creates a real
+  schema with extra unused indexes and verifies the composite
+  shapes). Tool surface 81 → 84. 831 tests pass / 3 skipped.
+- 2026-05-26 — **Tier-A milestone closed** — three picks from
+  `docs/feature-shortlist.md` shipped in one branch. (1.1) HTTP
+  transport bearer-token auth via a new `mcpg.http_runtime` ASGI
+  middleware: when `MCPG_HTTP_AUTH_TOKEN` is set, every request to
+  the streamable-http / sse transport needs `Authorization: Bearer
+  <token>` (constant-time compared via `hmac.compare_digest`).
+  `/metrics`, `/healthz`, `/readyz` are exempted so a Prometheus
+  scraper / load-balancer probe can hit them without holding the MCP
+  token. (2.1) In-process Prometheus metrics — new `mcpg.observability`
+  emits `mcpg_tool_calls_total{tool,status}` and
+  `mcpg_tool_duration_seconds_*` (histogram + sum + count) via a
+  zero-dep text-exposition renderer. `AuditedFastMCP.call_tool`
+  records every invocation; the same payload is exposed as the
+  `get_metrics_exposition` MCP tool for stdio transports. (4.2)
+  TimescaleDB hypertable wrappers — new `mcpg.timescaledb` adds five
+  tools (`list_hypertables`, `list_chunks`, `create_hypertable`,
+  `add_compression_policy`, `add_retention_policy`); every interval
+  / identifier is allowlisted before being inlined into SQL, and
+  each tool degrades to `available=False` when the extension is
+  missing. 33 new unit tests pin the wiring (`test_observability.py`,
+  `test_http_runtime.py`, `test_timescaledb.py`). Tool surface 84 →
+  90.

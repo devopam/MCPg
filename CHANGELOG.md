@@ -6,6 +6,135 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Tier-A milestone closed** — three picks from
+  `docs/feature-shortlist.md` shipped together. Tool surface 84 → 90.
+  - **HTTP transport bearer-token auth** (shortlist 1.1). New
+    `mcpg.http_runtime` module wraps FastMCP's `streamable_http_app()`
+    / `sse_app()` with an ASGI `_BearerAuthMiddleware`. When
+    `MCPG_HTTP_AUTH_TOKEN` is set, every request needs
+    `Authorization: Bearer <token>` (constant-time compared via
+    `hmac.compare_digest`); missing / wrong tokens get a 401 with
+    `WWW-Authenticate: Bearer realm="mcpg"`. `/metrics`, `/healthz`,
+    and `/readyz` are exempt so a Prometheus scraper / load-balancer
+    probe doesn't need the MCP token. New settings field
+    `Settings.http_auth_token`. The `stdio` transport is unaffected
+    (no HTTP surface). The runtime logs a WARNING when an HTTP
+    transport starts without a token.
+  - **Prometheus `/metrics` endpoint + `get_metrics_exposition` tool**
+    (shortlist 2.1). New `mcpg.observability` module records every
+    `call_tool` invocation in an in-process `Metrics` store and
+    renders the standard text-exposition format (v0.0.4) — zero
+    runtime dependency. Three series: `mcpg_tool_calls_total{tool,
+    status}` (counter), `mcpg_tool_duration_seconds_bucket{tool,le}`
+    (histogram with default Prometheus buckets + 30s/60s overflow),
+    `mcpg_tool_duration_seconds_sum/_count{tool}`. `AuditedFastMCP`
+    times every tool call and records (`ok` | `error`) +
+    wall-clock seconds. The new `get_metrics_exposition` MCP tool
+    returns the same payload over the MCP protocol for stdio
+    transports where `/metrics` isn't reachable.
+  - **TimescaleDB hypertable wrappers** (shortlist 4.2). New
+    `mcpg.timescaledb` module adds five tools — two read-only
+    (`list_hypertables`, `list_chunks`) plus three DDL-gated writes
+    (`create_hypertable`, `add_compression_policy`,
+    `add_retention_policy`). Every interval / identifier is
+    allowlist-validated before being inlined into SQL (TimescaleDB's
+    management functions take interval expressions as positional
+    args, not bound params). Each tool degrades to
+    `available=False` when the `timescaledb` extension is missing —
+    same pattern as the existing pg_trgm / pgvector / postgis
+    integrations.
+
+- Three new agent-UX-focused tools (more Tier-A picks). Tool surface
+  81 → 84. All read-only.
+  - **`summarize_table`** — one-stop snapshot of a table: columns,
+    primary key, foreign keys, every other constraint, indexes,
+    storage / row-count / last-vacuum/analyze stats, and an optional
+    short row sample. Replaces what would otherwise be 4-5
+    individual tool calls. Lives in new module `mcpg.composite`.
+  - **`why_is_this_slow`** — one-call diagnosis: runs
+    `EXPLAIN (FORMAT JSON)` (does NOT execute the query), walks the
+    plan tree, snapshots concurrent active queries and blocking
+    lock pairs, reads the cluster-wide cache hit ratio, and
+    produces categorised suggestions (plan / contention / cache /
+    maintenance). Safe to run on a statement the agent doesn't
+    want to materialise yet. Lives in `mcpg.composite`.
+  - **`find_unused_objects`** — scans `pg_stat_user_tables` and
+    `pg_stat_user_indexes` for tables/indexes with zero scans since
+    stats were last reset. Tables also need zero writes (the row
+    never moved) to qualify; indexes backing PRIMARY KEY / UNIQUE
+    constraints are excluded since PG needs them for enforcement.
+    Returns context (scan + write counts, size, definition) so the
+    agent can decide whether the object is safe to drop. Documented
+    as a SIGNAL not a verdict — recent stats resets produce false
+    positives. Lives in `mcpg.advisors` alongside `run_advisors`.
+
+- Three new pgvector tools (Tier-A picks from the feature shortlist).
+  Tool surface 78 → 81. All read-only; all extend `mcpg.textsearch`
+  alongside the existing `vector_search` / `recommend_vector_index`
+  family.
+  - **`hybrid_search`** — fuses vector and full-text ranking via
+    reciprocal-rank fusion (RRF). Pulls `candidate_pool` candidates
+    from each source (vector k-NN on `vector_column`, FTS via
+    `websearch_to_tsquery` on `text_column`), then merges them with
+    `score = Σ 1/(rrf_k + rank)`. Each match carries `vector_rank`,
+    `fts_rank`, the fused `rrf_score`, and the original distance +
+    ts_rank values. Tunables: `metric`, `text_config`,
+    `candidate_pool` (default 50), `rrf_k` (default 60), `limit`.
+    Closes the biggest unmet need in agentic RAG: pure vector
+    misses keyword/identifier matches, pure FTS misses semantic
+    synonyms.
+  - **`vector_range_search`** — finds every row within
+    `max_distance` of a query vector (not top-k). Useful for
+    de-duplication, similarity gating, clustering pre-passes.
+    Results still ordered by distance and capped at `limit` so a
+    too-loose threshold cannot pull the whole table.
+  - **`recommend_vector_quantization`** — scans a schema for
+    `vector(N)` columns whose storage could shrink by switching to
+    pgvector v0.7+'s `halfvec(N)` (16-bit float). Returns
+    per-column current vs suggested bytes, the savings ratio, and a
+    rationale. Skips columns that are already non-`vector` and
+    small tables where the absolute saving wouldn't justify the
+    migration. Catalog query uses `pg_attribute.atttypmod` + a
+    `t.typname IN ('vector','halfvec','sparsevec')` filter so PG's
+    built-in `bit(N)` doesn't false-positive.
+
+- Four more catalog → DSL exporters under the same Batch G umbrella.
+  Tool surface 74 → 78. All read-only, no new capability or env-var
+  gates. Coverage matches the existing exporters (Prisma / Drizzle /
+  SQLAlchemy 2.0 / sqlc): base tables, columns, primary keys, single-
+  column intra-schema foreign keys, enums. Cross-schema FKs and
+  composite FKs are documented v1 gaps.
+  - `generate_diesel_schema` — emits a Diesel ORM (Rust) `schema.rs`
+    with one `table!` macro per table, `Nullable<T>` wrappers for
+    nullable columns, `joinable!` lines for intra-schema FKs, and an
+    `allow_tables_to_appear_in_same_query!` macro so multi-table
+    joins type-check. Enum types are emitted as Text-backed wrapper
+    enums in a `pg_enum` module so the output works without
+    `diesel_derive_enum`.
+  - `generate_jooq_config` — emits a `jooq-codegen` configuration
+    XML pointing at the database. Unlike the other exporters, jOOQ
+    generates Java code itself from the live database at build
+    time; the artefact here is the XML the user feeds to
+    `mvn jooq-codegen:generate`. Includes an explicit `<includes>`
+    regex naming every base table, an `<excludes>` covering MCPg's
+    bookkeeping schemas, and a `<forcedType>` for every json / jsonb
+    column so they map to `org.jooq.JSON` / `org.jooq.JSONB`.
+  - `generate_ent_schemas` — emits Ent (Go) Schema struct files,
+    one `.go` per table. Each struct lists `field.X(...)` calls,
+    `edge.To(...)` lines for single-column FKs, and
+    `field.Enum().Values()` for enum-typed columns. Returns a
+    `{filename: source}` dict.
+  - `generate_ecto_schemas` — emits Ecto (Elixir) schema modules,
+    one `.ex` per table named after the singularised table
+    (matching the Phoenix `lib/my_app/<singular>.ex` convention).
+    Each module uses `use Ecto.Schema`, declares `@primary_key`,
+    `field` for each column, `belongs_to` for single-column FKs,
+    and `timestamps()` when both `inserted_at` + `updated_at`
+    exist. The Elixir top-level module is configurable via the
+    `app_module` arg (default `MyApp`).
+
 ## [0.4.0] - 2026-05-26
 
 Twenty-nine new MCP tools, closing **Batches D / E / F / G** of the

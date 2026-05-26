@@ -96,6 +96,136 @@ async def test_vector_search_against_real_pgvector(connected_database: Database)
         await driver.execute_query("DROP TABLE IF EXISTS mcpg_vsearch_it", force_readonly=False)
 
 
+async def test_vector_range_search_returns_only_rows_within_threshold(connected_database: Database) -> None:
+    driver = connected_database.driver()
+    available = {extension.name for extension in await list_available_extensions(driver)}
+    if "vector" not in available:
+        pytest.skip("pgvector is not available on this PostgreSQL server")
+    await enable_extension(driver, "vector")
+    await driver.execute_query("DROP TABLE IF EXISTS mcpg_vrange_it", force_readonly=False)
+    await driver.execute_query("CREATE TABLE mcpg_vrange_it (id integer, embedding vector(3))", force_readonly=False)
+    await driver.execute_query(
+        "INSERT INTO mcpg_vrange_it (id, embedding) VALUES "
+        "(1, '[1,0,0]'), (2, '[0.9,0.1,0]'), (3, '[0,1,0]'), (4, '[0,0,1]')",
+        force_readonly=False,
+    )
+    try:
+        from mcpg.textsearch import vector_range_search
+
+        # L2 distance from [1,0,0]: row 1 = 0.0, row 2 ≈ 0.14, row 3 ≈ 1.41, row 4 ≈ 1.41.
+        # max_distance=0.5 should keep only the first two.
+        result = await vector_range_search(
+            driver, "public", "mcpg_vrange_it", "embedding", [1.0, 0.0, 0.0], max_distance=0.5
+        )
+
+        assert result.available is True
+        ids = {match.row["id"] for match in result.matches}
+        assert ids == {1, 2}
+        # Distances are ordered ascending.
+        distances = [m.distance for m in result.matches]
+        assert distances == sorted(distances)
+    finally:
+        await driver.execute_query("DROP TABLE IF EXISTS mcpg_vrange_it", force_readonly=False)
+
+
+async def test_hybrid_search_fuses_vector_and_full_text_results_against_real_pg(
+    connected_database: Database,
+) -> None:
+    driver = connected_database.driver()
+    available = {extension.name for extension in await list_available_extensions(driver)}
+    if "vector" not in available:
+        pytest.skip("pgvector is not available on this PostgreSQL server")
+    await enable_extension(driver, "vector")
+    await driver.execute_query("DROP TABLE IF EXISTS mcpg_hybrid_it", force_readonly=False)
+    await driver.execute_query(
+        "CREATE TABLE mcpg_hybrid_it (id serial PRIMARY KEY, body text NOT NULL, embedding vector(3))",
+        force_readonly=False,
+    )
+    await driver.execute_query(
+        "INSERT INTO mcpg_hybrid_it (body, embedding) VALUES "
+        "('apple pie recipe', '[1,0,0]'),"
+        "('banana bread', '[0,1,0]'),"
+        "('apple banana smoothie', '[0.5,0.5,0]'),"
+        "('vintage car', '[0,0,1]')",
+        force_readonly=False,
+    )
+    try:
+        from mcpg.textsearch import hybrid_search
+
+        # Query vector points at "apple pie" row 1; FTS query "apple"
+        # matches rows 1 and 3 (anything mentioning apple). The fused
+        # ranking should rank row 1 first (appears in both sources at
+        # rank 1), then row 3.
+        result = await hybrid_search(
+            driver,
+            "public",
+            "mcpg_hybrid_it",
+            "embedding",
+            "body",
+            [1.0, 0.0, 0.0],
+            "apple",
+        )
+
+        assert result.available is True
+        # All four candidates surface in the merged list (each appears
+        # in at least the vector pool).
+        ids = [match.row["id"] for match in result.matches]
+        assert 1 in ids and 3 in ids
+        # The top-ranked result is the one that appears in BOTH sources.
+        top = result.matches[0]
+        assert top.row["id"] == 1
+        assert top.vector_rank == 1 and top.fts_rank == 1
+        # rrf_score is descending across the list.
+        scores = [m.rrf_score for m in result.matches]
+        assert scores == sorted(scores, reverse=True)
+    finally:
+        await driver.execute_query("DROP TABLE IF EXISTS mcpg_hybrid_it", force_readonly=False)
+
+
+async def test_recommend_vector_quantization_picks_up_real_pgvector_columns(
+    connected_database: Database,
+) -> None:
+    driver = connected_database.driver()
+    available = {extension.name for extension in await list_available_extensions(driver)}
+    if "vector" not in available:
+        pytest.skip("pgvector is not available on this PostgreSQL server")
+    await enable_extension(driver, "vector")
+    await driver.execute_query("DROP SCHEMA IF EXISTS mcpg_quant_it CASCADE", force_readonly=False)
+    await driver.execute_query("CREATE SCHEMA mcpg_quant_it", force_readonly=False)
+    # 768-dim vectors, just below the row threshold — should NOT recommend.
+    await driver.execute_query(
+        "CREATE TABLE mcpg_quant_it.small (id serial PRIMARY KEY, emb vector(768))",
+        force_readonly=False,
+    )
+    # 768-dim with 10001 rows — clears the dimension>=768 + row_count>=10000 path.
+    await driver.execute_query(
+        "CREATE TABLE mcpg_quant_it.big (id serial PRIMARY KEY, emb vector(768))",
+        force_readonly=False,
+    )
+    await driver.execute_query(
+        "INSERT INTO mcpg_quant_it.big (emb) SELECT "
+        "('[' || array_to_string(array(SELECT random() FROM generate_series(1, 768)), ',') || ']')::vector "
+        "FROM generate_series(1, 10001)",
+        force_readonly=False,
+    )
+    try:
+        from mcpg.textsearch import recommend_vector_quantization
+
+        recs = await recommend_vector_quantization(driver, "mcpg_quant_it")
+        # Only the big table qualifies.
+        tables = {r.table for r in recs}
+        assert "big" in tables
+        assert "small" not in tables
+        big = next(r for r in recs if r.table == "big")
+        assert big.dimension == 768
+        assert big.current_type == "vector"
+        assert big.suggested_type == "halfvec"
+        # halfvec halves the per-element bytes — savings ratio ~0.5.
+        assert 0.49 < big.savings_ratio < 0.51
+    finally:
+        await driver.execute_query("DROP SCHEMA IF EXISTS mcpg_quant_it CASCADE", force_readonly=False)
+
+
 async def test_geo_search_against_real_postgis(connected_database: Database) -> None:
     driver = connected_database.driver()
     available = {extension.name for extension in await list_available_extensions(driver)}

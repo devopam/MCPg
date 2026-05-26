@@ -17,14 +17,19 @@ from mcpg import (
     __version__,
     advisors,
     audit_trail,
+    composite,
     cron,
     data_movement,
     diagrams,
+    diesel,
     drizzle,
+    ecto,
+    ent,
     extensions,
     health,
     indexing,
     introspection,
+    jooq,
     liveops,
     maintenance,
     migrations,
@@ -35,6 +40,7 @@ from mcpg import (
     sqlalchemy_export,
     sqlc,
     textsearch,
+    timescaledb,
     vector_tuning,
     workload,
     write,
@@ -80,6 +86,23 @@ def _register_server_info(server: FastMCP[AppContext]) -> None:
     )
     async def get_server_info(ctx: _Ctx) -> dict[str, Any]:
         return asdict(build_server_info(ctx.request_context.lifespan_context))
+
+    @server.tool(
+        name="get_metrics_exposition",
+        description=(
+            "Return the in-process Prometheus-format metrics for this MCPg "
+            "server. Three series: mcpg_tool_calls_total (counter by tool / "
+            "status), mcpg_tool_duration_seconds (histogram by tool with "
+            "sum and count). Useful when the HTTP transport's /metrics "
+            "endpoint is unreachable (e.g. running over stdio) or to fetch "
+            "via the MCP protocol itself."
+        ),
+    )
+    async def get_metrics_exposition(ctx: _Ctx) -> str:
+        del ctx  # context unused; tool reads from process-wide singleton
+        from mcpg.observability import render_prometheus
+
+        return render_prometheus()
 
 
 def _register_introspection(server: FastMCP[AppContext]) -> None:
@@ -388,6 +411,78 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
         return await drizzle.generate_drizzle_schema(_driver(ctx), schema)
 
     @server.tool(
+        name="generate_diesel_schema",
+        description=(
+            "Read a PostgreSQL schema and emit a Diesel ORM (Rust) schema.rs. "
+            "One `table!` macro per table with column SQL types, `Nullable<T>` "
+            "for nullable columns, plus `joinable!` declarations for single-"
+            "column intra-schema FKs and an `allow_tables_to_appear_in_same_query!` "
+            "macro so multi-table joins type-check. Enum types are emitted as "
+            "Text-backed wrapper enums in a `pg_enum` module so the output "
+            "works without `diesel_derive_enum`. Composite FKs are a "
+            "documented v1 gap."
+        ),
+    )
+    async def generate_diesel_schema(ctx: _Ctx, schema: str) -> str:
+        return await diesel.generate_diesel_schema(_driver(ctx), schema)
+
+    @server.tool(
+        name="generate_jooq_config",
+        description=(
+            "Read a PostgreSQL schema and emit a jooq-codegen configuration XML "
+            "pointing at it. Unlike the other exporters, jOOQ generates Java "
+            "code itself from a live database — the artefact here is the "
+            "configuration file the user feeds to mvn jooq-codegen:generate "
+            "(or the Gradle task). The XML lists every base table explicitly "
+            "via an <includes> regex, excludes MCPg's bookkeeping tables, and "
+            "emits a <forcedType> for every json / jsonb column so they map "
+            "to org.jooq.JSON / org.jooq.JSONB out of the box. Default Java "
+            "package is com.example.jooq; override via the target_package arg."
+        ),
+    )
+    async def generate_jooq_config(
+        ctx: _Ctx,
+        schema: str,
+        target_package: str = "com.example.jooq",
+        target_directory: str = "src/main/java",
+    ) -> str:
+        return await jooq.generate_jooq_config(
+            _driver(ctx),
+            schema,
+            target_package=target_package,
+            target_directory=target_directory,
+        )
+
+    @server.tool(
+        name="generate_ent_schemas",
+        description=(
+            "Read a PostgreSQL schema and emit Ent (Go) Schema struct files — "
+            "one .go file per table. Each file exports a struct that lists "
+            "field.X(...) calls for every column, edge.To(...) for single-"
+            "column intra-schema FKs, and field.Enum().Values() for enum-typed "
+            "columns. Composite FKs are a documented v1 gap. Returns a JSON "
+            "object {filename: source} so the agent can write each file."
+        ),
+    )
+    async def generate_ent_schemas(ctx: _Ctx, schema: str) -> dict[str, str]:
+        return await ent.generate_ent_schemas(_driver(ctx), schema)
+
+    @server.tool(
+        name="generate_ecto_schemas",
+        description=(
+            "Read a PostgreSQL schema and emit Ecto (Elixir) schema modules — "
+            "one .ex file per table, named after the singularised table. Each "
+            "module uses Ecto.Schema with field declarations, belongs_to for "
+            "single-column intra-schema FKs, and timestamps() when both "
+            "inserted_at and updated_at exist. The Elixir top-level module is "
+            "configurable via app_module (default MyApp). Returns a JSON "
+            "object {filename: source} so the agent can write each file."
+        ),
+    )
+    async def generate_ecto_schemas(ctx: _Ctx, schema: str, app_module: str = "MyApp") -> dict[str, str]:
+        return await ecto.generate_ecto_schemas(_driver(ctx), schema, app_module=app_module)
+
+    @server.tool(
         name="generate_sqlalchemy_models",
         description=(
             "Read a PostgreSQL schema and emit a SQLAlchemy 2.0 declarative "
@@ -431,6 +526,55 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     async def run_advisors(ctx: _Ctx, schema: str) -> dict[str, Any]:
         report = await advisors.run_advisors(_driver(ctx), schema)
         return asdict(report)
+
+    @server.tool(
+        name="find_unused_objects",
+        description=(
+            "Find tables and indexes with zero scans since pg_stat was last "
+            "reset — a strong signal of dead code, but NOT a verdict. Tables "
+            "report seq+idx scan counts, write counts, and estimated row "
+            "count; indexes report size and definition. Excludes PRIMARY KEY "
+            "and UNIQUE indexes (PG needs those regardless of scans). Run "
+            "this after the database has been hot for a meaningful period — "
+            "fresh stats produce false positives."
+        ),
+    )
+    async def find_unused_objects(ctx: _Ctx, schema: str) -> dict[str, Any]:
+        report = await advisors.find_unused_objects(_driver(ctx), schema)
+        return asdict(report)
+
+
+def _register_composite(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="summarize_table",
+        description=(
+            "Return a one-stop snapshot of a table: columns, primary key, "
+            "foreign keys, every other constraint, indexes, storage + "
+            "row-count + last-vacuum/analyze stats, and (optionally) a "
+            "short sample of rows. Replaces what would otherwise be 4-5 "
+            "individual tool calls. Set sample_rows=0 on wide / jsonb-"
+            "heavy tables where the sample isn't useful."
+        ),
+    )
+    async def summarize_table(ctx: _Ctx, schema: str, table: str, sample_rows: int = 5) -> dict[str, Any]:
+        result = await composite.summarize_table(_driver(ctx), schema, table, sample_rows=sample_rows)
+        return asdict(result)
+
+    @server.tool(
+        name="why_is_this_slow",
+        description=(
+            "Diagnose why a SQL query might be slow, in one call. Runs "
+            "EXPLAIN (FORMAT JSON) — does NOT execute the query — walks the "
+            "plan tree, snapshots concurrent active queries + blocking "
+            "lock pairs, reads the cluster-wide cache hit ratio, and "
+            "produces categorised suggestions (plan / contention / cache / "
+            "maintenance). Read-only; safe to run on a statement the agent "
+            "doesn't want to materialise yet."
+        ),
+    )
+    async def why_is_this_slow(ctx: _Ctx, sql: str) -> dict[str, Any]:
+        result = await composite.why_is_this_slow(_driver(ctx), sql)
+        return asdict(result)
 
 
 def _register_data_movement(server: FastMCP[AppContext]) -> None:
@@ -606,6 +750,90 @@ def _register_migrations(server: FastMCP[AppContext]) -> None:
             }
             for r in records
         ]
+
+
+def _register_timescaledb_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="list_hypertables",
+        description=(
+            "List every TimescaleDB hypertable visible to the current "
+            "role, with chunk count, compression flag, and total size. "
+            "Reports available=false when the timescaledb extension is "
+            "not installed."
+        ),
+    )
+    async def list_hypertables(ctx: _Ctx) -> dict[str, Any]:
+        result = await timescaledb.list_hypertables(_driver(ctx))
+        return asdict(result)
+
+    @server.tool(
+        name="list_chunks",
+        description=(
+            "List the chunks of a TimescaleDB hypertable with each chunk's "
+            "range_start / range_end and whether it has been compressed. "
+            "Empty list when the table is not a hypertable."
+        ),
+    )
+    async def list_chunks(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
+        result = await timescaledb.list_chunks(_driver(ctx), schema, table)
+        return asdict(result)
+
+
+def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="create_hypertable",
+        description=(
+            "Convert an existing table into a TimescaleDB hypertable on "
+            "`time_column`. Validates schema / table / column names against "
+            "the plain-identifier allowlist and the chunk interval against "
+            "a TimescaleDB-style pattern (e.g. '7 days', '1 hour'). "
+            "Requires unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def create_hypertable(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        time_column: str,
+        chunk_time_interval: str = "7 days",
+        if_not_exists: bool = True,
+    ) -> dict[str, Any]:
+        result = await timescaledb.create_hypertable(
+            _driver(ctx),
+            schema,
+            table,
+            time_column,
+            chunk_time_interval=chunk_time_interval,
+            if_not_exists=if_not_exists,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="add_compression_policy",
+        description=(
+            "Enable TimescaleDB column-store compression on a hypertable and "
+            "schedule a policy that compresses chunks older than "
+            "`compress_after` (e.g. '7 days'). Requires unrestricted mode "
+            "+ MCPG_ALLOW_DDL."
+        ),
+    )
+    async def add_compression_policy(
+        ctx: _Ctx, schema: str, table: str, compress_after: str = "7 days"
+    ) -> dict[str, Any]:
+        result = await timescaledb.add_compression_policy(_driver(ctx), schema, table, compress_after=compress_after)
+        return asdict(result)
+
+    @server.tool(
+        name="add_retention_policy",
+        description=(
+            "Schedule a TimescaleDB retention policy that drops hypertable "
+            "chunks older than `drop_after` (e.g. '30 days'). Requires "
+            "unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def add_retention_policy(ctx: _Ctx, schema: str, table: str, drop_after: str = "30 days") -> dict[str, Any]:
+        result = await timescaledb.add_retention_policy(_driver(ctx), schema, table, drop_after=drop_after)
+        return asdict(result)
 
 
 def _register_listen(server: FastMCP[AppContext]) -> None:
@@ -902,6 +1130,97 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
     @server.tool(
+        name="vector_range_search",
+        description=(
+            "Return every row within `max_distance` of a query vector (a "
+            "threshold-based query rather than top-k). Useful for de-dup, "
+            "similarity gating, and clustering pre-passes. Still ordered by "
+            "distance and capped at `limit` to avoid pulling huge result "
+            "sets. Reports available=false if the pgvector extension is "
+            "not installed."
+        ),
+    )
+    async def vector_range_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        query_vector: list[float],
+        max_distance: float,
+        metric: str = textsearch.DEFAULT_VECTOR_METRIC,
+        limit: int = textsearch.DEFAULT_LIMIT,
+    ) -> dict[str, Any]:
+        result = await textsearch.vector_range_search(
+            _driver(ctx),
+            schema,
+            table,
+            column,
+            query_vector,
+            max_distance,
+            metric=metric,
+            limit=limit,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="hybrid_search",
+        description=(
+            "Combine vector and full-text ranking via reciprocal-rank fusion "
+            "(RRF) — pulls candidates from each source, then fuses them so "
+            "rows ranked highly in EITHER source surface. Closes the gap "
+            "between pure vector (misses keyword/identifier matches) and "
+            "pure full-text (misses semantic synonyms). Parameters: "
+            "vector_column, text_column, query_vector, text_query, plus "
+            "metric / text_config / limit / candidate_pool / rrf_k tunables. "
+            "Each match carries vector_rank, fts_rank, the fused rrf_score, "
+            "and (when present) the original distance + ts_rank values."
+        ),
+    )
+    async def hybrid_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        vector_column: str,
+        text_column: str,
+        query_vector: list[float],
+        text_query: str,
+        metric: str = textsearch.DEFAULT_VECTOR_METRIC,
+        text_config: str = textsearch.DEFAULT_TEXT_CONFIG,
+        limit: int = textsearch.DEFAULT_LIMIT,
+        candidate_pool: int = 50,
+    ) -> dict[str, Any]:
+        result = await textsearch.hybrid_search(
+            _driver(ctx),
+            schema,
+            table,
+            vector_column,
+            text_column,
+            query_vector,
+            text_query,
+            metric=metric,
+            text_config=text_config,
+            limit=limit,
+            candidate_pool=candidate_pool,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="recommend_vector_quantization",
+        description=(
+            "Scan a schema for `vector(N)` columns whose storage could be "
+            "halved by switching to pgvector v0.7+'s `halfvec(N)` type "
+            "(16-bit float). Returns one recommendation per qualifying "
+            "column with current vs suggested bytes, the savings ratio, "
+            "and a one-line rationale. Skips columns that are already "
+            "non-`vector` and small tables where the absolute saving "
+            "wouldn't justify the migration."
+        ),
+    )
+    async def recommend_vector_quantization(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        recommendations = await textsearch.recommend_vector_quantization(_driver(ctx), schema)
+        return [asdict(rec) for rec in recommendations]
+
+    @server.tool(
         name="geo_search",
         description=(
             "Find the rows nearest to a lon/lat point by PostGIS distance. "
@@ -1139,11 +1458,13 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_vector_tuning(server)
         _register_prisma(server)
         _register_advisors(server)
+        _register_composite(server)
         _register_data_movement(server)
         _register_audit_trail(server)
         _register_query(server)
         _register_health(server)
         _register_liveops(server)
+        _register_timescaledb_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -1153,6 +1474,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)
+        _register_timescaledb_writes(server)
     if is_permitted(settings.access_mode, Capability.MIGRATE) and settings.allow_ddl:
         _register_migrations(server)
     if is_permitted(settings.access_mode, Capability.SHELL) and settings.allow_shell:
