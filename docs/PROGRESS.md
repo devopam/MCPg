@@ -6,9 +6,9 @@
 
 ## Current state
 
-- **Phase:** post-v0.4.0 — additional Batch G exporters (Diesel /
-  jOOQ / Ent / Ecto) under the schema→DSL umbrella. Tool surface
-  74 → 78.
+- **Phase:** post-v0.4.0 — Batch G follow-on exporters shipped
+  (Diesel / jOOQ / Ent / Ecto) + documentation pass (tool tour,
+  tools.md refresh, user-guide post-0.3.0 sections).
 - **Last updated:** 2026-05-26
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 - **Tool count:** 78
@@ -870,3 +870,19 @@
   registration) + 5 new integration tests round-trip each exporter
   against real PG. **Tool surface 74 → 78.** 772 tests pass / 9
   skipped; coverage maintained.
+- 2026-05-26 — Documentation pass: refreshed `docs/tools.md` to
+  cover all 78 tools (was at 45 from the v0.3.0 era) with a
+  capability-gate matrix and a tool-index table at the top of the
+  page, plus new sections for data movement (read / write / shell),
+  LISTEN/NOTIFY bridge, staged migrations, audit trail, ORM-DSL
+  exporters (including the four follow-ons), pg_cron, pg_partman.
+  New `docs/tour.md` — a one-page tool-tour organised by what an
+  agent typically wants to do ("what's in this database?", "move
+  data in/out", "react to events", "generate code for my ORM",
+  etc.) for fast discovery without reading the source. Updated
+  `docs/user-guide.md` with post-0.3.0 sections (data movement,
+  LISTEN/NOTIFY, staged migrations, ORM bridges, persistent audit)
+  + extended troubleshooting (new opt-in env vars,
+  CONCURRENTLY-in-migrations error). README capability surface
+  refreshed to list all eight ORM exporters and link the new tour
+  doc. No code changes.

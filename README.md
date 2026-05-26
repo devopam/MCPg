@@ -4,7 +4,7 @@ A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
 server for **PostgreSQL** — letting AI agents safely inspect, query, operate,
 and tune a Postgres database.
 
-> **Status:** v0.4.0 released. **74 MCP tools** covering deep catalog
+> **Status:** v0.4.0 released; trunk at **78 MCP tools**. Covers deep catalog
 > introspection, index intelligence, full-text/trigram/vector/geospatial
 > search, live ops, gated maintenance, Mermaid ER diagrams, structural
 > schema diff, **subprocess-driven data movement (pg_dump/pg_restore/psql),
@@ -70,14 +70,18 @@ See the [Installation Guide](docs/installation.md) and
   schema into a shadow, applies the candidate SQL there, and surfaces
   the structural diff for review; `complete_migration` /
   `cancel_migration` / `list_pending_migrations` round out the workflow.
-- **ORM bridges** — `generate_prisma_schema`, `generate_drizzle_schema`,
-  `generate_sqlalchemy_models`, `generate_sqlc_schema` emit ready-to-use
-  schemas / models from a live PG catalog.
+- **ORM bridges** — eight read-only catalog → DSL exporters:
+  `generate_prisma_schema`, `generate_drizzle_schema`,
+  `generate_sqlalchemy_models`, `generate_sqlc_schema`,
+  `generate_diesel_schema`, `generate_jooq_config`,
+  `generate_ent_schemas`, `generate_ecto_schemas` cover the major
+  Postgres-aware ORM ecosystems.
 
 ## Documentation
 
 - [`docs/installation.md`](docs/installation.md) — Installation Guide
 - [`docs/user-guide.md`](docs/user-guide.md) — User Guide
+- [`docs/tour.md`](docs/tour.md) — compact tool tour (start here for discovery)
 - [`docs/tools.md`](docs/tools.md) — reference for every MCP tool
 - [`docs/architecture.md`](docs/architecture.md) — Architecture Document
 - [`docs/security.md`](docs/security.md) — threat model and security controls
