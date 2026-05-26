@@ -112,6 +112,39 @@ Effort scale (rough, single-session yardstick):
 
 ---
 
+## 11. pgvector extensions
+
+Building on what's already shipped (`vector_search`,
+`recommend_vector_index`, `analyze_vector_search`,
+`analyze_vector_table`, `describe_table` vector-dimension awareness,
+HNSW/IVFFlat detection in `list_indexes`):
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 11.1 | **`hybrid_search`** — combine vector + full-text scoring via reciprocal-rank fusion | M | Very High | Single biggest unmet need in agentic retrieval. Pairs the existing `vector_search` and `full_text_search` into one ranked result set. |
+| 11.2 | **`range_search`** — find rows within a distance threshold (not top-k) | S | High | Different query shape than k-NN; common for de-dup / similarity gating. |
+| 11.3 | **`recommend_vector_quantization`** — flag tables where `halfvec` (16-bit) or `bit` quantization would cut storage 2-32× | S-M | High | pgvector v0.7+. Compares dim × row-count × bytes vs working-set memory; concrete cost win. |
+| 11.4 | **HNSW recall/speed tuner** (`analyze_hnsw_recall`) — sweep `ef_search` against a ground-truth set, return recall@k curves | M | High | Lets agents pick the right speed/quality knob without manual tuning. |
+| 11.5 | **`mmr_search`** — Maximal Marginal Relevance re-ranking on top of vector_search for result diversity | S-M | Medium-High | Quality of agent RAG flows improves materially. |
+| 11.6 | **`cluster_vectors`** — k-means cluster a vector column, return centroids + per-row labels | M | Medium-High | Exploration / segmentation tool; uses ``cube_distance`` or in-memory clustering. |
+| 11.7 | **`detect_vector_outliers`** — flag rows whose embedding is far from any cluster centroid | S-M | Medium-High | Data quality + content moderation. |
+| 11.8 | **`monitor_embedding_drift`** — compare distributional stats of vectors over time windows | M | Medium | Ops / model-quality monitoring. |
+| 11.9 | **`import_vectors`** — bulk-load embeddings from JSON/CSV with `vector(N)` column-type validation | S | Medium | Sibling of `import_csv` specialised for vector columns. |
+| 11.10 | **`cross_table_similarity`** — given a row in table A, find the k most similar rows in table B (different embedding source, same dim) | S | Medium | Useful for entity resolution / linking across tables. |
+| 11.11 | **`analyze_distance_metric`** — heuristically recommend cosine vs L2 vs inner-product based on vector magnitude distribution | S | Medium | Concrete advice when the user hasn't decided yet. |
+| 11.12 | **`monitor_index_build`** — surface HNSW / IVFFlat build progress for long-running index creations | S | Medium | Lives next to `list_active_queries`; useful for big-table index work. |
+| 11.13 | **`migrate_vector_to_halfvec`** — generate the DDL to convert a `vector(N)` column to `halfvec(N)` (or `bit`) safely | S-M | Medium | Pairs with 11.3. Uses the existing migration shadow workflow for the structural review. |
+
+**Suggested pgvector picks for Tier A:**
+- **11.1 `hybrid_search`** (Very High value, M effort) — biggest agentic-RAG win
+- **11.3 `recommend_vector_quantization`** (High value, S-M effort) — concrete cost savings
+- **11.2 `range_search`** (High value, S effort) — quick win that fills a real gap
+
+These three would bring the pgvector tool surface from 4 → 7 and
+cover the most common gaps agentic-RAG workflows hit.
+
+---
+
 ## Suggested priority tiers
 
 These are my recommendations to bucket the list — feel free to override.
@@ -123,6 +156,9 @@ These are my recommendations to bucket the list — feel free to override.
 - 8.2 Unused-table / column finder (S, High)
 - 10.1 `why_is_this_slow` composite tool (M, Very High)
 - 4.2 TimescaleDB wrappers (M, High)
+- **11.1 Hybrid (vector + FTS) search** (M, Very High)
+- **11.3 Vector quantization advisor** (S-M, High)
+- **11.2 Vector range search** (S, High)
 
 **Tier B — strong UX or coverage wins:**
 - 1.4 Per-request `SET ROLE` multi-tenancy (M, High)
