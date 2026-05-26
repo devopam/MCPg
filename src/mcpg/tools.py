@@ -40,9 +40,11 @@ from mcpg import (
     partman,
     prisma,
     query,
+    rls,
     schema_diff,
     sqlalchemy_export,
     sqlc,
+    test_data,
     textsearch,
     timescaledb,
     vector_tuning,
@@ -655,6 +657,43 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     async def lint_naming_conventions(ctx: _Ctx, schema: str) -> dict[str, Any]:
         report = await naming.lint_naming_conventions(_driver(ctx), schema)
         return asdict(report)
+
+    @server.tool(
+        name="test_rls_for_role",
+        description=(
+            "Test what an RLS-bound role can read from a table. Reports "
+            "whether RLS is enabled on the table, lists the policies "
+            "that apply to the given role, counts the rows the role "
+            "can read, and returns up to sample_size rows so the agent "
+            "can inspect them. Runs as the target role inside a "
+            "READ ONLY transaction — no writes can leak. Pure read."
+        ),
+    )
+    async def test_rls_for_role(
+        ctx: _Ctx, schema: str, table: str, role: str, sample_size: int = rls.DEFAULT_RLS_SAMPLE_SIZE
+    ) -> dict[str, Any]:
+        result = await rls.test_rls_for_role(_driver(ctx), schema, table, role, sample_size=sample_size)
+        return asdict(result)
+
+    @server.tool(
+        name="generate_test_data",
+        description=(
+            "Generate synthetic INSERT statements for a table — typed "
+            "values respecting column type, NOT NULL, and DEFAULT. "
+            "Returns the SQL as strings; does NOT execute it. Useful "
+            "for seeding dev / staging environments. The generator is "
+            "deterministic when a seed is provided. Foreign keys are "
+            "NOT resolved — the caller must pre-seed referenced rows "
+            "or drop the FK before applying. Hard cap of 10000 rows "
+            "per call. Pure read (the actual writes go through "
+            "run_write under unrestricted mode)."
+        ),
+    )
+    async def generate_test_data(
+        ctx: _Ctx, schema: str, table: str, rows: int = test_data.DEFAULT_ROW_COUNT, seed: int | None = None
+    ) -> dict[str, Any]:
+        dataset = await test_data.generate_test_data(_driver(ctx), schema, table, rows=rows, seed=seed)
+        return asdict(dataset)
 
 
 def _register_composite(server: FastMCP[AppContext]) -> None:
