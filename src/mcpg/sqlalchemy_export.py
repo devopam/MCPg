@@ -228,10 +228,84 @@ def _render_column(
     )
 
 
+_PY_KEYWORDS = frozenset(
+    {
+        "False",
+        "None",
+        "True",
+        "and",
+        "as",
+        "assert",
+        "async",
+        "await",
+        "break",
+        "class",
+        "continue",
+        "def",
+        "del",
+        "elif",
+        "else",
+        "except",
+        "finally",
+        "for",
+        "from",
+        "global",
+        "if",
+        "import",
+        "in",
+        "is",
+        "lambda",
+        "nonlocal",
+        "not",
+        "or",
+        "pass",
+        "raise",
+        "return",
+        "try",
+        "while",
+        "with",
+        "yield",
+    }
+)
+_IDENT_SAFE = re.compile(r"[^A-Za-z0-9_]")
+
+
+def _safe_member_name(label: str) -> str:
+    """Coerce a PG enum label into a valid Python identifier.
+
+    Non-identifier chars collapse to underscore; a digit-leading label
+    gets an underscore prefix; Python keywords get a trailing underscore.
+    The original label remains the enum value — only the Python
+    attribute name is sanitised, so user code keeps round-tripping the
+    real label to PG.
+    """
+    member = _IDENT_SAFE.sub("_", label).strip("_") or "value"
+    if member[0].isdigit():
+        member = "_" + member
+    if member in _PY_KEYWORDS:
+        member = member + "_"
+    return member
+
+
 def _render_enum_class(name: str, values: list[str]) -> str:
+    """Emit a Python ``enum.Enum`` whose values are the PG labels verbatim.
+
+    Uses the class-body form when every label is a valid Python
+    identifier (the common case), and falls back to the functional
+    ``Status = enum.Enum("Status", {"member": "label"})`` form when
+    any label needs sanitising — so labels with hyphens, spaces,
+    leading digits, or Python keywords don't make the generated file
+    a SyntaxError.
+    """
     class_name = _pascal_case(name)
-    body = "\n".join(f'    {value} = "{value}"' for value in values)
-    return f"class {class_name}(enum.Enum):\n{body}\n"
+    members = [_safe_member_name(v) for v in values]
+    # Detect collisions or any sanitisation that changed the label.
+    needs_functional = len(set(members)) != len(members) or any(m != v for m, v in zip(members, values, strict=True))
+    if not needs_functional:
+        body = "\n".join(f'    {v} = "{v}"' for v in values)
+        return f"class {class_name}(enum.Enum):\n{body}\n"
+    pairs = ", ".join(f'"{m}": "{v}"' for m, v in zip(members, values, strict=True))
+    return f'{class_name} = enum.Enum("{class_name}", {{{pairs}}})\n'
 
 
 def _render_table_args(schema: str, composite_uniques: list[tuple[str, list[str]]]) -> str | None:

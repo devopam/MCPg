@@ -160,8 +160,17 @@ def _render_default(column: ColumnInfo) -> str | None:
     if re.fullmatch(r"-?\d+", cast_stripped) or re.fullmatch(r"-?\d+\.\d+", cast_stripped):
         return f".default({cast_stripped})"
     if cast_stripped.startswith("'") and cast_stripped.endswith("'"):
-        # PG-quoted literal → TS string literal.
-        return f'.default("{cast_stripped[1:-1].replace('"', '\\"')}")'
+        # PG-quoted literal → TS string literal. Translate the PG escapes
+        # to JS-string escapes in this order: '' → ' (PG quote escape),
+        # then backslash → \\, then " → \". Skipping the backslash step
+        # would mean a PG literal of 'a\nb' (with a literal backslash)
+        # silently becomes a TS newline; skipping the '' step turns
+        # 'it''s' into "it''s" instead of "it's".
+        body = cast_stripped[1:-1]
+        body = body.replace("''", "'")
+        body = body.replace("\\", "\\\\")
+        body = body.replace('"', '\\"')
+        return f'.default("{body}")'
     # Unrecognised — fall back to raw sql template literal so the agent sees it.
     return f".default(sql`{cast_stripped}`)"
 

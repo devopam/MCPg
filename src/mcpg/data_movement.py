@@ -338,6 +338,11 @@ async def restore_database(
 
         binary = "pg_restore"
         argv = [
+            # pg_restore needs --dbname or it switches to "convert to SQL
+            # script" mode and demands -f. Pass an empty libpq URI so
+            # libpq fills user/host/password/dbname from the PG* env
+            # vars we already set — credentials stay off argv.
+            "--dbname=postgresql:///",
             "--no-owner",
             "--no-privileges",
             "--single-transaction",

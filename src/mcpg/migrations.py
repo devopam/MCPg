@@ -129,12 +129,27 @@ def _check_identifier(name: str, kind: str) -> None:
 
 
 def _make_migration_id(name: str) -> str:
-    """Build a unique migration id from the caller-supplied name + timestamp."""
+    """Build a unique migration id from the caller-supplied name + timestamp.
+
+    The slice for the user-supplied portion is sized so the derived
+    shadow schema name (``mcpg_shadow_<id>``) stays under PostgreSQL's
+    63-byte NAMEDATALEN limit — otherwise CREATE SCHEMA would silently
+    truncate and downstream lookups by the un-truncated name would
+    fail.
+
+    Budget: NAMEDATALEN=63. Reserved: ``mcpg_shadow_`` (12) +
+    ``_<ms-timestamp>`` (1+13=14). User portion: 63 - 12 - 14 = 37.
+    """
     # Strip non-identifier chars from the name so the id stays
     # opaque-but-readable (and so the derived shadow schema name is a
     # plain identifier).
-    safe = _NAME_SUFFIX_RE.sub("_", name).strip("_")[:40] or "migration"
+    safe = _NAME_SUFFIX_RE.sub("_", name).strip("_")[:_USER_NAME_MAX] or "migration"
     return f"{safe}_{int(time.time() * 1000)}"
+
+
+# Keep the shadow schema name under PG's 63-byte identifier limit.
+# See _make_migration_id for the budget calculation.
+_USER_NAME_MAX = 37
 
 
 def _shadow_name_for(migration_id: str) -> str:
@@ -176,7 +191,16 @@ async def _replay_target_into_shadow(driver: SqlDriver, target_schema: str, shad
     for table in plain_tables:
         constraints = await list_constraints(driver, target_schema, table.name)
         for con in sorted(constraints, key=_constraint_sort_key):
-            definition = _rewrite_schema_reference(con.definition, target_schema, shadow_schema)
+            # Only rewrite schema references for FOREIGN KEYs — those
+            # are the only constraints whose definition can name another
+            # table by schema. CHECK / UNIQUE / PK definitions may
+            # legitimately contain string literals that happen to start
+            # with the target schema name (e.g. CHECK (path LIKE
+            # 'public.%')) which a blanket regex sub would corrupt.
+            if con.type == "foreign_key":
+                definition = _rewrite_schema_reference(con.definition, target_schema, shadow_schema)
+            else:
+                definition = con.definition
             await driver.execute_query(
                 f'ALTER TABLE "{shadow_schema}"."{table.name}" ADD CONSTRAINT "{con.name}" {definition}'
             )
@@ -377,6 +401,25 @@ async def list_pending_migrations(driver: SqlDriver) -> list[MigrationRecord]:
 # --- internals ------------------------------------------------------
 
 
+# Statements that PostgreSQL refuses to run inside a transaction block.
+# We wrap candidate SQL in a transaction (for SET LOCAL search_path), so
+# we have to refuse these up-front with a clear message rather than let
+# PG raise an opaque error mid-migration.
+_NON_TRANSACTIONAL_SQL = re.compile(
+    r"\b(?:"
+    r"CREATE\s+INDEX\s+CONCURRENTLY"
+    r"|DROP\s+INDEX\s+CONCURRENTLY"
+    r"|REINDEX\s+\w+\s+CONCURRENTLY"
+    r"|VACUUM"
+    r"|ALTER\s+SYSTEM"
+    r"|CREATE\s+DATABASE"
+    r"|DROP\s+DATABASE"
+    r"|ALTER\s+DATABASE\s+\S+\s+SET\s+TABLESPACE"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
 async def _execute_in_schema(driver: SqlDriver, schema: str, sql: str) -> None:
     """Run ``sql`` with ``SET LOCAL search_path = schema, public`` on one connection.
 
@@ -391,7 +434,22 @@ async def _execute_in_schema(driver: SqlDriver, schema: str, sql: str) -> None:
     Multi-statement candidate SQL is supported via
     ``cursor.execute`` (psycopg drives ``cursor.nextset()`` to walk
     the result sets).
+
+    Raises:
+        MigrationError: When ``sql`` contains a statement that PG
+            refuses to run inside a transaction block (CREATE INDEX
+            CONCURRENTLY, VACUUM, ALTER SYSTEM, ...). The staged-
+            migration workflow always runs candidates transactionally
+            so the user gets atomic apply-or-rollback; these
+            statements need a different tool.
     """
+    if _NON_TRANSACTIONAL_SQL.search(sql):
+        raise MigrationError(
+            "candidate_sql uses a statement that cannot run inside a transaction "
+            "block (e.g. CREATE INDEX CONCURRENTLY, VACUUM, ALTER SYSTEM). The "
+            "staged-migration workflow always runs candidates transactionally; "
+            "run these statements directly via run_ddl outside this tool."
+        )
     if not getattr(driver, "is_pool", False):
         # Direct-connection mode is a test/edge path; run SET + SQL on it.
         async with driver.conn.cursor() as cur:

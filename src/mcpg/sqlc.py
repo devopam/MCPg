@@ -61,7 +61,10 @@ def _render_column_line(column: ColumnInfo) -> str:
 
 
 def _render_enum(enum_name: str, values: list[str]) -> str:
-    literals = ", ".join(f"'{v}'" for v in values)
+    # PG's standard string-literal escape doubles the apostrophe; without
+    # this an enum label like O'Brien produces broken DDL that sqlc and
+    # psql both reject.
+    literals = ", ".join("'" + v.replace("'", "''") + "'" for v in values)
     return f'CREATE TYPE "{enum_name}" AS ENUM ({literals});'
 
 

@@ -208,17 +208,22 @@ async def run_pg_binary(
         if stdin is None or process.stdin is None:
             return
         try:
-            process.stdin.write(stdin)
-            await process.stdin.drain()
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        try:
-            process.stdin.close()
-            # Wait for the OS-level close to land so the child sees EOF
-            # before we wait() on it.
-            await process.stdin.wait_closed()
-        except (BrokenPipeError, ConnectionResetError):
-            pass
+            try:
+                process.stdin.write(stdin)
+                await process.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        finally:
+            # Close UNCONDITIONALLY so the child always sees EOF even
+            # when write/drain raised something other than a pipe error
+            # (OSError on saturated pipe, RuntimeError from a closed
+            # loop in tests). Without this, a non-pipe exception would
+            # leave the child blocked reading stdin until the timeout.
+            try:
+                process.stdin.close()
+                await process.stdin.wait_closed()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
     try:
         async with asyncio.timeout(timeout_sec):

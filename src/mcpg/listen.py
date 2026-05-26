@@ -127,6 +127,9 @@ class ListenManager:
     _task: asyncio.Task[None] | None = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _closed: bool = False
+    # Set by the reader loop on unexpected exit; consumed by the next
+    # _ensure_connection to re-issue LISTEN for every active channel.
+    _needs_resubscribe: bool = False
 
     async def subscribe(self, channel: str) -> str:
         """Register a subscription on ``channel`` and return its id.
@@ -238,9 +241,14 @@ class ListenManager:
             self._subscriptions.clear()
             self._channels.clear()
         if conn is not None:
+            # Bound the close so a half-open TCP socket or a libpq quirk
+            # can't wedge server shutdown. The connection is being
+            # abandoned either way; we just need to make a best-effort
+            # attempt before moving on so the lifespan's database
+            # __aexit__ still runs.
             try:
-                await conn.close()
-            except Exception:
+                await asyncio.wait_for(conn.close(), timeout=2.0)
+            except (TimeoutError, Exception):
                 pass
         if task is not None:
             task.cancel()
@@ -291,6 +299,17 @@ class ListenManager:
 
             factory = _default
         self._conn = await factory()
+        # Recovery path: when the reader loop died on a dead conn it
+        # cleared _conn AND set _needs_resubscribe. Re-issue LISTEN for
+        # every channel with a live subscription so the new conn picks
+        # up where the dead one left off. On a FIRST-ever subscribe the
+        # flag is False and the channels dict is consistent with what
+        # the subscribe() caller is about to issue, so we don't double-
+        # register.
+        if self._needs_resubscribe:
+            for channel in self._channels:
+                await self._conn.execute(f'LISTEN "{channel}"')
+            self._needs_resubscribe = False
         self._task = asyncio.create_task(self._reader_loop(), name="mcpg-listen-reader")
         return self._conn
 
@@ -317,6 +336,11 @@ class ListenManager:
         the subscribe/unsubscribe path needs. Iterating with a short
         timeout releases the lock between waits so admin commands can
         land, at the cost of a tiny per-tick wake-up overhead.
+
+        On any non-cancellation exception (PG restart, network blip)
+        the loop clears ``_conn`` / ``_task`` so the NEXT subscribe()
+        triggers a fresh ``_ensure_connection`` rather than reusing
+        the dead connection forever.
         """
         assert self._conn is not None
         try:
@@ -329,9 +353,13 @@ class ListenManager:
             raise
         except Exception:
             # A dead listener connection shouldn't crash the server.
-            # Subscriptions will silently stop receiving notifications;
-            # next subscribe() will try to re-open.
+            # Clear the cached conn + task so the next subscribe() opens
+            # a fresh listener; set _needs_resubscribe so the new conn
+            # re-registers LISTEN for every existing subscription.
             logger.exception("listen reader loop terminated")
+            self._conn = None
+            self._task = None
+            self._needs_resubscribe = True
 
     async def __aenter__(self) -> ListenManager:
         return self

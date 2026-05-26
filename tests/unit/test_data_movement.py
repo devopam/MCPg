@@ -440,6 +440,10 @@ async def test_restore_database_custom_format_base64_decodes_content_and_invokes
 
     assert captured["binary"] == "pg_restore"
     assert "--format=custom" in captured["argv"]  # type: ignore[operator]
+    # pg_restore requires --dbname or it switches to "convert to SQL
+    # script" mode; we pass an empty libpq URI so PG* env vars supply
+    # the connection params (credentials stay off argv).
+    assert "--dbname=postgresql:///" in captured["argv"]  # type: ignore[operator]
     # The base64-decoded raw bytes must be piped through stdin verbatim.
     assert captured["stdin"] == raw
 
