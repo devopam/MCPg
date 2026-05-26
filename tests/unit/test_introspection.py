@@ -1,6 +1,6 @@
 """Tests for schema-introspection queries and their MCP tools."""
 
-from _fakes import FakeDatabase, FakeDriver
+from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
@@ -779,3 +779,47 @@ async def test_introspection_tools_are_registered() -> None:
         listed = {tool.name for tool in (await client.list_tools()).tools}
 
     assert _INTROSPECTION_TOOLS <= listed
+
+
+# --- list_generated_columns (Phase 4.7) ---------------------------------
+
+
+async def test_list_generated_columns_returns_typed_rows() -> None:
+    from mcpg.introspection import GeneratedColumnInfo, list_generated_columns
+
+    driver = FakeRoutingDriver(
+        {
+            "pg_attribute": [
+                {
+                    "table_name": "widget",
+                    "column_name": "fullname",
+                    "data_type": "text",
+                    "expression": "(first || ' ' || last)",
+                    "kind": "s",
+                },
+                {
+                    "table_name": "widget",
+                    "column_name": "search_doc",
+                    "data_type": "tsvector",
+                    "expression": "to_tsvector('english', body)",
+                    "kind": "s",
+                },
+            ]
+        }
+    )
+
+    rows = await list_generated_columns(driver, "public")  # type: ignore[arg-type]
+
+    assert len(rows) == 2
+    assert isinstance(rows[0], GeneratedColumnInfo)
+    assert rows[0].column == "fullname"
+    assert rows[0].kind == "stored"
+    assert "first" in rows[0].expression
+
+
+async def test_list_generated_columns_returns_empty_when_none_present() -> None:
+    from mcpg.introspection import list_generated_columns
+
+    driver = FakeRoutingDriver({"pg_attribute": []})
+    rows = await list_generated_columns(driver, "public")  # type: ignore[arg-type]
+    assert rows == []

@@ -29,8 +29,10 @@ from mcpg import (
     health,
     indexing,
     introspection,
+    io_stats,
     jooq,
     liveops,
+    locks,
     maintenance,
     migrations,
     partman,
@@ -297,6 +299,63 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     async def list_available_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         extensions = await introspection.list_available_extensions(_driver(ctx))
         return [asdict(extension) for extension in extensions]
+
+    @server.tool(
+        name="list_generated_columns",
+        description=(
+            "List every GENERATED ALWAYS AS (...) STORED column in a schema, "
+            "with its data type, the underlying expression, and whether it's "
+            "stored or virtual. PostgreSQL today supports only the stored "
+            "form; the kind field is reported anyway so the response shape "
+            "is forward-compatible when PG adds virtual columns."
+        ),
+    )
+    async def list_generated_columns(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        cols = await introspection.list_generated_columns(_driver(ctx), schema)
+        return [asdict(c) for c in cols]
+
+    @server.tool(
+        name="list_locks",
+        description=(
+            "List currently-held and waiting locks, joined with backend "
+            "state from pg_stat_activity. Ordered by (granted ASC, pid) so "
+            "waiting locks float to the top. Returns lock type, mode, "
+            "qualified relation name when applicable, transaction / "
+            "virtualxid, the application_name + state + wait event of the "
+            "owning backend, and the first 200 chars of its query. Read-only."
+        ),
+    )
+    async def list_locks(ctx: _Ctx, limit: int = locks.DEFAULT_LOCK_LIMIT) -> list[dict[str, Any]]:
+        rows = await locks.list_locks(_driver(ctx), limit=limit)
+        return [asdict(row) for row in rows]
+
+    @server.tool(
+        name="find_blocking_chains",
+        description=(
+            "Return (blocked, blocking) backend pairs via pg_blocking_pids. "
+            "Each row pairs a backend waiting on a Lock with one PID "
+            "holding the lock that's preventing progress. Cycles are "
+            "possible (A blocks B, B blocks A); render with care. Read-only."
+        ),
+    )
+    async def find_blocking_chains(ctx: _Ctx, limit: int = locks.DEFAULT_BLOCKING_LIMIT) -> list[dict[str, Any]]:
+        rows = await locks.find_blocking_chains(_driver(ctx), limit=limit)
+        return [asdict(row) for row in rows]
+
+    @server.tool(
+        name="read_pg_stat_io",
+        description=(
+            "Read the pg_stat_io view (PostgreSQL 16+). Reports per "
+            "(backend_type, object, context) cumulative I/O activity — "
+            "reads, writes, extends, evictions, hits, fsyncs. Useful for "
+            "spotting buffer-cache misses and write amplification. On "
+            "PostgreSQL 14 / 15 the view doesn't exist, so the tool "
+            "returns available=false and an empty list."
+        ),
+    )
+    async def read_pg_stat_io(ctx: _Ctx) -> dict[str, Any]:
+        report = await io_stats.read_pg_stat_io(_driver(ctx))
+        return asdict(report)
 
 
 def _register_diagrams(server: FastMCP[AppContext]) -> None:
