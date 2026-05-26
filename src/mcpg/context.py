@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from mcpg.config import Settings
 from mcpg.database import Database
+from mcpg.listen import ListenManager
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,3 +15,4 @@ class AppContext:
 
     settings: Settings
     database: Database
+    listen_manager: ListenManager

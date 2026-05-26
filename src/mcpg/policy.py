@@ -19,18 +19,31 @@ class Capability(StrEnum):
     WRITE = "write"
     DDL = "ddl"
     SHELL = "shell"
+    LISTEN = "listen"
+    MIGRATE = "migrate"
 
 
 # Capabilities permitted in each access mode. read-only and restricted both
 # allow reads only; restricted additionally constrains execution (timeouts,
-# row caps) at the tool level. Unrestricted adds writes, DDL, and shell.
-# DDL additionally requires the MCPG_ALLOW_DDL opt-in; shell additionally
-# requires the MCPG_ALLOW_SHELL opt-in. Both are enforced where tools
-# register, not here, so the policy table stays the single source of truth.
+# row caps) at the tool level. Unrestricted adds writes, DDL, shell, listen,
+# and migrate. DDL/shell/listen/migrate additionally require their per-feature
+# opt-in (MCPG_ALLOW_DDL / _SHELL / _LISTEN; migrate piggybacks on
+# MCPG_ALLOW_DDL since the underlying ops are DDL). Those gates are enforced
+# where tools register, not here, so the policy table stays the single source
+# of truth.
 _PERMITTED: dict[AccessMode, frozenset[Capability]] = {
     AccessMode.READ_ONLY: frozenset({Capability.READ}),
     AccessMode.RESTRICTED: frozenset({Capability.READ}),
-    AccessMode.UNRESTRICTED: frozenset({Capability.READ, Capability.WRITE, Capability.DDL, Capability.SHELL}),
+    AccessMode.UNRESTRICTED: frozenset(
+        {
+            Capability.READ,
+            Capability.WRITE,
+            Capability.DDL,
+            Capability.SHELL,
+            Capability.LISTEN,
+            Capability.MIGRATE,
+        }
+    ),
 }
 
 

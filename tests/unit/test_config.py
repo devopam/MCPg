@@ -95,6 +95,20 @@ def test_invalid_allow_ddl_raises() -> None:
         load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_DDL": "maybe"})
 
 
+def test_allow_listen_defaults_to_false_and_parses_booleans() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).allow_listen is False
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_LISTEN": "true"}).allow_listen is True
+    with pytest.raises(ConfigError, match="MCPG_ALLOW_LISTEN"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_LISTEN": "maybe"})
+
+
+def test_listen_queue_max_defaults_and_parses() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).listen_queue_max == 1000
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_LISTEN_QUEUE_MAX": "50"}).listen_queue_max == 50
+    with pytest.raises(ConfigError, match="MCPG_LISTEN_QUEUE_MAX"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_LISTEN_QUEUE_MAX": "0"})
+
+
 def test_pool_sizes_default_to_one_and_five() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
     assert settings.pool_min_size == 1

@@ -1,14 +1,21 @@
-"""Data-movement tools — in-process export to CSV and JSON.
+"""Data-movement tools — exports, dumps, restores, and bulk imports.
 
-This module covers the read-only half of Batch D (Phase 24): two tools
-that serialise SQL query results or full tables to a string an agent
-can inspect or write to a file.
+Read-only half (no subprocess, no new attack surface):
 
-The subprocess-driven half (``dump_database``, ``restore_database``,
-``copy_table_between_databases``) follows ADR-0004 and lives in a
-separate PR. Imports (``import_csv`` / ``import_json``) need
-``COPY ... FROM STDIN`` plumbing that the vendored driver doesn't
-expose yet; they're tracked as Phase 24c.
+- :func:`export_query`, :func:`export_table` — serialise SELECT
+  results to CSV / JSON in-process.
+
+Subprocess-driven half (ADR-0004; gated behind ``MCPG_ALLOW_SHELL``):
+
+- :func:`dump_database` — ``pg_dump``.
+- :func:`restore_database` — ``psql`` / ``pg_restore``.
+
+Bulk imports (in-process, no subprocess; gated behind ``WRITE``
+capability — unrestricted access mode):
+
+- :func:`import_csv` — ``COPY ... FROM STDIN`` with raw CSV content.
+- :func:`import_json` — parametrised ``INSERT`` from a JSON array of
+  objects.
 """
 
 from __future__ import annotations
@@ -22,6 +29,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from mcpg._vendor.sql import SqlDriver
+from mcpg.database import Database
 from mcpg.query import QueryError, run_select
 from mcpg.shell import ShellError, run_pg_binary
 
@@ -330,6 +338,11 @@ async def restore_database(
 
         binary = "pg_restore"
         argv = [
+            # pg_restore needs --dbname or it switches to "convert to SQL
+            # script" mode and demands -f. Pass an empty libpq URI so
+            # libpq fills user/host/password/dbname from the PG* env
+            # vars we already set — credentials stay off argv.
+            "--dbname=postgresql:///",
             "--no-owner",
             "--no-privileges",
             "--single-transaction",
@@ -363,3 +376,362 @@ async def restore_database(
         binary=result.binary,
         argv=result.argv,
     )
+
+
+# --- cross-database table copy (subprocess; gated behind MCPG_ALLOW_SHELL) --
+
+
+@dataclass(frozen=True, slots=True)
+class CopyTableResult:
+    """The outcome of a cross-database ``copy_table_between_databases`` call.
+
+    Both legs (``pg_dump`` on the source, ``pg_restore`` on the dest) are
+    recorded. ``timed_out`` is true when either leg hit its time limit.
+    ``schema_copied`` / ``data_copied`` echo the input flags so a result
+    inspected without its call context is self-describing.
+    """
+
+    schema: str
+    table: str
+    schema_copied: bool
+    data_copied: bool
+    dump_exit_code: int
+    restore_exit_code: int
+    dump_output_bytes: int
+    restore_output_bytes: int
+    dump_stderr_tail: str
+    restore_stderr_tail: str
+    dump_argv: list[str]
+    restore_argv: list[str]
+    timed_out: bool
+
+
+async def copy_table_between_databases(
+    source_url: str,
+    dest_url: str,
+    schema: str,
+    table: str,
+    *,
+    include_schema: bool,
+    include_data: bool,
+    timeout_sec: int,
+    max_output_bytes: int,
+) -> CopyTableResult:
+    """Copy ``schema.table`` from ``source_url`` into ``dest_url``.
+
+    Runs ``pg_dump --format=custom --table=schema.table`` against the
+    source, captures the binary archive in memory, then pipes it into
+    ``pg_restore --format=custom --single-transaction --exit-on-error``
+    against the destination. Credentials reach both binaries via libpq
+    env vars (``PGPASSWORD`` etc.), never on the command line.
+
+    Args:
+        source_url: ``postgresql://...`` URL of the source database;
+            must specify a database name.
+        dest_url: ``postgresql://...`` URL of the destination database;
+            must specify a database name.
+        schema: Schema name; must be a plain identifier.
+        table: Table name; must be a plain identifier.
+        include_schema: Copy the table's ``CREATE TABLE`` (schema). The
+            target table must NOT exist when this is true and
+            ``include_data`` is false (pg_restore --single-transaction
+            aborts on duplicate-table errors).
+        include_data: Copy the table's rows. At least one of
+            ``include_schema`` / ``include_data`` must be true.
+        timeout_sec: Hard wall-clock limit on EACH leg of the copy
+            (dump and restore are timed separately).
+        max_output_bytes: Cap on the captured pg_dump archive. Exceeding
+            the cap raises :class:`ShellError` BEFORE pg_restore runs —
+            we never feed a truncated custom-format archive to
+            pg_restore, since the result would be a half-restored
+            table that's hard to roll back.
+
+    Raises:
+        ShellError: When inputs fail validation, the pg_dump output
+            exceeds ``max_output_bytes``, or either subprocess fails
+            to spawn. A non-zero exit from either binary is NOT raised
+            here — it's returned in the result so the caller can see
+            both legs' stderr_tail in one place.
+    """
+    if not include_schema and not include_data:
+        raise ShellError("copy_table_between_databases requires include_schema or include_data (or both)")
+    _check_identifier_for_copy(schema, "schema")
+    _check_identifier_for_copy(table, "table")
+
+    source_env = _libpq_env_from_url(source_url)
+    if "PGDATABASE" not in source_env:
+        raise ShellError("source_url must specify a database name")
+    dest_env = _libpq_env_from_url(dest_url)
+    if "PGDATABASE" not in dest_env:
+        raise ShellError("dest_url must specify a database name")
+
+    # pg_dump's --table pattern accepts a literal schema-qualified name
+    # since we've already validated both halves against the plain-
+    # identifier allowlist (no wildcard chars).
+    dump_argv = ["--format=custom", f"--table={schema}.{table}"]
+    if not include_data:
+        dump_argv.append("--schema-only")
+    if not include_schema:
+        dump_argv.append("--data-only")
+
+    dump = await run_pg_binary(
+        "pg_dump",
+        *dump_argv,
+        env=source_env,
+        timeout_sec=timeout_sec,
+        max_output_bytes=max_output_bytes,
+    )
+    if dump.output_truncated:
+        raise ShellError(
+            f"pg_dump output exceeded max_output_bytes ({max_output_bytes}); refusing to restore a truncated archive"
+        )
+    # Refuse to restore if the dump itself failed — pg_restore on an
+    # incomplete custom archive will either error obscurely or, worse,
+    # silently restore a partial table.
+    if dump.exit_code != 0 or dump.timed_out:
+        return CopyTableResult(
+            schema=schema,
+            table=table,
+            schema_copied=include_schema,
+            data_copied=include_data,
+            dump_exit_code=dump.exit_code,
+            restore_exit_code=-1,
+            dump_output_bytes=dump.output_bytes,
+            restore_output_bytes=0,
+            dump_stderr_tail=_tail(dump.stderr),
+            restore_stderr_tail="",
+            dump_argv=dump.argv,
+            restore_argv=[],
+            timed_out=dump.timed_out,
+        )
+
+    # pg_restore requires --dbname even with PGDATABASE set: without -d
+    # it switches to "convert to SQL script" mode and demands -f. Pass
+    # an empty libpq URI as the dbname; libpq fills user/host/password/
+    # dbname from the PG* env vars we already set, so credentials still
+    # never appear on argv.
+    restore_argv = [
+        "--format=custom",
+        "--dbname=postgresql:///",
+        "--single-transaction",
+        "--exit-on-error",
+        "--no-owner",
+        "--no-privileges",
+    ]
+    if not include_schema:
+        restore_argv.append("--data-only")
+    if not include_data:
+        restore_argv.append("--schema-only")
+    restore = await run_pg_binary(
+        "pg_restore",
+        *restore_argv,
+        env=dest_env,
+        timeout_sec=timeout_sec,
+        max_output_bytes=max_output_bytes,
+        stdin=dump.stdout,
+    )
+
+    return CopyTableResult(
+        schema=schema,
+        table=table,
+        schema_copied=include_schema,
+        data_copied=include_data,
+        dump_exit_code=dump.exit_code,
+        restore_exit_code=restore.exit_code,
+        dump_output_bytes=dump.output_bytes,
+        restore_output_bytes=restore.output_bytes,
+        dump_stderr_tail=_tail(dump.stderr),
+        restore_stderr_tail=_tail(restore.stderr),
+        dump_argv=dump.argv,
+        restore_argv=restore.argv,
+        timed_out=dump.timed_out or restore.timed_out,
+    )
+
+
+def _check_identifier_for_copy(name: str, kind: str) -> None:
+    if not _IDENTIFIER.match(name):
+        raise ShellError(f"invalid {kind} name: {name!r}")
+
+
+def _tail(buf: bytes, *, max_bytes: int = 4096) -> str:
+    text = buf.decode("utf-8", errors="replace")
+    return text if len(text) <= max_bytes else text[-max_bytes:]
+
+
+# --- bulk imports (in-process; gated behind WRITE) -----------------------
+class ImportDataError(Exception):
+    """Raised when an import call is rejected or fails.
+
+    Named ``ImportDataError`` so it does not shadow the builtin
+    ``ImportError`` for callers who do ``from mcpg.data_movement
+    import *``.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class ImportResult:
+    """The outcome of an import call.
+
+    ``rows_imported`` is the row count the server reports — useful for
+    confirming the agent wrote what it expected. ``format`` echoes the
+    input format so a result inspected without its call context is
+    self-describing.
+    """
+
+    schema: str
+    table: str
+    format: str
+    rows_imported: int
+
+
+def _build_copy_sql(schema: str, table: str, columns: list[str] | None, *, header: bool, delimiter: str) -> str:
+    """Compose a ``COPY ... FROM STDIN`` statement with safe identifiers.
+
+    The schema, table, and (optional) column names are validated against
+    the plain-identifier allowlist before this is called; delimited
+    quoting still applies so reserved words don't break the statement.
+    The delimiter is restricted to a single non-newline character so it
+    can't terminate the COPY options list early.
+    """
+    column_clause = ""
+    if columns:
+        joined = ", ".join(f'"{col}"' for col in columns)
+        column_clause = f" ({joined})"
+    options = [
+        "FORMAT csv",
+        f"HEADER {'true' if header else 'false'}",
+        f"DELIMITER '{delimiter}'",
+    ]
+    return f'COPY "{schema}"."{table}"{column_clause} FROM STDIN WITH ({", ".join(options)})'
+
+
+async def import_csv(
+    database: Database,
+    schema: str,
+    table: str,
+    content: str,
+    *,
+    header: bool = True,
+    delimiter: str = ",",
+    columns: list[str] | None = None,
+) -> ImportResult:
+    """Bulk-load CSV ``content`` into ``schema.table`` via ``COPY FROM STDIN``.
+
+    The CSV text is sent verbatim; the caller is responsible for its
+    correctness (matching column count, proper quoting). ``header=True``
+    tells PostgreSQL to skip the first line.
+
+    Args:
+        database: The connected MCPg ``Database``.
+        schema: Target schema; must be a plain identifier.
+        table: Target table; must be a plain identifier.
+        content: CSV text to load. Encoded as UTF-8 on the wire.
+        header: When true, the first CSV row is treated as a header
+            and skipped by COPY.
+        delimiter: One-character field separator. Newlines and quote
+            characters are rejected to keep the COPY options safe.
+        columns: Optional explicit column list. When supplied, each
+            name must be a plain identifier; rows are loaded into the
+            named columns in order, with any unlisted columns taking
+            their default. When omitted, COPY uses the table's
+            declared column order.
+
+    Raises:
+        ImportError: When an identifier fails validation, the delimiter
+            is illegal, or the underlying COPY fails.
+    """
+    _check_identifier_for_import(schema, "schema")
+    _check_identifier_for_import(table, "table")
+    if columns is not None:
+        if not columns:
+            raise ImportDataError("columns, if supplied, must not be empty")
+        for col in columns:
+            _check_identifier_for_import(col, "column")
+    if len(delimiter) != 1 or delimiter in "\n\r\"'":
+        raise ImportDataError(f"invalid delimiter {delimiter!r}; must be a single non-newline, non-quote character")
+
+    copy_sql = _build_copy_sql(schema, table, columns, header=header, delimiter=delimiter)
+    try:
+        rowcount = await database.copy_from_stdin(copy_sql, content.encode("utf-8"))
+    except Exception as exc:  # psycopg / DatabaseError / OS error
+        raise ImportDataError(f"COPY failed: {exc}") from exc
+    return ImportResult(schema=schema, table=table, format="csv", rows_imported=max(rowcount, 0))
+
+
+async def import_json(
+    database: Database,
+    schema: str,
+    table: str,
+    content: str,
+    *,
+    columns: list[str] | None = None,
+) -> ImportResult:
+    """Bulk-load a JSON array of objects into ``schema.table``.
+
+    Parses ``content`` as a JSON array, derives the column list from
+    ``columns`` (when supplied) or from the keys of the first row
+    (otherwise), then executes a parametrised
+    ``INSERT INTO "schema"."table" (col, ...) VALUES (%s, ...)`` once
+    per row via ``executemany``. Values are bound — never spliced into
+    SQL — so they cannot inject statements.
+
+    Missing keys in a later row are bound as ``NULL``; nested
+    ``dict`` / ``list`` values are JSON-serialised so they round-trip
+    into a ``jsonb`` column.
+
+    Raises:
+        ImportError: When ``content`` is not a JSON array of objects,
+            an identifier fails validation, or the INSERT fails.
+    """
+    _check_identifier_for_import(schema, "schema")
+    _check_identifier_for_import(table, "table")
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ImportDataError(f"content is not valid JSON: {exc}") from exc
+    if not isinstance(parsed, list):
+        raise ImportDataError("content must be a JSON array of objects")
+    if not parsed:
+        return ImportResult(schema=schema, table=table, format="json", rows_imported=0)
+    if not all(isinstance(row, dict) for row in parsed):
+        raise ImportDataError("every row in the JSON array must be an object")
+
+    if columns is None:
+        columns = list(parsed[0].keys())
+    if not columns:
+        raise ImportDataError("could not derive a column list from the JSON rows")
+    for col in columns:
+        _check_identifier_for_import(col, "column")
+
+    placeholders = ", ".join(["%s"] * len(columns))
+    column_clause = ", ".join(f'"{col}"' for col in columns)
+    sql = f'INSERT INTO "{schema}"."{table}" ({column_clause}) VALUES ({placeholders})'
+    params_seq = [tuple(_json_cell(row.get(col)) for col in columns) for row in parsed]
+    try:
+        rowcount = await database.execute_many(sql, params_seq)
+    except Exception as exc:
+        raise ImportDataError(f"INSERT failed: {exc}") from exc
+    # psycopg's executemany sometimes reports -1 for the rowcount on certain
+    # backends. Fall back to the number of rows we sent.
+    if rowcount < 0:
+        rowcount = len(params_seq)
+    return ImportResult(schema=schema, table=table, format="json", rows_imported=rowcount)
+
+
+def _check_identifier_for_import(name: str, kind: str) -> None:
+    if not _IDENTIFIER.match(name):
+        raise ImportDataError(f"invalid {kind} name: {name!r}")
+
+
+def _json_cell(value: Any) -> Any:
+    """Coerce a JSON cell to a psycopg-friendly bound value.
+
+    Nested ``dict`` / ``list`` become JSON strings so they survive
+    insertion into a ``jsonb`` column without a round-trip through
+    Python ``repr``. Scalars pass through; the psycopg adapter handles
+    them natively.
+    """
+    if isinstance(value, (dict, list)):
+        return json.dumps(value)
+    return value

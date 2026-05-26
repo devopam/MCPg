@@ -8,6 +8,7 @@ from mcpg import __version__
 from mcpg.config import AccessMode, load_settings
 from mcpg.context import AppContext
 from mcpg.database import Database
+from mcpg.listen import ListenManager
 from mcpg.server import create_server
 from mcpg.tools import ServerInfo, build_server_info
 
@@ -48,8 +49,14 @@ def _database() -> Database:
     return Database(_SETTINGS, pool=FakePool())  # type: ignore[arg-type]
 
 
+def _listen_manager() -> ListenManager:
+    # Constructed with the real ListenManager class; stays idle (no PG
+    # connection opened) until a subscribe_channel call lands.
+    return ListenManager(database_url=_SETTINGS.database_url)
+
+
 def test_build_server_info_reports_static_facts() -> None:
-    info = build_server_info(AppContext(settings=_SETTINGS, database=_database()))
+    info = build_server_info(AppContext(settings=_SETTINGS, database=_database(), listen_manager=_listen_manager()))
 
     assert info == ServerInfo(
         mcpg_version=__version__,
@@ -63,7 +70,7 @@ async def test_build_server_info_reflects_database_connection() -> None:
     db = _database()
     await db.connect()
 
-    info = build_server_info(AppContext(settings=_SETTINGS, database=db))
+    info = build_server_info(AppContext(settings=_SETTINGS, database=db, listen_manager=_listen_manager()))
 
     assert info.database_connected is True
 

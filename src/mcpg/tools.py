@@ -20,16 +20,20 @@ from mcpg import (
     cron,
     data_movement,
     diagrams,
+    drizzle,
     extensions,
     health,
     indexing,
     introspection,
     liveops,
     maintenance,
+    migrations,
     partman,
     prisma,
     query,
     schema_diff,
+    sqlalchemy_export,
+    sqlc,
     textsearch,
     vector_tuning,
     workload,
@@ -369,6 +373,50 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
     async def generate_prisma_schema(ctx: _Ctx, schema: str) -> str:
         return await prisma.generate_prisma_schema(_driver(ctx), schema)
 
+    @server.tool(
+        name="generate_drizzle_schema",
+        description=(
+            "Read a PostgreSQL schema and emit a Drizzle ORM TypeScript schema "
+            "string (drizzle-orm/pg-core). Covers tables, columns with PG-native "
+            "types, primary/foreign keys, unique constraints, indexes, defaults, "
+            "and enums. Single-column FKs emit column-level .references(); "
+            "composite FKs are a documented v1 gap. Views, foreign tables, "
+            "partitions, triggers, and functions are out of scope."
+        ),
+    )
+    async def generate_drizzle_schema(ctx: _Ctx, schema: str) -> str:
+        return await drizzle.generate_drizzle_schema(_driver(ctx), schema)
+
+    @server.tool(
+        name="generate_sqlalchemy_models",
+        description=(
+            "Read a PostgreSQL schema and emit a SQLAlchemy 2.0 declarative "
+            "models file (DeclarativeBase + Mapped[T] + mapped_column). Covers "
+            "tables, columns with PG-native types (incl. jsonb via "
+            "sqlalchemy.dialects.postgresql.JSONB), primary keys, single-column "
+            "FKs via ForeignKey(), unique constraints (column-level + composite "
+            "via __table_args__), defaults, and enums (emitted as Python "
+            "enum.Enum classes). Composite FKs are a documented v1 gap."
+        ),
+    )
+    async def generate_sqlalchemy_models(ctx: _Ctx, schema: str) -> str:
+        return await sqlalchemy_export.generate_sqlalchemy_models(_driver(ctx), schema)
+
+    @server.tool(
+        name="generate_sqlc_schema",
+        description=(
+            "Read a PostgreSQL schema and emit a sqlc-friendly schema.sql "
+            "(plain DDL). Order: CREATE SCHEMA, CREATE TYPE for each enum, "
+            "CREATE TABLE statements (columns only), ALTER TABLE ADD "
+            "CONSTRAINT (PK / unique / check / foreign key in that order), "
+            "then CREATE INDEX for non-constraint indexes. The file replays "
+            "cleanly against an empty database so FKs land after all "
+            "referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed."
+        ),
+    )
+    async def generate_sqlc_schema(ctx: _Ctx, schema: str) -> str:
+        return await sqlc.generate_sqlc_schema(_driver(ctx), schema)
+
 
 def _register_advisors(server: FastMCP[AppContext]) -> None:
     @server.tool(
@@ -418,6 +466,207 @@ def _register_data_movement(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="import_csv",
+        description=(
+            "Bulk-load CSV content into schema.table via COPY ... FROM STDIN. "
+            "The CSV text is sent verbatim — the caller is responsible for "
+            "correctness (matching column count, proper quoting). `header=true` "
+            "skips the first line. Optional `columns` restricts loading to the "
+            "named columns in order; unlisted columns take their default. "
+            "Performs writes — requires unrestricted mode."
+        ),
+    )
+    async def import_csv(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        content: str,
+        header: bool = True,
+        delimiter: str = ",",
+        columns: list[str] | None = None,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await data_movement.import_csv(
+            database,
+            schema,
+            table,
+            content,
+            header=header,
+            delimiter=delimiter,
+            columns=columns,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="import_json",
+        description=(
+            "Bulk-load a JSON array of objects into schema.table. Parses the "
+            "array, derives column names from the first row (or from `columns` "
+            "when given), and runs a parametrised INSERT once per row. Nested "
+            "dict/list values are JSON-serialised so they round-trip into jsonb "
+            "columns. Missing keys in later rows bind as NULL. Performs writes "
+            "— requires unrestricted mode."
+        ),
+    )
+    async def import_json(
+        ctx: _Ctx, schema: str, table: str, content: str, columns: list[str] | None = None
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await data_movement.import_json(
+            database,
+            schema,
+            table,
+            content,
+            columns=columns,
+        )
+        return asdict(result)
+
+
+def _register_migrations(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="prepare_migration",
+        description=(
+            "Stage a candidate migration against a shadow clone of `target_schema`. "
+            "Replicates the target schema's structure into mcpg_shadow_<id>, applies "
+            "`candidate_sql` there, then runs compare_schemas(target, shadow) so the "
+            "agent can review the structural diff before completing. Returns the "
+            "migration id, shadow schema name, TTL, and the diff. Performs DDL — "
+            "requires unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def prepare_migration(
+        ctx: _Ctx, name: str, target_schema: str, candidate_sql: str, ttl_minutes: int = 60
+    ) -> dict[str, Any]:
+        result = await migrations.prepare_migration(
+            _driver(ctx),
+            name=name,
+            target_schema=target_schema,
+            candidate_sql=candidate_sql,
+            ttl_minutes=ttl_minutes,
+        )
+        return {
+            "id": result.id,
+            "target_schema": result.target_schema,
+            "shadow_schema": result.shadow_schema,
+            "ttl_expires_at": result.ttl_expires_at.isoformat(),
+            "diff": asdict(result.diff),
+        }
+
+    @server.tool(
+        name="complete_migration",
+        description=(
+            "Apply a prepared migration's candidate SQL to its target schema. "
+            "Refuses if the migration is not in 'prepared' status or its TTL "
+            "has expired. Drops the shadow on success and marks the row "
+            "completed. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def complete_migration(ctx: _Ctx, migration_id: str) -> dict[str, Any]:
+        result = await migrations.complete_migration(_driver(ctx), migration_id)
+        return {
+            "id": result.id,
+            "target_schema": result.target_schema,
+            "completed_at": result.completed_at.isoformat(),
+            "statements_run": result.statements_run,
+        }
+
+    @server.tool(
+        name="cancel_migration",
+        description=(
+            "Drop a prepared migration's shadow schema and mark it cancelled. "
+            "Idempotent — calling cancel on a non-existent or already-completed "
+            "migration returns shadow_dropped=false without raising."
+        ),
+    )
+    async def cancel_migration(ctx: _Ctx, migration_id: str) -> dict[str, Any]:
+        result = await migrations.cancel_migration(_driver(ctx), migration_id)
+        return {"id": result.id, "shadow_dropped": result.shadow_dropped}
+
+    @server.tool(
+        name="list_pending_migrations",
+        description=(
+            "List migrations currently in 'prepared' status, newest first. Sweeps "
+            "expired entries (drops their shadows, flips status to 'expired') "
+            "before listing."
+        ),
+    )
+    async def list_pending_migrations(ctx: _Ctx) -> list[dict[str, Any]]:
+        records = await migrations.list_pending_migrations(_driver(ctx))
+        return [
+            {
+                "id": r.id,
+                "prepared_at": r.prepared_at.isoformat(),
+                "target_schema": r.target_schema,
+                "shadow_schema": r.shadow_schema,
+                "status": r.status,
+                "ttl_expires_at": r.ttl_expires_at.isoformat(),
+                "candidate_sql_preview": r.candidate_sql[:200],
+            }
+            for r in records
+        ]
+
+
+def _register_listen(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="subscribe_channel",
+        description=(
+            "Open a PostgreSQL LISTEN on `channel` and return a subscription "
+            "id. Notifications buffer in process memory; poll for them via "
+            "poll_notifications. Channel name must match [A-Za-z_][A-Za-z0-9_]*. "
+            "Subscriptions are lost on server restart. Requires unrestricted "
+            "mode + MCPG_ALLOW_LISTEN."
+        ),
+    )
+    async def subscribe_channel(ctx: _Ctx, channel: str) -> dict[str, Any]:
+        manager = ctx.request_context.lifespan_context.listen_manager
+        sub_id = await manager.subscribe(channel)
+        return {"subscription_id": sub_id, "channel": channel}
+
+    @server.tool(
+        name="poll_notifications",
+        description=(
+            "Drain up to `max_messages` notifications from `subscription_id`. "
+            "When the queue is empty, waits at most `timeout_ms` for the first "
+            "notification (0 = return immediately). Each notification carries "
+            "{channel, payload, delivered_at, dropped_count}; dropped_count is "
+            "non-zero only on the first message after a queue overflow."
+        ),
+    )
+    async def poll_notifications(
+        ctx: _Ctx, subscription_id: str, timeout_ms: int = 0, max_messages: int = 100
+    ) -> list[dict[str, Any]]:
+        manager = ctx.request_context.lifespan_context.listen_manager
+        notifications = await manager.poll(subscription_id, timeout_ms=timeout_ms, max_messages=max_messages)
+        return [asdict(n) for n in notifications]
+
+    @server.tool(
+        name="unsubscribe_channel",
+        description=(
+            "Remove a subscription. Returns true if it existed. The underlying "
+            "LISTEN is dropped when the last subscription on the channel goes "
+            "away. Requires unrestricted mode + MCPG_ALLOW_LISTEN."
+        ),
+    )
+    async def unsubscribe_channel(ctx: _Ctx, subscription_id: str) -> dict[str, Any]:
+        manager = ctx.request_context.lifespan_context.listen_manager
+        removed = await manager.unsubscribe(subscription_id)
+        return {"removed": removed}
+
+    @server.tool(
+        name="list_notification_subscriptions",
+        description=(
+            "List active LISTEN subscriptions in this server process as "
+            "{subscription_id, channel} pairs. Subscriptions are process-local "
+            "and lost on restart."
+        ),
+    )
+    async def list_notification_subscriptions(ctx: _Ctx) -> list[dict[str, str]]:
+        manager = ctx.request_context.lifespan_context.listen_manager
+        return [{"subscription_id": sub_id, "channel": ch} for sub_id, ch in manager.active_subscriptions()]
+
+
 def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="dump_database",
@@ -461,6 +710,42 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             timeout_sec=app.settings.shell_timeout_sec,
             max_output_bytes=app.settings.shell_max_output_bytes,
             format=format,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="copy_table_between_databases",
+        description=(
+            "Copy a single table from one database to another by piping "
+            "pg_dump (source) into pg_restore (destination). The source URL "
+            "is the caller-supplied source_url; the destination is the "
+            "configured database URL. Specify at least one of include_schema "
+            "/ include_data. Credentials pass through libpq env vars on each "
+            "leg, never on the command line. If the captured pg_dump archive "
+            "would exceed MCPG_SHELL_MAX_OUTPUT_BYTES, the tool errors BEFORE "
+            "pg_restore runs (a truncated custom-format archive cannot be "
+            "safely restored). Performs subprocess execution — requires "
+            "unrestricted mode + MCPG_ALLOW_SHELL."
+        ),
+    )
+    async def copy_table_between_databases(
+        ctx: _Ctx,
+        source_url: str,
+        schema: str,
+        table: str,
+        include_schema: bool,
+        include_data: bool,
+    ) -> dict[str, Any]:
+        app = ctx.request_context.lifespan_context
+        result = await data_movement.copy_table_between_databases(
+            source_url,
+            app.settings.database_url,
+            schema,
+            table,
+            include_schema=include_schema,
+            include_data=include_data,
+            timeout_sec=app.settings.shell_timeout_sec,
+            max_output_bytes=app.settings.shell_max_output_bytes,
         )
         return asdict(result)
 
@@ -864,8 +1149,13 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_maintenance(server)
         _register_backend_control(server)
         _register_cron_write(server)
+        _register_data_movement_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)
+    if is_permitted(settings.access_mode, Capability.MIGRATE) and settings.allow_ddl:
+        _register_migrations(server)
     if is_permitted(settings.access_mode, Capability.SHELL) and settings.allow_shell:
         _register_data_movement_shell(server)
+    if is_permitted(settings.access_mode, Capability.LISTEN) and settings.allow_listen:
+        _register_listen(server)

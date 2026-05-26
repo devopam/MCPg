@@ -4,14 +4,16 @@ A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
 server for **PostgreSQL** — letting AI agents safely inspect, query, operate,
 and tune a Postgres database.
 
-> **Status:** v0.3.0 released. **45 MCP tools** covering deep catalog
-> introspection (including custom types, foreign-data wrappers, and
-> logical replication), index intelligence, full-text/trigram/vector/
-> geospatial search, live ops, gated maintenance, Mermaid ER diagrams,
-> and structural schema diff. CI matrix runs the integration suite
-> against **PostgreSQL 14, 15, 16, and 17**. See
+> **Status:** v0.4.0 released. **74 MCP tools** covering deep catalog
+> introspection, index intelligence, full-text/trigram/vector/geospatial
+> search, live ops, gated maintenance, Mermaid ER diagrams, structural
+> schema diff, **subprocess-driven data movement (pg_dump/pg_restore/psql),
+> LISTEN/NOTIFY bridge, staged-migration shadow workflow, and ORM-DSL
+> exporters for Prisma / Drizzle / SQLAlchemy 2.0 / sqlc**. CI matrix runs
+> the integration suite against **PostgreSQL 14, 15, 16, 17, and 18**. See
 > [`CHANGELOG.md`](CHANGELOG.md) and [`docs/PROGRESS.md`](docs/PROGRESS.md)
-> for detail; [`PLAN.md`](PLAN.md) §11 has the post-0.3.0 roadmap.
+> for detail; [`PLAN.md`](PLAN.md) §11 has the post-0.3.0 roadmap. The
+> Batches A–G plan is now **fully shipped**.
 
 ## Quick start
 
@@ -36,7 +38,7 @@ See the [Installation Guide](docs/installation.md) and
 - **Production-ready** — connection pooling, scalability, multi-tenancy,
   thorough documentation.
 
-## Capability surface (v0.3.0)
+## Capability surface (v0.4.0)
 
 - **Catalog introspection** — schemas, tables, columns, indexes,
   constraints, views, functions, triggers, sequences, partitions,
@@ -56,6 +58,21 @@ See the [Installation Guide](docs/installation.md) and
 - **Live ops & maintenance** (gated) — `list_active_queries`,
   `run_maintenance` (VACUUM/ANALYZE), `cancel_query`,
   `terminate_backend`, `run_write`, `run_ddl`, `enable_extension`.
+- **Data movement** — `export_query` / `export_table` (in-process
+  CSV/JSON), `dump_database` / `restore_database` (subprocess gate),
+  `import_csv` / `import_json` (COPY FROM STDIN + parametrised
+  executemany), `copy_table_between_databases` (cross-DB pipeline).
+- **Event streams** (gated) — `subscribe_channel` /
+  `poll_notifications` / `unsubscribe_channel` /
+  `list_notification_subscriptions` bridge PostgreSQL `LISTEN`/`NOTIFY`
+  into the MCP tool-poll model.
+- **Staged migrations** (gated) — `prepare_migration` clones a target
+  schema into a shadow, applies the candidate SQL there, and surfaces
+  the structural diff for review; `complete_migration` /
+  `cancel_migration` / `list_pending_migrations` round out the workflow.
+- **ORM bridges** — `generate_prisma_schema`, `generate_drizzle_schema`,
+  `generate_sqlalchemy_models`, `generate_sqlc_schema` emit ready-to-use
+  schemas / models from a live PG catalog.
 
 ## Documentation
 
@@ -70,6 +87,7 @@ See the [Installation Guide](docs/installation.md) and
 - [`docs/PROGRESS.md`](docs/PROGRESS.md) — live progress tracker (resume point)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — development setup and workflow
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes
+- [`docs/release-notes-0.4.0.md`](docs/release-notes-0.4.0.md) — v0.4.0 release summary
 - [`docs/release-notes-0.3.0.md`](docs/release-notes-0.3.0.md) — v0.3.0 release summary
 
 ## License

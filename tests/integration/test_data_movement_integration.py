@@ -6,7 +6,15 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from mcpg.data_movement import dump_database, export_query, export_table, restore_database
+from mcpg.data_movement import (
+    copy_table_between_databases,
+    dump_database,
+    export_query,
+    export_table,
+    import_csv,
+    import_json,
+    restore_database,
+)
 from mcpg.database import Database
 
 _SCHEMA = "mcpg_data_movement_it"
@@ -104,6 +112,64 @@ async def test_dump_database_runs_real_pg_dump_against_a_live_schema(
     assert "widget" in result.content
 
 
+@pytest.fixture
+async def empty_import_schema(connected_database: Database) -> AsyncIterator[str]:
+    """A fresh table the import tests can fill, isolated from the export fixture."""
+    schema = "mcpg_data_movement_imp_it"
+    driver = connected_database.driver()
+    await driver.execute_query(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+    await driver.execute_query(f"CREATE SCHEMA {schema}")
+    await driver.execute_query(
+        f"CREATE TABLE {schema}.widget (id integer PRIMARY KEY, name text NOT NULL, config jsonb, tags text[])"
+    )
+    try:
+        yield schema
+    finally:
+        await driver.execute_query(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+
+
+async def test_import_csv_loads_rows_via_copy_from_stdin(
+    connected_database: Database, empty_import_schema: str
+) -> None:
+    payload = "id,name\n1,alpha\n2,beta\n3,gamma\n"
+    result = await import_csv(connected_database, empty_import_schema, "widget", payload, columns=["id", "name"])
+
+    assert result.rows_imported == 3
+
+    rows = await connected_database.driver().execute_query(
+        f"SELECT id, name FROM {empty_import_schema}.widget ORDER BY id",
+        force_readonly=True,
+    )
+    assert rows is not None
+    assert [(r.cells["id"], r.cells["name"]) for r in rows] == [(1, "alpha"), (2, "beta"), (3, "gamma")]
+
+
+async def test_import_json_loads_rows_with_nested_jsonb_via_executemany(
+    connected_database: Database, empty_import_schema: str
+) -> None:
+    payload = json.dumps(
+        [
+            {"id": 1, "name": "alpha", "config": {"weight": 5}},
+            {"id": 2, "name": "beta", "config": {"weight": 7}},
+        ]
+    )
+    result = await import_json(
+        connected_database, empty_import_schema, "widget", payload, columns=["id", "name", "config"]
+    )
+
+    assert result.rows_imported == 2
+
+    rows = await connected_database.driver().execute_query(
+        f"SELECT id, name, config FROM {empty_import_schema}.widget ORDER BY id",
+        force_readonly=True,
+    )
+    assert rows is not None
+    assert rows[0].cells["name"] == "alpha"
+    # The jsonb column survived the round-trip as a dict, not a stringified payload.
+    assert rows[0].cells["config"] == {"weight": 5}
+    assert rows[1].cells["config"] == {"weight": 7}
+
+
 async def test_dump_then_restore_round_trip_against_real_pg(connected_database: Database, export_schema: str) -> None:
     if shutil.which("pg_dump") is None or shutil.which("psql") is None:
         pytest.skip("pg_dump / psql not on PATH on this runner")
@@ -143,3 +209,81 @@ async def test_dump_then_restore_round_trip_against_real_pg(connected_database: 
     )
     assert rows is not None
     assert rows[0].cells["n"] == 0
+
+
+async def test_copy_table_between_databases_round_trips_against_real_pg(
+    connected_database: Database, export_schema: str
+) -> None:
+    """End-to-end: pg_dump source DB, pipe into pg_restore on a fresh dest DB.
+
+    Spins up a throwaway target database on the same server so the dump
+    archive's hard-coded schema/table names land cleanly without PK
+    collisions. Exercises the full subprocess pipeline (two separate
+    libpq envs, stdin handoff between dump and restore) end-to-end.
+    """
+    if shutil.which("pg_dump") is None or shutil.which("pg_restore") is None:
+        pytest.skip("pg_dump / pg_restore not on PATH on this runner")
+
+    from urllib.parse import urlparse, urlunparse
+
+    settings = connected_database._settings
+    parsed = urlparse(settings.database_url)
+    dest_db = "mcpg_copy_target"
+    # CREATE/DROP DATABASE can't run inside a transaction, so they go
+    # through Database.run_unmanaged.
+    await connected_database.run_unmanaged(f"DROP DATABASE IF EXISTS {dest_db}")
+    await connected_database.run_unmanaged(f"CREATE DATABASE {dest_db}")
+    try:
+        dest_url = urlunparse(parsed._replace(path=f"/{dest_db}"))
+        # pg_dump --table emits the table's CREATE but not its enclosing
+        # schema. Pre-create the schema on the destination so the
+        # restore-with-schema path lands without a "schema does not
+        # exist" error.
+        from mcpg.config import load_settings as _load_settings
+
+        dest_bootstrap_settings = _load_settings({"MCPG_DATABASE_URL": dest_url})
+        bootstrap = Database(dest_bootstrap_settings)
+        await bootstrap.connect()
+        try:
+            await bootstrap.driver().execute_query(f"CREATE SCHEMA {export_schema}")
+        finally:
+            await bootstrap.close()
+
+        result = await copy_table_between_databases(
+            settings.database_url,
+            dest_url,
+            export_schema,
+            "widget",
+            include_schema=True,
+            include_data=True,
+            timeout_sec=settings.shell_timeout_sec,
+            max_output_bytes=settings.shell_max_output_bytes,
+        )
+        assert result.dump_exit_code == 0, result.dump_stderr_tail
+        assert result.restore_exit_code == 0, result.restore_stderr_tail
+        assert result.timed_out is False
+        assert result.schema_copied is True
+        assert result.data_copied is True
+
+        # Verify the rows landed in the destination database by opening
+        # a second pool against dest_url.
+        dest = Database(dest_bootstrap_settings)
+        await dest.connect()
+        try:
+            rows = await dest.driver().execute_query(
+                f"SELECT id, name FROM {export_schema}.widget ORDER BY id",
+                force_readonly=True,
+            )
+        finally:
+            await dest.close()
+        assert rows is not None
+        assert [(r.cells["id"], r.cells["name"]) for r in rows] == [
+            (1, "alpha"),
+            (2, "beta"),
+            (3, "gamma, with comma"),
+        ]
+    finally:
+        # FORCE drop the target DB even if connections lingered (the
+        # test pool's been closed above, but pg_dump/pg_restore may have
+        # left backends in TERMINATING). FORCE is PG 13+.
+        await connected_database.run_unmanaged(f"DROP DATABASE IF EXISTS {dest_db} WITH (FORCE)")

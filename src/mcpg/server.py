@@ -19,6 +19,7 @@ from mcpg import audit
 from mcpg.config import Settings, Transport
 from mcpg.context import AppContext
 from mcpg.database import Database
+from mcpg.listen import ListenManager
 from mcpg.tools import register_tools
 
 SERVER_NAME = "mcpg"
@@ -43,31 +44,50 @@ class AuditedFastMCP(FastMCP[AppContext]):
 
 
 def make_lifespan(
-    settings: Settings, database: Database
+    settings: Settings, database: Database, listen_manager: ListenManager
 ) -> Callable[[FastMCP[AppContext]], AbstractAsyncContextManager[AppContext]]:
-    """Build the server lifespan: open the database on start, close on stop."""
+    """Build the server lifespan: open the database on start, close on stop.
+
+    The listen manager is created eagerly (cheap — it doesn't open the
+    listener connection until the first ``subscribe_channel`` call) and
+    torn down on lifespan exit so subscriptions can't outlive the
+    server.
+    """
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP[AppContext]) -> AsyncIterator[AppContext]:
-        async with database:
-            yield AppContext(settings=settings, database=database)
+        async with database, listen_manager:
+            yield AppContext(settings=settings, database=database, listen_manager=listen_manager)
 
     return lifespan
 
 
-def create_server(settings: Settings, *, database: Database | None = None) -> FastMCP[AppContext]:
+def create_server(
+    settings: Settings,
+    *,
+    database: Database | None = None,
+    listen_manager: ListenManager | None = None,
+) -> FastMCP[AppContext]:
     """Construct a configured FastMCP server.
 
     Args:
         settings: Validated server configuration.
         database: Optional pre-built database (used by tests); otherwise one
             is created from ``settings``.
+        listen_manager: Optional pre-built listen manager (used by tests
+            to inject a fake connection factory); otherwise a default
+            one is created from ``settings``.
     """
     db = database if database is not None else Database(settings)
+    lm = (
+        listen_manager
+        if listen_manager is not None
+        else ListenManager(database_url=settings.database_url, queue_max=settings.listen_queue_max)
+    )
     server: FastMCP[AppContext] = AuditedFastMCP(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
-        lifespan=make_lifespan(settings, db),
+        lifespan=make_lifespan(settings, db, lm),
         host=settings.http_host,
         port=settings.http_port,
     )

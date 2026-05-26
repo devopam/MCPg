@@ -6,7 +6,251 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-26
+
+Twenty-nine new MCP tools, closing **Batches D / E / F / G** of the
+post-0.3.0 roadmap (`PLAN.md` §11). Brings the total MCP tool surface
+from **45 to 74** and ships the long-planned cross-cutting features:
+the data-movement family, the LISTEN/NOTIFY bridge, the agent-driven
+migration shadow workflow, and three new ORM-DSL exporters
+(Drizzle / SQLAlchemy 2.0 / sqlc) alongside the existing Prisma one.
+
+### Headline features
+
+- **Batch D — data movement (5 tools).** `dump_database` /
+  `restore_database` round-trip a database through `pg_dump` /
+  `psql` / `pg_restore` via the ADR-0004 subprocess gate.
+  `copy_table_between_databases` pipes one database's table into
+  another in one shell pipeline. `import_csv` /
+  `import_json` bulk-load via in-process `COPY ... FROM STDIN`
+  and parametrised `executemany` — no subprocess gate needed.
+- **Batch E — LISTEN/NOTIFY bridge (4 tools), ADR-0005.**
+  `subscribe_channel` / `poll_notifications` /
+  `unsubscribe_channel` / `list_notification_subscriptions`
+  let an agent react to PostgreSQL events through a polled,
+  per-subscription bounded queue. New `Capability.LISTEN` +
+  `MCPG_ALLOW_LISTEN` opt-in.
+- **Batch F — staged-migration workflow (4 tools), ADR-0006.**
+  `prepare_migration` clones a target schema's structure into a
+  shadow schema via introspection, applies a candidate SQL there,
+  and runs `compare_schemas` so the agent reviews the structural
+  delta. `complete_migration` lands it on the target.
+  `cancel_migration` / `list_pending_migrations` round out the
+  workflow. Same-database shadow (no full-DB clone). New
+  `Capability.MIGRATE` reuses the existing `MCPG_ALLOW_DDL` opt-in.
+- **Batch G — catalog → DSL exporters (3 new tools).**
+  `generate_drizzle_schema` (Drizzle ORM TypeScript),
+  `generate_sqlalchemy_models` (SQLAlchemy 2.0 declarative Python),
+  `generate_sqlc_schema` (replayable plain DDL for sqlc). All
+  read-only — drop into any agentic project as a starting point.
+
+### Fixed
+
+- PR #17 code-review findings (10 fixes across the Batches D / E / F / G
+  surfaces):
+  1. `restore_database` for custom/tar formats now passes
+     `--dbname=postgresql:///` so pg_restore actually connects (it
+     previously fell into "convert to SQL script" mode without `-d`).
+  2. `ListenManager` recovers from a dead listener connection — the
+     reader-loop clears `_conn` and sets `_needs_resubscribe`, the next
+     subscribe opens a fresh conn and re-issues LISTEN for every active
+     channel (previously the manager silently stopped delivering after
+     any PG restart).
+  3. Migration DDL replay only rewrites schema references on
+     `foreign_key` constraints, not on every constraint type — a CHECK
+     constraint whose literal happens to contain the target schema
+     name (e.g. `CHECK (path LIKE 'public.%')`) is no longer corrupted.
+  4. `mcpg.sqlc` enum labels are now apostrophe-escaped (PG-standard
+     `''` doubling) so labels like `O'Brien` don't break the DDL.
+  5. `mcpg.sqlalchemy_export` enum generator falls back to the
+     functional `enum.Enum("Name", {...})` form when any label isn't a
+     valid Python identifier (`in-progress`, `1st`, `class`, ...),
+     keeping the generated file importable.
+  6. `mcpg.drizzle` default rendering now translates PG escape rules to
+     JS escape rules in the right order: `''` → `'`, backslash → `\\`,
+     `"` → `\"`. Previously `'it''s'` became `"it''s"` and `'a\nb'`
+     silently injected a newline.
+  7. Shadow schema names are capped to fit PostgreSQL's 63-byte
+     NAMEDATALEN limit, preventing silent truncation that would leak
+     shadow schemas the workflow couldn't clean up.
+  8. The migration shadow-workflow now refuses candidate SQL containing
+     statements PG won't run inside a transaction block (CREATE INDEX
+     CONCURRENTLY, VACUUM, ALTER SYSTEM, ...) with a clear error
+     pointing the user at `run_ddl` instead.
+  9. `mcpg.shell._write_stdin` always closes the child's stdin in a
+     `finally` block — a non-`BrokenPipeError` from `write`/`drain`
+     no longer leaks the pipe and wedges the child.
+  10. `ListenManager.close()` bounds the `conn.close()` await at 2s so
+      a libpq close hanging on a half-open socket can't wedge server
+      shutdown.
+
+- PR #17 code-review findings (10 fixes across the Batches D / E / F / G
+  surfaces):
+  1. `restore_database` for custom/tar formats now passes
+     `--dbname=postgresql:///` so pg_restore actually connects (it
+     previously fell into "convert to SQL script" mode without `-d`).
+  2. `ListenManager` recovers from a dead listener connection — the
+     reader-loop clears `_conn` and sets `_needs_resubscribe`, the next
+     subscribe opens a fresh conn and re-issues LISTEN for every active
+     channel (previously the manager silently stopped delivering after
+     any PG restart).
+  3. Migration DDL replay only rewrites schema references on
+     `foreign_key` constraints, not on every constraint type — a CHECK
+     constraint whose literal happens to contain the target schema
+     name (e.g. `CHECK (path LIKE 'public.%')`) is no longer corrupted.
+  4. `mcpg.sqlc` enum labels are now apostrophe-escaped (PG-standard
+     `''` doubling) so labels like `O'Brien` don't break the DDL.
+  5. `mcpg.sqlalchemy_export` enum generator falls back to the
+     functional `enum.Enum("Name", {...})` form when any label isn't a
+     valid Python identifier (`in-progress`, `1st`, `class`, ...),
+     keeping the generated file importable.
+  6. `mcpg.drizzle` default rendering now translates PG escape rules to
+     JS escape rules in the right order: `''` → `'`, backslash → `\\`,
+     `"` → `\"`. Previously `'it''s'` became `"it''s"` and `'a\nb'`
+     silently injected a newline.
+  7. Shadow schema names are capped to fit PostgreSQL's 63-byte
+     NAMEDATALEN limit, preventing silent truncation that would leak
+     shadow schemas the workflow couldn't clean up.
+  8. The migration shadow-workflow now refuses candidate SQL containing
+     statements PG won't run inside a transaction block (CREATE INDEX
+     CONCURRENTLY, VACUUM, ALTER SYSTEM, ...) with a clear error
+     pointing the user at `run_ddl` instead.
+  9. `mcpg.shell._write_stdin` always closes the child's stdin in a
+     `finally` block — a non-`BrokenPipeError` from `write`/`drain`
+     no longer leaks the pipe and wedges the child.
+  10. `ListenManager.close()` bounds the `conn.close()` await at 2s so
+      a libpq close hanging on a half-open socket can't wedge server
+      shutdown.
+
 ### Added
+
+- ORM-bridge exporters — Batch G follow-ons (Phase 28b/c/d). Three
+  new MCP tools sit alongside the existing `generate_prisma_schema`
+  under the schema→DSL umbrella:
+  - `generate_drizzle_schema` — emit a Drizzle ORM TypeScript schema
+    (`drizzle-orm/pg-core`) covering tables, columns with PG-native
+    types (incl. `serial`/`bigserial` from `nextval` defaults, length
+    on varchar, `withTimezone` on timestamptz), single-column FKs as
+    column-level `.references(() => ...)`, primary/unique/check
+    constraints, indexes, defaults, and enums via `pgEnum`. The
+    helper-import line is computed from what was actually emitted, so
+    unused helpers don't clutter the output.
+  - `generate_sqlalchemy_models` — emit a SQLAlchemy 2.0 declarative
+    models file (`DeclarativeBase` + `Mapped[T]` + `mapped_column`)
+    with PG types from both `sqlalchemy` core and
+    `sqlalchemy.dialects.postgresql` (jsonb), single-column FKs via
+    `ForeignKey("schema.table.col")`, composite uniques in
+    `__table_args__`, enum types emitted as Python `enum.Enum`
+    classes, and `server_default=text(...)` / `func.now()` for
+    defaults. Composite FKs are a documented v1 gap.
+  - `generate_sqlc_schema` — emit a sqlc-friendly `schema.sql` (plain
+    DDL) ordered for clean replay: `CREATE SCHEMA` → `CREATE TYPE`
+    enums → `CREATE TABLE` (columns only) → `ALTER TABLE ADD
+    CONSTRAINT` (PK / unique / check / FK in that order) → `CREATE
+    INDEX` for non-constraint indexes. In-process — no
+    `MCPG_ALLOW_SHELL` needed.
+  All three are read-only; gated by the standard READ capability.
+
+- Staged-migration workflow — Batch F (Phase 27), per ADR-0006. New
+  `mcpg.migrations` module implements Neon-style "branch the schema,
+  test the migration, merge" with same-database shadow schemas (no
+  `pg_dump` shell-out, no cross-batch dependency on Batch D). Four
+  new MCP tools:
+  - `prepare_migration(name, target_schema, candidate_sql,
+    ttl_minutes=60)` clones the target schema's structure into a
+    fresh `mcpg_shadow_<id>` schema via introspection-driven DDL
+    replay (tables + columns, PK / UNIQUE / CHECK / FK constraints,
+    indexes), applies `candidate_sql` against the shadow with
+    `SET LOCAL search_path` so unqualified identifiers resolve there,
+    runs `compare_schemas(target, shadow)`, and persists the staged
+    row in `mcpg_migrations.staged`. Returns the migration id +
+    shadow schema name + TTL + structural diff for review.
+  - `complete_migration(id)` applies the candidate SQL to the
+    target schema and drops the shadow. Refuses if status is not
+    `prepared` or TTL has expired.
+  - `cancel_migration(id)` drops the shadow and marks the row
+    `cancelled`. Idempotent.
+  - `list_pending_migrations()` lists prepared migrations newest
+    first; sweeps any expired prepared rows before listing.
+  Intra-schema FK references are rewritten to point at the shadow;
+  cross-schema FKs are left pointing at the original and surface in
+  the diff as removed (documented limitation per ADR-0006).
+- New `Capability.MIGRATE` enum entry; the migration tools register
+  under unrestricted mode + the existing `MCPG_ALLOW_DDL` opt-in
+  (the underlying ops are DDL).
+- New `mcpg_migrations` schema + `staged` table created idempotently
+  on first migration call. State columns: `id`, `prepared_at`,
+  `target_schema`, `shadow_schema`, `candidate_sql`, `status`
+  (`prepared` / `completed` / `cancelled` / `expired`),
+  `ttl_expires_at`, `completed_at`.
+
+- LISTEN/NOTIFY bridge — Batch E first slice, per ADR-0005. New
+  `mcpg.listen` module owns the server-lifetime subscription state.
+  Four new MCP tools:
+  - `subscribe_channel(channel)` opens a PostgreSQL `LISTEN` on the
+    given channel (validated against the standard plain-identifier
+    allowlist) and returns a subscription id. Notifications buffer
+    in a per-subscription bounded queue.
+  - `poll_notifications(subscription_id, timeout_ms, max_messages)`
+    drains up to `max_messages` from the queue, waiting at most
+    `timeout_ms` for the first one when the queue is empty. Each
+    `{channel, payload, delivered_at, dropped_count}` notification
+    surfaces drop count only on the first message after an overflow
+    so the caller is informed exactly once.
+  - `unsubscribe_channel(subscription_id)` removes a subscription;
+    `UNLISTEN` fires when the last subscription on a channel is gone.
+  - `list_notification_subscriptions()` reports the active
+    `{subscription_id, channel}` pairs for visibility.
+  A single dedicated PostgreSQL connection (separate from the request
+  pool) holds every active LISTEN, opened lazily on first subscribe.
+  A background `asyncio.Task` drains psycopg's notifies generator
+  with a short polling timeout so subscribe/unsubscribe `execute()`
+  calls can land between iterations (the psycopg connection lock
+  would otherwise deadlock concurrent admin commands). Queue overflow
+  drops the oldest message and surfaces `dropped_count` on the next
+  poll.
+- New `Capability.LISTEN` enum entry. Two new env vars:
+  `MCPG_ALLOW_LISTEN` (bool, default `false`) toggling the
+  subscription tool surface; `MCPG_LISTEN_QUEUE_MAX` (default 1000)
+  capping per-subscription buffer size.
+- `AppContext.listen_manager` exposes the manager to every tool;
+  `create_server` accepts an optional `listen_manager` keyword arg so
+  tests can inject a fake connection factory.
+
+- `copy_table_between_databases` tool — copy a single table from one
+  database to another by piping `pg_dump --format=custom --table=...`
+  (source) into `pg_restore --format=custom --single-transaction
+  --exit-on-error` (destination). Both legs run through the ADR-0004
+  shell runner with separate libpq env dicts derived from the source
+  and destination URLs; credentials never appear on argv. `include_schema`
+  and `include_data` flags are required (no implicit default) so the
+  caller can't accidentally copy the wrong half. If the captured
+  pg_dump archive exceeds `MCPG_SHELL_MAX_OUTPUT_BYTES`, the tool
+  raises before invoking pg_restore — a truncated custom-format archive
+  would either fail obscurely or partially restore. A failed pg_dump
+  short-circuits the same way, returning the dump stderr_tail with
+  `restore_exit_code=-1` as a sentinel. Gated under unrestricted mode
+  + `MCPG_ALLOW_SHELL`.
+
+- `import_csv` tool — bulk-load CSV content into `schema.table` via
+  `COPY ... FROM STDIN`. CSV text is sent verbatim; `header` toggles
+  header-row skipping; optional `columns` restricts loading to named
+  columns (each validated against the plain-identifier allowlist).
+  Delimiter is restricted to a single non-newline, non-quote character
+  so it cannot terminate the COPY options list early. Returns the
+  server-reported row count. Gated under unrestricted mode (WRITE
+  capability) — no subprocess, no `MCPG_ALLOW_SHELL` needed.
+- `import_json` tool — bulk-load a JSON array of objects into
+  `schema.table` via parametrised `INSERT ... executemany`. Columns
+  are derived from the first row's keys (or supplied explicitly);
+  nested `dict`/`list` values are JSON-serialised so they round-trip
+  into `jsonb` columns; missing keys in later rows bind as `NULL`.
+  Values are bound — never spliced into SQL — so they cannot inject
+  statements. Gated under unrestricted mode (WRITE capability).
+- `Database.copy_from_stdin` and `Database.execute_many` helpers —
+  in-process plumbing for COPY FROM STDIN and `executemany`, used by
+  the new import tools. The vendored `SqlDriver` exposes neither, so
+  imports go through the `Database` wrapper for raw connection access.
 
 - `restore_database` tool — restore a dump into the connected database
   via the ADR-0004 subprocess gate. `format='plain'` pipes SQL text

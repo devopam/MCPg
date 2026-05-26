@@ -6,23 +6,33 @@
 
 ## Current state
 
-- **Phase:** 24c — `restore_database` (full dump/restore round-trip
-  via the shell gate)
-- **Last updated:** 2026-05-25
+- **Phase:** v0.4.0 release prep — version bumped 0.3.0 → 0.4.0,
+  CHANGELOG converted, release notes written, README capability
+  surface refreshed. Tool surface 74. **All planned batches A–G
+  are now closed.**
+- **Last updated:** 2026-05-26
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 60
+- **Tool count:** 74
 
 ## Next action
 
-> Phase 24c shipped — `restore_database` completes the dump/restore
-> symmetry, and the integration test now exercises a real end-to-end
-> `pg_dump` → drop schema → `psql` restore against every PG version
-> in the matrix. Also fixed a latent `stdin` ordering bug in
-> `mcpg.shell` that would have deadlocked any subprocess consuming
-> stdin (no tool relied on it yet). Next slices: **Phase 24d**
-> `copy_table_between_databases`; **Phase 24e** `import_csv` /
-> `import_json` once `COPY ... FROM STDIN` plumbing lands. Batch G
-> follow-ons and Batches E and F also remain open.
+> Batch G follow-ons shipped — three new exporters sit alongside the
+> existing `generate_prisma_schema` under the schema→DSL umbrella.
+> `generate_drizzle_schema` emits a `drizzle-orm/pg-core` TS file
+> (tables + columns + single-column FK `.references()` + enums via
+> `pgEnum` + serial detection from `nextval` defaults). The
+> helper-import line is computed from what was actually emitted so
+> unused imports don't clutter the output.
+> `generate_sqlalchemy_models` emits a 2.0-style declarative file
+> (`DeclarativeBase` + `Mapped[T]` + `mapped_column`, jsonb via the
+> PG dialect, enum types as Python `enum.Enum` classes, composite
+> uniques in `__table_args__`). `generate_sqlc_schema` emits a clean
+> replayable `schema.sql` (CREATE SCHEMA → CREATE TYPE → CREATE
+> TABLE → ALTER TABLE ADD CONSTRAINT in PK→FK order → CREATE
+> INDEX), no subprocess needed. All three are read-only.
+> **Roadmap status: A–G all closed.** Next direction is open —
+> release prep (v0.2.0 cut from this branch with all post-1.0
+> features), additional Batch-G exporters, or new feature work.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -660,3 +670,175 @@
   a real dump → drop schema → restore round-trip against every PG
   version in the CI matrix. Phase 24c complete (60 MCP tools total).
   576 tests, 100% coverage.
+- 2026-05-25 — Phase 24e (bulk imports): two new write tools land
+  the import half of Batch D. `import_csv` pipes raw CSV content
+  into `COPY "schema"."table" [(cols)] FROM STDIN WITH (FORMAT csv,
+  HEADER ?, DELIMITER ?)` — header / delimiter / explicit-columns
+  all configurable, with the delimiter restricted to a single
+  non-newline non-quote character so it cannot terminate the COPY
+  options list. `import_json` parses a JSON array of objects,
+  derives the column list from the first row's keys (or an explicit
+  `columns` arg), and runs `INSERT INTO ... VALUES (%s, ...)` via
+  `executemany`; nested dict/list values are JSON-serialised so they
+  survive into a jsonb column, missing keys bind as NULL. Both
+  gated under unrestricted mode (WRITE capability) — no subprocess,
+  no `MCPG_ALLOW_SHELL`. Vendored `SqlDriver` doesn't expose COPY
+  or executemany, so two new helpers (`Database.copy_from_stdin`,
+  `Database.execute_many`) wrap raw pool-connection access;
+  `FakeDatabase` grew matching recorders so unit tests don't need a
+  live server. 19 new unit tests cover SQL composition, identifier
+  rejection, delimiter validation, empty-input no-op, error
+  wrapping, negative-rowcount fallback, and the WRITE-gate tool
+  wiring matrix. 2 new integration tests round-trip real CSV +
+  JSON loads against every PG version in the CI matrix (including a
+  `jsonb` column on the JSON path). Phase 24e complete (62 MCP
+  tools total). 599 tests, 98% coverage.
+- 2026-05-25 — Phase 24d (closes Batch D): new
+  `copy_table_between_databases` tool runs
+  `pg_dump --format=custom --table=schema.table` against a caller-
+  supplied source URL, captures the binary archive in memory, then
+  pipes it through `pg_restore --format=custom --single-transaction
+  --exit-on-error --no-owner --no-privileges` against the configured
+  destination URL. Both legs go through the existing
+  `mcpg.shell.run_pg_binary` runner with separate libpq env dicts so
+  credentials never reach argv on either side. pg_restore needs
+  `--dbname` even with PGDATABASE set (without `-d` it switches to
+  script-output mode), so the argv carries `--dbname=postgresql:///`
+  — an empty libpq URI that makes libpq fall back to PG* env for
+  every connection parameter. `include_schema` and `include_data`
+  are required (no defaults) per design feedback. A truncated dump
+  raises `ShellError` BEFORE pg_restore runs (a partial custom-
+  format archive cannot be safely restored); a non-zero dump exit
+  short-circuits and returns the dump stderr_tail with
+  `restore_exit_code=-1`. 11 new unit tests cover the two-leg
+  pipeline (separate envs, stdin handoff), schema-only / data-only
+  argv composition, both-flags-off rejection, identifier rejection
+  on each side, both-URL database-name requirement, truncation
+  refusal, dump-failure short-circuit, restore-timeout flag
+  surfacing, and the `MCPG_ALLOW_SHELL` tool-wiring gate. 1 new
+  integration test spins up a fresh target database via
+  `run_unmanaged`, pre-creates the schema there (pg_dump --table
+  doesn't include `CREATE SCHEMA`), copies the seeded widget table
+  across, and verifies the rows arrived. **Batch D closed** — export,
+  dump, restore, bulk import, and cross-DB copy are all shipped.
+  Phase 24d complete (63 MCP tools total). 611 tests, 98% coverage.
+- 2026-05-25 — Phase 26 (Batch E first slice, LISTEN/NOTIFY bridge):
+  new `mcpg.listen` module implements the ADR-0005 tool-poll model.
+  `ListenManager` owns server-lifetime subscription state behind an
+  asyncio.Lock; subscriptions get individual bounded `asyncio.Queue`s
+  and overflow drops oldest while bumping a per-sub drop counter that
+  surfaces in the next poll's first message (then resets). A
+  dedicated PG connection (lazy — opened only on first subscribe,
+  separate from the request pool) holds every active LISTEN; a
+  background `asyncio.Task` drains psycopg's `notifies()` generator.
+  Discovery during integration testing: psycopg's connection lock is
+  held while `notifies()` waits on the socket, so a `timeout=None`
+  iteration would deadlock concurrent UNLISTEN execute() calls. Fixed
+  by iterating with `timeout=0.5` and yielding between iterations so
+  the lock is released periodically. Four new tools land:
+  `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`,
+  `list_notification_subscriptions`. New `Capability.LISTEN` +
+  `MCPG_ALLOW_LISTEN` opt-in (defence-in-depth: must be
+  unrestricted AND opt-in). New `MCPG_LISTEN_QUEUE_MAX` knob
+  (default 1000). `AppContext` grew a `listen_manager` field;
+  `create_server` accepts an injectable `listen_manager` so unit
+  tests can pass a fake connection factory. Server lifespan
+  enters/exits the manager via `async with`, so subscriptions
+  cannot outlive the server. 20 new unit tests cover subscribe /
+  unsubscribe lifecycle, LISTEN/UNLISTEN reference counting per
+  channel, queue overflow + dropped_count semantics, poll
+  validation, channel-name allowlist, close idempotency, and the
+  three-mode tool-wiring gate. 2 new integration tests round-trip
+  a real `SELECT pg_notify(...)` from one connection to the
+  listener and verify unsubscribe halts delivery. Phase 26 complete
+  (67 MCP tools total). 635 tests, 97% coverage.
+- 2026-05-25 — Phase 27 (closes Batch F, staged-migration workflow):
+  new `mcpg.migrations` module implements ADR-0006's
+  same-database shadow strategy. `prepare_migration` creates a fresh
+  `mcpg_shadow_<id>` schema, replays the target schema's structure
+  into it via introspection (tables + columns, PK / UNIQUE / CHECK
+  / FK constraints, indexes; intra-schema FKs are rewritten to
+  point at the shadow, cross-schema FKs documented as remaining-
+  pointed-at-original per ADR), applies the candidate SQL with
+  `SET LOCAL search_path` so unqualified identifiers resolve in the
+  shadow, runs `compare_schemas(target, shadow)`, and persists the
+  staged row in `mcpg_migrations.staged`. `complete_migration` runs
+  the same candidate against the target schema (same SET LOCAL
+  treatment) and drops the shadow; `cancel_migration` drops the
+  shadow without applying (idempotent). `list_pending_migrations`
+  sweeps expired prepared rows before listing. New
+  `Capability.MIGRATE` gates the four tools under unrestricted mode
+  + the existing `MCPG_ALLOW_DDL` opt-in (the underlying ops are
+  DDL). Discovery during smoke testing: the vendored `SqlDriver`
+  gives a fresh pool connection per `execute_query` call, so a
+  standalone `SET search_path` would only affect that one call.
+  Fix: a `_execute_in_schema` helper reaches through the driver to
+  the underlying pool, opens one connection, and runs SET LOCAL +
+  the candidate SQL together in one transaction. Second discovery:
+  `TableInfo.type` comes from `information_schema` as `BASE TABLE`
+  not `table`; the replay filter had to match. 16 new unit tests
+  cover the pure helpers (identifier check, migration-id derivation,
+  shadow naming, column clause builder, FK + index schema rewriting),
+  input validation in `prepare_migration`, and the three-mode tool-
+  wiring gate. 5 new integration tests round-trip a real
+  prepare → complete (column landed on target, shadow gone),
+  prepare → cancel (shadow gone, target untouched), bad SQL
+  rolls back the shadow without orphaning it, the pending list
+  reflects cancellations, and complete refuses unknown or
+  already-completed ids. **Batch F closed** — all three roadmap-
+  blocking ADRs (D / E / F) are now shipped. Phase 27 complete
+  (71 MCP tools total). 656 tests, 97% coverage.
+- 2026-05-25 — Batch G follow-ons (Phase 28b/c/d): three new ORM
+  exporters sit alongside the existing `generate_prisma_schema` and
+  close out the schema→DSL umbrella. `mcpg.drizzle` emits a
+  `drizzle-orm/pg-core` TypeScript schema with pgTable consts,
+  PG-native helpers (integer / bigint / varchar with length /
+  timestamp with `withTimezone: true` / jsonb / etc.), `pgEnum`
+  consts for enum columns, `serial`/`bigserial` detected from
+  `nextval()` defaults, single-column FKs as column-level
+  `.references(() => target.col)`, composite PK/unique/index in the
+  extras callback, and a stripped import line computed from what
+  was actually emitted (chain methods like `.primaryKey()` are NOT
+  picked up — only top-level helpers). `mcpg.sqlalchemy_export`
+  emits a 2.0-style declarative file with `DeclarativeBase` +
+  `Mapped[T]` + `mapped_column`, PG types from both core and the
+  PG dialect (jsonb), `ForeignKey("schema.table.col")` for
+  single-column FKs, `UniqueConstraint` in `__table_args__` for
+  composites, Python `enum.Enum` classes for PG enums, and
+  `server_default=text(...)` / `func.now()` for defaults; the
+  output compiles cleanly under `compile()` so syntax errors can
+  never reach the agent. `mcpg.sqlc` emits plain DDL ordered for
+  replay against an empty database (CREATE SCHEMA → CREATE TYPE
+  enums → CREATE TABLE columns-only → ALTER TABLE ADD CONSTRAINT
+  in PK/unique/check/FK order → CREATE INDEX for non-constraint
+  indexes). All three tools are read-only — no new capability or
+  opt-in needed. 41 new unit tests across three test files cover
+  helper composition (camelCase / PascalCase / type maps / default
+  rendering / nextval detection / enum resolution including
+  schema-qualified types / FK chain rendering) and tool
+  registration. 6 new integration tests round-trip each exporter
+  against a real PG schema with FKs + uniques + enum + jsonb;
+  SQLAlchemy output is verified to `compile()` cleanly, and the
+  sqlc output is verified to order PK before FK so the file
+  replays clean. **Batches A–G are all closed.** Phase 28b/c/d
+  complete (74 MCP tools total). 698 tests, 96% coverage.
+- 2026-05-26 — PR #17 code-review fixes: 10 confirmed findings
+  fixed with 25 new regression tests (restore_database missing
+  `--dbname`, ListenManager dead-conn recovery, migration
+  CHECK-literal corruption, sqlc apostrophe escape, SQLAlchemy
+  enum-class fallback for non-identifier labels, Drizzle default
+  escape ordering, shadow-name NAMEDATALEN cap, migrations refuses
+  non-transactional candidates, shell `_write_stdin` close in
+  finally, ListenManager.close conn-close timeout). Test count
+  698 → 723; coverage 96%. PR #17 stays open for the user's
+  review; PR #16 (Phase 24c shell stdin hardening) landed on main.
+- 2026-05-26 — v0.4.0 release prep: pyproject.toml +
+  `mcpg/__init__.py` bumped 0.3.0 → 0.4.0; CHANGELOG `[Unreleased]`
+  section converted to `[0.4.0] - 2026-05-26` with a release-overview
+  blurb covering Batches D/E/F/G and the 10 review fixes; new
+  `docs/release-notes-0.4.0.md` with the full release summary,
+  capability table, upgrade notes, and what's-next; README
+  capability surface refreshed (45 → 74 tools, PG 14-18 in CI,
+  data movement + LISTEN/NOTIFY + staged migrations + ORM bridges
+  highlighted). No code changes — release prep only. Tagging /
+  publishing awaits explicit user sign-off.

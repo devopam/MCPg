@@ -7,7 +7,9 @@ typed errors, and async-context-manager support, so the server owns a single
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from types import TracebackType
+from typing import Any
 
 from mcpg._vendor.sql import DbConnPool, SqlDriver, obfuscate_password
 from mcpg.config import Settings
@@ -66,6 +68,42 @@ class Database:
         if not self._connected:
             raise DatabaseError("database is not connected; call connect() first")
         return SqlDriver(conn=self._pool)
+
+    async def copy_from_stdin(self, sql: str, data: bytes) -> int:
+        """Stream ``data`` into a ``COPY ... FROM STDIN`` statement.
+
+        Returns the row count the server reports (``cursor.rowcount``).
+        The caller is responsible for SQL safety — the SQL is executed
+        verbatim, so identifiers in it must already be validated.
+
+        Raises:
+            DatabaseError: If called before :meth:`connect`.
+        """
+        if not self._connected:
+            raise DatabaseError("database is not connected; call connect() first")
+        pool = await self._pool.pool_connect()
+        async with pool.connection() as connection, connection.cursor() as cursor:
+            async with cursor.copy(sql) as copy:
+                if data:
+                    await copy.write(data)
+            return cursor.rowcount
+
+    async def execute_many(self, sql: str, params_seq: Sequence[Sequence[Any]]) -> int:
+        """Run ``sql`` once per row of ``params_seq`` via ``executemany``.
+
+        Returns the total row count the server reports across all rows.
+        The caller is responsible for SQL safety; values are passed as
+        bound parameters, so they cannot inject SQL.
+
+        Raises:
+            DatabaseError: If called before :meth:`connect`.
+        """
+        if not self._connected:
+            raise DatabaseError("database is not connected; call connect() first")
+        pool = await self._pool.pool_connect()
+        async with pool.connection() as connection, connection.cursor() as cursor:
+            await cursor.executemany(sql, params_seq)
+            return cursor.rowcount
 
     async def run_unmanaged(self, sql: str) -> None:
         """Execute a statement on an autocommit connection — no transaction.
