@@ -6,10 +6,11 @@
 
 ## Current state
 
-- **Phase:** 28b/c/d — Batch G ORM bridges shipped (Drizzle,
-  SQLAlchemy 2.0, sqlc). Tool surface 71 → 74. **All planned
-  batches A–G are now closed.**
-- **Last updated:** 2026-05-25
+- **Phase:** v0.4.0 release prep — version bumped 0.3.0 → 0.4.0,
+  CHANGELOG converted, release notes written, README capability
+  surface refreshed. Tool surface 74. **All planned batches A–G
+  are now closed.**
+- **Last updated:** 2026-05-26
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
 - **Tool count:** 74
 
@@ -821,3 +822,23 @@
   sqlc output is verified to order PK before FK so the file
   replays clean. **Batches A–G are all closed.** Phase 28b/c/d
   complete (74 MCP tools total). 698 tests, 96% coverage.
+- 2026-05-26 — PR #17 code-review fixes: 10 confirmed findings
+  fixed with 25 new regression tests (restore_database missing
+  `--dbname`, ListenManager dead-conn recovery, migration
+  CHECK-literal corruption, sqlc apostrophe escape, SQLAlchemy
+  enum-class fallback for non-identifier labels, Drizzle default
+  escape ordering, shadow-name NAMEDATALEN cap, migrations refuses
+  non-transactional candidates, shell `_write_stdin` close in
+  finally, ListenManager.close conn-close timeout). Test count
+  698 → 723; coverage 96%. PR #17 stays open for the user's
+  review; PR #16 (Phase 24c shell stdin hardening) landed on main.
+- 2026-05-26 — v0.4.0 release prep: pyproject.toml +
+  `mcpg/__init__.py` bumped 0.3.0 → 0.4.0; CHANGELOG `[Unreleased]`
+  section converted to `[0.4.0] - 2026-05-26` with a release-overview
+  blurb covering Batches D/E/F/G and the 10 review fixes; new
+  `docs/release-notes-0.4.0.md` with the full release summary,
+  capability table, upgrade notes, and what's-next; README
+  capability surface refreshed (45 → 74 tools, PG 14-18 in CI,
+  data movement + LISTEN/NOTIFY + staged migrations + ORM bridges
+  highlighted). No code changes — release prep only. Tagging /
+  publishing awaits explicit user sign-off.

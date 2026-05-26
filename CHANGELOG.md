@@ -6,7 +6,83 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-26
+
+Twenty-nine new MCP tools, closing **Batches D / E / F / G** of the
+post-0.3.0 roadmap (`PLAN.md` §11). Brings the total MCP tool surface
+from **45 to 74** and ships the long-planned cross-cutting features:
+the data-movement family, the LISTEN/NOTIFY bridge, the agent-driven
+migration shadow workflow, and three new ORM-DSL exporters
+(Drizzle / SQLAlchemy 2.0 / sqlc) alongside the existing Prisma one.
+
+### Headline features
+
+- **Batch D — data movement (5 tools).** `dump_database` /
+  `restore_database` round-trip a database through `pg_dump` /
+  `psql` / `pg_restore` via the ADR-0004 subprocess gate.
+  `copy_table_between_databases` pipes one database's table into
+  another in one shell pipeline. `import_csv` /
+  `import_json` bulk-load via in-process `COPY ... FROM STDIN`
+  and parametrised `executemany` — no subprocess gate needed.
+- **Batch E — LISTEN/NOTIFY bridge (4 tools), ADR-0005.**
+  `subscribe_channel` / `poll_notifications` /
+  `unsubscribe_channel` / `list_notification_subscriptions`
+  let an agent react to PostgreSQL events through a polled,
+  per-subscription bounded queue. New `Capability.LISTEN` +
+  `MCPG_ALLOW_LISTEN` opt-in.
+- **Batch F — staged-migration workflow (4 tools), ADR-0006.**
+  `prepare_migration` clones a target schema's structure into a
+  shadow schema via introspection, applies a candidate SQL there,
+  and runs `compare_schemas` so the agent reviews the structural
+  delta. `complete_migration` lands it on the target.
+  `cancel_migration` / `list_pending_migrations` round out the
+  workflow. Same-database shadow (no full-DB clone). New
+  `Capability.MIGRATE` reuses the existing `MCPG_ALLOW_DDL` opt-in.
+- **Batch G — catalog → DSL exporters (3 new tools).**
+  `generate_drizzle_schema` (Drizzle ORM TypeScript),
+  `generate_sqlalchemy_models` (SQLAlchemy 2.0 declarative Python),
+  `generate_sqlc_schema` (replayable plain DDL for sqlc). All
+  read-only — drop into any agentic project as a starting point.
+
 ### Fixed
+
+- PR #17 code-review findings (10 fixes across the Batches D / E / F / G
+  surfaces):
+  1. `restore_database` for custom/tar formats now passes
+     `--dbname=postgresql:///` so pg_restore actually connects (it
+     previously fell into "convert to SQL script" mode without `-d`).
+  2. `ListenManager` recovers from a dead listener connection — the
+     reader-loop clears `_conn` and sets `_needs_resubscribe`, the next
+     subscribe opens a fresh conn and re-issues LISTEN for every active
+     channel (previously the manager silently stopped delivering after
+     any PG restart).
+  3. Migration DDL replay only rewrites schema references on
+     `foreign_key` constraints, not on every constraint type — a CHECK
+     constraint whose literal happens to contain the target schema
+     name (e.g. `CHECK (path LIKE 'public.%')`) is no longer corrupted.
+  4. `mcpg.sqlc` enum labels are now apostrophe-escaped (PG-standard
+     `''` doubling) so labels like `O'Brien` don't break the DDL.
+  5. `mcpg.sqlalchemy_export` enum generator falls back to the
+     functional `enum.Enum("Name", {...})` form when any label isn't a
+     valid Python identifier (`in-progress`, `1st`, `class`, ...),
+     keeping the generated file importable.
+  6. `mcpg.drizzle` default rendering now translates PG escape rules to
+     JS escape rules in the right order: `''` → `'`, backslash → `\\`,
+     `"` → `\"`. Previously `'it''s'` became `"it''s"` and `'a\nb'`
+     silently injected a newline.
+  7. Shadow schema names are capped to fit PostgreSQL's 63-byte
+     NAMEDATALEN limit, preventing silent truncation that would leak
+     shadow schemas the workflow couldn't clean up.
+  8. The migration shadow-workflow now refuses candidate SQL containing
+     statements PG won't run inside a transaction block (CREATE INDEX
+     CONCURRENTLY, VACUUM, ALTER SYSTEM, ...) with a clear error
+     pointing the user at `run_ddl` instead.
+  9. `mcpg.shell._write_stdin` always closes the child's stdin in a
+     `finally` block — a non-`BrokenPipeError` from `write`/`drain`
+     no longer leaks the pipe and wedges the child.
+  10. `ListenManager.close()` bounds the `conn.close()` await at 2s so
+      a libpq close hanging on a half-open socket can't wedge server
+      shutdown.
 
 - PR #17 code-review findings (10 fixes across the Batches D / E / F / G
   surfaces):
