@@ -20,11 +20,15 @@ from mcpg import (
     cron,
     data_movement,
     diagrams,
+    diesel,
     drizzle,
+    ecto,
+    ent,
     extensions,
     health,
     indexing,
     introspection,
+    jooq,
     liveops,
     maintenance,
     migrations,
@@ -386,6 +390,78 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
     )
     async def generate_drizzle_schema(ctx: _Ctx, schema: str) -> str:
         return await drizzle.generate_drizzle_schema(_driver(ctx), schema)
+
+    @server.tool(
+        name="generate_diesel_schema",
+        description=(
+            "Read a PostgreSQL schema and emit a Diesel ORM (Rust) schema.rs. "
+            "One `table!` macro per table with column SQL types, `Nullable<T>` "
+            "for nullable columns, plus `joinable!` declarations for single-"
+            "column intra-schema FKs and an `allow_tables_to_appear_in_same_query!` "
+            "macro so multi-table joins type-check. Enum types are emitted as "
+            "Text-backed wrapper enums in a `pg_enum` module so the output "
+            "works without `diesel_derive_enum`. Composite FKs are a "
+            "documented v1 gap."
+        ),
+    )
+    async def generate_diesel_schema(ctx: _Ctx, schema: str) -> str:
+        return await diesel.generate_diesel_schema(_driver(ctx), schema)
+
+    @server.tool(
+        name="generate_jooq_config",
+        description=(
+            "Read a PostgreSQL schema and emit a jooq-codegen configuration XML "
+            "pointing at it. Unlike the other exporters, jOOQ generates Java "
+            "code itself from a live database — the artefact here is the "
+            "configuration file the user feeds to mvn jooq-codegen:generate "
+            "(or the Gradle task). The XML lists every base table explicitly "
+            "via an <includes> regex, excludes MCPg's bookkeeping tables, and "
+            "emits a <forcedType> for every json / jsonb column so they map "
+            "to org.jooq.JSON / org.jooq.JSONB out of the box. Default Java "
+            "package is com.example.jooq; override via the target_package arg."
+        ),
+    )
+    async def generate_jooq_config(
+        ctx: _Ctx,
+        schema: str,
+        target_package: str = "com.example.jooq",
+        target_directory: str = "src/main/java",
+    ) -> str:
+        return await jooq.generate_jooq_config(
+            _driver(ctx),
+            schema,
+            target_package=target_package,
+            target_directory=target_directory,
+        )
+
+    @server.tool(
+        name="generate_ent_schemas",
+        description=(
+            "Read a PostgreSQL schema and emit Ent (Go) Schema struct files — "
+            "one .go file per table. Each file exports a struct that lists "
+            "field.X(...) calls for every column, edge.To(...) for single-"
+            "column intra-schema FKs, and field.Enum().Values() for enum-typed "
+            "columns. Composite FKs are a documented v1 gap. Returns a JSON "
+            "object {filename: source} so the agent can write each file."
+        ),
+    )
+    async def generate_ent_schemas(ctx: _Ctx, schema: str) -> dict[str, str]:
+        return await ent.generate_ent_schemas(_driver(ctx), schema)
+
+    @server.tool(
+        name="generate_ecto_schemas",
+        description=(
+            "Read a PostgreSQL schema and emit Ecto (Elixir) schema modules — "
+            "one .ex file per table, named after the singularised table. Each "
+            "module uses Ecto.Schema with field declarations, belongs_to for "
+            "single-column intra-schema FKs, and timestamps() when both "
+            "inserted_at and updated_at exist. The Elixir top-level module is "
+            "configurable via app_module (default MyApp). Returns a JSON "
+            "object {filename: source} so the agent can write each file."
+        ),
+    )
+    async def generate_ecto_schemas(ctx: _Ctx, schema: str, app_module: str = "MyApp") -> dict[str, str]:
+        return await ecto.generate_ecto_schemas(_driver(ctx), schema, app_module=app_module)
 
     @server.tool(
         name="generate_sqlalchemy_models",

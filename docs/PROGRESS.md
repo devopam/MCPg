@@ -6,13 +6,12 @@
 
 ## Current state
 
-- **Phase:** v0.4.0 release prep — version bumped 0.3.0 → 0.4.0,
-  CHANGELOG converted, release notes written, README capability
-  surface refreshed. Tool surface 74. **All planned batches A–G
-  are now closed.**
+- **Phase:** post-v0.4.0 — additional Batch G exporters (Diesel /
+  jOOQ / Ent / Ecto) under the schema→DSL umbrella. Tool surface
+  74 → 78.
 - **Last updated:** 2026-05-26
 - **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 74
+- **Tool count:** 78
 
 ## Next action
 
@@ -842,3 +841,32 @@
   data movement + LISTEN/NOTIFY + staged migrations + ORM bridges
   highlighted). No code changes — release prep only. Tagging /
   publishing awaits explicit user sign-off.
+- 2026-05-26 — v0.4.0 tagged and released on GitHub
+  (https://github.com/devopam/MCPg/releases/tag/v0.4.0). PR #17
+  merged. Branch fast-forwarded to main (`77970f2`).
+- 2026-05-26 — Post-0.4.0 Batch G follow-ons shipped: four more
+  catalog→DSL exporters alongside the existing Prisma / Drizzle /
+  SQLAlchemy 2.0 / sqlc ones. `mcpg.diesel` emits Diesel ORM (Rust)
+  `schema.rs` with `table!` macros, `Nullable<T>` for nullable
+  columns, `joinable!` for single-column intra-schema FKs, an
+  `allow_tables_to_appear_in_same_query!` macro, and Text-backed
+  wrapper enums in a `pg_enum` module so output works without
+  `diesel_derive_enum`. `mcpg.jooq` emits a `jooq-codegen`
+  configuration XML pointing at the live database — unlike other
+  exporters, jOOQ generates Java code itself at build time, so the
+  artefact is the config file (with explicit `<includes>` regex,
+  `<excludes>` for MCPg's bookkeeping schemas, and `<forcedType>`
+  entries for json / jsonb columns → org.jooq.JSON / .JSONB).
+  `mcpg.ent` emits Ent (Go) Schema struct files — one `.go` per
+  table, with `field.X(...)` calls, `edge.To(...)` for FKs, and
+  `field.Enum().Values()` for enum columns. `mcpg.ecto` emits
+  Ecto (Elixir) schema modules — one `.ex` per table, named after
+  the singularised table (Phoenix convention), with `@primary_key`
+  declared, `field` per column, `belongs_to` for single-column
+  FKs, and `timestamps()` when both `inserted_at` and `updated_at`
+  exist. Configurable `app_module` arg. All four tools are
+  read-only — no new capability or opt-in. 49 new unit tests
+  (helper functions, FK / enum handling, default mapping, tool
+  registration) + 5 new integration tests round-trip each exporter
+  against real PG. **Tool surface 74 → 78.** 772 tests pass / 9
+  skipped; coverage maintained.

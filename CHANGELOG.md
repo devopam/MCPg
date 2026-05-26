@@ -6,6 +6,43 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Four more catalog → DSL exporters under the same Batch G umbrella.
+  Tool surface 74 → 78. All read-only, no new capability or env-var
+  gates. Coverage matches the existing exporters (Prisma / Drizzle /
+  SQLAlchemy 2.0 / sqlc): base tables, columns, primary keys, single-
+  column intra-schema foreign keys, enums. Cross-schema FKs and
+  composite FKs are documented v1 gaps.
+  - `generate_diesel_schema` — emits a Diesel ORM (Rust) `schema.rs`
+    with one `table!` macro per table, `Nullable<T>` wrappers for
+    nullable columns, `joinable!` lines for intra-schema FKs, and an
+    `allow_tables_to_appear_in_same_query!` macro so multi-table
+    joins type-check. Enum types are emitted as Text-backed wrapper
+    enums in a `pg_enum` module so the output works without
+    `diesel_derive_enum`.
+  - `generate_jooq_config` — emits a `jooq-codegen` configuration
+    XML pointing at the database. Unlike the other exporters, jOOQ
+    generates Java code itself from the live database at build
+    time; the artefact here is the XML the user feeds to
+    `mvn jooq-codegen:generate`. Includes an explicit `<includes>`
+    regex naming every base table, an `<excludes>` covering MCPg's
+    bookkeeping schemas, and a `<forcedType>` for every json / jsonb
+    column so they map to `org.jooq.JSON` / `org.jooq.JSONB`.
+  - `generate_ent_schemas` — emits Ent (Go) Schema struct files,
+    one `.go` per table. Each struct lists `field.X(...)` calls,
+    `edge.To(...)` lines for single-column FKs, and
+    `field.Enum().Values()` for enum-typed columns. Returns a
+    `{filename: source}` dict.
+  - `generate_ecto_schemas` — emits Ecto (Elixir) schema modules,
+    one `.ex` per table named after the singularised table
+    (matching the Phoenix `lib/my_app/<singular>.ex` convention).
+    Each module uses `use Ecto.Schema`, declares `@primary_key`,
+    `field` for each column, `belongs_to` for single-column FKs,
+    and `timestamps()` when both `inserted_at` + `updated_at`
+    exist. The Elixir top-level module is configurable via the
+    `app_module` arg (default `MyApp`).
+
 ## [0.4.0] - 2026-05-26
 
 Twenty-nine new MCP tools, closing **Batches D / E / F / G** of the
