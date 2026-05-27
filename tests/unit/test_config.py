@@ -186,3 +186,116 @@ def test_default_role_must_appear_in_allowed_roles_when_both_set() -> None:
                 "MCPG_ALLOWED_ROLES": "tenant_a,tenant_b",
             }
         )
+
+
+# --- NL→SQL provider config (Phase 10.2) ---------------------------------
+
+
+def test_nl2sql_defaults_to_unset_and_zero_overhead() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.nl2sql_provider is None
+    assert settings.nl2sql_api_key is None
+    assert settings.nl2sql_model is None
+    assert settings.nl2sql_max_tokens == 2048
+
+
+def test_nl2sql_provider_rejects_unknown_vendor() -> None:
+    with pytest.raises(ConfigError, match="MCPG_NL2SQL_PROVIDER"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_NL2SQL_PROVIDER": "perplexity",
+                "MCPG_NL2SQL_API_KEY": "k",
+            }
+        )
+
+
+def test_nl2sql_provider_requires_an_api_key_somewhere() -> None:
+    with pytest.raises(ConfigError, match="no API key found"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_NL2SQL_PROVIDER": "anthropic",
+            }
+        )
+
+
+def test_nl2sql_explicit_api_key_wins_over_vendor_fallback() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_PROVIDER": "anthropic",
+            "MCPG_NL2SQL_API_KEY": "explicit-key",
+            "ANTHROPIC_API_KEY": "vendor-fallback",
+        }
+    )
+    assert settings.nl2sql_api_key == "explicit-key"
+
+
+def test_nl2sql_falls_back_to_anthropic_api_key_env() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_PROVIDER": "anthropic",
+            "ANTHROPIC_API_KEY": "fallback",
+        }
+    )
+    assert settings.nl2sql_api_key == "fallback"
+
+
+def test_nl2sql_falls_back_to_openai_api_key_env() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_PROVIDER": "openai",
+            "OPENAI_API_KEY": "fallback",
+        }
+    )
+    assert settings.nl2sql_api_key == "fallback"
+
+
+def test_nl2sql_falls_back_to_gemini_or_google_api_key_env() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_PROVIDER": "gemini",
+            "GOOGLE_API_KEY": "google-fallback",
+        }
+    )
+    assert settings.nl2sql_api_key == "google-fallback"
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_PROVIDER": "gemini",
+            "GEMINI_API_KEY": "gemini-fallback",
+            # GOOGLE_API_KEY also set — GEMINI wins because it's checked first.
+            "GOOGLE_API_KEY": "google-fallback",
+        }
+    )
+    assert settings.nl2sql_api_key == "gemini-fallback"
+
+
+def test_nl2sql_rejects_max_tokens_above_hard_cap() -> None:
+    with pytest.raises(ConfigError, match="hard cap"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_NL2SQL_PROVIDER": "anthropic",
+                "MCPG_NL2SQL_API_KEY": "k",
+                "MCPG_NL2SQL_MAX_TOKENS": "100000",
+            }
+        )
+
+
+def test_nl2sql_api_key_never_appears_in_repr() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_PROVIDER": "anthropic",
+            "MCPG_NL2SQL_API_KEY": "sk-not-a-real-key-secret",
+        }
+    )
+    rendered = repr(settings)
+    assert "sk-not-a-real-key-secret" not in rendered
+    assert "nl2sql_api_key='set'" in rendered

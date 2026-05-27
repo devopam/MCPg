@@ -77,6 +77,16 @@ class Settings:
     # are validated against ``[A-Za-z_][A-Za-z0-9_]*`` regardless.
     default_role: str | None = None
     allowed_roles: tuple[str, ...] = ()
+    # NL→SQL helper. ``nl2sql_provider`` is one of "anthropic", "openai",
+    # "gemini"; unset means the tool reports unavailable. ``nl2sql_api_key``
+    # falls back to ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY /
+    # GOOGLE_API_KEY when not set explicitly. ``nl2sql_base_url`` lets the
+    # OpenAI path target a self-hosted endpoint (Ollama, vLLM, OpenRouter).
+    nl2sql_provider: str | None = None
+    nl2sql_api_key: str | None = None
+    nl2sql_model: str | None = None
+    nl2sql_base_url: str | None = None
+    nl2sql_max_tokens: int = 2048
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -95,7 +105,12 @@ class Settings:
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size}, "
             f"http_auth_token={'set' if self.http_auth_token else 'unset'!r}, "
             f"default_role={self.default_role!r}, "
-            f"allowed_roles={self.allowed_roles!r})"
+            f"allowed_roles={self.allowed_roles!r}, "
+            f"nl2sql_provider={self.nl2sql_provider!r}, "
+            f"nl2sql_api_key={'set' if self.nl2sql_api_key else 'unset'!r}, "
+            f"nl2sql_model={self.nl2sql_model!r}, "
+            f"nl2sql_base_url={self.nl2sql_base_url!r}, "
+            f"nl2sql_max_tokens={self.nl2sql_max_tokens})"
         )
 
 
@@ -238,6 +253,58 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
                 f"MCPG_DEFAULT_ROLE ({default_role!r}) is not in MCPG_ALLOWED_ROLES ({list(allowed_roles)!r})"
             )
 
+    nl2sql_provider: str | None = None
+    if (raw := env.get("MCPG_NL2SQL_PROVIDER")) is not None:
+        candidate = raw.strip().lower()
+        if not candidate:
+            raise ConfigError("MCPG_NL2SQL_PROVIDER must not be blank when set")
+        if candidate not in {"anthropic", "openai", "gemini"}:
+            raise ConfigError(f"MCPG_NL2SQL_PROVIDER must be one of: anthropic, openai, gemini (got {raw!r})")
+        nl2sql_provider = candidate
+
+    # API key falls back to the vendor's conventional env var so users
+    # don't have to duplicate it. Order matters when multiple are set;
+    # the explicit MCPG_NL2SQL_API_KEY always wins.
+    nl2sql_api_key: str | None = None
+    if (raw := env.get("MCPG_NL2SQL_API_KEY")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_NL2SQL_API_KEY must not be blank when set")
+        nl2sql_api_key = stripped
+    elif nl2sql_provider == "anthropic":
+        nl2sql_api_key = (env.get("ANTHROPIC_API_KEY") or "").strip() or None
+    elif nl2sql_provider == "openai":
+        nl2sql_api_key = (env.get("OPENAI_API_KEY") or "").strip() or None
+    elif nl2sql_provider == "gemini":
+        # Either GEMINI_API_KEY or the more common GOOGLE_API_KEY.
+        nl2sql_api_key = (env.get("GEMINI_API_KEY") or "").strip() or (env.get("GOOGLE_API_KEY") or "").strip() or None
+
+    if nl2sql_provider is not None and nl2sql_api_key is None:
+        raise ConfigError(
+            f"MCPG_NL2SQL_PROVIDER={nl2sql_provider!r} but no API key found; "
+            "set MCPG_NL2SQL_API_KEY (or the vendor's conventional env var)"
+        )
+
+    nl2sql_model: str | None = None
+    if (raw := env.get("MCPG_NL2SQL_MODEL")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_NL2SQL_MODEL must not be blank when set")
+        nl2sql_model = stripped
+
+    nl2sql_base_url: str | None = None
+    if (raw := env.get("MCPG_NL2SQL_BASE_URL")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_NL2SQL_BASE_URL must not be blank when set")
+        nl2sql_base_url = stripped
+
+    nl2sql_max_tokens = 2048
+    if (raw := env.get("MCPG_NL2SQL_MAX_TOKENS")) is not None:
+        nl2sql_max_tokens = _parse_positive_int("MCPG_NL2SQL_MAX_TOKENS", raw)
+        if nl2sql_max_tokens > 16_384:
+            raise ConfigError(f"MCPG_NL2SQL_MAX_TOKENS ({nl2sql_max_tokens}) exceeds the hard cap of 16384")
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -257,4 +324,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_auth_token=http_auth_token,
         default_role=default_role,
         allowed_roles=allowed_roles,
+        nl2sql_provider=nl2sql_provider,
+        nl2sql_api_key=nl2sql_api_key,
+        nl2sql_model=nl2sql_model,
+        nl2sql_base_url=nl2sql_base_url,
+        nl2sql_max_tokens=nl2sql_max_tokens,
     )

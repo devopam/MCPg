@@ -37,6 +37,7 @@ from mcpg import (
     maintenance,
     migrations,
     naming,
+    nl2sql,
     partman,
     prisma,
     query,
@@ -1296,6 +1297,59 @@ def _register_query(server: FastMCP[AppContext]) -> None:
     )
     async def analyze_query_plan(ctx: _Ctx, sql: str) -> dict[str, Any]:
         result = await query.analyze_query_plan(_driver(ctx), sql)
+        return asdict(result)
+
+    @server.tool(
+        name="translate_nl_to_sql",
+        description=(
+            "Translate a natural-language question into a read-only "
+            "PostgreSQL query against `schema`. The configured LLM "
+            "provider (anthropic / openai / gemini, set via "
+            "MCPG_NL2SQL_PROVIDER) sees a compact brief of the schema "
+            "(tables, columns, foreign keys) and is instructed to "
+            "return JSON with `sql` and `explanation`. When "
+            "execute=true, the generated SQL goes through the SAME "
+            "safety allowlist as run_select before running — writes / "
+            "DDL / multi-statement input are rejected even if the "
+            "model produced them. Returns the SQL, model rationale, "
+            "and (when executed) rows / columns / row_count. "
+            "table_filter narrows the brief to a known subset when "
+            "the question is clearly scoped. When the server isn't "
+            "configured with a provider + API key, returns an error "
+            "rather than guessing."
+        ),
+    )
+    async def translate_nl_to_sql(
+        ctx: _Ctx,
+        question: str,
+        schema: str,
+        execute: bool = False,
+        table_filter: list[str] | None = None,
+        max_rows: int = query.DEFAULT_MAX_ROWS,
+    ) -> dict[str, Any]:
+        settings = ctx.request_context.lifespan_context.settings
+        if settings.nl2sql_provider is None or settings.nl2sql_api_key is None:
+            raise nl2sql.NL2SQLError(
+                "translate_nl_to_sql is not configured; set MCPG_NL2SQL_PROVIDER "
+                "and MCPG_NL2SQL_API_KEY (or the vendor's conventional env var)"
+            )
+        provider = nl2sql.build_provider(
+            settings.nl2sql_provider,
+            settings.nl2sql_api_key,
+            base_url=settings.nl2sql_base_url,
+        )
+        model = settings.nl2sql_model or nl2sql.DEFAULT_MODELS[settings.nl2sql_provider]
+        result = await nl2sql.translate_nl_to_sql(
+            _driver(ctx),
+            provider=provider,
+            model=model,
+            question=question,
+            schema=schema,
+            execute=execute,
+            table_filter=tuple(table_filter) if table_filter else None,
+            max_tokens=settings.nl2sql_max_tokens,
+            max_rows=max_rows,
+        )
         return asdict(result)
 
 

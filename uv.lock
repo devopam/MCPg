@@ -632,6 +632,7 @@ name = "mcpg"
 version = "0.4.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
     { name = "pglast" },
     { name = "psycopg", extra = ["binary"] },
@@ -652,6 +653,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.25.0" },
     { name = "pglast", specifier = "==7.11" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.2" },
