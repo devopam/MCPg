@@ -501,8 +501,8 @@ describe_graph(graph_name="social")
 # → { labels: ["Person", "Company"], edges: [...], property_stats: {...} }
 
 run_cypher(graph_name="social",
-           cypher="MATCH (p:Person)-[:WORKS_AT]->(c:Company) RETURN p.name, c.name LIMIT 25")
-# → { rows: [{ "p.name": "Alice", "c.name": "Acme" }, ...], parsed_agtype: true }
+           cypher_query="MATCH (p:Person)-[:WORKS_AT]->(c:Company) RETURN p.name AS person, c.name AS company LIMIT 25")
+# → { columns: ["person", "company"], rows: [{"person": "Alice", "company": "Acme"}, ...], row_count: 25 }
 ```
 
 Visualise the schema of the graph (Mermaid):
@@ -518,10 +518,13 @@ create_graph(graph_name="my_new_graph")
 drop_graph(graph_name="my_new_graph", cascade=true)
 ```
 
-`run_cypher` validates Cypher input parameters against the same
-identifier-safety rules MCPg uses elsewhere; `agtype` results are
-parsed back into native Python values (objects, lists, numbers,
-strings, booleans, nulls) before reaching the agent.
+`run_cypher` validates the `graph_name` identifier (must be
+alphanumeric / underscores, can't start with a digit). The Cypher
+statement is scanned for write keywords (`CREATE` / `SET` /
+`DELETE` / `REMOVE` / `MERGE`) — when present the call is gated
+under the WRITE capability, requiring `unrestricted` access mode.
+`columns` are inferred from the `RETURN` clause; use explicit `AS`
+aliases for stable column names.
 
 ---
 

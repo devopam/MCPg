@@ -13,11 +13,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   - `list_graphs()` and `describe_graph(graph_name)` read
     `ag_catalog`, returning the graphs in the database plus per-graph
     label / edge / property statistics. Read-only.
-  - `run_cypher(graph_name, cypher, params)` executes arbitrary
-    Cypher against a named graph. `agtype` results are parsed back
-    into native Python values (objects, lists, numbers, strings,
-    booleans, nulls). Identifier params validated against the same
-    safety rule MCPg uses for SQL identifiers. Read-only by default.
+  - `run_cypher(graph_name, cypher_query)` executes arbitrary
+    Cypher against a named graph and returns a typed result
+    (`columns` / `rows` / `row_count`). The `graph_name` identifier
+    is validated (alphanumeric / underscores, not starting with a
+    digit). The query is scanned for write keywords (`CREATE` /
+    `SET` / `DELETE` / `REMOVE` / `MERGE`) and gated under the
+    WRITE capability when any are present — reads stay under READ.
   - `generate_graph_diagram(graph_name, max_labels=50)` emits a
     Mermaid graph of label-to-label relationships — the graph
     equivalent of `generate_schema_diagram`.

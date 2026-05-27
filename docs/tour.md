@@ -239,7 +239,7 @@ When the `age` extension is installed and loaded:
 ```
 list_graphs()                                               # graphs in ag_catalog
 describe_graph(graph_name)                                  # labels + properties + edges
-run_cypher(graph_name, cypher, params={})                   # arbitrary Cypher; read-only by default
+run_cypher(graph_name, cypher_query)                        # arbitrary Cypher; writes (CREATE/SET/DELETE/REMOVE/MERGE) need unrestricted
 generate_graph_diagram(graph_name, max_labels=50)           # Mermaid graph of label relationships
 create_graph(graph_name)                                    # DDL — unrestricted + MCPG_ALLOW_DDL
 drop_graph(graph_name, cascade=true)                        # DDL — unrestricted + MCPG_ALLOW_DDL
