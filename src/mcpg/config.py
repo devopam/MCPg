@@ -70,6 +70,18 @@ class Settings:
     # When unset, the HTTP transport runs without auth (current
     # behaviour). stdio is never gated.
     http_auth_token: str | None = None
+    # HTTP transport authentication mode. ``static`` (the default) does
+    # constant-time comparison against ``http_auth_token``. ``oidc``
+    # validates the bearer JWT against the configured OIDC provider's
+    # JWKS — see ``mcpg.oidc`` for the verification flow.
+    auth_mode: str = "static"
+    oidc_issuer: str | None = None
+    oidc_audience: str | None = None
+    oidc_jwks_url: str | None = None
+    # When set, the named claim's value becomes the per-request PG role
+    # (composes with the Phase-1.4 tenancy driver). Typical claims:
+    # ``pg_role``, ``preferred_username``.
+    oidc_role_claim: str | None = None
     # Multi-tenancy via PG roles. ``default_role`` is applied to every
     # query when set. HTTP requests can override per-request by sending
     # ``X-MCPG-Role: <role>``; when ``allowed_roles`` is set the header
@@ -110,6 +122,11 @@ class Settings:
             f"audit_persist={self.audit_persist}, "
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size}, "
             f"http_auth_token={'set' if self.http_auth_token else 'unset'!r}, "
+            f"auth_mode={self.auth_mode!r}, "
+            f"oidc_issuer={self.oidc_issuer!r}, "
+            f"oidc_audience={self.oidc_audience!r}, "
+            f"oidc_jwks_url={self.oidc_jwks_url!r}, "
+            f"oidc_role_claim={self.oidc_role_claim!r}, "
             f"default_role={self.default_role!r}, "
             f"allowed_roles={self.allowed_roles!r}, "
             f"replica_urls={tuple(obfuscate_password(u) for u in self.replica_urls)!r}, "
@@ -241,6 +258,44 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             raise ConfigError("MCPG_HTTP_AUTH_TOKEN must not be blank when set")
         http_auth_token = stripped
 
+    auth_mode = "static"
+    if (raw := env.get("MCPG_AUTH_MODE")) is not None:
+        candidate = raw.strip().lower()
+        if candidate not in {"static", "oidc"}:
+            raise ConfigError(f"MCPG_AUTH_MODE must be one of: static, oidc (got {raw!r})")
+        auth_mode = candidate
+
+    oidc_issuer: str | None = None
+    oidc_audience: str | None = None
+    oidc_jwks_url: str | None = None
+    oidc_role_claim: str | None = None
+    if (raw := env.get("MCPG_OIDC_ISSUER")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_OIDC_ISSUER must not be blank when set")
+        oidc_issuer = stripped
+    if (raw := env.get("MCPG_OIDC_AUDIENCE")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_OIDC_AUDIENCE must not be blank when set")
+        oidc_audience = stripped
+    if (raw := env.get("MCPG_OIDC_JWKS_URL")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_OIDC_JWKS_URL must not be blank when set")
+        oidc_jwks_url = stripped
+    if (raw := env.get("MCPG_OIDC_ROLE_CLAIM")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_OIDC_ROLE_CLAIM must not be blank when set")
+        oidc_role_claim = stripped
+
+    if auth_mode == "oidc":
+        if oidc_issuer is None:
+            raise ConfigError("MCPG_AUTH_MODE=oidc requires MCPG_OIDC_ISSUER")
+        if oidc_audience is None:
+            raise ConfigError("MCPG_AUTH_MODE=oidc requires MCPG_OIDC_AUDIENCE")
+
     default_role: str | None = None
     if (raw := env.get("MCPG_DEFAULT_ROLE")) is not None:
         stripped = raw.strip()
@@ -336,6 +391,11 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
         http_auth_token=http_auth_token,
+        auth_mode=auth_mode,
+        oidc_issuer=oidc_issuer,
+        oidc_audience=oidc_audience,
+        oidc_jwks_url=oidc_jwks_url,
+        oidc_role_claim=oidc_role_claim,
         default_role=default_role,
         allowed_roles=allowed_roles,
         replica_urls=replica_urls,

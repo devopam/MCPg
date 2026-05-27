@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 
 from mcpg.config import Settings
 from mcpg.observability import render_prometheus
+from mcpg.oidc import OIDCError, OIDCVerifier
 from mcpg.tenancy import TenancyError, current_role, validate_role
 
 if TYPE_CHECKING:
@@ -110,6 +111,79 @@ class _BearerAuthMiddleware:
             return
 
         await self._app(scope, receive, send)  # type: ignore[operator]
+
+
+class _OIDCAuthMiddleware:
+    """ASGI middleware that validates the bearer JWT against an OIDC issuer.
+
+    When ``role_claim`` is configured AND the JWT carries that claim,
+    the claim's value is also stashed in
+    :data:`mcpg.tenancy.current_role` so the tenanted driver issues
+    ``SET LOCAL ROLE`` for the request. This replaces the
+    ``X-MCPG-Role`` header path for OIDC deployments — the issuer
+    becomes the single source of truth for which role the caller can
+    assume.
+    """
+
+    def __init__(
+        self,
+        app: object,
+        *,
+        verifier: OIDCVerifier,
+        exempt_paths: frozenset[str] = _AUTH_EXEMPT_PATHS,
+    ) -> None:
+        self._app = app
+        self._verifier = verifier
+        self._exempt = exempt_paths
+
+    async def __call__(self, scope: dict[str, object], receive: object, send: object) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        path = str(scope.get("path", ""))
+        if path in self._exempt:
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        headers: list[tuple[bytes, bytes]] = scope.get("headers", [])  # type: ignore[assignment]
+        auth_header = b""
+        for key, value in headers:
+            if key.lower() == b"authorization":
+                auth_header = value
+                break
+
+        if not auth_header.startswith(b"Bearer "):
+            await _send_401(send, "missing Authorization: Bearer header")
+            return
+
+        token = auth_header[len(b"Bearer ") :].decode("utf-8", errors="ignore").strip()
+        try:
+            verified = await self._verifier.verify(token)
+        except OIDCError as exc:
+            logger.warning("OIDC verification failed: %s", exc)
+            await _send_401(send, "invalid bearer token")
+            return
+
+        if verified.role is None:
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        # JWT carried a role claim — validate it as an identifier
+        # before stashing so an attacker-controlled value can't break
+        # the SQL the tenancy driver inlines.
+        try:
+            validate_role(verified.role)
+        except TenancyError:
+            logger.warning("OIDC role claim has unsafe identifier: %r", verified.role)
+            await _send_401(send, "role claim contains an invalid identifier")
+            return
+
+        reset_token = current_role.set(verified.role)
+        try:
+            await self._app(scope, receive, send)  # type: ignore[operator]
+        finally:
+            current_role.reset(reset_token)
 
 
 class _TenantRoleMiddleware:
@@ -241,25 +315,38 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
     app.router.routes.append(Route("/metrics", _metrics_response_factory(), methods=["GET"]))
     app.router.routes.append(Route("/healthz", _health_response_factory(), methods=["GET"]))
 
-    # The tenant-role middleware sits ABOVE bearer auth in the stack so
-    # an unauthenticated request never reaches the role parser; Starlette
-    # applies the most-recently-added middleware first, so we add the
-    # bearer-auth layer LAST.
-    if settings.default_role is not None or settings.allowed_roles:
-        app.add_middleware(_TenantRoleMiddleware, allowed_roles=settings.allowed_roles)
-
-    if settings.http_auth_token is not None:
-        # Starlette's add_middleware appends to the middleware stack
-        # that's wrapped around the app at startup. ASGI middleware
-        # has signature (app, *args, **kwargs) -> wrapped_app, and
-        # Starlette calls it accordingly.
-        app.add_middleware(_BearerAuthMiddleware, token=settings.http_auth_token)
-    else:
-        logger.warning(
-            "MCPg HTTP transport %s is running without auth. "
-            "Set MCPG_HTTP_AUTH_TOKEN to require Bearer tokens on every request.",
-            kind,
+    # Middleware stack ordering:
+    #   In OIDC mode, the OIDC middleware verifies the JWT AND stashes
+    #   the role-claim into current_role itself — so the tenant
+    #   X-MCPG-Role middleware is skipped (the issuer is the source of
+    #   truth for the role). In static mode, the X-MCPG-Role
+    #   middleware sits ABOVE the bearer-token middleware so
+    #   unauthenticated requests can't reach the role parser; Starlette
+    #   applies the most-recently-added middleware first, so we add
+    #   the auth layer LAST.
+    if settings.auth_mode == "oidc":
+        assert settings.oidc_issuer is not None  # validated by load_settings
+        assert settings.oidc_audience is not None
+        verifier = OIDCVerifier(
+            issuer=settings.oidc_issuer,
+            audience=settings.oidc_audience,
+            jwks_url=settings.oidc_jwks_url,
+            role_claim=settings.oidc_role_claim,
+            allowed_roles=settings.allowed_roles,
         )
+        app.add_middleware(_OIDCAuthMiddleware, verifier=verifier)
+    else:
+        if settings.default_role is not None or settings.allowed_roles:
+            app.add_middleware(_TenantRoleMiddleware, allowed_roles=settings.allowed_roles)
+        if settings.http_auth_token is not None:
+            app.add_middleware(_BearerAuthMiddleware, token=settings.http_auth_token)
+        else:
+            logger.warning(
+                "MCPg HTTP transport %s is running without auth. "
+                "Set MCPG_HTTP_AUTH_TOKEN or MCPG_AUTH_MODE=oidc to require "
+                "bearer tokens on every request.",
+                kind,
+            )
     # FastMCP types streamable_http_app() / sse_app() as Starlette already,
     # but mypy under strict mode loses the type through the .add_middleware
     # call (returns None). Cast through Any to settle the return type
