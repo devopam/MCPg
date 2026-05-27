@@ -13,6 +13,9 @@ dependencies = [
     "psycopg-pool>=3.3.0",
     "pglast==7.11",
     "typing-extensions>=4.12",
+    # httpx ships transitively via mcp; declare it explicitly so the
+    # NL→SQL providers in mcpg.nl2sql have a guaranteed surface.
+    "httpx>=0.27",
 ]
 
 [project.scripts]
