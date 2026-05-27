@@ -4,17 +4,22 @@ A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
 server for **PostgreSQL** — letting AI agents safely inspect, query, operate,
 and tune a Postgres database.\*
 
-> **Status:** v0.4.0 released; trunk at **107 MCP tools** with v0.5.0
-> in prep. Beyond v0.4.0's catalog / search / live-ops surface, v0.5.0
-> adds **HTTP transport bearer-token auth, Prometheus `/metrics`,
-> TimescaleDB wrappers, hybrid (vector + FTS) search, sensitive-column
-> heuristics, an N+1 detector, transient-shadow migration validation,
-> per-request `SET ROLE` multi-tenancy, server-side cursors,
-> RLS testing, synthetic test-data generation, FK cascade graphs, and
-> a natural-language → SQL helper (Anthropic / OpenAI / Gemini)**. CI
-> matrix runs the integration suite against **PostgreSQL 14, 15, 16,
-> 17, and 18**. See [`docs/cookbook.md`](docs/cookbook.md) for common
-> agent recipes, [`CHANGELOG.md`](CHANGELOG.md) and
+> **Status:** v0.5.0 released; trunk at **108 MCP tools**. Beyond
+> v0.5.0's natural-language → SQL helper, per-request `SET ROLE`
+> multi-tenancy, server-side cursors, hybrid (vector + FTS) search,
+> TimescaleDB wrappers, HTTP transport bearer-token auth, Prometheus
+> `/metrics`, RLS testing, FK cascade graphs, and the rest of the
+> Tier-A/B/C shortlist, trunk now adds **read-replica routing**
+> (`MCPG_REPLICA_URLS` round-robins read-only queries across replicas
+> with degraded-replica detection and primary fallback) and
+> **OIDC/JWT bearer-token validation** (`MCPG_AUTH_MODE=oidc` swaps
+> the static token for full JWT validation against an OIDC issuer's
+> JWKS, with optional role-claim mapping that composes with the
+> tenancy driver). CI matrix runs the integration suite against
+> **PostgreSQL 14, 15, 16, 17, and 18**. See
+> [`docs/cookbook.md`](docs/cookbook.md) for common agent recipes,
+> [`docs/tour.md`](docs/tour.md) for the tool tour,
+> [`CHANGELOG.md`](CHANGELOG.md) and
 > [`docs/PROGRESS.md`](docs/PROGRESS.md) for detail.
 
 ## Quick start

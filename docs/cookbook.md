@@ -266,9 +266,79 @@ request with that header. MCPg validates the role identifier against
 inside every query's transaction. `SET LOCAL` auto-resets at txn end
 — no state leaks back into the pool.
 
+**With OIDC**: when `MCPG_AUTH_MODE=oidc` and `MCPG_OIDC_ROLE_CLAIM`
+is set, the role is read from the JWT claim instead of the
+`X-MCPG-Role` header. The OIDC issuer becomes the single source of
+truth — clients send only `Authorization: Bearer <JWT>`.
+
 ---
 
-## 11. "Natural language to SQL."
+## 11. "Spread reads across replicas."
+
+Configure replica DSNs at startup:
+
+```bash
+MCPG_REPLICA_URLS=postgresql://reader:pw@replica-1/app,postgresql://reader:pw@replica-2/app
+```
+
+MCPg now keeps a dedicated pool per replica alongside the primary
+pool. Every `force_readonly=True` query (catalog reads, `run_select`,
+the safety-driver path) is round-robin routed to a healthy replica;
+writes always go to the primary. Composes with multi-tenancy —
+`SET LOCAL ROLE` applies per-replica.
+
+Diagnose:
+
+```text
+list_replicas()
+# → [{ index, dsn, degraded, last_error, seconds_until_retry }]
+```
+
+A replica that fails a query is marked degraded for 30s, skipped
+from the round-robin, then re-probed. When every replica is degraded,
+reads fall back to the primary — the routing layer never blocks the
+tool layer because the replicas are unavailable.
+
+Routing decisions land in the Prometheus metrics under
+`mcpg_tool_calls_total{tool="__replica_route", status=...}` with
+status values `primary` / `primary_no_healthy` / `fallback` /
+`replica_<n>`.
+
+---
+
+## 12. "OIDC bearer-token validation."
+
+```bash
+MCPG_AUTH_MODE=oidc
+MCPG_OIDC_ISSUER=https://accounts.example.com
+MCPG_OIDC_AUDIENCE=mcpg
+MCPG_OIDC_ROLE_CLAIM=pg_role         # optional; maps claim → PG role
+```
+
+Replaces the static-token compare path with full JWT validation. On
+first request MCPg fetches `<issuer>/.well-known/openid-configuration`,
+caches the `jwks_uri`, then validates every subsequent JWT against
+the JWKS: signature (RS256/RS384/RS512 + ES256/ES384/ES512 only —
+HS-family is excluded), expiry, issuer, audience, with 30s clock
+leeway. JWKS keys cache for 1 hour.
+
+When `MCPG_OIDC_ROLE_CLAIM` is configured AND the JWT carries that
+claim, the value is validated as a safe PG identifier and stashed
+into the same ContextVar `SET ROLE` uses — so the tenanted driver
+issues `SET LOCAL ROLE "<role-from-claim>"` for the request. The
+`X-MCPG-Role` header path is skipped in OIDC mode: the issuer is the
+single source of truth.
+
+Override the JWKS URL when discovery isn't reachable (e.g. issuer
+behind a private network):
+
+```bash
+MCPG_OIDC_JWKS_URL=https://public.example/keys
+```
+
+---
+
+## 13. "Natural language to SQL."
 
 ```text
 translate_nl_to_sql(question="how many orders were shipped last week?",
@@ -293,7 +363,7 @@ For a quick review pattern: call with `execute=false`, read the
 
 ---
 
-## 12. "Bring data in / out."
+## 14. "Bring data in / out."
 
 **Export a query as CSV / JSON**:
 
@@ -332,7 +402,7 @@ gated under `MCPG_ALLOW_SHELL=true`.
 
 ---
 
-## 13. "Emit ORM models from the live schema."
+## 15. "Emit ORM models from the live schema."
 
 Eight catalog → DSL exporters:
 
@@ -352,7 +422,7 @@ project. They read the catalog only — your database stays untouched.
 
 ---
 
-## 14. "Listen / notify bridge."
+## 16. "Listen / notify bridge."
 
 Postgres `LISTEN`/`NOTIFY` adapted to the MCP poll model. Requires
 `MCPG_ALLOW_LISTEN=true`.
@@ -370,7 +440,7 @@ on drop; subscriptions survive transient outages.
 
 ---
 
-## 15. "Inspect TimescaleDB hypertables."
+## 17. "Inspect TimescaleDB hypertables."
 
 When the `timescaledb` extension is installed:
 
@@ -388,7 +458,7 @@ inlining into SQL.
 
 ---
 
-## 16. "Generate synthetic data for staging."
+## 18. "Generate synthetic data for staging."
 
 ```text
 generate_test_data(schema="app", table="widget", rows=100, seed=42)
@@ -404,7 +474,7 @@ boolean / date / timestamp / json / uuid types. Unsupported types
 
 ---
 
-## 17. "Lint the schema."
+## 19. "Lint the schema."
 
 ```text
 run_advisors(schema="app")                       # PK / FK / duplicate-index / nullable-tstz
