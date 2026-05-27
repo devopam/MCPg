@@ -71,3 +71,34 @@ async def test_default_fetch_batch_is_under_the_hard_cap() -> None:
     # Pin the relationship — a future change to the default must not
     # exceed the hard cap, or every call would error.
     assert DEFAULT_FETCH_BATCH < HARD_FETCH_BATCH
+
+
+async def test_active_cursor_carries_an_asyncio_lock_for_serialised_access() -> None:
+    """Regression for the concurrent-fetch protocol-corruption hazard.
+
+    psycopg AsyncConnection is not safe for concurrent task access;
+    each ``_ActiveCursor`` carries its own ``asyncio.Lock`` so the
+    manager can serialise FETCH and CLOSE on the same cursor.
+    """
+    import asyncio
+
+    from mcpg.cursors import _ActiveCursor
+
+    # We can't easily construct a real _ActiveCursor without a live
+    # psycopg connection. Use a sentinel for the connection field —
+    # the lock attribute is what we're asserting on.
+    cursor = _ActiveCursor(
+        cursor_id="mcpg_smoke",
+        sql="SELECT 1",
+        connection=object(),  # type: ignore[arg-type]
+    )
+    assert isinstance(cursor.use_lock, asyncio.Lock)
+    # Distinct cursors must each get their own lock — defaulting to a
+    # shared class-level instance would silently re-serialise across
+    # unrelated cursors.
+    other = _ActiveCursor(
+        cursor_id="mcpg_other",
+        sql="SELECT 1",
+        connection=object(),  # type: ignore[arg-type]
+    )
+    assert cursor.use_lock is not other.use_lock

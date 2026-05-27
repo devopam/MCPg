@@ -50,6 +50,11 @@ class _ActiveCursor:
     last_touched: float = field(default_factory=time.monotonic)
     rows_returned: int = 0
     closed: bool = False
+    # psycopg's AsyncConnection is NOT safe for concurrent use by
+    # multiple tasks. A per-cursor lock serialises every database
+    # operation on the held connection so a racing fetch + close (or
+    # two fetches on the same cursor_id) can't corrupt the protocol.
+    use_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,18 +166,32 @@ class CursorManager:
         if active is None or active.closed:
             raise CursorError(f"unknown cursor_id: {cursor_id!r}")
 
-        try:
-            async with active.connection.cursor(row_factory=dict_row) as cur:
-                await cur.execute(f'FETCH FORWARD {batch_size} FROM "{cursor_id}"')
-                fetched = await cur.fetchall()
-        except Exception as exc:
-            # On any failure, close the cursor so the connection isn't
-            # left in a broken state — keep the contract clean.
-            await self._close_internal(cursor_id)
-            raise CursorError(f"FETCH failed; cursor closed: {exc}") from exc
+        # Serialise concurrent fetch / close on the same cursor. psycopg's
+        # AsyncConnection isn't safe for concurrent task access; without
+        # this lock two simultaneous fetches on the same cursor_id would
+        # corrupt the wire protocol.
+        fetch_error: Exception | None = None
+        rows: list[dict[str, Any]] = []
+        async with active.use_lock:
+            # Re-check after acquiring — a concurrent close may have run.
+            if active.closed:
+                raise CursorError(f"unknown cursor_id: {cursor_id!r}")
+            try:
+                async with active.connection.cursor(row_factory=dict_row) as cur:
+                    await cur.execute(f'FETCH FORWARD {batch_size} FROM "{cursor_id}"')
+                    fetched = await cur.fetchall()
+                rows = [dict(row) for row in fetched]
+            except Exception as exc:
+                # On any failure, close the cursor so the connection isn't
+                # left in a broken state. Defer the close call to outside
+                # the lock so _close_internal can re-acquire it.
+                fetch_error = exc
 
-        rows = [dict(row) for row in fetched]
-        columns = list(rows[0].keys()) if rows else []
+        if fetch_error is not None:
+            await self._close_internal(cursor_id)
+            raise CursorError(f"FETCH failed; cursor closed: {fetch_error}") from fetch_error
+
+        columns: list[str] = list(rows[0].keys()) if rows else []
         exhausted = len(rows) < batch_size
         active.last_touched = time.monotonic()
         active.rows_returned += len(rows)
@@ -227,15 +246,20 @@ class CursorManager:
             active = self._cursors.pop(cursor_id, None)
         if active is None or active.closed:
             return False
-        active.closed = True
-        try:
-            async with active.connection.cursor() as cur:
-                await cur.execute(f'CLOSE "{cursor_id}"')
-                await cur.execute("ROLLBACK")
-        except Exception:
-            # Connection may already be in a broken state — swallow,
-            # the close-callable below cleans up anyway.
-            pass
+        # Hold the per-cursor lock so a racing fetch can't run CLOSE
+        # concurrently with FETCH on the same psycopg connection.
+        async with active.use_lock:
+            if active.closed:
+                return False
+            active.closed = True
+            try:
+                async with active.connection.cursor() as cur:
+                    await cur.execute(f'CLOSE "{cursor_id}"')
+                    await cur.execute("ROLLBACK")
+            except Exception:
+                # Connection may already be in a broken state — swallow,
+                # the close-callable below cleans up anyway.
+                pass
         try:
             await active.connection.close()
         except Exception as exc:
