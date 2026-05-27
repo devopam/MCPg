@@ -27,6 +27,7 @@ they'd require a shared secret, defeating the OIDC trust model.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -141,8 +142,14 @@ class OIDCVerifier:
         if not token:
             raise OIDCError("empty token")
         client = await self._ensure_jwks_client()
+        # PyJWKClient.get_signing_key_from_jwt fetches the JWKS via
+        # urllib.request (synchronous, blocking) on the first call /
+        # whenever the cache misses. Run it on a worker thread so a
+        # cache-miss can't stall the ASGI event loop for every other
+        # in-flight request.
         try:
-            signing_key = client.get_signing_key_from_jwt(token).key
+            signing_key_obj = await asyncio.to_thread(client.get_signing_key_from_jwt, token)
+            signing_key = signing_key_obj.key
         except Exception as exc:
             raise OIDCError(f"could not resolve signing key: {exc}") from exc
         try:

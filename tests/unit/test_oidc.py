@@ -314,3 +314,40 @@ async def test_verifier_uses_explicit_jwks_url_when_provided() -> None:
     # Discovery URL was never hit because we supplied jwks_url.
     assert discovery_calls == []
     assert verified.claims["sub"] == "user-42"
+
+
+async def test_verifier_offloads_jwks_fetch_to_a_worker_thread() -> None:
+    """Regression: PyJWKClient.get_signing_key_from_jwt does sync
+    urllib I/O on cache miss; running it directly on the event loop
+    blocks every other in-flight request. Pin that we wrap the call
+    in asyncio.to_thread so a cache-miss runs off-loop."""
+    import asyncio as _asyncio
+    import unittest.mock as _mock
+
+    private_key, kid, jwk = _build_rsa_key()
+    issuer = "https://issuer.example"
+    audience = "mcpg"
+
+    discovery = {"issuer": issuer, "jwks_uri": f"{issuer}/.well-known/jwks.json"}
+    jwks = {"keys": [jwk]}
+    token = _make_jwt(private_key, kid, issuer=issuer, audience=audience)
+
+    httpx_patch, urlopen_patch = _mock_httpx_responses(discovery=discovery, jwks=jwks)
+    with httpx_patch, urlopen_patch:
+        # Wrap asyncio.to_thread to confirm it's called with the
+        # PyJWKClient method — that's how we ensure the blocking
+        # call doesn't run on the event loop.
+        original_to_thread = _asyncio.to_thread
+        observed: list[str] = []
+
+        async def _spy_to_thread(fn, *args, **kwargs):  # type: ignore[no-untyped-def]
+            observed.append(fn.__name__)
+            return await original_to_thread(fn, *args, **kwargs)
+
+        with _mock.patch("mcpg.oidc.asyncio.to_thread", _spy_to_thread):
+            verifier = OIDCVerifier(issuer=issuer, audience=audience)
+            verified = await verifier.verify(token)
+
+    assert verified.claims["sub"] == "user-42"
+    # PyJWKClient.get_signing_key_from_jwt is the method we offloaded.
+    assert "get_signing_key_from_jwt" in observed

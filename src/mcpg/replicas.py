@@ -123,18 +123,24 @@ class ReplicaPool:
         :class:`ReplicaError` so the operator sees which replica is
         misconfigured. The server starts even if every replica fails
         — the routing layer falls back to the primary in that case.
+
+        A failing replica is marked degraded for the standard retry
+        window (default 30s), NOT permanently — a transient DNS or
+        network blip at startup should self-heal at the next sweep,
+        same as a per-query failure.
         """
         for state in self._states:
             try:
                 await state.pool.pool_connect()
             except Exception as exc:
-                state.degraded_until = float("inf")
+                state.degraded_until = time.monotonic() + self._degraded_retry_seconds
                 state.last_error = obfuscate_password(str(exc))
                 logger.warning(
-                    "Replica %d (%s) failed to open: %s",
+                    "Replica %d (%s) failed to open: %s (degraded for %.1fs)",
                     state.index,
                     obfuscate_password(state.dsn),
                     state.last_error,
+                    self._degraded_retry_seconds,
                 )
 
     async def close(self) -> None:

@@ -175,3 +175,28 @@ async def test_routed_driver_routes_to_primary_when_every_replica_is_degraded() 
     assert result == ["primary"]
     assert replica.calls == []
     assert len(primary.calls) == 1
+
+
+async def test_replica_pool_connect_failure_is_temporarily_degraded_not_permanent() -> None:
+    """Regression: a startup connect failure must be the same finite
+    retry window as a per-query failure. Earlier code set
+    degraded_until=inf which permanently disabled the replica until
+    a restart; we want a transient DNS / network blip at startup to
+    self-heal at the next sweep."""
+    import time as _time
+    import unittest.mock as _mock
+
+    # ReplicaPool.__init__ builds DbConnPools eagerly but does NOT
+    # connect them. Make pool_connect() raise to simulate a startup
+    # failure, then check the degraded window is finite.
+    pool = _build_pool(size=1)
+    state = pool._states[0]
+    with _mock.patch.object(state.pool, "pool_connect", side_effect=RuntimeError("DNS failure")):
+        await pool.connect()
+
+    assert state.degraded_until != float("inf")
+    assert state.degraded_until > _time.monotonic()
+    assert "DNS failure" in (state.last_error or "")
+    # After the retry window passes, the replica returns to service.
+    snapshot = await pool.snapshot()
+    assert snapshot[0].seconds_until_retry <= DEFAULT_DEGRADED_RETRY_SECONDS
