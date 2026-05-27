@@ -50,6 +50,15 @@ def test_parse_agtype_strips_vertex_edge_path() -> None:
     assert parse_agtype(123) == 123
     assert parse_agtype("hello") == "hello"
 
+    # Suffix substring inside string properties must be preserved
+    corrupt_str = (
+        '{"id": 1, "properties": {"desc": "This is a ::vertex inside string", "note": "some ::edge note"}}::vertex'
+    )
+    parsed_corrupt = parse_agtype(corrupt_str)
+    assert isinstance(parsed_corrupt, dict)
+    assert parsed_corrupt["properties"]["desc"] == "This is a ::vertex inside string"
+    assert parsed_corrupt["properties"]["note"] == "some ::edge note"
+
 
 async def test_list_graphs_raises_database_error_when_missing() -> None:
     fake_driver = FakeDriver(fail=True)

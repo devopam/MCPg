@@ -115,16 +115,11 @@ async def run_cypher(
     columns = parse_return_columns(cypher_query)
     columns_clause = ", ".join(f'"{col}" agtype' for col in columns)
 
-    # We dollar-quote the Cypher query to prevent SQL syntax clashes
-    sql = f"""
-        SELECT * FROM cypher('{graph_name}', $$
-            {cypher_query}
-        $$) as ({columns_clause});
-    """
+    sql = f"SELECT * FROM cypher('{graph_name}', %s) as ({columns_clause});"
 
     # 6. Execute the query and parse agtype columns
     try:
-        rows = await driver.execute_query(sql)
+        rows = await driver.execute_query(sql, [cypher_query])
     except Exception as exc:
         raise DatabaseError(f"Cypher execution failed: {exc}") from exc
 

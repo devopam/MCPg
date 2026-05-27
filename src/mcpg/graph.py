@@ -8,6 +8,7 @@ and a high-performance, dependency-free parser for Apache AGE's custom
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, TypedDict
 
 from mcpg.context import AppContext
@@ -52,7 +53,12 @@ def parse_agtype(val: Any) -> Any:
     """
     if isinstance(val, str):
         if val.endswith("::vertex") or val.endswith("::edge") or val.endswith("::path"):
-            clean = val.replace("::vertex", "").replace("::edge", "").replace("::path", "")
+            # Split by unescaped double quotes to safely strip suffixes only outside string literals
+            parts = re.split(r'(?<!\\)"', val)
+            for i in range(len(parts)):
+                if i % 2 == 0:
+                    parts[i] = parts[i].replace("::vertex", "").replace("::edge", "").replace("::path", "")
+            clean = '"'.join(parts)
             try:
                 return json.loads(clean)
             except json.JSONDecodeError:
