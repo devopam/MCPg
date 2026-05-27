@@ -6,6 +6,36 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-27
+
+Thirty-three new MCP tools and four major runtime features, closing
+the full `docs/feature-shortlist.md` (**Tier A + Tier B + Tier C**)
+plus an NL→SQL helper. Brings the total MCP tool surface from **74
+to 107** and adds: HTTP transport bearer-token auth, Prometheus
+`/metrics`, TimescaleDB wrappers, hybrid (vector + FTS) search,
+per-request `SET ROLE` multi-tenancy, server-side cursors, RLS
+testing, synthetic test-data generation, FK cascade graphs, and a
+natural-language → SQL helper.
+
+### Headline features
+
+- **Per-request multi-tenancy.** `MCPG_DEFAULT_ROLE` + `X-MCPG-Role`
+  header drive a `TenantSqlDriver` that wraps every query in
+  `BEGIN ... SET LOCAL ROLE "<role>" ...` so one MCPg process can
+  serve N tenants from a single connection pool. Role names
+  validated, allowlist via `MCPG_ALLOWED_ROLES`.
+- **HTTP transport bearer-token auth + Prometheus `/metrics`.**
+  `MCPG_HTTP_AUTH_TOKEN` gates the streamable-http / sse surface;
+  `/metrics`, `/healthz`, `/readyz` are exempt so a Prometheus
+  scraper doesn't hold the MCP credential.
+- **NL→SQL.** `translate_nl_to_sql` sends a schema brief to a
+  pluggable LLM provider (Anthropic / OpenAI / Gemini), parses the
+  JSON response, and optionally executes the generated SQL through
+  the existing `SafeSqlDriver` allowlist.
+- **Server-side cursors** via a `CursorManager` holding dedicated
+  per-cursor connections — pageable reads through millions of rows
+  without starving the main pool.
+
 ### Added
 
 - **Tier-A milestone closed** — three picks from
@@ -45,6 +75,103 @@ adheres to [Semantic Versioning](https://semver.org/).
     `available=False` when the `timescaledb` extension is missing —
     same pattern as the existing pg_trgm / pgvector / postgis
     integrations.
+
+- **Tier-B milestone closed** — four picks from the feature shortlist
+  shipped together. Tool surface 90 → 93 plus the runtime tenancy
+  feature.
+  - **`find_sensitive_columns`** (6.2). Scans `pg_attribute` for
+    columns whose names or types look like they hold PII / secrets:
+    seven categories (credential, financial, contact, identifier,
+    health, government_id, location) with high / medium / low
+    confidence. Pure heuristic — no row sampling. Lives in
+    `mcpg.advisors`.
+  - **`detect_n_plus_one`** (8.4). Walks `pg_stat_statements` for
+    the classic N+1 shape: query templates called hundreds-to-
+    thousands of times, each returning ≤ `max_rows_per_call` rows
+    and accumulating ≥ `min_total_ms` of wall-clock time. Sorted
+    by total time desc; degrades to `available=false` on databases
+    without `pg_stat_statements`.
+  - **`validate_migration`** (9.2). Applies `candidate_sql` to a
+    TRANSIENT shadow of `target_schema` pre-populated with up to
+    `sample_rows_per_table` rows from each base table. Catches
+    failure modes a structural diff misses: NOT NULL added to a
+    column with NULLs, CHECK constraints violated by live rows,
+    type narrowings that fail. Always drops the shadow before
+    returning. Gated under MIGRATE.
+  - **Per-request `SET ROLE` multi-tenancy** (1.4). New
+    `mcpg.tenancy.TenantSqlDriver` subclasses the vendored driver
+    and wraps every query in an explicit transaction with
+    `SET LOCAL ROLE "<role>"`. Role resolved per-request from the
+    `X-MCPG-Role` header (HTTP only) or falls back to
+    `MCPG_DEFAULT_ROLE`. Role names validated against
+    `[A-Za-z_][A-Za-z0-9_]*`; `MCPG_ALLOWED_ROLES` configures an
+    allowlist enforced both at startup (default must be in it) and
+    per request (403 if not in it). `SET LOCAL` auto-resets at txn
+    end — no state leak into the pool. `_TenantRoleMiddleware` sits
+    above bearer auth so unauthenticated requests can't reach the
+    role parser.
+
+- **Tier-C milestone closed** — every remaining pick from the
+  shortlist. Tool surface 93 → 106 (13 new tools), plus a small
+  follow-up fix.
+  - **Catalog readers** — `list_generated_columns` (4.7) reads
+    `pg_attribute.attgenerated` for stored-generated columns;
+    `list_locks` + `find_blocking_chains` (4.5, new module
+    `mcpg.locks`) join `pg_locks` / `pg_blocking_pids` with
+    `pg_stat_activity`; `read_pg_stat_io` (4.3, new module
+    `mcpg.io_stats`) wraps the PG16+ I/O stats view (degrades on
+    14/15).
+  - **`lint_naming_conventions`** (8.1, new module `mcpg.naming`).
+    Detects the majority case style per schema and per table
+    (snake_case / camelCase / PascalCase / SCREAMING_SNAKE), flags
+    outliers, plus an index-prefix rule.
+  - **`generate_fk_cascade_graph`** (8.5). Mermaid `graph LR` of
+    foreign-key cascade chains; only CASCADE / SET NULL / SET
+    DEFAULT FKs by default. Cross-schema targets get their schema
+    prefix preserved.
+  - **`run_select_parallel`** (3.4). Up to `parallel_limit`
+    concurrent SELECTs via `asyncio.gather`; each goes through the
+    same safety allowlist as `run_select`; one bad query doesn't
+    abort the others.
+  - **Server-side cursors** (3.1, new module `mcpg.cursors`). Four
+    tools — `open_cursor`, `fetch_cursor`, `close_cursor`,
+    `list_cursors`. Each cursor holds a DEDICATED psycopg
+    connection (not a pool checkout) inside a `READ ONLY`
+    transaction, with a per-cursor `asyncio.Lock` so concurrent
+    fetch / close on the same cursor can't corrupt the wire
+    protocol. Hard cap of 16 concurrent cursors; 5-min idle TTL
+    with lazy sweep.
+  - **`test_rls_for_role`** (4.8, new module `mcpg.rls`). Runs a
+    SELECT as a target role inside `READ ONLY` + `SET LOCAL ROLE`,
+    reports applicable policies, visible row count, and a bounded
+    sample. Identifier-validated.
+  - **`generate_test_data`** (10.3, new module `mcpg.test_data`).
+    Produces synthetic INSERT statements honouring column type,
+    NOT NULL, DEFAULT. Deterministic with a seed; covers numeric /
+    text / boolean / date / timestamp / json / uuid types.
+    Unsupported types (geometry, hstore, vector, ...) listed in
+    `skipped_columns`. Does NOT execute — returns SQL for review.
+
+- **NL → SQL helper** (shortlist 10.2). New `mcpg.nl2sql` module
+  with a pluggable `LLMProvider` (Anthropic / OpenAI / Gemini)
+  speaking each vendor's HTTPS API via `httpx` — no SDK dependency.
+  `translate_nl_to_sql(question, schema, execute=False, ...)`
+  gathers a compact schema brief (tables, columns, FKs), asks the
+  configured model to emit JSON with `sql` + `explanation`, and —
+  when `execute=true` — passes the generated SQL through
+  `SafeSqlDriver` before running. Writes / DDL / multi-statement
+  input rejected even if the model produced them. New settings:
+  `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` (with vendor-env
+  fallbacks) / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` /
+  `MCPG_NL2SQL_MAX_TOKENS` (hard cap 16384). API key never appears
+  in `repr(Settings)`.
+
+- **Agent cookbook** (`docs/cookbook.md`). Practical recipes for
+  common workflows: schema discovery, slow-query diagnosis,
+  migration safety, cursor streaming, multi-tenancy, NL→SQL,
+  observability scraping, RLS testing, data import / export,
+  ORM model emission, TimescaleDB inspection. Linked from the
+  README and the docs index.
 
 - Three new agent-UX-focused tools (more Tier-A picks). Tool surface
   81 → 84. All read-only.
