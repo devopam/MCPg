@@ -637,6 +637,7 @@ dependencies = [
     { name = "pglast" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "typing-extensions" },
 ]
 
@@ -658,6 +659,7 @@ requires-dist = [
     { name = "pglast", specifier = "==7.11" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.2" },
     { name = "psycopg-pool", specifier = ">=3.3.0" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8" },
     { name = "typing-extensions", specifier = ">=4.12" },
 ]
 

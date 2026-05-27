@@ -397,3 +397,60 @@ def test_build_http_app_with_tenant_role_returns_403_for_unknown_role() -> None:
         # Unknown role → 403.
         response = client.get("/", headers={"X-MCPG-Role": "tenant_zzz"})
         assert response.status_code == 403
+
+
+# --- OIDC mode (Shortlist 6.5) -------------------------------------------
+
+
+def test_build_http_app_in_oidc_mode_installs_the_oidc_middleware() -> None:
+    """In OIDC mode, _OIDCAuthMiddleware replaces the static bearer +
+    X-MCPG-Role pair: the issuer is the source of truth for the role."""
+    from mcpg.http_runtime import _OIDCAuthMiddleware
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_AUTH_MODE": "oidc",
+            "MCPG_OIDC_ISSUER": "https://issuer.example",
+            "MCPG_OIDC_AUDIENCE": "mcpg",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+
+    # Find the OIDC middleware in the wrapped app's middleware stack.
+    middleware_classes = [m.cls for m in wrapped.user_middleware]
+    assert _OIDCAuthMiddleware in middleware_classes
+
+
+def test_build_http_app_in_oidc_mode_blocks_requests_without_a_valid_jwt() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_AUTH_MODE": "oidc",
+            "MCPG_OIDC_ISSUER": "https://issuer.example",
+            "MCPG_OIDC_AUDIENCE": "mcpg",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    with TestClient(wrapped) as client:
+        # No token → 401.
+        response = client.get("/")
+        assert response.status_code == 401
+        # Wrong token → 401 (verification fails — discovery never reached).
+        response = client.get("/", headers={"Authorization": "Bearer not.a.real.jwt"})
+        assert response.status_code == 401
+        # /metrics and /healthz still bypass auth.
+        response = client.get("/metrics")
+        assert response.status_code == 200
+        response = client.get("/healthz")
+        assert response.status_code == 200

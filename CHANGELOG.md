@@ -6,6 +6,44 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Read-replica routing** (Shortlist 1.6). When `MCPG_REPLICA_URLS`
+  is set (comma-separated DSN list), every `force_readonly=True`
+  query is round-robin routed to a healthy replica; writes always
+  go to the primary. New `mcpg.replicas` module owns per-replica
+  pools + degraded-replica state with a 30s retry window; replica
+  connection failures at startup are logged + marked degraded
+  individually rather than aborting startup. Composes with the
+  Phase-1.4 tenancy driver — each replica gets its own
+  `TenantSqlDriver`. New `list_replicas` MCP tool reports index /
+  password-obfuscated DSN / degraded / last_error /
+  seconds_until_retry per replica. Routing decisions land in
+  Prometheus metrics under `mcpg_tool_calls_total` with synthetic
+  tool name `__replica_route` and statuses `primary` /
+  `primary_no_healthy` / `fallback` / `replica_<n>`.
+
+- **OIDC bearer-token validation** (Shortlist 6.5). New
+  `MCPG_AUTH_MODE=oidc` swaps the static-token compare for full JWT
+  validation against an OIDC issuer's JWKS. New `mcpg.oidc.OIDCVerifier`
+  fetches the discovery doc on first use (cached), caches JWKS keys
+  via `PyJWKClient` (default 1h), and validates each request's JWT
+  against signature + iss + aud + exp + nbf with 30s clock leeway.
+  Only asymmetric algorithms (RS256/RS384/RS512 + ES256/ES384/ES512)
+  are accepted — HS-family is excluded to preserve the OIDC trust
+  model. When `MCPG_OIDC_ROLE_CLAIM` is set the claim's value is
+  validated as a safe PG identifier and stashed in the same
+  `current_role` ContextVar the X-MCPG-Role middleware uses, so the
+  tenanted driver issues `SET LOCAL ROLE "<role>"` for the request.
+  Adds `pyjwt[crypto]` as a runtime dependency. The static
+  `MCPG_HTTP_AUTH_TOKEN` path is unchanged when `MCPG_AUTH_MODE=static`
+  (the default).
+
+- **Docs refresh** — `docs/tour.md` tool count 90 → 108 + new
+  sections for cursors / linting / RLS / replicas / NL→SQL.
+  `docs/cookbook.md` adds two new recipes (replica routing,
+  OIDC). README headline updated.
+
 ## [0.5.0] - 2026-05-27
 
 Thirty-three new MCP tools and four major runtime features, closing

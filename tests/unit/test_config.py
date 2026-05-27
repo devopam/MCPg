@@ -299,3 +299,87 @@ def test_nl2sql_api_key_never_appears_in_repr() -> None:
     rendered = repr(settings)
     assert "sk-not-a-real-key-secret" not in rendered
     assert "nl2sql_api_key='set'" in rendered
+
+
+# --- replica routing (Phase 1.6) -----------------------------------------
+
+
+def test_replica_urls_defaults_to_empty_tuple() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).replica_urls == ()
+
+
+def test_replica_urls_parses_comma_separated_list() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_REPLICA_URLS": ("postgresql://u:p@replica-1/db, postgresql://u:p@replica-2/db"),
+        }
+    )
+    assert settings.replica_urls == (
+        "postgresql://u:p@replica-1/db",
+        "postgresql://u:p@replica-2/db",
+    )
+
+
+def test_blank_replica_urls_raises() -> None:
+    with pytest.raises(ConfigError, match="MCPG_REPLICA_URLS"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_REPLICA_URLS": "  ,  "})
+
+
+def test_replica_repr_obfuscates_passwords() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_REPLICA_URLS": "postgresql://u:supersecret@replica/db",
+        }
+    )
+    rendered = repr(settings)
+    assert "supersecret" not in rendered
+
+
+# --- OIDC auth (Shortlist 6.5) -------------------------------------------
+
+
+def test_auth_mode_defaults_to_static() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.auth_mode == "static"
+
+
+def test_auth_mode_rejects_unknown_value() -> None:
+    with pytest.raises(ConfigError, match="MCPG_AUTH_MODE"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_AUTH_MODE": "saml"})
+
+
+def test_oidc_mode_requires_issuer_and_audience() -> None:
+    with pytest.raises(ConfigError, match="MCPG_OIDC_ISSUER"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_AUTH_MODE": "oidc"})
+
+    with pytest.raises(ConfigError, match="MCPG_OIDC_AUDIENCE"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_AUTH_MODE": "oidc",
+                "MCPG_OIDC_ISSUER": "https://issuer.example",
+            }
+        )
+
+
+def test_oidc_settings_parse_when_complete() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_AUTH_MODE": "oidc",
+            "MCPG_OIDC_ISSUER": "https://issuer.example",
+            "MCPG_OIDC_AUDIENCE": "mcpg",
+            "MCPG_OIDC_ROLE_CLAIM": "pg_role",
+        }
+    )
+    assert settings.auth_mode == "oidc"
+    assert settings.oidc_issuer == "https://issuer.example"
+    assert settings.oidc_audience == "mcpg"
+    assert settings.oidc_role_claim == "pg_role"
+
+
+def test_oidc_blank_individual_settings_raise() -> None:
+    with pytest.raises(ConfigError, match="MCPG_OIDC_ISSUER"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_OIDC_ISSUER": "   "})
