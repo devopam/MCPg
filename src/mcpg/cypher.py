@@ -23,6 +23,7 @@ _RETURN_PATTERN = re.compile(r"\bRETURN\b\s+(.*)$", re.IGNORECASE | re.DOTALL)
 
 class CypherResult(TypedDict):
     """The result of a Cypher query execution."""
+
     columns: list[str]
     rows: list[dict[str, Any]]
     row_count: int
@@ -85,10 +86,7 @@ async def run_cypher(
     # 2. Safety / Write checks: Cypher statements can modify graph state.
     # We inspect if the Cypher query contains modifying keywords as single words.
     query_upper = cypher_query.upper()
-    is_write = any(
-        re.search(rf"\b{w}\b", query_upper)
-        for w in ("CREATE", "SET", "DELETE", "REMOVE", "MERGE")
-    )
+    is_write = any(re.search(rf"\b{w}\b", query_upper) for w in ("CREATE", "SET", "DELETE", "REMOVE", "MERGE"))
 
     if is_write:
         check_permission(Capability.WRITE, context.settings.access_mode)

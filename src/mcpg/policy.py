@@ -64,6 +64,4 @@ class PermissionError(Exception):
 def check_permission(capability: Capability, access_mode: AccessMode) -> None:
     """Raise PermissionError if capability is not permitted in access_mode."""
     if not is_permitted(access_mode, capability):
-        raise PermissionError(
-            f"access mode {access_mode.value} requires {capability.value.upper()} capability"
-        )
+        raise PermissionError(f"access mode {access_mode.value} requires {capability.value.upper()} capability")

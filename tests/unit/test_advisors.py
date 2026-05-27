@@ -7,8 +7,8 @@ from mcpg.advisors import (
     RULE_DUPLICATE_INDEXES,
     RULE_MISSING_PRIMARY_KEY,
     RULE_NULLABLE_TIMESTAMP_WITHOUT_TZ,
-    RULE_UNINDEXED_FOREIGN_KEY,
     RULE_RECOMMEND_GRAPH_INDICES,
+    RULE_UNINDEXED_FOREIGN_KEY,
     AdvisorReport,
     Finding,
     _duplicate_indexes,
@@ -144,7 +144,8 @@ async def test_run_advisors_aggregates_every_rule_and_records_them_in_rules_run(
         RULE_RECOMMEND_GRAPH_INDICES,
     }
     rules_in_findings = {finding.rule for finding in report.findings}
-    # All 5 rules are represented in findings because FakeRoutingDriver routes pg_class query to recommend_graph_indices.
+    # All 5 rules are represented in findings because FakeRoutingDriver routes
+    # pg_class query to recommend_graph_indices.
     assert len(rules_in_findings) == 5
     assert rules_in_findings == set(report.rules_run)
 

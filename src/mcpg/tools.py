@@ -1815,10 +1815,7 @@ def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="describe_graph",
-        description=(
-            "Describe the schema structure, vertex labels, and edge labels "
-            "of a specific property graph."
-        ),
+        description=("Describe the schema structure, vertex labels, and edge labels of a specific property graph."),
     )
     async def describe_graph(ctx: _Ctx, graph_name: str) -> dict[str, Any]:
         app = ctx.request_context.lifespan_context

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 class DiagramResult(TypedDict):
     """The result of graph diagram generation."""
+
     graph_name: str
     mermaid: str
 
@@ -94,11 +95,13 @@ async def generate_graph_diagram(
             for vr in v_rows or []:
                 raw_props = vr.cells.get("props") or "{}"
                 props = json.loads(str(raw_props))
-                nodes.append({
-                    "id": int(vr.cells["id"]),
-                    "label": tbl,
-                    "name": props.get("name") or props.get("title") or f"id:{vr.cells['id']}",
-                })
+                nodes.append(
+                    {
+                        "id": int(vr.cells["id"]),
+                        "label": tbl,
+                        "name": props.get("name") or props.get("title") or f"id:{vr.cells['id']}",
+                    }
+                )
         except Exception as exc:
             logger.warning("failed to fetch vertices from label %s: %s", tbl, exc)
 
@@ -113,11 +116,13 @@ async def generate_graph_diagram(
                 [limit - len(edges)],
             )
             for er in e_rows or []:
-                edges.append({
-                    "start_id": int(er.cells["start_id"]),
-                    "end_id": int(er.cells["end_id"]),
-                    "label": tbl,
-                })
+                edges.append(
+                    {
+                        "start_id": int(er.cells["start_id"]),
+                        "end_id": int(er.cells["end_id"]),
+                        "label": tbl,
+                    }
+                )
         except Exception as exc:
             logger.warning("failed to fetch edges from label %s: %s", tbl, exc)
 
@@ -143,7 +148,7 @@ async def generate_graph_diagram(
     node_ids = {n["id"] for n in nodes}
     for e in edges:
         if e["start_id"] in node_ids and e["end_id"] in node_ids:
-            lines.append(f'  v{e["start_id"]} -->|{e["label"]}| v{e["end_id"]}')
+            lines.append(f"  v{e['start_id']} -->|{e['label']}| v{e['end_id']}")
 
     mermaid = "\n".join(lines)
     return DiagramResult(

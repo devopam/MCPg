@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 from _fakes import FakeDatabase, FakeRoutingDriver
 
-from mcpg.context import AppContext
 from mcpg.config import Settings
+from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
-from mcpg.listen import ListenManager
 from mcpg.graph_diagram import generate_graph_diagram
+from mcpg.listen import ListenManager
 
 
 async def test_generate_graph_diagram_validates_inputs() -> None:
@@ -46,20 +46,22 @@ async def test_generate_graph_diagram_raises_error_if_not_exists() -> None:
 
 async def test_generate_graph_diagram_renders_mermaid() -> None:
     # Put ag_label first to prevent partial substring match of ag_graph
-    fake_routing = FakeRoutingDriver({
-        "ag_label": [
-            {"name": "Person", "kind": "v"},
-            {"name": "KNOWS", "kind": "e"},
-        ],
-        "ag_graph": [{"name": "my_graph"}],
-        'FROM "my_graph"."Person"': [
-            {"id": 844424930131969, "props": '{"name": "Charlie"}'},
-            {"id": 844424930131970, "props": '{"name": "Dennis"}'},
-        ],
-        'FROM "my_graph"."KNOWS"': [
-            {"start_id": 844424930131969, "end_id": 844424930131970, "props": "{}"},
-        ]
-    })
+    fake_routing = FakeRoutingDriver(
+        {
+            "ag_label": [
+                {"name": "Person", "kind": "v"},
+                {"name": "KNOWS", "kind": "e"},
+            ],
+            "ag_graph": [{"name": "my_graph"}],
+            'FROM "my_graph"."Person"': [
+                {"id": 844424930131969, "props": '{"name": "Charlie"}'},
+                {"id": 844424930131970, "props": '{"name": "Dennis"}'},
+            ],
+            'FROM "my_graph"."KNOWS"': [
+                {"start_id": 844424930131969, "end_id": 844424930131970, "props": "{}"},
+            ],
+        }
+    )
     fake_db = FakeDatabase(fake_routing)  # type: ignore[arg-type]
     url = "postgresql://localhost/db"
     settings = Settings(database_url=url)
@@ -77,4 +79,4 @@ async def test_generate_graph_diagram_renders_mermaid() -> None:
     assert "subgraph Person_nodes [Person Nodes]" in mermaid
     assert 'v844424930131969["Charlie"]' in mermaid
     assert 'v844424930131970["Dennis"]' in mermaid
-    assert 'v844424930131969 -->|KNOWS| v844424930131970' in mermaid
+    assert "v844424930131969 -->|KNOWS| v844424930131970" in mermaid

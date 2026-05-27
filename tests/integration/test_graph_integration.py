@@ -1,15 +1,16 @@
 """Integration tests for Apache AGE graph tools against a live PostgreSQL database."""
 
 from collections.abc import AsyncIterator
+
 import pytest
 
+from mcpg.config import AccessMode, Settings
 from mcpg.context import AppContext
-from mcpg.config import Settings, AccessMode
-from mcpg.database import Database
-from mcpg.graph import list_graphs, describe_graph
 from mcpg.cypher import run_cypher
-from mcpg.graph_mgmt import create_graph, drop_graph
+from mcpg.database import Database
+from mcpg.graph import describe_graph, list_graphs
 from mcpg.graph_diagram import generate_graph_diagram
+from mcpg.graph_mgmt import create_graph, drop_graph
 
 
 @pytest.fixture
@@ -86,11 +87,7 @@ async def test_graph_lifecycle_and_cypher_queries(
     assert any(g["name"] == graph_name for g in graphs)
 
     # 2. create nodes
-    c_res = await run_cypher(
-        context,
-        graph_name,
-        "CREATE (a:Person {name: 'Charlie', age: 30}) RETURN a"
-    )
+    c_res = await run_cypher(context, graph_name, "CREATE (a:Person {name: 'Charlie', age: 30}) RETURN a")
     assert c_res["row_count"] == 1
     assert c_res["columns"] == ["a"]
     node = c_res["rows"][0]["a"]
@@ -99,11 +96,7 @@ async def test_graph_lifecycle_and_cypher_queries(
     assert node["properties"]["age"] == 30
 
     # Create Dennis
-    d_res = await run_cypher(
-        context,
-        graph_name,
-        "CREATE (b:Person {name: 'Dennis', age: 31}) RETURN b"
-    )
+    d_res = await run_cypher(context, graph_name, "CREATE (b:Person {name: 'Dennis', age: 31}) RETURN b")
     assert d_res["row_count"] == 1
 
     # 3. Create relationship KNOWS between them
@@ -112,7 +105,7 @@ async def test_graph_lifecycle_and_cypher_queries(
         graph_name,
         "MATCH (a:Person {name: 'Charlie'}), (b:Person {name: 'Dennis'}) "
         "CREATE (a)-[r:KNOWS {since: 2021}]->(b) "
-        "RETURN r"
+        "RETURN r",
     )
     assert r_res["row_count"] == 1
     edge = r_res["rows"][0]["r"]
@@ -124,7 +117,7 @@ async def test_graph_lifecycle_and_cypher_queries(
     assert desc["name"] == graph_name
     assert desc["total_vertices"] == 2
     assert desc["total_edges"] == 1
-    
+
     # Check vertex labels
     person_label_stats = next(x for x in desc["vertex_labels"] if x["label"] == "Person")
     assert person_label_stats["count"] == 2
@@ -139,5 +132,5 @@ async def test_graph_lifecycle_and_cypher_queries(
     mermaid = diag_res["mermaid"]
     assert "flowchart TD" in mermaid
     assert "subgraph Person_nodes [Person Nodes]" in mermaid
-    assert 'v' in mermaid  # contains node IDs
-    assert 'KNOWS' in mermaid  # contains edge relationship
+    assert "v" in mermaid  # contains node IDs
+    assert "KNOWS" in mermaid  # contains edge relationship

@@ -5,9 +5,9 @@ reachable database; otherwise they are skipped. CI provides this via a
 PostgreSQL service container; locally, set it to any test database.
 """
 
+import asyncio
 import os
 import sys
-import asyncio
 from collections.abc import AsyncIterator
 
 import pytest

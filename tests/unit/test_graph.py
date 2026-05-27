@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
 
-from mcpg.context import AppContext
 from mcpg.config import Settings
-from mcpg.database import DatabaseError
+from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
+from mcpg.database import DatabaseError
+from mcpg.graph import describe_graph, list_graphs, parse_agtype
 from mcpg.listen import ListenManager
-from mcpg.graph import parse_agtype, list_graphs, describe_graph
 
 
 def test_parse_agtype_strips_vertex_edge_path() -> None:
@@ -23,14 +23,22 @@ def test_parse_agtype_strips_vertex_edge_path() -> None:
     assert parsed_v["properties"]["name"] == "Charlie"
 
     # Edge shape
-    e_str = '{"id": 1125899906842625, "label": "KNOWS", "end_id": 844424930131970, "start_id": 844424930131969, "properties": {"since": 2020}}::edge'
+    e_str = (
+        '{"id": 1125899906842625, "label": "KNOWS", "end_id": 844424930131970, '
+        '"start_id": 844424930131969, "properties": {"since": 2020}}::edge'
+    )
     parsed_e = parse_agtype(e_str)
     assert isinstance(parsed_e, dict)
     assert parsed_e["label"] == "KNOWS"
     assert parsed_e["properties"]["since"] == 2020
 
     # Path shape
-    p_str = '[{"id": 844424930131969, "label": "Person", "properties": {"name": "Charlie"}}::vertex, {"id": 1125899906842625, "label": "KNOWS", "end_id": 844424930131970, "start_id": 844424930131969, "properties": {"since": 2020}}::edge, {"id": 844424930131970, "label": "Person", "properties": {"name": "Dennis"}}::vertex]::path'
+    p_str = (
+        '[{"id": 844424930131969, "label": "Person", "properties": {"name": "Charlie"}}::vertex, '
+        '{"id": 1125899906842625, "label": "KNOWS", "end_id": 844424930131970, '
+        '"start_id": 844424930131969, "properties": {"since": 2020}}::edge, '
+        '{"id": 844424930131970, "label": "Person", "properties": {"name": "Dennis"}}::vertex]::path'
+    )
     parsed_p = parse_agtype(p_str)
     assert isinstance(parsed_p, list)
     assert len(parsed_p) == 3
@@ -60,9 +68,7 @@ async def test_list_graphs_raises_database_error_when_missing() -> None:
 
 
 async def test_list_graphs_returns_graphs_when_installed() -> None:
-    fake_driver = FakeDriver([
-        {"graphid": 16555, "name": "my_graph", "namespace": "my_graph"}
-    ])
+    fake_driver = FakeDriver([{"graphid": 16555, "name": "my_graph", "namespace": "my_graph"}])
     fake_db = FakeDatabase(fake_driver)
     url = "postgresql://localhost/db"
     settings = Settings(database_url=url)
@@ -118,16 +124,18 @@ async def test_describe_graph_raises_error_if_not_exists() -> None:
 
 async def test_describe_graph_fetches_stats() -> None:
     # Put ag_label first to prevent partial substring match of ag_graph
-    fake_routing = FakeRoutingDriver({
-        "ag_label": [
-            {"name": "Person", "kind": "v"},
-            {"name": "KNOWS", "kind": "e"},
-            {"name": "_ag_label_vertex", "kind": "v"}, # should be skipped
-        ],
-        "ag_graph": [{"name": "my_graph", "namespace": "my_graph"}],
-        '"my_graph"."Person"': [{"cnt": 10}],
-        '"my_graph"."KNOWS"': [{"cnt": 15}],
-    })
+    fake_routing = FakeRoutingDriver(
+        {
+            "ag_label": [
+                {"name": "Person", "kind": "v"},
+                {"name": "KNOWS", "kind": "e"},
+                {"name": "_ag_label_vertex", "kind": "v"},  # should be skipped
+            ],
+            "ag_graph": [{"name": "my_graph", "namespace": "my_graph"}],
+            '"my_graph"."Person"': [{"cnt": 10}],
+            '"my_graph"."KNOWS"': [{"cnt": 15}],
+        }
+    )
     fake_db = FakeDatabase(fake_routing)  # type: ignore[arg-type]
     url = "postgresql://localhost/db"
     settings = Settings(database_url=url)

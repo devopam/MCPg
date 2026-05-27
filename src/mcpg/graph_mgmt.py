@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class GraphMgmtResult(TypedDict):
     """The result of a graph management operation."""
+
     graph_name: str
     status: str
     message: str
@@ -46,9 +47,7 @@ async def create_graph(context: AppContext, graph_name: str) -> GraphMgmtResult:
             [graph_name],
         )
     except Exception as exc:
-        raise DatabaseError(
-            "Apache AGE is not enabled in this database. Ensure CREATE EXTENSION age is run."
-        ) from exc
+        raise DatabaseError("Apache AGE is not enabled in this database. Ensure CREATE EXTENSION age is run.") from exc
 
     if exists_rows:
         return GraphMgmtResult(

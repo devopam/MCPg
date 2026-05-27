@@ -5,13 +5,12 @@ from __future__ import annotations
 import pytest
 from _fakes import FakeDatabase, FakeRoutingDriver
 
+from mcpg.config import AccessMode, Settings
 from mcpg.context import AppContext
-from mcpg.config import Settings, AccessMode
-from mcpg.policy import PermissionError
-from mcpg.database import DatabaseError
 from mcpg.cursors import CursorManager
-from mcpg.listen import ListenManager
 from mcpg.graph_mgmt import create_graph, drop_graph
+from mcpg.listen import ListenManager
+from mcpg.policy import PermissionError
 
 
 async def test_create_graph_validates_inputs() -> None:
@@ -47,9 +46,11 @@ async def test_create_graph_requires_ddl_capability() -> None:
 
 
 async def test_create_graph_returns_exists_if_already_exists() -> None:
-    fake_routing = FakeRoutingDriver({
-        "ag_graph": [{"present": 1}],
-    })
+    fake_routing = FakeRoutingDriver(
+        {
+            "ag_graph": [{"present": 1}],
+        }
+    )
     fake_db = FakeDatabase(fake_routing)  # type: ignore[arg-type]
     url = "postgresql://localhost/db"
     settings = Settings(database_url=url, access_mode=AccessMode.UNRESTRICTED, allow_ddl=True)
@@ -66,10 +67,12 @@ async def test_create_graph_returns_exists_if_already_exists() -> None:
 
 
 async def test_create_graph_creates_successfully() -> None:
-    fake_routing = FakeRoutingDriver({
-        "ag_graph": [],  # does not exist
-        "create_graph": [{"result": "created"}],
-    })
+    fake_routing = FakeRoutingDriver(
+        {
+            "ag_graph": [],  # does not exist
+            "create_graph": [{"result": "created"}],
+        }
+    )
     fake_db = FakeDatabase(fake_routing)  # type: ignore[arg-type]
     url = "postgresql://localhost/db"
     settings = Settings(database_url=url, access_mode=AccessMode.UNRESTRICTED, allow_ddl=True)
@@ -87,9 +90,11 @@ async def test_create_graph_creates_successfully() -> None:
 
 
 async def test_drop_graph_returns_not_found_if_does_not_exist() -> None:
-    fake_routing = FakeRoutingDriver({
-        "ag_graph": [],
-    })
+    fake_routing = FakeRoutingDriver(
+        {
+            "ag_graph": [],
+        }
+    )
     fake_db = FakeDatabase(fake_routing)  # type: ignore[arg-type]
     url = "postgresql://localhost/db"
     settings = Settings(database_url=url, access_mode=AccessMode.UNRESTRICTED, allow_ddl=True)
@@ -106,10 +111,12 @@ async def test_drop_graph_returns_not_found_if_does_not_exist() -> None:
 
 
 async def test_drop_graph_drops_successfully() -> None:
-    fake_routing = FakeRoutingDriver({
-        "ag_graph": [{"present": 1}],
-        "drop_graph": [{"result": "dropped"}],
-    })
+    fake_routing = FakeRoutingDriver(
+        {
+            "ag_graph": [{"present": 1}],
+            "drop_graph": [{"result": "dropped"}],
+        }
+    )
     fake_db = FakeDatabase(fake_routing)  # type: ignore[arg-type]
     url = "postgresql://localhost/db"
     settings = Settings(database_url=url, access_mode=AccessMode.UNRESTRICTED, allow_ddl=True)

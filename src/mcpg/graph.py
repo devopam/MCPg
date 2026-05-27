@@ -16,6 +16,7 @@ from mcpg.database import DatabaseError
 
 class GraphInfo(TypedDict):
     """Structured information about an Apache AGE graph."""
+
     graphid: int
     name: str
     namespace: str
@@ -23,12 +24,14 @@ class GraphInfo(TypedDict):
 
 class LabelStats(TypedDict):
     """Vertex or Edge label node count stats."""
+
     label: str
     count: int
 
 
 class GraphDescription(TypedDict):
     """Detailed structural statistics and labels in a graph."""
+
     name: str
     vertex_labels: list[LabelStats]
     edge_labels: list[LabelStats]
@@ -70,9 +73,7 @@ async def list_graphs(context: AppContext) -> list[GraphInfo]:
             FROM ag_catalog.ag_graph;
         """)
     except Exception as exc:
-        raise DatabaseError(
-            "Apache AGE is not enabled in this database. Ensure CREATE EXTENSION age is run."
-        ) from exc
+        raise DatabaseError("Apache AGE is not enabled in this database. Ensure CREATE EXTENSION age is run.") from exc
 
     return [
         GraphInfo(

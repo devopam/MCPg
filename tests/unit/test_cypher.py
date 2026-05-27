@@ -5,13 +5,12 @@ from __future__ import annotations
 import pytest
 from _fakes import FakeDatabase, FakeRoutingDriver
 
+from mcpg.config import AccessMode, Settings
 from mcpg.context import AppContext
-from mcpg.config import Settings, AccessMode
-from mcpg.policy import PermissionError
-from mcpg.database import DatabaseError
 from mcpg.cursors import CursorManager
-from mcpg.listen import ListenManager
 from mcpg.cypher import parse_return_columns, run_cypher
+from mcpg.listen import ListenManager
+from mcpg.policy import PermissionError
 
 
 def test_parse_return_columns() -> None:
@@ -74,15 +73,17 @@ async def test_run_cypher_enforces_read_only_access_mode() -> None:
 
 
 async def test_run_cypher_executes_successfully() -> None:
-    fake_routing = FakeRoutingDriver({
-        "ag_graph": [{"name": "my_graph"}],
-        "SELECT * FROM cypher": [
-            {
-                "person": '{"id": 844424930131969, "label": "Person", "properties": {"name": "Charlie"}}::vertex',
-                "friend": '{"id": 844424930131970, "label": "Person", "properties": {"name": "Dennis"}}::vertex'
-            }
-        ]
-    })
+    fake_routing = FakeRoutingDriver(
+        {
+            "ag_graph": [{"name": "my_graph"}],
+            "SELECT * FROM cypher": [
+                {
+                    "person": '{"id": 844424930131969, "label": "Person", "properties": {"name": "Charlie"}}::vertex',
+                    "friend": '{"id": 844424930131970, "label": "Person", "properties": {"name": "Dennis"}}::vertex',
+                }
+            ],
+        }
+    )
     fake_db = FakeDatabase(fake_routing)  # type: ignore[arg-type]
     url = "postgresql://localhost/db"
     settings = Settings(database_url=url, access_mode=AccessMode.UNRESTRICTED)
