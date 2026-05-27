@@ -19,6 +19,7 @@ from mcp.types import ContentBlock
 from mcpg import audit
 from mcpg.config import Settings, Transport
 from mcpg.context import AppContext
+from mcpg.cursors import CursorManager
 from mcpg.database import Database
 from mcpg.listen import ListenManager
 from mcpg.observability import get_metrics
@@ -52,20 +53,29 @@ class AuditedFastMCP(FastMCP[AppContext]):
 
 
 def make_lifespan(
-    settings: Settings, database: Database, listen_manager: ListenManager
+    settings: Settings,
+    database: Database,
+    listen_manager: ListenManager,
+    cursor_manager: CursorManager,
 ) -> Callable[[FastMCP[AppContext]], AbstractAsyncContextManager[AppContext]]:
     """Build the server lifespan: open the database on start, close on stop.
 
     The listen manager is created eagerly (cheap — it doesn't open the
     listener connection until the first ``subscribe_channel`` call) and
     torn down on lifespan exit so subscriptions can't outlive the
-    server.
+    server. The cursor manager holds dedicated connections per open
+    server-side cursor and is closed-out symmetrically.
     """
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP[AppContext]) -> AsyncIterator[AppContext]:
-        async with database, listen_manager:
-            yield AppContext(settings=settings, database=database, listen_manager=listen_manager)
+        async with database, listen_manager, cursor_manager:
+            yield AppContext(
+                settings=settings,
+                database=database,
+                listen_manager=listen_manager,
+                cursor_manager=cursor_manager,
+            )
 
     return lifespan
 
@@ -75,6 +85,7 @@ def create_server(
     *,
     database: Database | None = None,
     listen_manager: ListenManager | None = None,
+    cursor_manager: CursorManager | None = None,
 ) -> FastMCP[AppContext]:
     """Construct a configured FastMCP server.
 
@@ -92,10 +103,11 @@ def create_server(
         if listen_manager is not None
         else ListenManager(database_url=settings.database_url, queue_max=settings.listen_queue_max)
     )
+    cm = cursor_manager if cursor_manager is not None else CursorManager(database_url=settings.database_url)
     server: FastMCP[AppContext] = AuditedFastMCP(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
-        lifespan=make_lifespan(settings, db, lm),
+        lifespan=make_lifespan(settings, db, lm, cm),
         host=settings.http_host,
         port=settings.http_port,
     )

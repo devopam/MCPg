@@ -7,12 +7,14 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcpg.config import load_settings
 from mcpg.query import (
     ExplainResult,
+    ParallelQueryResult,
     QueryError,
     QueryPlanAnalysis,
     QueryResult,
     analyze_query_plan,
     explain_query,
     run_select,
+    run_select_parallel,
 )
 from mcpg.server import create_server
 
@@ -177,3 +179,76 @@ async def test_analyze_query_plan_tool_is_callable_from_a_client() -> None:
         result = await client.call_tool("analyze_query_plan", {"sql": "SELECT 1"})
 
     assert result.isError is False
+
+
+# --- run_select_parallel (Phase 3.4) -------------------------------------
+
+
+async def test_run_select_parallel_runs_all_statements_concurrently() -> None:
+    driver = FakeDriver([{"x": 1}])
+
+    result = await run_select_parallel(
+        driver,
+        [
+            "SELECT 1 AS x",
+            "SELECT 2 AS x",
+            "SELECT 3 AS x",
+        ],
+    )
+
+    assert isinstance(result, ParallelQueryResult)
+    assert len(result.outcomes) == 3
+    # Indices preserved + every slot succeeded.
+    assert [o.index for o in result.outcomes] == [0, 1, 2]
+    assert all(o.success for o in result.outcomes)
+    assert all(o.error is None for o in result.outcomes)
+    assert result.outcomes[0].result is not None
+    assert result.outcomes[0].result.row_count == 1
+
+
+async def test_run_select_parallel_rejects_empty_list() -> None:
+    with pytest.raises(QueryError, match="empty"):
+        await run_select_parallel(FakeDriver([]), [])
+
+
+async def test_run_select_parallel_rejects_blank_entry() -> None:
+    with pytest.raises(QueryError, match="blank"):
+        await run_select_parallel(FakeDriver([]), ["SELECT 1", "   "])
+
+
+async def test_run_select_parallel_rejects_too_many_statements() -> None:
+    with pytest.raises(QueryError, match="too many"):
+        await run_select_parallel(
+            FakeDriver([]),
+            [f"SELECT {i}" for i in range(20)],
+            parallel_limit=5,
+        )
+
+
+async def test_run_select_parallel_captures_per_statement_failure() -> None:
+    """A query that the safety allowlist rejects yields a captured outcome,
+    not an exception that aborts the others."""
+    driver = FakeDriver([{"x": 1}])
+
+    result = await run_select_parallel(
+        driver,
+        [
+            "SELECT 1 AS x",
+            "DROP TABLE users",  # unsafe — should be rejected
+            "SELECT 2 AS x",
+        ],
+    )
+
+    # Three slots regardless of one bad entry.
+    assert len(result.outcomes) == 3
+    assert result.outcomes[0].success is True
+    assert result.outcomes[1].success is False
+    assert result.outcomes[1].error is not None
+    assert result.outcomes[2].success is True
+
+
+async def test_run_select_parallel_tool_is_registered() -> None:
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "run_select_parallel" in listed

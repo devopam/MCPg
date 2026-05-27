@@ -180,3 +180,104 @@ async def test_generate_schema_diagram_tool_is_registered_and_callable() -> None
     # The wiring should hand the raw Mermaid string straight through; an empty
     # schema still produces the ``erDiagram`` preamble.
     assert result.content[0].text.startswith("erDiagram\n")  # type: ignore[union-attr]
+
+
+# --- generate_fk_cascade_graph (Phase 8.5) -------------------------------
+
+
+async def test_generate_fk_cascade_graph_filters_to_cascade_actions_by_default() -> None:
+    from mcpg.diagrams import generate_fk_cascade_graph
+
+    driver = FakeRoutingDriver(
+        {
+            "con.contype = 'f'": [
+                # CASCADE FK — included.
+                {
+                    "fk_name": "fk_orders_user",
+                    "from_table": "orders",
+                    "to_schema": "public",
+                    "to_table": "users",
+                    "on_delete": "c",
+                    "on_update": "a",
+                },
+                # NO ACTION FK — excluded by default.
+                {
+                    "fk_name": "fk_invoices_customer",
+                    "from_table": "invoices",
+                    "to_schema": "public",
+                    "to_table": "customers",
+                    "on_delete": "a",
+                    "on_update": "a",
+                },
+            ]
+        }
+    )
+
+    mermaid = await generate_fk_cascade_graph(driver, "public")  # type: ignore[arg-type]
+
+    assert mermaid.startswith("graph LR")
+    assert "orders" in mermaid
+    assert "users" in mermaid
+    assert "DEL CASCADE" in mermaid
+    # NO ACTION FK was excluded; its tables should NOT be in the graph.
+    assert "invoices" not in mermaid
+    assert "customers" not in mermaid
+
+
+async def test_generate_fk_cascade_graph_include_all_draws_no_action_fks_too() -> None:
+    from mcpg.diagrams import generate_fk_cascade_graph
+
+    driver = FakeRoutingDriver(
+        {
+            "con.contype = 'f'": [
+                {
+                    "fk_name": "fk_invoices_customer",
+                    "from_table": "invoices",
+                    "to_schema": "public",
+                    "to_table": "customers",
+                    "on_delete": "a",
+                    "on_update": "a",
+                },
+            ]
+        }
+    )
+
+    mermaid = await generate_fk_cascade_graph(driver, "public", include_all=True)  # type: ignore[arg-type]
+
+    assert "invoices" in mermaid
+    assert "customers" in mermaid
+    assert "NO ACTION" in mermaid
+
+
+async def test_generate_fk_cascade_graph_emits_placeholder_when_no_cascades() -> None:
+    from mcpg.diagrams import generate_fk_cascade_graph
+
+    driver = FakeRoutingDriver({"con.contype = 'f'": []})
+
+    mermaid = await generate_fk_cascade_graph(driver, "public")  # type: ignore[arg-type]
+
+    assert "no cascade foreign keys" in mermaid
+
+
+async def test_generate_fk_cascade_graph_prefixes_cross_schema_targets() -> None:
+    from mcpg.diagrams import generate_fk_cascade_graph
+
+    driver = FakeRoutingDriver(
+        {
+            "con.contype = 'f'": [
+                {
+                    "fk_name": "fk_app_audit",
+                    "from_table": "events",
+                    "to_schema": "audit",
+                    "to_table": "log",
+                    "on_delete": "c",
+                    "on_update": "a",
+                },
+            ]
+        }
+    )
+
+    mermaid = await generate_fk_cascade_graph(driver, "public")  # type: ignore[arg-type]
+
+    # Cross-schema target rendered with its schema prefix.
+    assert "audit.log" in mermaid

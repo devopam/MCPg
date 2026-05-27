@@ -19,6 +19,7 @@ from mcpg import (
     audit_trail,
     composite,
     cron,
+    cursors,
     data_movement,
     diagrams,
     diesel,
@@ -29,16 +30,21 @@ from mcpg import (
     health,
     indexing,
     introspection,
+    io_stats,
     jooq,
     liveops,
+    locks,
     maintenance,
     migrations,
+    naming,
     partman,
     prisma,
     query,
+    rls,
     schema_diff,
     sqlalchemy_export,
     sqlc,
+    test_data,
     textsearch,
     timescaledb,
     vector_tuning,
@@ -298,6 +304,63 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         extensions = await introspection.list_available_extensions(_driver(ctx))
         return [asdict(extension) for extension in extensions]
 
+    @server.tool(
+        name="list_generated_columns",
+        description=(
+            "List every GENERATED ALWAYS AS (...) STORED column in a schema, "
+            "with its data type, the underlying expression, and whether it's "
+            "stored or virtual. PostgreSQL today supports only the stored "
+            "form; the kind field is reported anyway so the response shape "
+            "is forward-compatible when PG adds virtual columns."
+        ),
+    )
+    async def list_generated_columns(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+        cols = await introspection.list_generated_columns(_driver(ctx), schema)
+        return [asdict(c) for c in cols]
+
+    @server.tool(
+        name="list_locks",
+        description=(
+            "List currently-held and waiting locks, joined with backend "
+            "state from pg_stat_activity. Ordered by (granted ASC, pid) so "
+            "waiting locks float to the top. Returns lock type, mode, "
+            "qualified relation name when applicable, transaction / "
+            "virtualxid, the application_name + state + wait event of the "
+            "owning backend, and the first 200 chars of its query. Read-only."
+        ),
+    )
+    async def list_locks(ctx: _Ctx, limit: int = locks.DEFAULT_LOCK_LIMIT) -> list[dict[str, Any]]:
+        rows = await locks.list_locks(_driver(ctx), limit=limit)
+        return [asdict(row) for row in rows]
+
+    @server.tool(
+        name="find_blocking_chains",
+        description=(
+            "Return (blocked, blocking) backend pairs via pg_blocking_pids. "
+            "Each row pairs a backend waiting on a Lock with one PID "
+            "holding the lock that's preventing progress. Cycles are "
+            "possible (A blocks B, B blocks A); render with care. Read-only."
+        ),
+    )
+    async def find_blocking_chains(ctx: _Ctx, limit: int = locks.DEFAULT_BLOCKING_LIMIT) -> list[dict[str, Any]]:
+        rows = await locks.find_blocking_chains(_driver(ctx), limit=limit)
+        return [asdict(row) for row in rows]
+
+    @server.tool(
+        name="read_pg_stat_io",
+        description=(
+            "Read the pg_stat_io view (PostgreSQL 16+). Reports per "
+            "(backend_type, object, context) cumulative I/O activity — "
+            "reads, writes, extends, evictions, hits, fsyncs. Useful for "
+            "spotting buffer-cache misses and write amplification. On "
+            "PostgreSQL 14 / 15 the view doesn't exist, so the tool "
+            "returns available=false and an empty list."
+        ),
+    )
+    async def read_pg_stat_io(ctx: _Ctx) -> dict[str, Any]:
+        report = await io_stats.read_pg_stat_io(_driver(ctx))
+        return asdict(report)
+
 
 def _register_diagrams(server: FastMCP[AppContext]) -> None:
     @server.tool(
@@ -310,6 +373,23 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
     )
     async def generate_schema_diagram(ctx: _Ctx, schema: str, include_partitions: bool = False) -> str:
         return await diagrams.generate_schema_diagram(_driver(ctx), schema, include_partitions=include_partitions)
+
+    @server.tool(
+        name="generate_fk_cascade_graph",
+        description=(
+            "Build a Mermaid graph LR of foreign-key cascade chains in a "
+            "schema. Each edge runs from the referencing table to the "
+            "referenced table, labelled with the cascade action(s) on "
+            "DELETE / UPDATE. By default only FKs with at least one "
+            "CASCADE / SET NULL / SET DEFAULT action are included — "
+            "those are the ones that produce a write blast radius. Pass "
+            "include_all=true to include NO ACTION / RESTRICT FKs too "
+            "(full FK topology view). Cross-schema FK targets are "
+            "rendered as separate nodes prefixed with their schema."
+        ),
+    )
+    async def generate_fk_cascade_graph(ctx: _Ctx, schema: str, include_all: bool = False) -> str:
+        return await diagrams.generate_fk_cascade_graph(_driver(ctx), schema, include_all=include_all)
 
 
 def _register_schema_diff(server: FastMCP[AppContext]) -> None:
@@ -560,6 +640,60 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     async def find_sensitive_columns(ctx: _Ctx, schema: str) -> dict[str, Any]:
         report = await advisors.find_sensitive_columns(_driver(ctx), schema)
         return asdict(report)
+
+    @server.tool(
+        name="lint_naming_conventions",
+        description=(
+            "Lint table / column / index naming in a schema. Detects "
+            "the majority case style (snake_case / camelCase / "
+            "PascalCase / SCREAMING_SNAKE) per schema and per table, "
+            "then flags outliers. Also flags indexes whose names do "
+            "not start with a conventional prefix (idx_, ix_, pk_, "
+            "uq_, fk_ by default). Findings carry the offender's style "
+            "and the detected majority — agents can use the style "
+            "field to filter for renames vs accept-as-is. Pure read."
+        ),
+    )
+    async def lint_naming_conventions(ctx: _Ctx, schema: str) -> dict[str, Any]:
+        report = await naming.lint_naming_conventions(_driver(ctx), schema)
+        return asdict(report)
+
+    @server.tool(
+        name="test_rls_for_role",
+        description=(
+            "Test what an RLS-bound role can read from a table. Reports "
+            "whether RLS is enabled on the table, lists the policies "
+            "that apply to the given role, counts the rows the role "
+            "can read, and returns up to sample_size rows so the agent "
+            "can inspect them. Runs as the target role inside a "
+            "READ ONLY transaction — no writes can leak. Pure read."
+        ),
+    )
+    async def test_rls_for_role(
+        ctx: _Ctx, schema: str, table: str, role: str, sample_size: int = rls.DEFAULT_RLS_SAMPLE_SIZE
+    ) -> dict[str, Any]:
+        result = await rls.test_rls_for_role(_driver(ctx), schema, table, role, sample_size=sample_size)
+        return asdict(result)
+
+    @server.tool(
+        name="generate_test_data",
+        description=(
+            "Generate synthetic INSERT statements for a table — typed "
+            "values respecting column type, NOT NULL, and DEFAULT. "
+            "Returns the SQL as strings; does NOT execute it. Useful "
+            "for seeding dev / staging environments. The generator is "
+            "deterministic when a seed is provided. Foreign keys are "
+            "NOT resolved — the caller must pre-seed referenced rows "
+            "or drop the FK before applying. Hard cap of 10000 rows "
+            "per call. Pure read (the actual writes go through "
+            "run_write under unrestricted mode)."
+        ),
+    )
+    async def generate_test_data(
+        ctx: _Ctx, schema: str, table: str, rows: int = test_data.DEFAULT_ROW_COUNT, seed: int | None = None
+    ) -> dict[str, Any]:
+        dataset = await test_data.generate_test_data(_driver(ctx), schema, table, rows=rows, seed=seed)
+        return asdict(dataset)
 
 
 def _register_composite(server: FastMCP[AppContext]) -> None:
@@ -1052,6 +1186,95 @@ def _register_query(server: FastMCP[AppContext]) -> None:
     async def run_select(ctx: _Ctx, sql: str, max_rows: int = query.DEFAULT_MAX_ROWS) -> dict[str, Any]:
         result = await query.run_select(_driver(ctx), sql, max_rows=max_rows)
         return asdict(result)
+
+    @server.tool(
+        name="run_select_parallel",
+        description=(
+            "Run up to parallel_limit read-only SELECTs concurrently. Each "
+            "statement is validated by the same safety allowlist as "
+            "run_select; one bad query does not abort the others — its "
+            "error is captured in its own outcome slot. Useful for "
+            "dashboard-style fan-out where round-trip latency dominates "
+            "(e.g. fetching counters / aggregates from several tables at "
+            "once). Each outcome includes an index so the caller can "
+            "correlate results without relying on ordering."
+        ),
+    )
+    async def run_select_parallel(
+        ctx: _Ctx,
+        statements: list[str],
+        max_rows: int = query.DEFAULT_MAX_ROWS,
+        parallel_limit: int = query.DEFAULT_PARALLEL_LIMIT,
+    ) -> dict[str, Any]:
+        result = await query.run_select_parallel(
+            _driver(ctx),
+            statements,
+            max_rows=max_rows,
+            parallel_limit=parallel_limit,
+        )
+        return asdict(result)
+
+    @server.tool(
+        name="open_cursor",
+        description=(
+            "Open a server-side cursor for a SELECT query. The cursor "
+            "holds the result set on the server side so an agent can "
+            "page through millions of rows without loading them all. "
+            "SQL is validated by the same safety allowlist as "
+            "run_select. Returns the cursor_id; fetch the rows with "
+            "fetch_cursor and close with close_cursor (or let the "
+            "5-minute TTL clean up). Hard cap of 16 concurrent cursors."
+        ),
+    )
+    async def open_cursor(ctx: _Ctx, sql: str) -> dict[str, Any]:
+        manager = ctx.request_context.lifespan_context.cursor_manager
+        info = await manager.open(_driver(ctx), sql)
+        return asdict(info)
+
+    @server.tool(
+        name="fetch_cursor",
+        description=(
+            "Fetch the next batch from an open server-side cursor. "
+            "exhausted=true means the FETCH returned fewer rows than "
+            "requested — stop polling. batch_size defaults to 100; "
+            "hard cap is 10000 per call."
+        ),
+    )
+    async def fetch_cursor(
+        ctx: _Ctx,
+        cursor_id: str,
+        batch_size: int = cursors.DEFAULT_FETCH_BATCH,
+    ) -> dict[str, Any]:
+        manager = ctx.request_context.lifespan_context.cursor_manager
+        result = await manager.fetch(cursor_id, batch_size=batch_size)
+        return asdict(result)
+
+    @server.tool(
+        name="close_cursor",
+        description=(
+            "Close a server-side cursor and release its dedicated "
+            "connection. Idempotent — returns closed=false when the "
+            "cursor was not open (already closed, expired, or never "
+            "existed)."
+        ),
+    )
+    async def close_cursor(ctx: _Ctx, cursor_id: str) -> dict[str, Any]:
+        manager = ctx.request_context.lifespan_context.cursor_manager
+        closed = await manager.close(cursor_id)
+        return {"cursor_id": cursor_id, "closed": closed}
+
+    @server.tool(
+        name="list_cursors",
+        description=(
+            "List every currently-open server-side cursor with its SQL, "
+            "rows_returned so far, age in seconds, and the TTL after "
+            "which it'll be auto-closed."
+        ),
+    )
+    async def list_cursors(ctx: _Ctx) -> list[dict[str, Any]]:
+        manager = ctx.request_context.lifespan_context.cursor_manager
+        infos = await manager.list_open()
+        return [asdict(info) for info in infos]
 
     @server.tool(
         name="explain_query",

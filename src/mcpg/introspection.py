@@ -1043,3 +1043,65 @@ async def list_available_extensions(driver: SqlDriver) -> list[AvailableExtensio
         )
         for row in rows or []
     ]
+
+
+# --- generated columns (Phase 4.7) ---------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedColumnInfo:
+    """A ``GENERATED ALWAYS AS (...) STORED`` column on a table.
+
+    PostgreSQL today only supports ``STORED`` generated columns — the
+    standard's ``VIRTUAL`` form is not implemented — so ``kind`` is
+    always ``"stored"``. The field is reported anyway so callers can
+    distinguish a hypothetical ``virtual`` value when PG eventually
+    adds it without an interface break.
+    """
+
+    schema: str
+    table: str
+    column: str
+    data_type: str
+    expression: str
+    kind: str
+
+
+async def list_generated_columns(driver: SqlDriver, schema: str) -> list[GeneratedColumnInfo]:
+    """List every generated column in ``schema``, sorted by table + column.
+
+    Reads ``pg_attribute.attgenerated`` (``'s'`` for stored, ``''``
+    for not generated, ``'v'`` reserved for the future virtual form)
+    and pulls the expression from ``pg_attrdef`` via
+    :func:`pg_get_expr`.
+    """
+    rows = await driver.execute_query(
+        "SELECT c.relname AS table_name, "
+        "       a.attname AS column_name, "
+        "       format_type(a.atttypid, a.atttypmod) AS data_type, "
+        "       pg_get_expr(d.adbin, d.adrelid) AS expression, "
+        "       a.attgenerated AS kind "
+        "FROM pg_attribute a "
+        "JOIN pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum "
+        "WHERE n.nspname = %s "
+        "AND c.relkind IN ('r', 'p') "
+        "AND a.attnum > 0 AND NOT a.attisdropped "
+        "AND a.attgenerated <> '' "
+        "ORDER BY c.relname, a.attnum",
+        params=[schema],
+        force_readonly=True,
+    )
+    kind_map = {"s": "stored", "v": "virtual"}
+    return [
+        GeneratedColumnInfo(
+            schema=schema,
+            table=str(row.cells["table_name"]),
+            column=str(row.cells["column_name"]),
+            data_type=str(row.cells["data_type"]),
+            expression=str(row.cells["expression"]) if row.cells["expression"] is not None else "",
+            kind=kind_map.get(str(row.cells["kind"]), str(row.cells["kind"])),
+        )
+        for row in rows or []
+    ]
