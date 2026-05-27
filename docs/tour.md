@@ -4,9 +4,9 @@ A compact one-page tour of every tool MCPg exposes, organised by
 **what an agent typically wants to do**. Use this as a discovery surface;
 the full reference is in [`tools.md`](tools.md).
 
-**108 tools** as of trunk (post-v0.5.0). Numbers in `()` after each
-tool show roughly how parameters land — required ones first, common
-defaults afterwards.
+**114 tools** as of trunk (post-v0.5.0; +Apache AGE, replicas, OIDC).
+Numbers in `()` after each tool show roughly how parameters land —
+required ones first, common defaults afterwards.
 
 ## "What's in this database?"
 
@@ -230,6 +230,27 @@ list_chunks(schema, table)                                  # read-only — ever
 create_hypertable(schema, table, time_column, chunk_time_interval='7 days', if_not_exists=true)
 add_compression_policy(schema, table, compress_after='7 days')
 add_retention_policy(schema, table, drop_after='30 days')
+```
+
+## "Work with property graphs" (Apache AGE)
+
+When the `age` extension is installed and loaded:
+
+```
+list_graphs()                                               # graphs in ag_catalog
+describe_graph(graph_name)                                  # labels + properties + edges
+run_cypher(graph_name, cypher_query)                        # arbitrary Cypher; writes (CREATE/SET/DELETE/REMOVE/MERGE) need unrestricted
+generate_graph_diagram(graph_name, max_labels=50)           # Mermaid graph of label relationships
+create_graph(graph_name)                                    # DDL — unrestricted + MCPG_ALLOW_DDL
+drop_graph(graph_name, cascade=true)                        # DDL — unrestricted + MCPG_ALLOW_DDL
+```
+
+## "Hook up Prometheus / health probes"
+
+```
+get_metrics_exposition()                                    # Prometheus text-format snapshot
+                                                            # HTTP transport also serves /metrics + /healthz + /readyz
+list_replicas()                                             # per-replica health when MCPG_REPLICA_URLS set
 ```
 
 ## "Who did what?"

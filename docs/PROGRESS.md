@@ -6,12 +6,18 @@
 
 ## Current state
 
-- **Phase:** post-v0.4.0 — Tier-A milestone complete (observability,
-  TimescaleDB, HTTP bearer auth on top of Batch G exporters,
-  pgvector tools, and composite tools).
-- **Last updated:** 2026-05-26
-- **Branch:** `claude/postgresql-mcp-planning-8KssU`
-- **Tool count:** 90
+- **Phase:** post-v0.5.0 — full Tier-A/B/C shortlist closed +
+  Apache AGE property-graph support + read-replica routing +
+  OIDC / JWT bearer-token validation. Feature backlog from
+  `docs/feature-shortlist.md` is fully shipped.
+- **Last updated:** 2026-05-27
+- **Branch:** `main`
+- **Tool count:** 114
+- **Released:** v0.5.0 (2026-05-27)
+- **Trunk additions since v0.5.0:** Apache AGE (PR #24, +6 tools),
+  read-replica routing (PR #23, +1 tool: `list_replicas`), OIDC /
+  JWT bearer-token validation (PR #23, runtime feature — no new
+  tools).
 
 ## Next action
 

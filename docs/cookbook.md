@@ -488,6 +488,46 @@ present to a reviewer.
 
 ---
 
+## 20. "Work with a property graph" (Apache AGE)
+
+When the `age` extension is loaded on the target database, MCPg
+exposes the AGE / Cypher surface alongside the relational tools.
+
+```text
+list_graphs()
+# → [{ name: "social", node_count, edge_count }, ...]
+
+describe_graph(graph_name="social")
+# → { labels: ["Person", "Company"], edges: [...], property_stats: {...} }
+
+run_cypher(graph_name="social",
+           cypher_query="MATCH (p:Person)-[:WORKS_AT]->(c:Company) RETURN p.name AS person, c.name AS company LIMIT 25")
+# → { columns: ["person", "company"], rows: [{"person": "Alice", "company": "Acme"}, ...], row_count: 25 }
+```
+
+Visualise the schema of the graph (Mermaid):
+
+```text
+generate_graph_diagram(graph_name="social", max_labels=50)
+```
+
+DDL (gated under unrestricted + `MCPG_ALLOW_DDL`):
+
+```text
+create_graph(graph_name="my_new_graph")
+drop_graph(graph_name="my_new_graph", cascade=true)
+```
+
+`run_cypher` validates the `graph_name` identifier (must be
+alphanumeric / underscores, can't start with a digit). The Cypher
+statement is scanned for write keywords (`CREATE` / `SET` /
+`DELETE` / `REMOVE` / `MERGE`) — when present the call is gated
+under the WRITE capability, requiring `unrestricted` access mode.
+`columns` are inferred from the `RETURN` clause; use explicit `AS`
+aliases for stable column names.
+
+---
+
 ## Tool-call ordering tips
 
 * **Read before write.** Every write-class tool (`run_write`,

@@ -179,10 +179,24 @@ These are my recommendations to bucket the list — feel free to override.
 - 8.5 FK cascade visualisation (S, Medium)
 - 10.3 Test-data factory (M, Medium-High)
 
-**Defer for now:**
-- 1.5 Multi-database support — L; very ambitious
-- 1.6 Read-replica routing — won't move the needle until 1.4
-- 6.5 OIDC / SSO — start with 1.1 bearer-token first
-- 7.x Backups & DR family — narrow audience
-- 9.1 Migration script ingestion — big surface; wait for demand
-- 10.2 NL → SQL — different shape, needs a model dependency
+**Shipped from "Defer for now":**
+- ✅ **1.6 Read-replica routing** — landed via PR #23; `MCPG_REPLICA_URLS`
+- ✅ **6.5 OIDC / SSO** — landed via PR #23; `MCPG_AUTH_MODE=oidc` with JWKS validation and role-claim → tenancy bridge
+- ✅ **10.2 NL → SQL** — landed via PR #21; `translate_nl_to_sql` with pluggable Anthropic / OpenAI / Gemini providers
+
+**Still deferred (no commitments):**
+- 1.5 Multi-database support — L; very ambitious, no clear use case yet
+- 7.x Backups & DR family — narrow audience; `dump_database` / `restore_database` already cover the basics via subprocess gate
+- 9.1 Migration script ingestion — big surface; `validate_migration` + `prepare_migration` already cover the high-value reviewer workflow
+
+**Bonus features shipped beyond the original shortlist:**
+- Apache AGE property graph + Cypher (PR #24): `list_graphs`,
+  `describe_graph`, `run_cypher`, `generate_graph_diagram`,
+  `create_graph`, `drop_graph`. Plus a `recommend_graph_indices`
+  advisor rule.
+- Cookbook (`docs/cookbook.md`) — 20 task-oriented recipes.
+- Production hardening across releases: per-cursor locks against
+  concurrent fetch / close, asyncio.to_thread for blocking JWKS
+  fetches, hard caps on cursors / parallel selects / NL→SQL tokens,
+  password obfuscation in `Settings.__repr__` for every secret-bearing
+  field.
