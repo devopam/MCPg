@@ -33,12 +33,14 @@ RULE_MISSING_PRIMARY_KEY = "missing_primary_key"
 RULE_UNINDEXED_FOREIGN_KEY = "unindexed_foreign_key"
 RULE_DUPLICATE_INDEXES = "duplicate_indexes"
 RULE_NULLABLE_TIMESTAMP_WITHOUT_TZ = "nullable_timestamp_without_tz"
+RULE_RECOMMEND_GRAPH_INDICES = "recommend_graph_indices"
 
 _RULES = (
     RULE_MISSING_PRIMARY_KEY,
     RULE_UNINDEXED_FOREIGN_KEY,
     RULE_DUPLICATE_INDEXES,
     RULE_NULLABLE_TIMESTAMP_WITHOUT_TZ,
+    RULE_RECOMMEND_GRAPH_INDICES,
 )
 
 
@@ -197,6 +199,41 @@ async def _nullable_timestamps_without_tz(driver: SqlDriver, schema: str) -> lis
     ]
 
 
+async def _recommend_graph_indices(driver: SqlDriver, schema: str) -> list[Finding]:
+    try:
+        rows = await driver.execute_query(
+            "SELECT c.relname AS table_name "
+            "FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "JOIN ag_catalog.ag_label l ON l.name = c.relname "
+            "  AND l.graph = (SELECT graphid FROM ag_catalog.ag_graph WHERE namespace = n.nspname) "
+            "WHERE n.nspname = %s AND l.kind = 'v' "
+            "AND NOT EXISTS ("
+            "  SELECT 1 FROM pg_index idx "
+            "  JOIN pg_class i ON i.oid = idx.indexrelid "
+            "  WHERE idx.indrelid = c.oid AND pg_get_indexdef(idx.indexrelid) LIKE '%properties%'"
+            ") ORDER BY c.relname",
+            params=[schema],
+            force_readonly=True,
+        )
+    except Exception:
+        # Gracefully degrade if Apache AGE is not installed or ag_graph is missing
+        return []
+
+    return [
+        Finding(
+            rule=RULE_RECOMMEND_GRAPH_INDICES,
+            severity="warning",
+            object=f"{schema}.{row.cells['table_name']}",
+            message=(
+                "graph label table has no index on the 'properties' column; "
+                "queries filtering on properties will seq-scan"
+            ),
+        )
+        for row in rows or []
+    ]
+
+
 async def run_advisors(driver: SqlDriver, schema: str) -> AdvisorReport:
     """Run every advisor rule against ``schema`` and aggregate the findings."""
     findings: list[Finding] = []
@@ -204,6 +241,7 @@ async def run_advisors(driver: SqlDriver, schema: str) -> AdvisorReport:
     findings.extend(await _unindexed_foreign_keys(driver, schema))
     findings.extend(await _duplicate_indexes(driver, schema))
     findings.extend(await _nullable_timestamps_without_tz(driver, schema))
+    findings.extend(await _recommend_graph_indices(driver, schema))
     return AdvisorReport(schema=schema, rules_run=list(_RULES), findings=findings)
 
 

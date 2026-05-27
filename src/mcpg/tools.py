@@ -20,6 +20,7 @@ from mcpg import (
     composite,
     cron,
     cursors,
+    cypher,
     data_movement,
     diagrams,
     diesel,
@@ -27,6 +28,9 @@ from mcpg import (
     ecto,
     ent,
     extensions,
+    graph,
+    graph_diagram,
+    graph_mgmt,
     health,
     indexing,
     introspection,
@@ -1799,6 +1803,81 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="list_graphs",
+        description="List all active Apache AGE property graphs in the database.",
+    )
+    async def list_graphs(ctx: _Ctx) -> list[dict[str, Any]]:
+        app = ctx.request_context.lifespan_context
+        res = await graph.list_graphs(app)
+        return [dict(x) for x in res]
+
+    @server.tool(
+        name="describe_graph",
+        description=("Describe the schema structure, vertex labels, and edge labels of a specific property graph."),
+    )
+    async def describe_graph(ctx: _Ctx, graph_name: str) -> dict[str, Any]:
+        app = ctx.request_context.lifespan_context
+        res = await graph.describe_graph(app, graph_name)
+        return dict(res)
+
+    @server.tool(
+        name="run_cypher",
+        description=(
+            "Execute an openCypher query on a specific graph database. "
+            "Supports read queries (MATCH) and write/modifying queries "
+            "(CREATE, SET, DELETE, MERGE, REMOVE)."
+        ),
+    )
+    async def run_cypher(
+        ctx: _Ctx,
+        graph_name: str,
+        cypher_query: str,
+    ) -> dict[str, Any]:
+        app = ctx.request_context.lifespan_context
+        res = await cypher.run_cypher(app, graph_name, cypher_query)
+        return dict(res)
+
+    @server.tool(
+        name="generate_graph_diagram",
+        description=(
+            "Generate a Mermaid flowchart diagram representing nodes and "
+            "relationships in a property graph to visualize its schema and topology."
+        ),
+    )
+    async def generate_graph_diagram(ctx: _Ctx, graph_name: str, limit: int = 50) -> str:
+        app = ctx.request_context.lifespan_context
+        res = await graph_diagram.generate_graph_diagram(app, graph_name, limit=limit)
+        return res["mermaid"]
+
+
+def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="create_graph",
+        description=(
+            "Create a new Apache AGE property graph space in the database. "
+            "Performs DDL — requires DDL permission enabled."
+        ),
+    )
+    async def create_graph(ctx: _Ctx, graph_name: str) -> dict[str, Any]:
+        app = ctx.request_context.lifespan_context
+        res = await graph_mgmt.create_graph(app, graph_name)
+        return dict(res)
+
+    @server.tool(
+        name="drop_graph",
+        description=(
+            "Delete an Apache AGE property graph space, dropping all its nodes, "
+            "edges, and backing tables. Performs DDL — requires DDL permission enabled."
+        ),
+    )
+    async def drop_graph(ctx: _Ctx, graph_name: str, cascade: bool = True) -> dict[str, Any]:
+        app = ctx.request_context.lifespan_context
+        res = await graph_mgmt.drop_graph(app, graph_name, cascade=cascade)
+        return dict(res)
+
+
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     """Register the MCP tools permitted by the configured access mode.
 
@@ -1822,6 +1901,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_health(server)
         _register_liveops(server)
         _register_timescaledb_reads(server)
+        _register_graphs_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -1832,6 +1912,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_ddl(server)
         _register_partman(server)
         _register_timescaledb_writes(server)
+        _register_graphs_writes(server)
     if is_permitted(settings.access_mode, Capability.MIGRATE) and settings.allow_ddl:
         _register_migrations(server)
     if is_permitted(settings.access_mode, Capability.SHELL) and settings.allow_shell:

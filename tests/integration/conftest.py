@@ -5,10 +5,15 @@ reachable database; otherwise they are skipped. CI provides this via a
 PostgreSQL service container; locally, set it to any test database.
 """
 
+import asyncio
 import os
+import sys
 from collections.abc import AsyncIterator
 
 import pytest
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from mcpg.config import load_settings
 from mcpg.database import Database

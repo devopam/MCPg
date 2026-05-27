@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from mcpg.config import ConfigError, load_settings
 from mcpg.server import run

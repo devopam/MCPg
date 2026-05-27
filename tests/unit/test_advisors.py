@@ -7,6 +7,7 @@ from mcpg.advisors import (
     RULE_DUPLICATE_INDEXES,
     RULE_MISSING_PRIMARY_KEY,
     RULE_NULLABLE_TIMESTAMP_WITHOUT_TZ,
+    RULE_RECOMMEND_GRAPH_INDICES,
     RULE_UNINDEXED_FOREIGN_KEY,
     AdvisorReport,
     Finding,
@@ -140,8 +141,12 @@ async def test_run_advisors_aggregates_every_rule_and_records_them_in_rules_run(
         RULE_UNINDEXED_FOREIGN_KEY,
         RULE_DUPLICATE_INDEXES,
         RULE_NULLABLE_TIMESTAMP_WITHOUT_TZ,
+        RULE_RECOMMEND_GRAPH_INDICES,
     }
     rules_in_findings = {finding.rule for finding in report.findings}
+    # All 5 rules are represented in findings because FakeRoutingDriver routes
+    # pg_class query to recommend_graph_indices.
+    assert len(rules_in_findings) == 5
     assert rules_in_findings == set(report.rules_run)
 
 
@@ -150,7 +155,7 @@ async def test_run_advisors_returns_an_empty_findings_list_for_a_clean_schema() 
 
     assert report.schema == "app"
     assert report.findings == []
-    assert len(report.rules_run) == 4
+    assert len(report.rules_run) == 5
 
 
 async def test_run_advisors_tool_is_registered_and_callable() -> None:
@@ -165,7 +170,7 @@ async def test_run_advisors_tool_is_registered_and_callable() -> None:
     assert result.structuredContent is not None
     assert result.structuredContent["schema"] == "public"
     assert result.structuredContent["findings"] == []
-    assert len(result.structuredContent["rules_run"]) == 4
+    assert len(result.structuredContent["rules_run"]) == 5
 
 
 # --- find_unused_objects -----------------------------------------------
