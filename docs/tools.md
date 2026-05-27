@@ -7,34 +7,64 @@ the configured access mode (see the [User Guide](user-guide.md)).
 
 | Capability | Default access mode | Extra opt-in | What it unlocks |
 |---|---|---|---|
-| READ | every mode | — | catalog introspection, query, search, health, ORM exporters |
+| READ | every mode | — | catalog introspection, query, search, health, advisors, ORM exporters, NL→SQL (generate only), cursors, AGE reads |
 | WRITE | unrestricted | — | `run_write`, `run_maintenance`, `cancel_query`, `terminate_backend`, `import_csv`, `import_json`, `pg_cron` writes |
-| DDL | unrestricted | `MCPG_ALLOW_DDL=true` | `run_ddl`, `enable_extension`, `pg_partman` write tools, **migration tools** (`MIGRATE` capability piggybacks on this gate) |
+| DDL | unrestricted | `MCPG_ALLOW_DDL=true` | `run_ddl`, `enable_extension`, `pg_partman` writes, TimescaleDB writes (`create_hypertable`, compression/retention policies), AGE writes (`create_graph`, `drop_graph`), **migration tools** (`MIGRATE` capability piggybacks on this gate) |
 | SHELL | unrestricted | `MCPG_ALLOW_SHELL=true` | `dump_database`, `restore_database`, `copy_table_between_databases` |
 | LISTEN | unrestricted | `MCPG_ALLOW_LISTEN=true` | `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions` |
 
-## Tool index (78 tools)
+## HTTP transport gates
+
+Independent of the capability gates above (which protect the tool
+surface), the HTTP transport has its own authn / multi-tenancy
+plumbing:
+
+| Setting | Purpose |
+|---|---|
+| `MCPG_HTTP_AUTH_TOKEN` | Static bearer token for the streamable-http / sse transports. `/metrics` / `/healthz` / `/readyz` are exempt. |
+| `MCPG_AUTH_MODE` | `static` (default) or `oidc`. In OIDC mode, swap the static-token compare for full JWT validation. |
+| `MCPG_OIDC_ISSUER` / `MCPG_OIDC_AUDIENCE` / `MCPG_OIDC_JWKS_URL` | OIDC provider config (issuer + audience required when `auth_mode=oidc`; JWKS URL optional override). |
+| `MCPG_OIDC_ROLE_CLAIM` | Optional. Maps a named JWT claim to the per-request PG role (composes with multi-tenancy). |
+| `MCPG_DEFAULT_ROLE` / `MCPG_ALLOWED_ROLES` | Static default + allowlist for `SET LOCAL ROLE`-driven multi-tenancy. In static-auth mode, per-request override via `X-MCPG-Role` header. |
+| `MCPG_REPLICA_URLS` | Comma-separated read-replica DSNs. When set, `force_readonly` queries round-robin across healthy replicas; writes always go to the primary. |
+| `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config (Anthropic / OpenAI / Gemini). |
+
+## Tool index (114 tools)
 
 | Category | Tools |
 |---|---|
-| **Server** | `get_server_info` |
-| **Catalog — schemas / tables / columns** | `list_schemas`, `list_tables`, `describe_table`, `list_indexes`, `list_constraints`, `list_views`, `list_functions`, `list_triggers`, `list_partitions`, `list_roles`, `list_grants`, `list_policies`, `list_sequences`, `list_enums`, `list_domains`, `list_composite_types`, `list_foreign_keys`, `list_foreign_data_wrappers`, `list_foreign_servers`, `list_foreign_tables`, `list_user_mappings`, `list_publications`, `list_subscriptions`, `list_extensions`, `list_available_extensions` |
-| **Visualisation & structural diff** | `generate_schema_diagram`, `compare_schemas` |
-| **Query intelligence** | `run_select`, `explain_query`, `analyze_query_plan` |
+| **Server** | `get_server_info`, `get_metrics_exposition` |
+| **Catalog — schemas / tables / columns** | `list_schemas`, `list_tables`, `describe_table`, `list_indexes`, `list_constraints`, `list_views`, `list_functions`, `list_triggers`, `list_partitions`, `list_roles`, `list_grants`, `list_policies`, `list_sequences`, `list_enums`, `list_domains`, `list_composite_types`, `list_foreign_keys`, `list_foreign_data_wrappers`, `list_foreign_servers`, `list_foreign_tables`, `list_user_mappings`, `list_publications`, `list_subscriptions`, `list_extensions`, `list_available_extensions`, `list_generated_columns` |
+| **Visualisation & structural diff** | `generate_schema_diagram`, `generate_fk_cascade_graph`, `generate_graph_diagram`, `compare_schemas` |
+| **Query intelligence** | `run_select`, `run_select_parallel`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql` |
+| **Server-side cursors** | `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors` |
+| **Composite + diagnostic** | `summarize_table`, `why_is_this_slow`, `find_unused_objects`, `find_sensitive_columns`, `detect_n_plus_one`, `lint_naming_conventions`, `test_rls_for_role`, `list_locks`, `find_blocking_chains`, `read_pg_stat_io` |
 | **Health & tuning** | `check_database_health`, `analyze_workload`, `recommend_indexes`, `run_advisors` |
-| **Search** | `fuzzy_search`, `full_text_search`, `vector_search`, `geo_search` |
-| **Vector tuning advisors** | `recommend_vector_index`, `analyze_vector_search`, `analyze_vector_table` |
-| **Live ops** | `list_active_queries` |
+| **Search** | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `hybrid_search`, `geo_search` |
+| **Vector tuning advisors** | `recommend_vector_index`, `analyze_vector_search`, `analyze_vector_table`, `recommend_vector_quantization` |
+| **Apache AGE graph + Cypher** | `list_graphs`, `describe_graph`, `run_cypher`, `create_graph` (gated), `drop_graph` (gated) |
+| **Live ops** | `list_active_queries`, `list_replicas` |
 | **Audit trail** | `list_audit_events` |
 | **Data movement — read** | `export_query`, `export_table` |
 | **Data movement — write (gated)** | `import_csv`, `import_json` |
 | **Data movement — subprocess (gated)** | `dump_database`, `restore_database`, `copy_table_between_databases` |
 | **LISTEN/NOTIFY bridge (gated)** | `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions` |
-| **Staged migrations (gated)** | `prepare_migration`, `complete_migration`, `cancel_migration`, `list_pending_migrations` |
+| **Staged migrations (gated)** | `prepare_migration`, `validate_migration`, `complete_migration`, `cancel_migration`, `list_pending_migrations` |
+| **Test-data factory** | `generate_test_data` (generates SQL — does not execute) |
+| **TimescaleDB hypertables (gated for writes)** | `list_hypertables`, `list_chunks`, `create_hypertable`, `add_compression_policy`, `add_retention_policy` |
 | **ORM-DSL exporters** | `generate_prisma_schema`, `generate_drizzle_schema`, `generate_sqlalchemy_models`, `generate_sqlc_schema`, `generate_diesel_schema`, `generate_jooq_config`, `generate_ent_schemas`, `generate_ecto_schemas` |
 | **pg_cron write (gated)** | `pg_cron.schedule`, `pg_cron.unschedule`, `pg_cron.update` |
 | **pg_partman write (gated)** | `partman.create_parent`, `partman.run_maintenance`, `partman.drop_partition_time` |
 | **Write & DDL (gated)** | `run_write`, `run_ddl`, `run_maintenance`, `cancel_query`, `terminate_backend`, `enable_extension` |
+
+> The reference sections below describe the v0.4.0-era tools in
+> depth. For everything added since, see
+> [`docs/cookbook.md`](cookbook.md) (task-oriented recipes) and the
+> module docstrings (`mcpg.composite`, `mcpg.advisors`, `mcpg.locks`,
+> `mcpg.io_stats`, `mcpg.naming`, `mcpg.cursors`, `mcpg.replicas`,
+> `mcpg.oidc`, `mcpg.nl2sql`, `mcpg.test_data`, `mcpg.rls`,
+> `mcpg.timescaledb`, `mcpg.graph`, `mcpg.graph_mgmt`,
+> `mcpg.graph_diagram`).
 
 ## Server
 

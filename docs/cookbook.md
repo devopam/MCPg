@@ -488,6 +488,43 @@ present to a reviewer.
 
 ---
 
+## 20. "Work with a property graph" (Apache AGE)
+
+When the `age` extension is loaded on the target database, MCPg
+exposes the AGE / Cypher surface alongside the relational tools.
+
+```text
+list_graphs()
+# → [{ name: "social", node_count, edge_count }, ...]
+
+describe_graph(graph_name="social")
+# → { labels: ["Person", "Company"], edges: [...], property_stats: {...} }
+
+run_cypher(graph_name="social",
+           cypher="MATCH (p:Person)-[:WORKS_AT]->(c:Company) RETURN p.name, c.name LIMIT 25")
+# → { rows: [{ "p.name": "Alice", "c.name": "Acme" }, ...], parsed_agtype: true }
+```
+
+Visualise the schema of the graph (Mermaid):
+
+```text
+generate_graph_diagram(graph_name="social", max_labels=50)
+```
+
+DDL (gated under unrestricted + `MCPG_ALLOW_DDL`):
+
+```text
+create_graph(graph_name="my_new_graph")
+drop_graph(graph_name="my_new_graph", cascade=true)
+```
+
+`run_cypher` validates Cypher input parameters against the same
+identifier-safety rules MCPg uses elsewhere; `agtype` results are
+parsed back into native Python values (objects, lists, numbers,
+strings, booleans, nulls) before reaching the agent.
+
+---
+
 ## Tool-call ordering tips
 
 * **Read before write.** Every write-class tool (`run_write`,

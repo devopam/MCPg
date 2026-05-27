@@ -8,6 +8,27 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Apache AGE graph + Cypher support** (PR #24). Six new tools
+  wired into the read / DDL surfaces:
+  - `list_graphs()` and `describe_graph(graph_name)` read
+    `ag_catalog`, returning the graphs in the database plus per-graph
+    label / edge / property statistics. Read-only.
+  - `run_cypher(graph_name, cypher, params)` executes arbitrary
+    Cypher against a named graph. `agtype` results are parsed back
+    into native Python values (objects, lists, numbers, strings,
+    booleans, nulls). Identifier params validated against the same
+    safety rule MCPg uses for SQL identifiers. Read-only by default.
+  - `generate_graph_diagram(graph_name, max_labels=50)` emits a
+    Mermaid graph of label-to-label relationships — the graph
+    equivalent of `generate_schema_diagram`.
+  - `create_graph(graph_name)` / `drop_graph(graph_name,
+    cascade=true)` are DDL, gated under unrestricted +
+    `MCPG_ALLOW_DDL`.
+  - Composes with the existing advisor surface — `run_advisors`
+    now reports a `recommend_graph_indices` rule when AGE labels
+    lack a property-search index that an expected access pattern
+    would need.
+
 - **Read-replica routing** (Shortlist 1.6). When `MCPG_REPLICA_URLS`
   is set (comma-separated DSN list), every `force_readonly=True`
   query is round-robin routed to a healthy replica; writes always
