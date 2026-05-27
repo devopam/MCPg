@@ -44,6 +44,10 @@ its behaviour, add characterization tests first.
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/):
   `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`, `ci:`.
+- **Run Local Pre-PR Code Reviews:** Always execute the AST-driven static reviewer script before committing or pushing a branch, to catch psycopg3, SQL injection, and capability gate issues before they trigger CI/PR review failures:
+  ```bash
+  uv run scratch/pr_review.py
+  ```
 - Keep PRs focused; update `CHANGELOG.md` under `[Unreleased]`.
 - Update `docs/PROGRESS.md` when you complete a roadmap task.
 - All CI checks (lint, format, type-check, tests) must pass.
