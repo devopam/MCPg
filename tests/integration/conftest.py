@@ -6,9 +6,14 @@ PostgreSQL service container; locally, set it to any test database.
 """
 
 import os
+import sys
+import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from mcpg.config import load_settings
 from mcpg.database import Database

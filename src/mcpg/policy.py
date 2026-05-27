@@ -55,3 +55,15 @@ def permitted_capabilities(access_mode: AccessMode) -> frozenset[Capability]:
 def is_permitted(access_mode: AccessMode, capability: Capability) -> bool:
     """Return whether ``access_mode`` permits ``capability``."""
     return capability in _PERMITTED[access_mode]
+
+
+class PermissionError(Exception):
+    """Raised when an operation is requested but the access mode does not permit it."""
+
+
+def check_permission(capability: Capability, access_mode: AccessMode) -> None:
+    """Raise PermissionError if capability is not permitted in access_mode."""
+    if not is_permitted(access_mode, capability):
+        raise PermissionError(
+            f"access mode {access_mode.value} requires {capability.value.upper()} capability"
+        )
