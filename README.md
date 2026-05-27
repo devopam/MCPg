@@ -4,16 +4,18 @@ A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
 server for **PostgreSQL** — letting AI agents safely inspect, query, operate,
 and tune a Postgres database.\*
 
-> **Status:** v0.4.0 released; trunk at **90 MCP tools**. Covers deep catalog
-> introspection, index intelligence, full-text/trigram/vector/geospatial
-> search, live ops, gated maintenance, Mermaid ER diagrams, structural
-> schema diff, **subprocess-driven data movement (pg_dump/pg_restore/psql),
-> LISTEN/NOTIFY bridge, staged-migration shadow workflow, and ORM-DSL
-> exporters for Prisma / Drizzle / SQLAlchemy 2.0 / sqlc**. CI matrix runs
-> the integration suite against **PostgreSQL 14, 15, 16, 17, and 18**. See
-> [`CHANGELOG.md`](CHANGELOG.md) and [`docs/PROGRESS.md`](docs/PROGRESS.md)
-> for detail; [`PLAN.md`](PLAN.md) §11 has the post-0.3.0 roadmap. The
-> Batches A–G plan is now **fully shipped**.
+> **Status:** v0.4.0 released; trunk at **107 MCP tools** with v0.5.0
+> in prep. Beyond v0.4.0's catalog / search / live-ops surface, v0.5.0
+> adds **HTTP transport bearer-token auth, Prometheus `/metrics`,
+> TimescaleDB wrappers, hybrid (vector + FTS) search, sensitive-column
+> heuristics, an N+1 detector, transient-shadow migration validation,
+> per-request `SET ROLE` multi-tenancy, server-side cursors,
+> RLS testing, synthetic test-data generation, FK cascade graphs, and
+> a natural-language → SQL helper (Anthropic / OpenAI / Gemini)**. CI
+> matrix runs the integration suite against **PostgreSQL 14, 15, 16,
+> 17, and 18**. See [`docs/cookbook.md`](docs/cookbook.md) for common
+> agent recipes, [`CHANGELOG.md`](CHANGELOG.md) and
+> [`docs/PROGRESS.md`](docs/PROGRESS.md) for detail.
 
 ## Quick start
 
@@ -82,6 +84,7 @@ See the [Installation Guide](docs/installation.md) and
 - [`docs/installation.md`](docs/installation.md) — Installation Guide
 - [`docs/user-guide.md`](docs/user-guide.md) — User Guide
 - [`docs/tour.md`](docs/tour.md) — compact tool tour (start here for discovery)
+- [`docs/cookbook.md`](docs/cookbook.md) — practical agent recipes (start here for common workflows)
 - [`docs/tools.md`](docs/tools.md) — reference for every MCP tool
 - [`docs/architecture.md`](docs/architecture.md) — Architecture Document
 - [`docs/security.md`](docs/security.md) — threat model and security controls
@@ -91,6 +94,7 @@ See the [Installation Guide](docs/installation.md) and
 - [`docs/PROGRESS.md`](docs/PROGRESS.md) — live progress tracker (resume point)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — development setup and workflow
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes
+- [`docs/release-notes-0.5.0.md`](docs/release-notes-0.5.0.md) — v0.5.0 release summary
 - [`docs/release-notes-0.4.0.md`](docs/release-notes-0.4.0.md) — v0.4.0 release summary
 - [`docs/release-notes-0.3.0.md`](docs/release-notes-0.3.0.md) — v0.3.0 release summary
 
