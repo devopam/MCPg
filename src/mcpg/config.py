@@ -77,6 +77,12 @@ class Settings:
     # are validated against ``[A-Za-z_][A-Za-z0-9_]*`` regardless.
     default_role: str | None = None
     allowed_roles: tuple[str, ...] = ()
+    # Read-replica routing. When ``replica_urls`` is non-empty, every
+    # ``force_readonly=True`` query is round-robin-routed to a
+    # healthy replica; writes always go to the primary. On replica
+    # failure the call falls back to the primary once and the
+    # replica is degraded for 30s.
+    replica_urls: tuple[str, ...] = ()
     # NL→SQL helper. ``nl2sql_provider`` is one of "anthropic", "openai",
     # "gemini"; unset means the tool reports unavailable. ``nl2sql_api_key``
     # falls back to ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY /
@@ -106,6 +112,7 @@ class Settings:
             f"http_auth_token={'set' if self.http_auth_token else 'unset'!r}, "
             f"default_role={self.default_role!r}, "
             f"allowed_roles={self.allowed_roles!r}, "
+            f"replica_urls={tuple(obfuscate_password(u) for u in self.replica_urls)!r}, "
             f"nl2sql_provider={self.nl2sql_provider!r}, "
             f"nl2sql_api_key={'set' if self.nl2sql_api_key else 'unset'!r}, "
             f"nl2sql_model={self.nl2sql_model!r}, "
@@ -253,6 +260,13 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
                 f"MCPG_DEFAULT_ROLE ({default_role!r}) is not in MCPG_ALLOWED_ROLES ({list(allowed_roles)!r})"
             )
 
+    replica_urls: tuple[str, ...] = ()
+    if (raw := env.get("MCPG_REPLICA_URLS")) is not None:
+        urls = tuple(u.strip() for u in raw.split(",") if u.strip())
+        if not urls:
+            raise ConfigError("MCPG_REPLICA_URLS must not be blank when set")
+        replica_urls = urls
+
     nl2sql_provider: str | None = None
     if (raw := env.get("MCPG_NL2SQL_PROVIDER")) is not None:
         candidate = raw.strip().lower()
@@ -324,6 +338,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_auth_token=http_auth_token,
         default_role=default_role,
         allowed_roles=allowed_roles,
+        replica_urls=replica_urls,
         nl2sql_provider=nl2sql_provider,
         nl2sql_api_key=nl2sql_api_key,
         nl2sql_model=nl2sql_model,

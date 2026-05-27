@@ -299,3 +299,39 @@ def test_nl2sql_api_key_never_appears_in_repr() -> None:
     rendered = repr(settings)
     assert "sk-not-a-real-key-secret" not in rendered
     assert "nl2sql_api_key='set'" in rendered
+
+
+# --- replica routing (Phase 1.6) -----------------------------------------
+
+
+def test_replica_urls_defaults_to_empty_tuple() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).replica_urls == ()
+
+
+def test_replica_urls_parses_comma_separated_list() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_REPLICA_URLS": ("postgresql://u:p@replica-1/db, postgresql://u:p@replica-2/db"),
+        }
+    )
+    assert settings.replica_urls == (
+        "postgresql://u:p@replica-1/db",
+        "postgresql://u:p@replica-2/db",
+    )
+
+
+def test_blank_replica_urls_raises() -> None:
+    with pytest.raises(ConfigError, match="MCPG_REPLICA_URLS"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_REPLICA_URLS": "  ,  "})
+
+
+def test_replica_repr_obfuscates_passwords() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_REPLICA_URLS": "postgresql://u:supersecret@replica/db",
+        }
+    )
+    rendered = repr(settings)
+    assert "supersecret" not in rendered

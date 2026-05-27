@@ -1614,6 +1614,24 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
         return [asdict(active) for active in queries]
 
     @server.tool(
+        name="list_replicas",
+        description=(
+            "Report the health of every configured read replica. Each "
+            "entry shows index, password-obfuscated DSN, whether the "
+            "replica is currently degraded (skipped from routing), the "
+            "last error that took it out, and how many seconds remain "
+            "before it's re-probed. Returns an empty list when no "
+            "replicas are configured."
+        ),
+    )
+    async def list_replicas(ctx: _Ctx) -> list[dict[str, Any]]:
+        db = ctx.request_context.lifespan_context.database
+        replica_pool = db.replica_pool
+        if replica_pool is None:
+            return []
+        return [asdict(info) for info in await replica_pool.snapshot()]
+
+    @server.tool(
         name="list_cron_jobs",
         description=(
             "List the pg_cron jobs registered in the database. Returns an empty list when pg_cron is not installed."

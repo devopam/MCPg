@@ -13,7 +13,7 @@ from typing import Any
 
 from mcpg._vendor.sql import DbConnPool, SqlDriver, obfuscate_password
 from mcpg.config import Settings
-from mcpg.tenancy import TenantSqlDriver
+from mcpg.replicas import ReplicaPool, RoutedSqlDriver, _make_driver_for_pool
 
 
 class DatabaseError(Exception):
@@ -23,7 +23,13 @@ class DatabaseError(Exception):
 class Database:
     """Owns the PostgreSQL connection pool for the server's lifetime."""
 
-    def __init__(self, settings: Settings, *, pool: DbConnPool | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        pool: DbConnPool | None = None,
+        replica_pool: ReplicaPool | None = None,
+    ) -> None:
         self._settings = settings
         self._pool = (
             pool
@@ -34,6 +40,19 @@ class Database:
                 max_size=settings.pool_max_size,
             )
         )
+        # Read-replica routing — opt-in via MCPG_REPLICA_URLS. The
+        # explicit ``replica_pool`` argument lets tests inject a
+        # pre-built / faked pool.
+        if replica_pool is not None:
+            self._replica_pool: ReplicaPool | None = replica_pool
+        elif settings.replica_urls:
+            self._replica_pool = ReplicaPool(
+                settings.replica_urls,
+                pool_min_size=settings.pool_min_size,
+                pool_max_size=settings.pool_max_size,
+            )
+        else:
+            self._replica_pool = None
         self._connected = False
 
     @property
@@ -53,30 +72,68 @@ class Database:
             self._connected = False
             # The vendored pool already obfuscates; re-apply defensively.
             raise DatabaseError(f"could not connect to the database: {obfuscate_password(str(exc))}") from exc
+        if self._replica_pool is not None:
+            # Replica connect failures are logged + marked degraded
+            # individually; they don't abort startup. See
+            # ``ReplicaPool.connect``.
+            await self._replica_pool.connect()
         self._connected = True
 
     async def close(self) -> None:
         """Close the connection pool. Safe to call when not connected."""
+        if self._replica_pool is not None:
+            await self._replica_pool.close()
         await self._pool.close()
         self._connected = False
+
+    @property
+    def replica_pool(self) -> ReplicaPool | None:
+        """The configured :class:`ReplicaPool`, or ``None`` when unset."""
+        return self._replica_pool
 
     def driver(self) -> SqlDriver:
         """Return a SQL driver bound to the pool.
 
-        When ``settings.default_role`` is set OR the per-request
-        ``X-MCPG-Role`` ContextVar could be set by the HTTP transport,
-        a :class:`mcpg.tenancy.TenantSqlDriver` is returned so every
-        query runs inside ``SET LOCAL ROLE "<role>"``. Otherwise the
-        bare upstream driver is returned (zero overhead path).
+        Composes three optional behaviours:
+
+        * **Tenancy** — when ``settings.default_role`` or
+          ``allowed_roles`` is set, the underlying driver is
+          :class:`mcpg.tenancy.TenantSqlDriver` so every query runs
+          inside ``SET LOCAL ROLE "<role>"``.
+        * **Replica routing** — when ``settings.replica_urls`` is
+          non-empty, the returned driver is
+          :class:`mcpg.replicas.RoutedSqlDriver`, which delegates
+          ``force_readonly=True`` queries to a round-robin healthy
+          replica and writes to the primary.
+        * **Neither** — the bare upstream driver is returned (zero
+          overhead path).
 
         Raises:
             DatabaseError: If called before :meth:`connect`.
         """
         if not self._connected:
             raise DatabaseError("database is not connected; call connect() first")
-        if self._settings.default_role is not None or self._settings.allowed_roles:
-            return TenantSqlDriver(conn=self._pool, default_role=self._settings.default_role)
-        return SqlDriver(conn=self._pool)
+        enable_tenancy = self._settings.default_role is not None or bool(self._settings.allowed_roles)
+        primary = _make_driver_for_pool(
+            self._pool,
+            default_role=self._settings.default_role,
+            enable_tenancy=enable_tenancy,
+        )
+        if self._replica_pool is None:
+            return primary
+        replica_drivers = [
+            _make_driver_for_pool(
+                state.pool,
+                default_role=self._settings.default_role,
+                enable_tenancy=enable_tenancy,
+            )
+            for state in self._replica_pool._states
+        ]
+        return RoutedSqlDriver(
+            primary=primary,
+            replicas=replica_drivers,
+            replica_pool=self._replica_pool,
+        )
 
     async def copy_from_stdin(self, sql: str, data: bytes) -> int:
         """Stream ``data`` into a ``COPY ... FROM STDIN`` statement.
