@@ -383,6 +383,11 @@ def _parse_response(raw: str) -> tuple[str, str]:
         parsed = json.loads(stripped)
     except json.JSONDecodeError:
         return ("", raw.strip())
+    # json.loads succeeds for non-dict shapes (lists, raw strings,
+    # numbers); .get on those crashes. Treat anything non-dict as a
+    # parse failure so the raw text reaches the agent unchanged.
+    if not isinstance(parsed, dict):
+        return ("", raw.strip())
     sql = str(parsed.get("sql", "")).strip()
     explanation = str(parsed.get("explanation", "")).strip()
     return (sql, explanation)
@@ -434,11 +439,16 @@ async def translate_nl_to_sql(
         columns_per_table=columns_per_table,
         table_filter=table_filter,
     )
-    user_prompt = _USER_PROMPT_TEMPLATE.format(
-        schema=schema,
-        max_tables=max_tables_in_brief,
-        schema_brief=schema_brief,
-        question=question.strip(),
+    # ``.replace`` (not ``.format``) so curly braces in the user's
+    # question (e.g. asking about a jsonb literal like ``{"k":1}``)
+    # don't get interpreted as format placeholders and crash with
+    # KeyError. The placeholders below are fixed strings; no need
+    # for str.format's escape semantics.
+    user_prompt = (
+        _USER_PROMPT_TEMPLATE.replace("{schema}", schema)
+        .replace("{max_tables}", str(max_tables_in_brief))
+        .replace("{schema_brief}", schema_brief)
+        .replace("{question}", question.strip())
     )
 
     try:

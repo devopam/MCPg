@@ -261,3 +261,38 @@ def test_llm_provider_protocol_is_satisfied_by_the_concrete_classes() -> None:
         assert isinstance(provider, LLMProvider)  # type: ignore[arg-type]
         assert hasattr(provider, "complete")
         assert provider.name in DEFAULT_MODELS
+
+
+def test_parse_response_returns_empty_when_json_is_not_an_object() -> None:
+    """Regression: a JSON list / scalar must not crash ``.get`` access.
+
+    Some models return ``"sorry"`` (a quoted string) or a JSON array
+    when they don't understand the schema. ``json.loads`` succeeds on
+    both; the result must fall through to the raw-text branch.
+    """
+    sql, explanation = _parse_response('"sorry, I cannot answer"')
+    assert sql == ""
+    assert "sorry" in explanation
+
+    sql, explanation = _parse_response("[1, 2, 3]")
+    assert sql == ""
+    assert "[1, 2, 3]" in explanation
+
+
+async def test_translate_nl_to_sql_handles_curly_braces_in_the_question() -> None:
+    """Regression: a question containing ``{`` / ``}`` (e.g. asking about a
+    jsonb literal) must NOT crash the prompt builder."""
+    provider = _StubProvider(response='{"sql": "SELECT 1", "explanation": "ok"}')
+
+    result = await translate_nl_to_sql(
+        FakeRoutingDriver(_routes_for_simple_schema()),  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="m",
+        question="find rows where data = '{\"k\": 1}' and {empty: braces}",
+        schema="public",
+    )
+
+    # No crash, and the question reached the model verbatim.
+    assert result.sql == "SELECT 1"
+    assert '{"k": 1}' in provider.captured_user
+    assert "{empty: braces}" in provider.captured_user
