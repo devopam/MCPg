@@ -19,6 +19,7 @@ Tools shipped here:
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -394,9 +395,10 @@ async def why_is_this_slow(driver: SqlDriver, sql: str) -> SlowQueryDiagnosis:
     if not sql or not sql.strip():
         raise CompositeError("sql must not be empty")
 
+    # The plan itself is load-bearing — if EXPLAIN fails we can't
+    # produce a meaningful diagnosis at all, so propagate that error.
     plan = await explain_query(driver, sql)
     plan_summary_obj = await analyze_query_plan(driver, sql)
-    # analyze_query_plan returns a typed dataclass; convert to a dict for the payload.
     plan_summary = {
         "total_cost": plan_summary_obj.total_cost,
         "estimated_rows": plan_summary_obj.estimated_rows,
@@ -404,23 +406,64 @@ async def why_is_this_slow(driver: SqlDriver, sql: str) -> SlowQueryDiagnosis:
         "sequential_scans": list(plan_summary_obj.sequential_scans),
         "node_types": list(plan_summary_obj.node_types),
     }
-    active = await list_active_queries(driver)
-    active_dicts = [
-        {
-            "pid": q.pid,
-            "username": q.username,
-            "state": q.state,
-            "query": q.query,
-            "wait_event": q.wait_event,
-            "duration_seconds": q.duration_seconds,
-            "blocked_by": list(q.blocked_by),
-        }
-        for q in active
-    ]
-    locks = await _fetch_blocking_locks(driver)
-    cache_ratio = await _cache_hit_ratio(driver)
+
+    # The contention + cache sources are best-effort context. If one
+    # of them fails (e.g. pg_blocking_pids not available on a strange
+    # PG build, permission denied on pg_stat_activity), the rest of
+    # the diagnosis should still reach the agent. Use
+    # asyncio.gather(return_exceptions=True) so cancellation of the
+    # parent task propagates to every sub-task — the earlier
+    # create_task + sequential-await pattern orphaned later tasks
+    # when an earlier one failed or the parent was cancelled.
+    active_dicts: list[dict[str, Any]] = []
+    locks: list[dict[str, Any]] = []
+    cache_ratio: float | None = None
+    diagnosis_errors: list[str] = []
+
+    active_result, locks_result, cache_result = await asyncio.gather(
+        list_active_queries(driver),
+        _fetch_blocking_locks(driver),
+        _cache_hit_ratio(driver),
+        return_exceptions=True,
+    )
+
+    if isinstance(active_result, BaseException):
+        diagnosis_errors.append(f"list_active_queries: {active_result}")
+    else:
+        active_dicts = [
+            {
+                "pid": q.pid,
+                "username": q.username,
+                "state": q.state,
+                "query": q.query,
+                "wait_event": q.wait_event,
+                "duration_seconds": q.duration_seconds,
+                "blocked_by": list(q.blocked_by),
+            }
+            for q in active_result
+        ]
+
+    if isinstance(locks_result, BaseException):
+        diagnosis_errors.append(f"blocking_locks: {locks_result}")
+    else:
+        locks = locks_result
+
+    if isinstance(cache_result, BaseException):
+        diagnosis_errors.append(f"cache_hit_ratio: {cache_result}")
+    else:
+        cache_ratio = cache_result
 
     suggestions = _build_suggestions(plan_summary, active_dicts, locks, cache_ratio)
+    if diagnosis_errors:
+        # Surface partial-source failures as suggestions so an agent
+        # browsing only the high-level summary still sees them.
+        suggestions = list(suggestions) + [
+            SlowQuerySuggestion(
+                category="diagnosis",
+                hint=f"some diagnosis sources unavailable — {e}",
+            )
+            for e in diagnosis_errors
+        ]
     return SlowQueryDiagnosis(
         sql=sql,
         plan_summary=plan_summary,
