@@ -211,3 +211,54 @@ async def test_audit_database_log_scanning_escapes_identifiers() -> None:
     # Verify that the actual log query is safely double-quoted and escaped
     log_query_call = next(c for c in driver.calls if "error_severity" in c[0])
     assert 'FROM "public"."""injected;--"' in log_query_call[0]
+
+
+async def test_audit_database_with_pg17_checkpointer_compatibility() -> None:
+    # Set up FakeRoutingDriver with checkpointer views present
+    driver = FakeRoutingDriver(
+        {
+            "SELECT version()": [{"version": "PostgreSQL 17.1", "dbname": "prod"}],
+            "pg_views": [{"exists": 1}],  # Simulate view exists
+            "pg_stat_checkpointer": [
+                {
+                    "checkpoints_timed": 95,
+                    "checkpoints_req": 5,
+                    "buffers_checkpoint": 1000,
+                    "buffers_clean": 2000,
+                    "maxwritten_clean": 10,
+                    "buffers_backend": 0,
+                    "buffers_backend_fsync": 0,
+                }
+            ],
+            "blks_hit": [{"hits": 999000, "reads": 1000}],
+            "temp_files": [{"temp_files": 0, "temp_bytes": 0}],
+            "xact_commit": [{"commits": 100000, "rollbacks": 10}],
+            "long_active": [{"long_active": 0, "long_idle": 0}],
+            "prepared_count": [{"prepared_count": 0}],
+            "used": [{"used": 15, "maximum": 100}],
+            "count_waiting": [{"count_waiting": 0}],
+            "max_wait": [{"max_wait": 0.0}],
+            "deadlocks": [{"deadlocks": 0}],
+            "bloated_tables": [{"bloated_tables": 0, "max_bloat_pct": 2.1}],
+            "invalid": [{"invalid": 0}],
+            "long_queries": [{"long_queries": 0}],
+            "pg_stat_statements": [
+                {
+                    "query": "SELECT 1",
+                    "calls": 100,
+                    "total_exec_time": 200.0,
+                    "mean_exec_time": 2.0,
+                }
+            ],
+        }
+    )
+
+    report = await audit_database(driver, "public")  # type: ignore[arg-type]
+    assert report.database == "prod"
+    assert report.overall_health == "GOOD"
+    assert report.health_score == 100
+
+    # Verify that it queried pg_views to find pg_stat_checkpointer
+    assert any("pg_views" in c[0] for c in driver.calls)
+    # Verify that it queried the combined pg_stat_checkpointer query
+    assert any("pg_stat_checkpointer" in c[0] for c in driver.calls)

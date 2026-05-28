@@ -105,6 +105,11 @@ class Settings:
     nl2sql_model: str | None = None
     nl2sql_base_url: str | None = None
     nl2sql_max_tokens: int = 2048
+    rate_limit_enabled: bool = False
+    rate_limit_max_requests: int = 60
+    rate_limit_window_seconds: int = 60
+    rate_limit_heavy_max: int = 5
+    rate_limit_heavy_window: int = 60
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -134,7 +139,12 @@ class Settings:
             f"nl2sql_api_key={'set' if self.nl2sql_api_key else 'unset'!r}, "
             f"nl2sql_model={self.nl2sql_model!r}, "
             f"nl2sql_base_url={self.nl2sql_base_url!r}, "
-            f"nl2sql_max_tokens={self.nl2sql_max_tokens})"
+            f"nl2sql_max_tokens={self.nl2sql_max_tokens}, "
+            f"rate_limit_enabled={self.rate_limit_enabled}, "
+            f"rate_limit_max_requests={self.rate_limit_max_requests}, "
+            f"rate_limit_window_seconds={self.rate_limit_window_seconds}, "
+            f"rate_limit_heavy_max={self.rate_limit_heavy_max}, "
+            f"rate_limit_heavy_window={self.rate_limit_heavy_window})"
         )
 
 
@@ -374,6 +384,26 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         if nl2sql_max_tokens > 16_384:
             raise ConfigError(f"MCPG_NL2SQL_MAX_TOKENS ({nl2sql_max_tokens}) exceeds the hard cap of 16384")
 
+    rate_limit_enabled = False
+    if (raw := env.get("MCPG_RATE_LIMIT_ENABLED")) is not None:
+        rate_limit_enabled = _parse_bool("MCPG_RATE_LIMIT_ENABLED", raw)
+
+    rate_limit_max_requests = 60
+    if (raw := env.get("MCPG_RATE_LIMIT_MAX_REQUESTS")) is not None:
+        rate_limit_max_requests = _parse_positive_int("MCPG_RATE_LIMIT_MAX_REQUESTS", raw)
+
+    rate_limit_window_seconds = 60
+    if (raw := env.get("MCPG_RATE_LIMIT_WINDOW_SECONDS")) is not None:
+        rate_limit_window_seconds = _parse_positive_int("MCPG_RATE_LIMIT_WINDOW_SECONDS", raw)
+
+    rate_limit_heavy_max = 5
+    if (raw := env.get("MCPG_RATE_LIMIT_HEAVY_MAX")) is not None:
+        rate_limit_heavy_max = _parse_positive_int("MCPG_RATE_LIMIT_HEAVY_MAX", raw)
+
+    rate_limit_heavy_window = 60
+    if (raw := env.get("MCPG_RATE_LIMIT_HEAVY_WINDOW")) is not None:
+        rate_limit_heavy_window = _parse_positive_int("MCPG_RATE_LIMIT_HEAVY_WINDOW", raw)
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -404,4 +434,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         nl2sql_model=nl2sql_model,
         nl2sql_base_url=nl2sql_base_url,
         nl2sql_max_tokens=nl2sql_max_tokens,
+        rate_limit_enabled=rate_limit_enabled,
+        rate_limit_max_requests=rate_limit_max_requests,
+        rate_limit_window_seconds=rate_limit_window_seconds,
+        rate_limit_heavy_max=rate_limit_heavy_max,
+        rate_limit_heavy_window=rate_limit_heavy_window,
     )

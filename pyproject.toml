@@ -40,6 +40,7 @@ dev = [
     "ruff>=0.14.0",
     "mypy>=1.15.0",
     "pre-commit>=4.0.0",
+    "bandit>=1.7.8",
 ]
 
 [tool.pytest.ini_options]
@@ -88,3 +89,8 @@ ignore_errors = true
 # pglast ships no type stubs.
 module = ["pglast", "pglast.*"]
 ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = ["tests", "src/mcpg/_vendor"]
+skips = ["B101", "B608", "B110"]
+
