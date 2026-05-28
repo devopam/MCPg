@@ -22,6 +22,7 @@ from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
 from mcpg.database import Database
 from mcpg.listen import ListenManager
+from mcpg.middleware.rate_limit import RateLimiter
 from mcpg.observability import get_metrics
 from mcpg.tools import register_tools
 
@@ -36,7 +37,15 @@ __all__ = ["SERVER_NAME", "AppContext", "AuditedFastMCP", "create_server", "make
 class AuditedFastMCP(FastMCP[AppContext]):
     """A FastMCP server that records an audit event for every tool call."""
 
+    rate_limiter: RateLimiter
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[ContentBlock] | dict[str, Any]:
+        # Enforce rate limiting if configured
+        if hasattr(self, "rate_limiter"):
+            allowed = await self.rate_limiter.consume(name)
+            if not allowed:
+                raise RuntimeError(f"Rate limit exceeded for tool {name!r}. Please try again later.")
+
         metrics = get_metrics()
         start = time.monotonic()
         try:
@@ -104,12 +113,20 @@ def create_server(
         else ListenManager(database_url=settings.database_url, queue_max=settings.listen_queue_max)
     )
     cm = cursor_manager if cursor_manager is not None else CursorManager(database_url=settings.database_url)
-    server: FastMCP[AppContext] = AuditedFastMCP(
+    server: AuditedFastMCP = AuditedFastMCP(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
         lifespan=make_lifespan(settings, db, lm, cm),
         host=settings.http_host,
         port=settings.http_port,
+    )
+    # Instantiate and register the RateLimiter
+    server.rate_limiter = RateLimiter(
+        enabled=settings.rate_limit_enabled,
+        global_max=settings.rate_limit_max_requests,
+        global_window=settings.rate_limit_window_seconds,
+        heavy_max=settings.rate_limit_heavy_max,
+        heavy_window=settings.rate_limit_heavy_window,
     )
     register_tools(server, settings)
     return server

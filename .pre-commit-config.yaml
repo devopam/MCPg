@@ -22,3 +22,11 @@ repos:
         types: [python]
         pass_filenames: false
         require_serial: true
+      - id: bandit
+        name: bandit (sast)
+        entry: uv run bandit -r src/mcpg
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+

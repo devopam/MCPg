@@ -202,13 +202,29 @@ async def audit_memory_io(driver: SqlDriver, health_score: dict[str, int]) -> Ca
 
     # 2. Checkpoint Completion & Bgwriter Efficiency
     try:
-        rows = await driver.execute_query(
-            "SELECT checkpoints_timed, checkpoints_req, "
-            "buffers_checkpoint, buffers_clean, maxwritten_clean, "
-            "buffers_backend, buffers_backend_fsync "
-            "FROM pg_stat_bgwriter",
+        # Check if pg_stat_checkpointer view exists (introduced in PG 17+)
+        cp_exists = await driver.execute_query(
+            "SELECT 1 FROM pg_views WHERE schemaname = 'pg_catalog' AND viewname = 'pg_stat_checkpointer'",
             force_readonly=True,
         )
+        if cp_exists:
+            # Query for PG 17+ combining pg_stat_checkpointer and pg_stat_bgwriter
+            rows = await driver.execute_query(
+                "SELECT num_timed AS checkpoints_timed, num_requested AS checkpoints_req, "
+                "buffers_written AS buffers_checkpoint, buffers_clean, maxwritten_clean, "
+                "0 AS buffers_backend, 0 AS buffers_backend_fsync "
+                "FROM pg_stat_checkpointer, pg_stat_bgwriter",
+                force_readonly=True,
+            )
+        else:
+            # Query for PG 16 and older
+            rows = await driver.execute_query(
+                "SELECT checkpoints_timed, checkpoints_req, "
+                "buffers_checkpoint, buffers_clean, maxwritten_clean, "
+                "buffers_backend, buffers_backend_fsync "
+                "FROM pg_stat_bgwriter",
+                force_readonly=True,
+            )
         cells = (rows or [])[0].cells
         cp_timed = int(cells["checkpoints_timed"] or 0)
         cp_req = int(cells["checkpoints_req"] or 0)
@@ -944,16 +960,20 @@ async def audit_slow_queries(driver: SqlDriver) -> CategoryResult:
         )
     except Exception:
         # Gracefully degrade if pg_stat_statements is not installed/enabled
+        category_score -= 10
         metrics.append(
             MetricResult(
                 name="Top Time Consumer",
                 value="Not Installed",
                 unit="",
                 target="N/A",
-                status="GOOD",
-                severity=0,
-                evidence="pg_stat_statements extension is not installed in the database.",
-                suggestion="Install pg_stat_statements in shared_preload_libraries to profile SQL execution history.",
+                status="WARNING",
+                severity=2,
+                evidence="pg_stat_statements extension is not installed or enabled in the database.",
+                suggestion=(
+                    "Add pg_stat_statements to shared_preload_libraries, "
+                    "restart, and run 'CREATE EXTENSION pg_stat_statements;'"
+                ),
             )
         )
 

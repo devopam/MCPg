@@ -29,6 +29,22 @@ jobs:
       - name: mypy
         run: uv run mypy src/mcpg
 
+  security:
+    name: Security audit (SAST & Dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Dependency audit
+        run: uv audit
+      - name: Bandit static analysis (SAST)
+        run: uv run bandit -r src/mcpg --skip B101,B608,B110 -ll
+
   test:
     name: Tests (PG ${{ matrix.postgres }})
     runs-on: ubuntu-latest
