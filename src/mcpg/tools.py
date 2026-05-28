@@ -366,6 +366,16 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         report = await io_stats.read_pg_stat_io(_driver(ctx))
         return asdict(report)
 
+    @server.tool(
+        name="get_compact_schema",
+        description=(
+            "Return a highly condensed, token-efficient text summary of a schema's "
+            "tables, columns, primary keys, nullability, and relations to save context window tokens."
+        ),
+    )
+    async def get_compact_schema(ctx: _Ctx, schema: str) -> str:
+        return await introspection.get_compact_schema(_driver(ctx), schema)
+
 
 def _register_diagrams(server: FastMCP[AppContext]) -> None:
     @server.tool(
@@ -699,6 +709,17 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     ) -> dict[str, Any]:
         dataset = await test_data.generate_test_data(_driver(ctx), schema, table, rows=rows, seed=seed)
         return asdict(dataset)
+
+    @server.tool(
+        name="optimize_query",
+        description=(
+            "Analyze a SQL query for syntax anti-patterns and performance issues "
+            "using EXPLAIN plan costs and index scans, returning an optimized version."
+        ),
+    )
+    async def optimize_query(ctx: _Ctx, sql: str) -> dict[str, Any]:
+        res = await advisors.optimize_query(_driver(ctx), sql)
+        return asdict(res)
 
 
 def _register_composite(server: FastMCP[AppContext]) -> None:

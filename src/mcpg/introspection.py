@@ -8,6 +8,7 @@ no value is interpolated into SQL text.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from mcpg._vendor.sql import SqlDriver
 
@@ -1105,3 +1106,109 @@ async def list_generated_columns(driver: SqlDriver, schema: str) -> list[Generat
         )
         for row in rows or []
     ]
+
+
+async def get_compact_schema(driver: SqlDriver, schema: str) -> str:
+    """Return a highly condensed, token-efficient text summary of a schema.
+
+    Collects all tables, columns, primary keys, and foreign keys in the schema
+    using exactly 3 queries, then formats them into a compact notation.
+    """
+    tables = await list_tables(driver, schema)
+    if not tables:
+        return f"Schema {schema!r} contains no tables."
+
+    # Fetch all columns for all tables in the schema in a single query
+    col_rows = await driver.execute_query(
+        "SELECT c.relname AS table_name, a.attname AS column_name, "
+        "format_type(a.atttypid, a.atttypmod) AS data_type, "
+        "NOT a.attnotnull AS nullable, t.typname AS type_name, a.atttypmod AS type_mod "
+        "FROM pg_attribute a "
+        "JOIN pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_type t ON t.oid = a.atttypid "
+        "WHERE n.nspname = %s AND c.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped "
+        "ORDER BY c.relname, a.attnum",
+        params=[schema],
+        force_readonly=True,
+    )
+
+    columns_by_table: dict[str, list[dict[str, Any]]] = {}
+    for row in col_rows or []:
+        t_name = str(row.cells["table_name"])
+        columns_by_table.setdefault(t_name, []).append(
+            {
+                "name": str(row.cells["column_name"]),
+                "data_type": str(row.cells["data_type"]),
+                "nullable": bool(row.cells["nullable"]),
+                "vector_dimension": (
+                    int(row.cells["type_mod"])
+                    if str(row.cells["type_name"]) == "vector" and int(row.cells["type_mod"]) > 0
+                    else None
+                ),
+            }
+        )
+
+    # Fetch all primary keys in the schema in a single query
+    pk_rows = await driver.execute_query(
+        "SELECT tc.table_name, kcu.column_name "
+        "FROM information_schema.table_constraints AS tc "
+        "JOIN information_schema.key_column_usage AS kcu "
+        "ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema "
+        "WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = %s "
+        "ORDER BY tc.table_name, kcu.ordinal_position",
+        params=[schema],
+        force_readonly=True,
+    )
+    pks_by_table: dict[str, list[str]] = {}
+    for row in pk_rows or []:
+        pks_by_table.setdefault(str(row.cells["table_name"]), []).append(str(row.cells["column_name"]))
+
+    # Fetch all foreign keys in the schema in a single query
+    fks = await list_foreign_keys(driver, schema)
+    fks_by_table: dict[str, dict[str, str]] = {}
+    for fk in fks:
+        for idx, from_col in enumerate(fk.from_columns):
+            if idx < len(fk.to_columns):
+                to_col = fk.to_columns[idx]
+                target_ref = (
+                    f"{fk.to_schema}.{fk.to_table}.{to_col}" if fk.to_schema != schema else f"{fk.to_table}.{to_col}"
+                )
+                fks_by_table.setdefault(fk.from_table, {})[from_col] = target_ref
+
+    lines = []
+    for table in tables:
+        t_name = table.name
+        # Skip partition tables if they are children to keep context compact
+        if table.is_partition:
+            continue
+
+        cols = columns_by_table.get(t_name, [])
+        pks = pks_by_table.get(t_name, [])
+        table_fks = fks_by_table.get(t_name, {})
+
+        parts = []
+        if pks:
+            pk_str = ",".join(pks)
+            parts.append(f"pk:{pk_str}")
+
+        for col in cols:
+            c_name = col["name"]
+            c_type = col["data_type"]
+            if col["vector_dimension"] is not None:
+                c_type = f"vector({col['vector_dimension']})"
+
+            null_suffix = "?" if col["nullable"] else ""
+
+            if c_name in table_fks:
+                ref = table_fks[c_name]
+                col_str = f"{c_name}:{c_type}{null_suffix}->{ref}"
+            else:
+                col_str = f"{c_name}:{c_type}{null_suffix}"
+
+            parts.append(col_str)
+
+        line = f"[{t_name}] " + " | ".join(parts)
+        lines.append(line)
+
+    return "\n".join(lines)

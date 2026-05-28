@@ -27,6 +27,7 @@ import re
 from dataclasses import dataclass
 
 from mcpg._vendor.sql import SqlDriver
+from mcpg.query import QueryError, analyze_query_plan
 
 # Stable rule identifiers — agents may filter by these.
 RULE_MISSING_PRIMARY_KEY = "missing_primary_key"
@@ -598,3 +599,115 @@ async def find_sensitive_columns(driver: SqlDriver, schema: str) -> SensitiveCol
             )
         )
     return SensitiveColumnsReport(schema=schema, columns=columns)
+
+
+@dataclass(frozen=True, slots=True)
+class OptimizationResult:
+    """The result of query syntax and execution plan optimization."""
+
+    original_sql: str
+    optimized_sql: str
+    findings: list[str]
+    explain_summary: str
+    rationale: str
+
+
+async def optimize_query(driver: SqlDriver, sql: str) -> OptimizationResult:
+    """Analyze a SQL query for anti-patterns and performance issues, returning an optimized version."""
+    findings = []
+    ex_summary = ""
+
+    # 1. Plan analysis
+    try:
+        plan = await analyze_query_plan(driver, sql)
+        ex_summary = (
+            f"Estimated Cost: {plan.total_cost:.2f} | "
+            f"Estimated Rows: {plan.estimated_rows} | "
+            f"Node Types: {', '.join(plan.node_types)}"
+        )
+        if plan.sequential_scans:
+            seq_scans_str = ", ".join(plan.sequential_scans)
+            findings.append(f"Sequential scan detected on table(s): {seq_scans_str}")
+    except QueryError as err:
+        ex_summary = f"Plan Analysis Failed: {err}"
+
+    # 2. Syntax anti-pattern audits
+    # Check SELECT *
+    has_select_star = bool(re.search(r"\bSELECT\s+\*(?!\w)", sql, re.IGNORECASE))
+    if has_select_star:
+        findings.append("Avoid using SELECT * to minimize network transfer and enable index-only scans.")
+
+    # Check missing LIMIT
+    is_select = bool(re.search(r"\bSELECT\b", sql, re.IGNORECASE))
+    has_limit = bool(re.search(r"\bLIMIT\s+\d+\b", sql, re.IGNORECASE))
+    if is_select and not has_limit:
+        findings.append("Missing LIMIT clause on large table queries can cause memory and socket exhaustion.")
+
+    # Check IN subquery
+    has_in_subquery = bool(re.search(r"\bIN\s*\(\s*SELECT\b", sql, re.IGNORECASE))
+    if has_in_subquery:
+        findings.append(
+            "Use of IN (SELECT ...) subquery instead of JOIN or EXISTS. Subqueries with IN can prevent the "
+            "planner from using optimal semi-joins."
+        )
+
+    # Check leading wildcard
+    has_leading_wildcard = bool(re.search(r"\bLIKE\s*'\%.*?'", sql, re.IGNORECASE))
+    if has_leading_wildcard:
+        findings.append(
+            "Leading wildcard search (LIKE '%term%') prevents standard B-Tree index use. Consider a trigram "
+            "GIN index (pg_trgm) or full-text indexing."
+        )
+
+    # 3. Construct optimized SQL
+    opt_sql = sql
+    rationale_parts = []
+
+    if has_select_star:
+        # Suggest replacing * with columns
+        opt_sql = re.sub(r"\bSELECT\s+\*(?!\w)", "SELECT id, [explicit_columns]", opt_sql, flags=re.IGNORECASE)
+        rationale_parts.append(
+            "- Replaced SELECT * with explicit column list to reduce data transmission and allow index-only scans."
+        )
+
+    if is_select and not has_limit:
+        # Suggest adding LIMIT
+        stripped_sql = opt_sql.rstrip().rstrip(";")
+        opt_sql = f"{stripped_sql} LIMIT 100;"
+        rationale_parts.append(
+            "- Appended LIMIT 100 to safeguard application memory and prevent querying millions of records."
+        )
+
+    if has_in_subquery:
+        rationale_parts.append(
+            "- Suggest refactoring IN (SELECT ...) subqueries using INNER JOIN or EXISTS for cleaner planner "
+            "execution paths."
+        )
+
+    if has_leading_wildcard:
+        rationale_parts.append(
+            "- Suggest using pg_trgm trigram similarity search or PostgreSQL full-text search to leverage indexing "
+            "for wildcard searches."
+        )
+
+    try:
+        if "plan" in locals() and plan.sequential_scans:
+            rationale_parts.append(
+                "- Consider adding indexes on columns used in WHERE or JOIN clauses for tables with Seq Scan."
+            )
+    except Exception:
+        pass
+
+    rationale = (
+        "\n".join(rationale_parts)
+        if rationale_parts
+        else ("The query has no obvious syntactic anti-patterns. Ensure proper indexes are configured.")
+    )
+
+    return OptimizationResult(
+        original_sql=sql,
+        optimized_sql=opt_sql,
+        findings=findings,
+        explain_summary=ex_summary,
+        rationale=rationale,
+    )
