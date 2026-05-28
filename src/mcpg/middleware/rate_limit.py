@@ -48,10 +48,13 @@ class RateLimiter:
 
         # Storage for client rate-limiting state
         self._buckets: dict[tuple[str, bool], TokenBucket] = {}
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock | None = None
 
     async def consume(self, tool_name: str) -> bool:
         """Attempt to consume 1 token. Returns True if allowed, False if throttled."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+
         if not self.enabled:
             return True
 
