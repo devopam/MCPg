@@ -16,6 +16,7 @@ from mcp.server.session import ServerSession
 from mcpg import (
     __version__,
     advisors,
+    audit,
     audit_trail,
     composite,
     cron,
@@ -1388,6 +1389,19 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     )
     async def check_database_health(ctx: _Ctx) -> dict[str, Any]:
         report = await health.check_database_health(_driver(ctx))
+        return asdict(report)
+
+    @server.tool(
+        name="audit_database",
+        description=(
+            "Run a deep, comprehensive DBA-level database performance, logs, "
+            "and health audit over the specified schema. Scans memory, checkpoints, "
+            "temp file spills, contention locks, dead tuple cleanliness, and "
+            "optionally scans custom logging tables."
+        ),
+    )
+    async def audit_database(ctx: _Ctx, schema: str, log_table: str | None = None) -> dict[str, Any]:
+        report = await audit.audit_database(_driver(ctx), schema, log_table=log_table)
         return asdict(report)
 
     @server.tool(
