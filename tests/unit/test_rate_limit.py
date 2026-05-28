@@ -100,3 +100,31 @@ async def test_server_call_tool_enforces_rate_limits() -> None:
         result2 = await client.call_tool("check_database_health", {})
         assert result2.isError is True
         assert any("Rate limit exceeded" in content.text for content in result2.content)
+
+
+@pytest.mark.anyio
+async def test_rate_limiter_refills_tokens_over_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Use a short window to exercise token refill behavior
+    current_time = 1000.0
+
+    def fake_monotonic() -> float:
+        return current_time
+
+    # Patch the monotonic clock used inside the rate limiter
+    monkeypatch.setattr("mcpg.middleware.rate_limit.time.monotonic", fake_monotonic)
+
+    # 2 requests per 1 second
+    limiter = RateLimiter(enabled=True, global_max=2, global_window=1)
+
+    # Consume both available tokens
+    assert await limiter.consume("summarize_table") is True
+    assert await limiter.consume("summarize_table") is True
+
+    # Next request should be throttled
+    assert await limiter.consume("summarize_table") is False
+
+    # Advance time enough for at least one token to be refilled
+    current_time += 1.1
+
+    # After the time jump, consume should succeed again
+    assert await limiter.consume("summarize_table") is True
