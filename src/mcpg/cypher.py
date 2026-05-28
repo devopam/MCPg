@@ -107,22 +107,85 @@ async def run_cypher(
     if not graph_rows:
         raise ValueError(f"graph {graph_name!r} does not exist")
 
-    # 4. Load AGE and set search path at session-level
-    await driver.execute_query("LOAD 'age';")
-    await driver.execute_query(f"SET search_path = {graph_name}, ag_catalog, public;")
-
-    # 5. Parse return columns and build PostgreSQL cypher(...) SQL statement
+    # 4. Parse return columns and run the cypher() call on a DEDICATED
+    #    pool checkout so ``SET LOCAL search_path`` auto-resets at the
+    #    end of the explicit transaction and does NOT leak into the
+    #    next caller's connection state. Earlier code issued ``LOAD
+    #    'age'`` and ``SET search_path`` as separate ``execute_query``
+    #    calls; each landed on a different pool connection AND left
+    #    ``search_path`` mutated on the original — a confused-deputy
+    #    risk for any subsequent unqualified-identifier query.
     columns = parse_return_columns(cypher_query)
     columns_clause = ", ".join(f'"{col}" agtype' for col in columns)
 
-    sql = f"SELECT * FROM cypher('{graph_name}', %s) as ({columns_clause});"
-
-    # 6. Execute the query and parse agtype columns
     try:
-        rows = await driver.execute_query(sql, [cypher_query])
+        parsed_rows = await _execute_cypher_in_isolated_connection(
+            driver=driver,
+            graph_name=graph_name,
+            cypher_query=cypher_query,
+            columns=columns,
+            columns_clause=columns_clause,
+        )
+    except DatabaseError:
+        raise
     except Exception as exc:
         raise DatabaseError(f"Cypher execution failed: {exc}") from exc
 
+    return CypherResult(
+        columns=columns,
+        rows=parsed_rows,
+        row_count=len(parsed_rows),
+    )
+
+
+async def _execute_cypher_in_isolated_connection(
+    *,
+    driver: Any,
+    graph_name: str,
+    cypher_query: str,
+    columns: list[str],
+    columns_clause: str,
+) -> list[dict[str, Any]]:
+    """Run LOAD AGE + SET LOCAL search_path + cypher() on one checkout.
+
+    ``graph_name`` and ``columns_clause`` are pre-validated by the
+    caller, so inlining them into SQL is safe. ``cypher_query`` reaches
+    the database via a bound parameter on the ``cypher()`` call — that
+    keeps the openCypher string out of the SQL parser entirely.
+    """
+    # Test fakes don't expose pool primitives — fall back to the
+    # driver's normal ``execute_query`` path. The pool-pollution this
+    # function exists to prevent only matters with a real psycopg pool;
+    # fakes don't share connections across calls.
+    if not hasattr(driver, "conn") or driver.conn is None:
+        return await _run_cypher_via_driver(driver, graph_name, cypher_query, columns, columns_clause)
+    if not getattr(driver, "is_pool", False):
+        # Direct-connection mode (single AsyncConnection). Use it.
+        return await _run_cypher_statements(driver.conn, graph_name, cypher_query, columns, columns_clause)
+    pool = await driver.conn.pool_connect()
+    async with pool.connection() as connection:
+        return await _run_cypher_statements(connection, graph_name, cypher_query, columns, columns_clause)
+
+
+async def _run_cypher_via_driver(
+    driver: Any,
+    graph_name: str,
+    cypher_query: str,
+    columns: list[str],
+    columns_clause: str,
+) -> list[dict[str, Any]]:
+    """Fallback path for test fakes — issues the same statements via the driver.
+
+    Doesn't get the pool-isolation guarantee of the production path,
+    but the only callers that hit this branch are tests with in-memory
+    drivers that don't share connection state anyway.
+    """
+    await driver.execute_query("LOAD 'age'")
+    await driver.execute_query(f"SET search_path = {graph_name}, ag_catalog, public")
+    rows = await driver.execute_query(
+        f"SELECT * FROM cypher('{graph_name}', %s) AS ({columns_clause})",
+        [cypher_query],
+    )
     parsed_rows: list[dict[str, Any]] = []
     for row in rows or []:
         parsed_row: dict[str, Any] = {}
@@ -130,9 +193,49 @@ async def run_cypher(
             raw_val = row.cells.get(col)
             parsed_row[col] = parse_agtype(raw_val)
         parsed_rows.append(parsed_row)
+    return parsed_rows
 
-    return CypherResult(
-        columns=columns,
-        rows=parsed_rows,
-        row_count=len(parsed_rows),
-    )
+
+async def _run_cypher_statements(
+    connection: Any,
+    graph_name: str,
+    cypher_query: str,
+    columns: list[str],
+    columns_clause: str,
+) -> list[dict[str, Any]]:
+    """Issue the LOAD + SET LOCAL + cypher() trio on ``connection``.
+
+    Wrapped in an explicit ``BEGIN``/``COMMIT`` so ``SET LOCAL`` auto-
+    resets even if the cypher() call fails (``ROLLBACK`` resets local
+    settings the same way ``COMMIT`` does).
+    """
+    from psycopg.rows import dict_row
+
+    async with connection.cursor(row_factory=dict_row) as cur:
+        await cur.execute("BEGIN")
+        try:
+            await cur.execute("LOAD 'age'")
+            # ``SET LOCAL`` is valid only inside an explicit txn; auto-resets
+            # at COMMIT or ROLLBACK regardless of which exit we take.
+            await cur.execute(f"SET LOCAL search_path = {graph_name}, ag_catalog, public")
+            await cur.execute(
+                f"SELECT * FROM cypher('{graph_name}', %s) AS ({columns_clause})",
+                [cypher_query],
+            )
+            fetched = await cur.fetchall()
+            await cur.execute("COMMIT")
+        except Exception:
+            try:
+                await cur.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+
+    parsed_rows: list[dict[str, Any]] = []
+    for row in fetched or []:
+        parsed_row: dict[str, Any] = {}
+        for col in columns:
+            raw_val = row.get(col)
+            parsed_row[col] = parse_agtype(raw_val)
+        parsed_rows.append(parsed_row)
+    return parsed_rows

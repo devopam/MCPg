@@ -24,6 +24,7 @@ When neither is configured, the driver is identical to the vendored
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from contextvars import ContextVar
@@ -152,10 +153,14 @@ async def _execute_with_role(
                 await cursor.execute("COMMIT")
             transaction_started = False
             return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
-    except Exception:
+    except BaseException:
         if transaction_started:
             try:
                 await connection.rollback()
+            except asyncio.CancelledError:
+                # Re-raise cancellation so the caller's cancel scope
+                # actually unwinds; never swallow it inside a fallback.
+                raise
             except Exception as rollback_error:
                 logger.error("Error rolling back transaction during role-wrapped execute: %s", rollback_error)
         raise
