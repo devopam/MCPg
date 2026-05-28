@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **License: relicensed from AGPL-3.0-or-later to MIT.** New `LICENSE`
+  at the repo root carries the standard MIT text. `pyproject.toml`
+  `license` field, `NOTICE`, ADR-0001, and the README "License" section
+  updated to match. The vendored SQL-safety kernel at
+  `src/mcpg/_vendor/sql/` is and remains MIT-licensed; no upstream
+  attribution changed. No code surface changed.
+
 ### Added
 
 - **Apache AGE graph + Cypher support** (PR #24). Six new tools

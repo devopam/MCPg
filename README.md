@@ -152,6 +152,8 @@ See the [Installation Guide](docs/installation.md) and
 
 ## License
 
-See [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE). The vendored SQL-safety kernel at
+`src/mcpg/_vendor/sql/` is also MIT-licensed; see
+[`NOTICE`](NOTICE) for provenance.
 
 \* : While best intent has been put to make it production grade, it is still a developmental project and is expected to have issues. Please refer to License Terms for details on indemnity. 

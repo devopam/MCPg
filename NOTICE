@@ -1,8 +1,9 @@
 MCPg
-Copyright (c) 2026 the MCPg authors
+Copyright (c) 2026 Devopam Mittra
 
-This product is licensed under the GNU Affero General Public License v3.0
-or later (AGPL-3.0-or-later); see the LICENSE file.
+This product is licensed under the MIT License; see the LICENSE file at
+the repository root for the full text. (Relicensed from AGPL-3.0-or-later
+in v0.5.x.)
 
 ------------------------------------------------------------------------
 Third-party vendored code
@@ -18,6 +19,6 @@ This product includes software developed by Crystal Corp.
               See src/mcpg/_vendor/LICENSE for the full license text.
 
 The MIT-licensed code above is incorporated under the terms of the MIT
-License, which is compatible with the AGPL-3.0 license of this project.
+License; both this project and the vendored kernel are now MIT-licensed.
 See src/mcpg/_vendor/README.md for provenance details and the re-sync
 procedure.

@@ -4,7 +4,7 @@ version = "0.5.0"
 description = "A production-grade PostgreSQL Model Context Protocol (MCP) server."
 readme = "README.md"
 requires-python = ">=3.12"
-license = "AGPL-3.0-or-later"
+license = "MIT"
 license-files = ["LICENSE", "src/mcpg/_vendor/LICENSE"]
 
 dependencies = [

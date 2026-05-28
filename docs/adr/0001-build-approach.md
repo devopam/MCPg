@@ -112,10 +112,11 @@ hard-won, security-critical SQL validator.
 - **Harder:** the analysis features (health/explain/index) are now authored by
   us under TDD rather than inherited — more work in Phases 5+, but clean and
   fully tested.
-- **Licensing:** the MCPg repo is **AGPL-3.0**; the vendored `sql/` code is
-  **MIT** (permissive, AGPL-compatible). We preserve the upstream MIT licence
-  text and copyright in `src/mcpg/_vendor/LICENSE` and record provenance in
-  `NOTICE` and `src/mcpg/_vendor/README.md`.
+- **Licensing:** the MCPg repo is **MIT** (relicensed from AGPL-3.0 in
+  v0.5.x — see `LICENSE` at the repo root for current terms). The
+  vendored `sql/` code is also **MIT**; we preserve the upstream MIT
+  licence text and copyright in `src/mcpg/_vendor/LICENSE` and record
+  provenance in `NOTICE` and `src/mcpg/_vendor/README.md`.
 - **Follow-up:** track upstream `crystaldba/postgres-mcp` for security fixes to
   the `sql/` subpackage and cherry-pick into the vendored copy (re-sync
   procedure documented in `src/mcpg/_vendor/README.md`).
