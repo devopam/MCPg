@@ -410,19 +410,26 @@ async def why_is_this_slow(driver: SqlDriver, sql: str) -> SlowQueryDiagnosis:
     # The contention + cache sources are best-effort context. If one
     # of them fails (e.g. pg_blocking_pids not available on a strange
     # PG build, permission denied on pg_stat_activity), the rest of
-    # the diagnosis should still reach the agent. Run them in parallel
-    # with per-source error capture.
-    active_task = asyncio.create_task(list_active_queries(driver))
-    locks_task = asyncio.create_task(_fetch_blocking_locks(driver))
-    cache_task = asyncio.create_task(_cache_hit_ratio(driver))
-
+    # the diagnosis should still reach the agent. Use
+    # asyncio.gather(return_exceptions=True) so cancellation of the
+    # parent task propagates to every sub-task — the earlier
+    # create_task + sequential-await pattern orphaned later tasks
+    # when an earlier one failed or the parent was cancelled.
     active_dicts: list[dict[str, Any]] = []
     locks: list[dict[str, Any]] = []
     cache_ratio: float | None = None
     diagnosis_errors: list[str] = []
 
-    try:
-        active = await active_task
+    active_result, locks_result, cache_result = await asyncio.gather(
+        list_active_queries(driver),
+        _fetch_blocking_locks(driver),
+        _cache_hit_ratio(driver),
+        return_exceptions=True,
+    )
+
+    if isinstance(active_result, BaseException):
+        diagnosis_errors.append(f"list_active_queries: {active_result}")
+    else:
         active_dicts = [
             {
                 "pid": q.pid,
@@ -433,20 +440,18 @@ async def why_is_this_slow(driver: SqlDriver, sql: str) -> SlowQueryDiagnosis:
                 "duration_seconds": q.duration_seconds,
                 "blocked_by": list(q.blocked_by),
             }
-            for q in active
+            for q in active_result
         ]
-    except Exception as exc:
-        diagnosis_errors.append(f"list_active_queries: {exc}")
 
-    try:
-        locks = await locks_task
-    except Exception as exc:
-        diagnosis_errors.append(f"blocking_locks: {exc}")
+    if isinstance(locks_result, BaseException):
+        diagnosis_errors.append(f"blocking_locks: {locks_result}")
+    else:
+        locks = locks_result
 
-    try:
-        cache_ratio = await cache_task
-    except Exception as exc:
-        diagnosis_errors.append(f"cache_hit_ratio: {exc}")
+    if isinstance(cache_result, BaseException):
+        diagnosis_errors.append(f"cache_hit_ratio: {cache_result}")
+    else:
+        cache_ratio = cache_result
 
     suggestions = _build_suggestions(plan_summary, active_dicts, locks, cache_ratio)
     if diagnosis_errors:

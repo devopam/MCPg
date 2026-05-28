@@ -6,6 +6,7 @@ native openCypher graph queries, parsing the results dynamically.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any, TypedDict
@@ -224,10 +225,21 @@ async def _run_cypher_statements(
             )
             fetched = await cur.fetchall()
             await cur.execute("COMMIT")
-        except Exception:
+        except BaseException:
+            # BaseException — not Exception — so asyncio.CancelledError
+            # also lands here and we always issue ROLLBACK. Otherwise
+            # a cancelled request would leave the (possibly shared)
+            # connection in an aborted-transaction state and poison
+            # every subsequent query on it.
             try:
                 await cur.execute("ROLLBACK")
+            except asyncio.CancelledError:
+                raise
             except Exception:
+                # ROLLBACK itself can fail if the connection is already
+                # toast — at that point the pool's reset hook will
+                # discard it. Don't let the rollback failure mask the
+                # original exception.
                 pass
             raise
 
