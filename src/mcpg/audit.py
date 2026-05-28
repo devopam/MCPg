@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,9 +23,57 @@ from mcpg._vendor.sql import SqlDriver, obfuscate_password
 
 audit_logger = logging.getLogger("mcpg.audit")
 
-# Argument names whose values are masked wholesale, regardless of content.
-_SECRET_KEYS = frozenset({"password", "secret", "token", "database_url", "dsn", "conninfo"})
+# Names whose VALUES are credentials and must be masked before the
+# arguments dict is logged or persisted. Each entry is a regex matched
+# case-insensitively via ``re.search`` against the argument key — a
+# substring match by default, so ``password`` also catches
+# ``PGPASSWORD``, ``user_password`` and ``app.password``. Operators
+# extend the list via ``MCPG_AUDIT_REDACT_KEYS`` (comma-separated
+# regex fragments).
+_DEFAULT_SECRET_NAME_PATTERNS: tuple[str, ...] = (
+    r"password",
+    r"passwd",
+    r"secret",
+    r"token",
+    r"api[_-]?key",
+    r"bearer",
+    r"authorization",
+    r"database_url",
+    r"dsn",
+    r"conninfo",
+)
 _MASK = "****"
+
+
+def _compile_secret_name_pattern(extra: str | None) -> re.Pattern[str]:
+    patterns = list(_DEFAULT_SECRET_NAME_PATTERNS)
+    if extra:
+        for raw in extra.split(","):
+            stripped = raw.strip()
+            if stripped:
+                patterns.append(stripped)
+    return re.compile("|".join(patterns), re.IGNORECASE)
+
+
+# Pattern is recomputable so ``configure_redaction`` can swap in an
+# extended list at server start without restarting the process.
+_secret_name_re: re.Pattern[str] = _compile_secret_name_pattern(os.environ.get("MCPG_AUDIT_REDACT_KEYS"))
+
+
+def configure_redaction(env: Mapping[str, str] | None = None) -> None:
+    """Reload the secret-name pattern from ``MCPG_AUDIT_REDACT_KEYS``.
+
+    Idempotent. ``load_settings`` calls this once with the validated env
+    mapping; tests call it directly to flip the pattern without
+    mutating the process environment.
+    """
+    global _secret_name_re
+    source = os.environ if env is None else env
+    _secret_name_re = _compile_secret_name_pattern(source.get("MCPG_AUDIT_REDACT_KEYS"))
+
+
+def _is_secret_key(name: str) -> bool:
+    return bool(_secret_name_re.search(name))
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,21 +86,35 @@ class AuditEvent:
     error: str | None = None
 
 
-def redact_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of tool arguments with sensitive values masked.
+def _redact_value(value: Any) -> Any:
+    """Recursively mask credentials in dicts, lists, tuples, and strings.
 
-    Arguments named like a credential are masked entirely; string arguments
-    have any embedded connection-string password obfuscated.
+    Mapping keys whose name matches the configured secret-name pattern
+    have their value masked wholesale. String leaves pass through
+    ``obfuscate_password`` so an embedded DSN credential nested
+    arbitrarily deep is still scrubbed. Non-string scalars
+    (``int`` / ``bool`` / ``None``) pass through unchanged.
     """
-    safe: dict[str, Any] = {}
-    for key, value in arguments.items():
-        if key.lower() in _SECRET_KEYS:
-            safe[key] = _MASK
-        elif isinstance(value, str):
-            safe[key] = obfuscate_password(value)
-        else:
-            safe[key] = value
-    return safe
+    if isinstance(value, dict):
+        return {k: _MASK if isinstance(k, str) and _is_secret_key(k) else _redact_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_value(item) for item in value)
+    if isinstance(value, str):
+        return obfuscate_password(value)
+    return value
+
+
+def redact_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Return a deep copy of tool arguments with sensitive values masked.
+
+    Arguments named like a credential (per the configured pattern, see
+    :func:`configure_redaction`) are masked entirely; string leaves have
+    any embedded connection-string password obfuscated; nested dicts /
+    lists / tuples are walked recursively.
+    """
+    return _redact_value(arguments)  # type: ignore[no-any-return]
 
 
 def record(event: AuditEvent) -> None:

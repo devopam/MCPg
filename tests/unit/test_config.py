@@ -312,12 +312,14 @@ def test_replica_urls_parses_comma_separated_list() -> None:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _DB_URL,
-            "MCPG_REPLICA_URLS": ("postgresql://u:p@replica-1/db, postgresql://u:p@replica-2/db"),
+            "MCPG_REPLICA_URLS": (
+                "postgresql://u:p@replica-1/db?sslmode=require, postgresql://u:p@replica-2/db?sslmode=require"
+            ),
         }
     )
     assert settings.replica_urls == (
-        "postgresql://u:p@replica-1/db",
-        "postgresql://u:p@replica-2/db",
+        "postgresql://u:p@replica-1/db?sslmode=require",
+        "postgresql://u:p@replica-2/db?sslmode=require",
     )
 
 
@@ -330,7 +332,7 @@ def test_replica_repr_obfuscates_passwords() -> None:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _DB_URL,
-            "MCPG_REPLICA_URLS": "postgresql://u:supersecret@replica/db",
+            "MCPG_REPLICA_URLS": "postgresql://u:supersecret@replica/db?sslmode=require",
         }
     )
     rendered = repr(settings)
@@ -383,3 +385,63 @@ def test_oidc_settings_parse_when_complete() -> None:
 def test_oidc_blank_individual_settings_raise() -> None:
     with pytest.raises(ConfigError, match="MCPG_OIDC_ISSUER"):
         load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_OIDC_ISSUER": "   "})
+
+
+# --- PG TLS enforcement (security hardening) -----------------------------
+
+
+def test_loopback_database_url_without_sslmode_is_accepted() -> None:
+    # Default ``_DB_URL`` points at localhost without sslmode set;
+    # the existing test suite relies on this path staying clean.
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.allow_insecure_tls is False
+    assert settings.database_url == _DB_URL
+
+
+def test_remote_database_url_without_sslmode_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="sslmode"):
+        load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@db.example.com:5432/app"})
+
+
+@pytest.mark.parametrize("mode", ["disable", "allow", "prefer"])
+def test_remote_database_url_with_insecure_sslmode_is_rejected(mode: str) -> None:
+    with pytest.raises(ConfigError, match=mode):
+        load_settings({"MCPG_DATABASE_URL": f"postgresql://u:p@db.example.com/app?sslmode={mode}"})
+
+
+@pytest.mark.parametrize("mode", ["require", "verify-ca", "verify-full"])
+def test_remote_database_url_with_enforced_sslmode_is_accepted(mode: str) -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": f"postgresql://u:p@db.example.com/app?sslmode={mode}"})
+    assert f"sslmode={mode}" in settings.database_url
+
+
+def test_remote_database_url_is_accepted_when_allow_insecure_tls_is_true() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@db.example.com/app?sslmode=disable",
+            "MCPG_ALLOW_INSECURE_TLS": "true",
+        }
+    )
+    assert settings.allow_insecure_tls is True
+
+
+def test_insecure_replica_url_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="MCPG_REPLICA_URLS"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_REPLICA_URLS": "postgresql://u:p@replica.example.com/app?sslmode=disable",
+            }
+        )
+
+
+def test_loopback_aliases_are_treated_as_local() -> None:
+    # ``127.0.0.1`` and ``::1`` are local sockets; the validator must
+    # not require sslmode for them.
+    for host in ("127.0.0.1", "[::1]"):
+        load_settings({"MCPG_DATABASE_URL": f"postgresql://u:p@{host}:5432/app"})
+
+
+def test_allow_insecure_tls_appears_in_repr() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert "allow_insecure_tls=False" in repr(settings)

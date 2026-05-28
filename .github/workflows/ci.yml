@@ -40,8 +40,15 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - run: uv sync --frozen
-      - name: Dependency audit
-        run: uv audit
+      # pip-audit consults the PyPI advisory DB + OSV.dev for known
+      # CVEs in resolved dependencies. ``--strict`` upgrades warnings
+      # to failures so a vulnerable transitive dep blocks merge. We
+      # audit the uv-resolved requirements (runtime deps only, project
+      # excluded — the editable install of mcpg itself isn't on PyPI).
+      - name: Dependency audit (pip-audit)
+        run: |
+          uv export --no-dev --no-emit-project --format requirements-txt > /tmp/mcpg-reqs.txt
+          uv run pip-audit --strict --disable-pip -r /tmp/mcpg-reqs.txt
       - name: Bandit static analysis (SAST)
         run: uv run bandit -r src/mcpg --skip B101,B608,B110 -ll
 

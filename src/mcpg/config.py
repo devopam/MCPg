@@ -110,6 +110,10 @@ class Settings:
     rate_limit_window_seconds: int = 60
     rate_limit_heavy_max: int = 5
     rate_limit_heavy_window: int = 60
+    # When True, MCPg accepts a database / replica URL whose sslmode is
+    # disable / allow / prefer even for non-loopback hosts. Off by default
+    # so a misconfigured production deployment fails closed at startup.
+    allow_insecure_tls: bool = False
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -144,7 +148,46 @@ class Settings:
             f"rate_limit_max_requests={self.rate_limit_max_requests}, "
             f"rate_limit_window_seconds={self.rate_limit_window_seconds}, "
             f"rate_limit_heavy_max={self.rate_limit_heavy_max}, "
-            f"rate_limit_heavy_window={self.rate_limit_heavy_window})"
+            f"rate_limit_heavy_window={self.rate_limit_heavy_window}, "
+            f"allow_insecure_tls={self.allow_insecure_tls})"
+        )
+
+
+# sslmode values that don't enforce a TLS-protected connection.
+# Per psycopg / libpq docs: `disable` accepts plaintext, `allow` and
+# `prefer` try TLS but fall back to plaintext on failure. Only
+# `require` / `verify-ca` / `verify-full` actually guarantee TLS.
+_INSECURE_SSLMODES = frozenset({"disable", "allow", "prefer"})
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
+
+
+def _require_tls_or_loopback(var: str, dsn: str) -> None:
+    """Refuse a non-loopback DSN that doesn't enforce TLS.
+
+    Bypassable via ``MCPG_ALLOW_INSECURE_TLS=true``; the caller
+    consults that knob before invoking this validator.
+    """
+    from urllib.parse import parse_qs, urlsplit
+
+    try:
+        parts = urlsplit(dsn)
+    except ValueError as exc:
+        # Not a parseable URL — let the actual psycopg connect raise
+        # its own clearer error rather than block startup here.
+        raise ConfigError(f"{var} is not a valid URL: {exc}") from None
+    host = (parts.hostname or "").lower()
+    if host in _LOOPBACK_HOSTS:
+        return
+    # Default libpq behaviour when sslmode is unset is `prefer`, which
+    # WILL fall back to plaintext on TLS failure — so an unset value
+    # is unsafe for remote hosts, exactly the same as `prefer`.
+    sslmode_values = parse_qs(parts.query).get("sslmode", ["prefer"])
+    sslmode = sslmode_values[-1].lower() if sslmode_values else "prefer"
+    if sslmode in _INSECURE_SSLMODES:
+        raise ConfigError(
+            f"{var} points at a remote host ({host}) but its sslmode is {sslmode!r}; "
+            f"set sslmode=require (or verify-ca / verify-full) in the URL, "
+            f"or pass MCPG_ALLOW_INSECURE_TLS=true to override."
         )
 
 
@@ -404,6 +447,26 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if (raw := env.get("MCPG_RATE_LIMIT_HEAVY_WINDOW")) is not None:
         rate_limit_heavy_window = _parse_positive_int("MCPG_RATE_LIMIT_HEAVY_WINDOW", raw)
 
+    allow_insecure_tls = False
+    if (raw := env.get("MCPG_ALLOW_INSECURE_TLS")) is not None:
+        allow_insecure_tls = _parse_bool("MCPG_ALLOW_INSECURE_TLS", raw)
+
+    # PG TLS enforcement: refuse plaintext to remote hosts unless the
+    # operator has explicitly opted in. Loopback ("localhost",
+    # "127.0.0.1", "::1") is exempt — local sockets / Unix-domain
+    # sockets are a different threat model and require their own
+    # operator opt-in to be reachable from outside the box anyway.
+    if not allow_insecure_tls:
+        for label, dsn in (("MCPG_DATABASE_URL", database_url), *(("MCPG_REPLICA_URLS", u) for u in replica_urls)):
+            _require_tls_or_loopback(label, dsn)
+
+    # Re-arm the audit-trail redaction pattern with the operator's
+    # MCPG_AUDIT_REDACT_KEYS extension (if any) so the very first audit
+    # event the server records honours the configured list.
+    from mcpg.audit import configure_redaction
+
+    configure_redaction(env)
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -439,4 +502,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         rate_limit_window_seconds=rate_limit_window_seconds,
         rate_limit_heavy_max=rate_limit_heavy_max,
         rate_limit_heavy_window=rate_limit_heavy_window,
+        allow_insecure_tls=allow_insecure_tls,
     )
