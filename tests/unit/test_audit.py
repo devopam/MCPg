@@ -190,3 +190,24 @@ async def test_audit_database_tool_is_registered_and_callable() -> None:
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["overall_health"] in ("GOOD", "WARNING", "CRITICAL")
+
+
+async def test_audit_database_log_scanning_escapes_identifiers() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "SELECT version()": [{"version": "PostgreSQL 16.4", "dbname": "prod"}],
+            "SELECT 1 FROM pg_tables": [{"exists": 1}],
+            "SELECT error_severity": [{"error_severity": "ERROR", "count": 2}],
+        }
+    )
+
+    report = await audit_database(driver, "public", log_table='public."injected;--')  # type: ignore[arg-type]
+    assert report.database == "prod"
+
+    # Verify that the pg_tables check ran with unescaped identifiers in parameters
+    pg_tables_call = next(c for c in driver.calls if "pg_tables" in c[0])
+    assert pg_tables_call[1] == ["public", '"injected;--']
+
+    # Verify that the actual log query is safely double-quoted and escaped
+    log_query_call = next(c for c in driver.calls if "error_severity" in c[0])
+    assert 'FROM "public"."""injected;--"' in log_query_call[0]

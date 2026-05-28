@@ -987,10 +987,15 @@ async def _check_custom_logs(driver: SqlDriver, log_table: str | None) -> list[T
         if not exists_rows:
             return issues  # table doesn't exist, gracefully ignore
 
+        # Safely quote identifiers to prevent SQL injection
+        safe_schema = schema_filter.replace('"', '""')
+        safe_table = table_filter.replace('"', '""')
+        safe_log_table = f'"{safe_schema}"."{safe_table}"'
+
         # Run log query safely (supports standard CSV-destination format schemas)
         rows = await driver.execute_query(
             f"SELECT error_severity, count(*) AS count "
-            f"FROM {log_table} "
+            f"FROM {safe_log_table} "
             f"WHERE log_time > now() - interval '1 hour' "
             f"  AND error_severity IN ('ERROR', 'FATAL', 'PANIC') "
             f"GROUP BY error_severity",
