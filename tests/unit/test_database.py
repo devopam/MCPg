@@ -153,3 +153,22 @@ def test_database_applies_configured_pool_sizes() -> None:
 
     assert db._pool.min_size == 2
     assert db._pool.max_size == 12
+
+
+async def test_database_loads_and_applies_timeout_settings() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_STATEMENT_TIMEOUT_MS": "45000",
+            "MCPG_LOCK_TIMEOUT_MS": "1500",
+        }
+    )
+    assert settings.statement_timeout_ms == 45000
+    assert settings.lock_timeout_ms == 1500
+
+    db = Database(settings, pool=FakePool())  # type: ignore[arg-type]
+    await db.connect()
+    driver = db.driver()
+    assert hasattr(driver, "_statement_timeout_ms")
+    assert driver._statement_timeout_ms == 45000  # type: ignore[attr-defined]
+    assert driver._lock_timeout_ms == 1500  # type: ignore[attr-defined]

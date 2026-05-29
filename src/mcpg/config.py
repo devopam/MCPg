@@ -114,6 +114,8 @@ class Settings:
     # disable / allow / prefer even for non-loopback hosts. Off by default
     # so a misconfigured production deployment fails closed at startup.
     allow_insecure_tls: bool = False
+    statement_timeout_ms: int = 30000
+    lock_timeout_ms: int = 5000
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -149,7 +151,9 @@ class Settings:
             f"rate_limit_window_seconds={self.rate_limit_window_seconds}, "
             f"rate_limit_heavy_max={self.rate_limit_heavy_max}, "
             f"rate_limit_heavy_window={self.rate_limit_heavy_window}, "
-            f"allow_insecure_tls={self.allow_insecure_tls})"
+            f"allow_insecure_tls={self.allow_insecure_tls}, "
+            f"statement_timeout_ms={self.statement_timeout_ms}, "
+            f"lock_timeout_ms={self.lock_timeout_ms})"
         )
 
 
@@ -479,6 +483,26 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         for idx, replica_dsn in enumerate(replica_urls):
             _require_tls_or_loopback(f"MCPG_REPLICA_URLS[{idx}]", replica_dsn)
 
+    statement_timeout_ms = 30000
+    if (raw := env.get("MCPG_STATEMENT_TIMEOUT_MS")) is not None:
+        try:
+            val = int(raw)
+            if val < 0:
+                raise ValueError()
+            statement_timeout_ms = val
+        except ValueError:
+            raise ConfigError(f"MCPG_STATEMENT_TIMEOUT_MS must be a non-negative integer (got {raw!r})") from None
+
+    lock_timeout_ms = 5000
+    if (raw := env.get("MCPG_LOCK_TIMEOUT_MS")) is not None:
+        try:
+            val = int(raw)
+            if val < 0:
+                raise ValueError()
+            lock_timeout_ms = val
+        except ValueError:
+            raise ConfigError(f"MCPG_LOCK_TIMEOUT_MS must be a non-negative integer (got {raw!r})") from None
+
     # Re-arm the audit-trail redaction pattern with the operator's
     # MCPG_AUDIT_REDACT_KEYS extension (if any) so the very first audit
     # event the server records honours the configured list.
@@ -522,4 +546,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         rate_limit_heavy_max=rate_limit_heavy_max,
         rate_limit_heavy_window=rate_limit_heavy_window,
         allow_insecure_tls=allow_insecure_tls,
+        statement_timeout_ms=statement_timeout_ms,
+        lock_timeout_ms=lock_timeout_ms,
     )

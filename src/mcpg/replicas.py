@@ -200,16 +200,81 @@ class ReplicaPool:
         await self.close()
 
 
+class TimeoutSqlDriver(SqlDriver):
+    """SqlDriver that sets statement and lock timeouts before every query."""
+
+    def __init__(
+        self,
+        *args: Any,
+        statement_timeout_ms: int = 30000,
+        lock_timeout_ms: int = 5000,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._statement_timeout_ms = statement_timeout_ms
+        self._lock_timeout_ms = lock_timeout_ms
+
+    async def _execute_with_connection(  # type: ignore[no-untyped-def]
+        self,
+        connection,
+        query,
+        params,
+        force_readonly,
+    ):
+        async with connection.cursor() as cursor:
+            await cursor.execute(f"SET statement_timeout = {self._statement_timeout_ms}")
+            await cursor.execute(f"SET lock_timeout = {self._lock_timeout_ms}")
+        return await super()._execute_with_connection(connection, query, params, force_readonly)
+
+
+class TenantTimeoutSqlDriver(TenantSqlDriver):
+    """TenantSqlDriver that sets statement and lock timeouts before every query."""
+
+    def __init__(
+        self,
+        *args: Any,
+        statement_timeout_ms: int = 30000,
+        lock_timeout_ms: int = 5000,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._statement_timeout_ms = statement_timeout_ms
+        self._lock_timeout_ms = lock_timeout_ms
+
+    async def _execute_with_connection(  # type: ignore[no-untyped-def]
+        self,
+        connection,
+        query,
+        params,
+        force_readonly,
+    ):
+        async with connection.cursor() as cursor:
+            await cursor.execute(f"SET statement_timeout = {self._statement_timeout_ms}")
+            await cursor.execute(f"SET lock_timeout = {self._lock_timeout_ms}")
+        return await super()._execute_with_connection(connection, query, params, force_readonly)  # type: ignore[no-untyped-call]
+
+
 def _make_driver_for_pool(
     pool: DbConnPool,
     *,
     default_role: str | None,
     enable_tenancy: bool,
+    statement_timeout_ms: int = 30000,
+    lock_timeout_ms: int = 5000,
 ) -> SqlDriver:
-    """Construct the per-pool driver — tenanted if tenancy is configured."""
+    """Construct the per-pool driver — tenanted and timeout-configured."""
     if enable_tenancy:
-        return TenantSqlDriver(conn=pool, default_role=default_role)
-    return SqlDriver(conn=pool)
+        return TenantTimeoutSqlDriver(
+            conn=pool,
+            default_role=default_role,
+            statement_timeout_ms=statement_timeout_ms,
+            lock_timeout_ms=lock_timeout_ms,
+        )
+    return TimeoutSqlDriver(
+        conn=pool,
+        statement_timeout_ms=statement_timeout_ms,
+        lock_timeout_ms=lock_timeout_ms,
+    )
 
 
 class RoutedSqlDriver(SqlDriver):

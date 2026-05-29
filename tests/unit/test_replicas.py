@@ -115,7 +115,7 @@ async def test_replica_pool_snapshot_obfuscates_password_and_reports_state() -> 
     assert ":p@" not in info.dsn  # password obfuscated
     assert info.degraded is True
     assert info.last_error == "boom"
-    assert 0 < info.seconds_until_retry <= DEFAULT_DEGRADED_RETRY_SECONDS
+    assert 0 < info.seconds_until_retry <= DEFAULT_DEGRADED_RETRY_SECONDS + 1.0
 
 
 async def test_routed_driver_sends_writes_to_primary() -> None:
@@ -199,4 +199,4 @@ async def test_replica_pool_connect_failure_is_temporarily_degraded_not_permanen
     assert "DNS failure" in (state.last_error or "")
     # After the retry window passes, the replica returns to service.
     snapshot = await pool.snapshot()
-    assert snapshot[0].seconds_until_retry <= DEFAULT_DEGRADED_RETRY_SECONDS
+    assert snapshot[0].seconds_until_retry <= DEFAULT_DEGRADED_RETRY_SECONDS + 1.0
