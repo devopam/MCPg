@@ -8,6 +8,7 @@ import sys
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+from mcpg import __version__
 from mcpg.config import ConfigError, load_settings
 from mcpg.server import run
 
@@ -18,6 +19,11 @@ def main() -> int:
     Returns:
         A process exit code: 0 on clean shutdown, 1 on a configuration error.
     """
+    # SECURITY.md asks bug reporters to include ``mcpg --version`` in
+    # their report; this is the surface that gives them an answer.
+    if len(sys.argv) > 1 and sys.argv[1] in {"--version", "-V"}:
+        print(f"mcpg {__version__}")
+        return 0
     try:
         settings = load_settings()
     except ConfigError as exc:

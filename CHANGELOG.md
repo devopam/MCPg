@@ -6,7 +6,61 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-29
+
+Inaugural PyPI release. Three landings since 0.5.0: security
+hardening, license switch to MIT, and the packaging surface needed
+to publish to PyPI.
+
+### Added
+
+- **`mcpg --version` (`mcpg -V`) flag.** Prints `mcpg <version>` so
+  bug reporters can paste the line `SECURITY.md` asks for. Backed
+  by `mcpg.__version__`.
+
+- **PyPI publishing pipeline.** New `.github/workflows/publish.yml`
+  triggers on `v*.*.*` tag pushes and runs: build → twine check →
+  TestPyPI upload → install-smoke against the published TestPyPI
+  artifact (deps resolved from real PyPI first, then `mcpg` with
+  `--no-deps` from TestPyPI — closes a dependency-confusion vector)
+  → reviewer-gated PyPI upload via Trusted Publishing OIDC → cut a
+  GitHub Release with notes pulled from `CHANGELOG.md`. The full
+  playbook lives at `docs/release-process.md`.
+
+- **`pyproject.toml` packaging metadata.** Adds `authors`,
+  `maintainers`, `keywords`, `classifiers`, `[project.urls]`
+  (Homepage / Documentation / Repository / Issues / Changelog /
+  Release notes / Security), and `[tool.hatch.build.targets.sdist]`
+  to keep the sdist tight. Adds `build>=1.2` + `twine>=5.1` to the
+  `dev` dep group.
+
+- **"Install from PyPI" section in `docs/installation.md`.**
+  Covers both `pip install mcpg` and `uv tool install mcpg`.
+
 ### Security
+
+- **PG TLS enforcement at startup.** `load_settings` now refuses to
+  start when `MCPG_DATABASE_URL` (or any entry in
+  `MCPG_REPLICA_URLS`) points at a non-loopback host with an
+  `sslmode` of `disable` / `allow` / `prefer` (or no `sslmode` set —
+  libpq's default falls back to plaintext). Uses
+  `psycopg.conninfo.conninfo_to_dict` so the check covers both URI
+  DSNs and keyword/value DSNs (e.g. `host=db sslmode=disable`) plus
+  failover multi-host URIs (e.g. `postgresql://h1,h2/db`); the
+  earlier `urllib.parse`-based path silently bypassed the check on
+  both shapes. DSNs with no explicit host are refused too — libpq
+  can resolve `PGHOST` to a non-loopback default. Bypassed with the
+  explicit opt-out `MCPG_ALLOW_INSECURE_TLS=true`. Loopback hosts
+  (`localhost`, `127.0.0.1`, `::1`) are exempt. Replica errors
+  identify the offending index (`MCPG_REPLICA_URLS[1]`) for
+  diagnostics.
+
+  > **Upgrade note.** This is a default-tightening change. Any
+  > deployment already configured with a remote DSN whose `sslmode`
+  > is `disable` / `allow` / `prefer` (or unset) will fail to
+  > start after upgrade. Either set `sslmode=require` (or
+  > `verify-ca` / `verify-full`) in the DSN — strongly recommended —
+  > or opt out with `MCPG_ALLOW_INSECURE_TLS=true`.
 
 - **PG TLS enforcement at startup.** `load_settings` now refuses to
   start when `MCPG_DATABASE_URL` (or any entry in

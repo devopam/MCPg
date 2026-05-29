@@ -6,10 +6,30 @@ document — it is updated as installation and configuration options change.
 ## Prerequisites
 
 - **Python 3.12 or newer**.
-- **PostgreSQL 14–17** reachable from where MCPg runs. (Older versions may
+- **PostgreSQL 14–18** reachable from where MCPg runs. (Older versions may
   work but are not tested.)
 - **[uv](https://docs.astral.sh/uv/)** for installing from source.
 - Optionally **Docker**, to run MCPg as a container.
+
+## Install from PyPI (recommended)
+
+```bash
+pip install mcpg
+# or, if you prefer uv:
+uv tool install mcpg
+```
+
+`pip install mcpg` puts the `mcpg` console script on your PATH and pulls
+the runtime deps (`mcp[cli]`, `psycopg[binary]`, `psycopg-pool`, `pglast`,
+`httpx`, `pyjwt[crypto]`). Verify with:
+
+```bash
+mcpg --version
+```
+
+`uv tool install mcpg` is the equivalent for the `uv` toolchain — it
+isolates MCPg in its own venv and exposes the `mcpg` script globally,
+without affecting other Python projects on the same machine.
 
 ## Install from source
 
@@ -20,7 +40,8 @@ uv sync
 ```
 
 `uv sync` creates a virtual environment and installs MCPg with the `mcpg`
-console script. A PyPI package is planned for a future release.
+console script. Pick this path if you want to follow `main`, run the test
+suite, or develop against the codebase.
 
 ## Install with Docker
 
