@@ -316,11 +316,25 @@ mkdir -p /tmp/mcpg-smoke && cd /tmp/mcpg-smoke
 uv venv .venv
 . .venv/bin/activate
 
-# --index-url is TestPyPI for mcpg itself; --extra-index-url is real
-# PyPI for the transitive deps (TestPyPI doesn't mirror them).
-pip install \
+# Two-step install closes a **dependency confusion** vector:
+# TestPyPI is a public sandbox where ANYONE can register a package,
+# so an `--extra-index-url=pypi` combined with `--index-url=testpypi`
+# would let an attacker shadow real PyPI deps (e.g. publishing a
+# `pglast==99.99.0` on TestPyPI that pip silently prefers). Instead:
+#
+#   1. Resolve the runtime deps from the locked source-tree manifest
+#      against the **real** PyPI only.
+#   2. Install MCPg itself from TestPyPI with --no-deps.
+#
+# Run step 1 from a checkout of the source tree so the dep list
+# stays canonically derived from pyproject.toml.
+(cd /path/to/MCPg && uv export \
+    --no-dev --no-emit-project --no-hashes \
+    --format requirements-txt) > /tmp/mcpg-deps.txt
+pip install -r /tmp/mcpg-deps.txt
+
+pip install --no-deps \
     --index-url https://test.pypi.org/simple/ \
-    --extra-index-url https://pypi.org/simple/ \
     mcpg==0.5.1
 
 python -c "import mcpg; print(mcpg.__version__)"
@@ -426,16 +440,29 @@ jobs:
     needs: publish-testpypi
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install from TestPyPI
+      - name: Install runtime deps from real PyPI (anti-confusion)
+        # TestPyPI is a public sandbox; combining its index with PyPI
+        # via --extra-index-url lets an attacker shadow our deps with
+        # a higher-numbered fake. Pin step 1 to real PyPI only,
+        # derived canonically from pyproject.toml via `uv export`.
+        run: |
+          uv export --no-dev --no-emit-project --no-hashes \
+            --format requirements-txt > /tmp/mcpg-deps.txt
+          python -m pip install -r /tmp/mcpg-deps.txt
+      - name: Install mcpg from TestPyPI (no deps)
         run: |
           # GITHUB_REF_NAME = "v0.5.1" → strip the leading "v".
           VER="${GITHUB_REF_NAME#v}"
-          python -m pip install \
+          python -m pip install --no-deps \
             --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
             "mcpg==${VER}"
       - name: Import + CLI smoke
         run: |
