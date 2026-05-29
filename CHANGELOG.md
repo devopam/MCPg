@@ -6,6 +6,56 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **PG TLS enforcement at startup.** `load_settings` now refuses to
+  start when `MCPG_DATABASE_URL` (or any entry in
+  `MCPG_REPLICA_URLS`) points at a non-loopback host with an
+  `sslmode` of `disable` / `allow` / `prefer` (or no `sslmode` set —
+  libpq's default falls back to plaintext). Uses
+  `psycopg.conninfo.conninfo_to_dict` so the check covers both URI
+  DSNs and keyword/value DSNs (e.g. `host=db sslmode=disable`) plus
+  failover multi-host URIs (e.g. `postgresql://h1,h2/db`); the
+  earlier `urllib.parse`-based path silently bypassed the check on
+  both shapes. DSNs with no explicit host are refused too — libpq
+  can resolve `PGHOST` to a non-loopback default. Bypassed with the
+  explicit opt-out `MCPG_ALLOW_INSECURE_TLS=true`. Loopback hosts
+  (`localhost`, `127.0.0.1`, `::1`) are exempt. Replica errors
+  identify the offending index (`MCPG_REPLICA_URLS[1]`) for
+  diagnostics.
+
+- **Tool-argument audit redaction upgraded to regex pattern match.**
+  `mcpg.audit.redact_arguments` and the persisted audit-trail
+  walker (`mcpg.audit_trail._redact`) now share a case-insensitive
+  regex matched via `re.search` against argument key names, so
+  `password` also masks `PGPASSWORD` / `user_password` /
+  `app.password`. Default patterns: `password`, `passwd`, `secret`,
+  `token`, `api[_-]?key`, `bearer`, `authorization`, `database_url`,
+  `dsn`, `conninfo`. Operators extend the list via
+  `MCPG_AUDIT_REDACT_KEYS` (comma-separated regex fragments). Walks
+  nested dicts / lists / tuples so credentials buried in result
+  payloads are masked too.
+
+- **Supply-chain CI hardening (dependency audit fix).** The
+  `security` job in `.github/workflows/ci.yml` was invoking
+  `uv audit` — a subcommand `uv` does not provide — so the
+  dependency-vulnerability step has been a silent no-op since it
+  was added. Replaced with `pip-audit --strict` over the
+  `uv export`-resolved runtime requirements; the existing bandit
+  SAST step is unchanged. Adds `pip-audit>=2.7` to the `dev`
+  dependency group.
+
+- **Vulnerability-reporting policy + hardening roadmap shipped.**
+  New `SECURITY.md` at the repo root documents supported versions,
+  the reporting address (`devopam@gmail.com`), the 3-business-day
+  acknowledgement target, and the 90-day coordinated-disclosure
+  window. New `docs/security-hardening.md` is a living checklist
+  of robust-security features with status indicators
+  (`✅` shipped / `🟡` partial / `⬜` queued) covering what's on
+  `main` today plus the queued items (HTTP request limits +
+  security headers, audit-log HMAC chain, pluggable secrets
+  backend, subprocess hardening, graceful shutdown).
+
 ### Changed
 
 - **License: relicensed from AGPL-3.0-or-later to MIT.** New `LICENSE`

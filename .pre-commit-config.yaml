@@ -24,7 +24,11 @@ repos:
         require_serial: true
       - id: bandit
         name: bandit (sast)
-        entry: uv run bandit -r src/mcpg
+        # Match CI flags exactly so a clean local commit also passes
+        # `security` in .github/workflows/ci.yml. Bandit doesn't
+        # auto-discover [tool.bandit] from pyproject.toml; the skips
+        # have to be passed on the command line.
+        entry: uv run bandit -r src/mcpg --skip B101,B608,B110 -ll
         language: system
         types: [python]
         pass_filenames: false

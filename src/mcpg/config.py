@@ -110,6 +110,10 @@ class Settings:
     rate_limit_window_seconds: int = 60
     rate_limit_heavy_max: int = 5
     rate_limit_heavy_window: int = 60
+    # When True, MCPg accepts a database / replica URL whose sslmode is
+    # disable / allow / prefer even for non-loopback hosts. Off by default
+    # so a misconfigured production deployment fails closed at startup.
+    allow_insecure_tls: bool = False
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -144,7 +148,64 @@ class Settings:
             f"rate_limit_max_requests={self.rate_limit_max_requests}, "
             f"rate_limit_window_seconds={self.rate_limit_window_seconds}, "
             f"rate_limit_heavy_max={self.rate_limit_heavy_max}, "
-            f"rate_limit_heavy_window={self.rate_limit_heavy_window})"
+            f"rate_limit_heavy_window={self.rate_limit_heavy_window}, "
+            f"allow_insecure_tls={self.allow_insecure_tls})"
+        )
+
+
+# sslmode values that don't enforce a TLS-protected connection.
+# Per psycopg / libpq docs: `disable` accepts plaintext, `allow` and
+# `prefer` try TLS but fall back to plaintext on failure. Only
+# `require` / `verify-ca` / `verify-full` actually guarantee TLS.
+_INSECURE_SSLMODES = frozenset({"disable", "allow", "prefer"})
+# Hosts that don't require TLS — a connection to one of these can't
+# leave the box. An *empty* host (i.e. unset in the DSN) is NOT in
+# this set: libpq falls back to ``PGHOST`` then to a default that
+# may not be loopback, so we refuse to second-guess it and demand
+# an explicit ``MCPG_ALLOW_INSECURE_TLS=true`` override instead.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _require_tls_or_loopback(var: str, dsn: str) -> None:
+    """Refuse a non-loopback DSN that doesn't enforce TLS.
+
+    Uses ``psycopg.conninfo.conninfo_to_dict`` (rather than
+    ``urllib.parse``) so the check handles every connection-string
+    format libpq itself does — key-value strings
+    (``host=db sslmode=disable``) and multi-host URIs
+    (``postgresql://h1,h2/db``) included.
+
+    Bypassable via ``MCPG_ALLOW_INSECURE_TLS=true``; the caller
+    consults that knob before invoking this validator.
+    """
+    from psycopg.conninfo import conninfo_to_dict
+
+    try:
+        params = conninfo_to_dict(dsn)
+    except Exception as exc:
+        raise ConfigError(f"{var} is not a valid PostgreSQL connection string: {exc}") from None
+
+    # ``host`` may be a comma-separated list of failover candidates;
+    # libpq treats each entry independently. We treat the DSN as
+    # remote if ANY listed host is non-loopback — partial coverage
+    # would be a footgun.
+    raw_host = str(params.get("host", "")).strip()
+    hosts = [h.strip().lower().strip("[]") for h in raw_host.split(",") if h.strip()]
+    if not hosts:
+        raise ConfigError(
+            f"{var} has no explicit host; libpq will fall back to PGHOST / a default "
+            f"that may not be loopback. Set host=localhost / 127.0.0.1 in the DSN, "
+            f"or pass MCPG_ALLOW_INSECURE_TLS=true to override."
+        )
+    remote_hosts = [h for h in hosts if h not in _LOOPBACK_HOSTS]
+    if not remote_hosts:
+        return
+    sslmode = str(params.get("sslmode", "prefer")).strip().lower()
+    if sslmode in _INSECURE_SSLMODES:
+        raise ConfigError(
+            f"{var} points at a remote host ({', '.join(remote_hosts)}) but its sslmode "
+            f"is {sslmode!r}; set sslmode=require (or verify-ca / verify-full) in the "
+            f"connection string, or pass MCPG_ALLOW_INSECURE_TLS=true to override."
         )
 
 
@@ -404,6 +465,27 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if (raw := env.get("MCPG_RATE_LIMIT_HEAVY_WINDOW")) is not None:
         rate_limit_heavy_window = _parse_positive_int("MCPG_RATE_LIMIT_HEAVY_WINDOW", raw)
 
+    allow_insecure_tls = False
+    if (raw := env.get("MCPG_ALLOW_INSECURE_TLS")) is not None:
+        allow_insecure_tls = _parse_bool("MCPG_ALLOW_INSECURE_TLS", raw)
+
+    # PG TLS enforcement: refuse plaintext to remote hosts unless the
+    # operator has explicitly opted in. Loopback ("localhost",
+    # "127.0.0.1", "::1") is exempt — local sockets / Unix-domain
+    # sockets are a different threat model and require their own
+    # operator opt-in to be reachable from outside the box anyway.
+    if not allow_insecure_tls:
+        _require_tls_or_loopback("MCPG_DATABASE_URL", database_url)
+        for idx, replica_dsn in enumerate(replica_urls):
+            _require_tls_or_loopback(f"MCPG_REPLICA_URLS[{idx}]", replica_dsn)
+
+    # Re-arm the audit-trail redaction pattern with the operator's
+    # MCPG_AUDIT_REDACT_KEYS extension (if any) so the very first audit
+    # event the server records honours the configured list.
+    from mcpg.audit import configure_redaction
+
+    configure_redaction(env)
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -439,4 +521,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         rate_limit_window_seconds=rate_limit_window_seconds,
         rate_limit_heavy_max=rate_limit_heavy_max,
         rate_limit_heavy_window=rate_limit_heavy_window,
+        allow_insecure_tls=allow_insecure_tls,
     )
