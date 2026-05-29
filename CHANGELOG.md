@@ -37,6 +37,24 @@ to publish to PyPI.
 - **"Install from PyPI" section in `docs/installation.md`.**
   Covers both `pip install mcpg` and `uv tool install mcpg`.
 
+- **Per-session `statement_timeout` / `lock_timeout`** (PR #32).
+  Every checked-out pool connection has
+  `statement_timeout=MCPG_STATEMENT_TIMEOUT_MS` (default 30000) and
+  `lock_timeout=MCPG_LOCK_TIMEOUT_MS` (default 5000) applied once
+  per connection via a single batched `SET` — runaway queries and
+  hanging lock waits self-terminate without operator intervention.
+  Applies to the primary pool and every replica pool.
+
+### Changed
+
+- **Hardened multi-stage Docker image** (PR #32). New runtime stage
+  drops the build toolchain entirely; runs as a non-root user
+  (`uid=10001 / gid=10001`) with a `nologin` shell. Application
+  files stay owned by root and read-only to the `mcpg` user so a
+  remote-code-execution bug can't modify the application on disk
+  to persist. Entrypoint switches from `uv run` to `python -m mcpg`
+  for a smaller process tree.
+
 ### Security
 
 - **PG TLS enforcement at startup.** `load_settings` now refuses to
