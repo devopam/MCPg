@@ -221,9 +221,15 @@ class TimeoutSqlDriver(SqlDriver):
         params,
         force_readonly,
     ):
-        async with connection.cursor() as cursor:
-            await cursor.execute(f"SET statement_timeout = {self._statement_timeout_ms}")
-            await cursor.execute(f"SET lock_timeout = {self._lock_timeout_ms}")
+        if not getattr(connection, "_timeouts_configured", False):
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    f"SET statement_timeout = {self._statement_timeout_ms}; SET lock_timeout = {self._lock_timeout_ms}"
+                )
+            try:
+                connection._timeouts_configured = True
+            except AttributeError:
+                pass
         return await super()._execute_with_connection(connection, query, params, force_readonly)
 
 
@@ -248,9 +254,15 @@ class TenantTimeoutSqlDriver(TenantSqlDriver):
         params,
         force_readonly,
     ):
-        async with connection.cursor() as cursor:
-            await cursor.execute(f"SET statement_timeout = {self._statement_timeout_ms}")
-            await cursor.execute(f"SET lock_timeout = {self._lock_timeout_ms}")
+        if not getattr(connection, "_timeouts_configured", False):
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    f"SET statement_timeout = {self._statement_timeout_ms}; SET lock_timeout = {self._lock_timeout_ms}"
+                )
+            try:
+                connection._timeouts_configured = True
+            except AttributeError:
+                pass
         return await super()._execute_with_connection(connection, query, params, force_readonly)  # type: ignore[no-untyped-call]
 
 

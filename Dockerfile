@@ -21,8 +21,7 @@ COPY --from=builder /app/README.md /app/README.md
 
 # Create unprivileged secure user UID 10001 / GID 10001
 RUN groupadd -g 10001 mcpg && \
-    useradd -r -u 10001 -g mcpg -d /app -s /sbin/nologin mcpg && \
-    chown -R mcpg:mcpg /app
+    useradd -r -u 10001 -g mcpg -d /app -s /sbin/nologin mcpg
 
 USER mcpg
 
