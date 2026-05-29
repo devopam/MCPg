@@ -445,3 +445,53 @@ def test_loopback_aliases_are_treated_as_local() -> None:
 def test_allow_insecure_tls_appears_in_repr() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
     assert "allow_insecure_tls=False" in repr(settings)
+
+
+def test_keyvalue_dsn_with_insecure_sslmode_is_rejected() -> None:
+    # libpq accepts keyword/value DSNs (host=... sslmode=...). The
+    # previous urllib-based check failed to extract the host and
+    # silently treated the DSN as loopback. Use a key-value form to
+    # pin the conninfo_to_dict path.
+    with pytest.raises(ConfigError, match=r"db\.example\.com"):
+        load_settings({"MCPG_DATABASE_URL": "host=db.example.com sslmode=disable user=u password=p dbname=app"})
+
+
+def test_multi_host_uri_with_insecure_sslmode_is_rejected() -> None:
+    # ``postgresql://h1,h2/db`` is libpq's failover syntax. The
+    # comma breaks urllib's host extraction; conninfo_to_dict keeps
+    # the host list intact. Any non-loopback entry should fail the
+    # validator.
+    with pytest.raises(ConfigError, match="host1"):
+        load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@host1,host2:5432,5432/app?sslmode=disable"})
+
+
+def test_dsn_without_explicit_host_is_rejected() -> None:
+    # An empty host means libpq falls back to ``PGHOST`` or a default
+    # that may not be loopback. Refuse unless the operator explicitly
+    # opts in.
+    with pytest.raises(ConfigError, match="no explicit host"):
+        load_settings({"MCPG_DATABASE_URL": "postgresql:///app?sslmode=disable"})
+
+
+def test_dsn_without_explicit_host_is_accepted_when_allow_insecure_tls_is_true() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql:///app",
+            "MCPG_ALLOW_INSECURE_TLS": "true",
+        }
+    )
+    assert settings.allow_insecure_tls is True
+
+
+def test_replica_url_error_includes_index_for_diagnostics() -> None:
+    # Multiple replicas with one misconfigured entry — the error
+    # message must identify WHICH replica is at fault.
+    with pytest.raises(ConfigError, match=r"MCPG_REPLICA_URLS\[1\]"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_REPLICA_URLS": (
+                    "postgresql://u:p@replica-1/db?sslmode=require, postgresql://u:p@replica-2/db?sslmode=disable"
+                ),
+            }
+        )

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mcpg._vendor.sql import SqlDriver, obfuscate_password
-from mcpg.audit import _is_secret_key
+from mcpg.audit import is_secret_key
 
 AUDIT_SCHEMA = "mcpg_audit"
 AUDIT_TABLE = "events"
@@ -64,7 +64,7 @@ def _redact(value: Any) -> Any:
     Non-string scalars (ints, bools, None) pass through unchanged.
     """
     if isinstance(value, dict):
-        return {k: _MASK if isinstance(k, str) and _is_secret_key(k) else _redact(v) for k, v in value.items()}
+        return {k: _MASK if isinstance(k, str) and is_secret_key(k) else _redact(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_redact(item) for item in value]
     if isinstance(value, tuple):

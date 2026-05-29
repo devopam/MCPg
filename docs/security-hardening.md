@@ -127,7 +127,7 @@ left in place.
 request body size limit, no per-request timeout, no
 `Content-Security-Policy` / `X-Frame-Options` /
 `Strict-Transport-Security` / `Referrer-Policy` headers, and no
-configurable CORS allow-list.
+configurable CORS allowlist.
 
 **Solution.** New `_SecurityHeadersMiddleware` adds the headers
 unconditionally (operators can disable per header via env). New

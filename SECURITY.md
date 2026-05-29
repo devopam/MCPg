@@ -48,7 +48,7 @@ release notes unless they prefer otherwise.
 - Vulnerabilities in the vendored SQL-safety kernel at
   `src/mcpg/_vendor/sql/` — those go upstream to
   `crystaldba/postgres-mcp`
-- Issues that require an attacker already to have `unrestricted`
+- Issues that require an attacker to already have `unrestricted`
   access mode AND `MCPG_ALLOW_DDL=true` (that combination is
   by-design root access)
 - Vulnerabilities in third-party Python dependencies — report

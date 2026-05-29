@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcpg import audit
+from mcpg import audit, audit_trail
 from mcpg.config import load_settings
 
 _DB_URL = "postgresql://u:p@localhost/db"
@@ -101,5 +101,16 @@ def test_load_settings_arms_the_audit_redaction_pattern() -> None:
     # the very first tool call honours the extended pattern.
     load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_AUDIT_REDACT_KEYS": "tenant_secret"})
     redacted = audit.redact_arguments({"tenant_secret": "abc", "ordinary": "value"})
+    assert redacted["tenant_secret"] == "****"
+    assert redacted["ordinary"] == "value"
+
+
+def test_load_settings_pattern_also_reaches_audit_trail_redact() -> None:
+    # ``mcpg.audit_trail._redact`` shares the same ``is_secret_key``
+    # predicate as the in-memory logger, so the
+    # ``MCPG_AUDIT_REDACT_KEYS`` extension must scrub keys before they
+    # land in ``mcpg_audit.events`` too.
+    load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_AUDIT_REDACT_KEYS": "tenant_secret"})
+    redacted = audit_trail._redact({"tenant_secret": "abc", "ordinary": "value"})
     assert redacted["tenant_secret"] == "****"
     assert redacted["ordinary"] == "value"

@@ -72,7 +72,13 @@ def configure_redaction(env: Mapping[str, str] | None = None) -> None:
     _secret_name_re = _compile_secret_name_pattern(source.get("MCPG_AUDIT_REDACT_KEYS"))
 
 
-def _is_secret_key(name: str) -> bool:
+def is_secret_key(name: str) -> bool:
+    """Return True when ``name`` matches the configured secret-name pattern.
+
+    Public so other audit-adjacent modules (notably
+    :mod:`mcpg.audit_trail`) can share the same key-match decision
+    instead of reaching into a private helper.
+    """
     return bool(_secret_name_re.search(name))
 
 
@@ -96,7 +102,7 @@ def _redact_value(value: Any) -> Any:
     (``int`` / ``bool`` / ``None``) pass through unchanged.
     """
     if isinstance(value, dict):
-        return {k: _MASK if isinstance(k, str) and _is_secret_key(k) else _redact_value(v) for k, v in value.items()}
+        return {k: _MASK if isinstance(k, str) and is_secret_key(k) else _redact_value(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_redact_value(item) for item in value]
     if isinstance(value, tuple):

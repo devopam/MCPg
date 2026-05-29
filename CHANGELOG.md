@@ -12,10 +12,17 @@ adheres to [Semantic Versioning](https://semver.org/).
   start when `MCPG_DATABASE_URL` (or any entry in
   `MCPG_REPLICA_URLS`) points at a non-loopback host with an
   `sslmode` of `disable` / `allow` / `prefer` (or no `sslmode` set —
-  libpq's default falls back to plaintext). The check is bypassed
-  with the explicit opt-out `MCPG_ALLOW_INSECURE_TLS=true` for
-  development-only deployments. Loopback hosts (`localhost`,
-  `127.0.0.1`, `::1`) are exempt.
+  libpq's default falls back to plaintext). Uses
+  `psycopg.conninfo.conninfo_to_dict` so the check covers both URI
+  DSNs and keyword/value DSNs (e.g. `host=db sslmode=disable`) plus
+  failover multi-host URIs (e.g. `postgresql://h1,h2/db`); the
+  earlier `urllib.parse`-based path silently bypassed the check on
+  both shapes. DSNs with no explicit host are refused too — libpq
+  can resolve `PGHOST` to a non-loopback default. Bypassed with the
+  explicit opt-out `MCPG_ALLOW_INSECURE_TLS=true`. Loopback hosts
+  (`localhost`, `127.0.0.1`, `::1`) are exempt. Replica errors
+  identify the offending index (`MCPG_REPLICA_URLS[1]`) for
+  diagnostics.
 
 - **Tool-argument audit redaction upgraded to regex pattern match.**
   `mcpg.audit.redact_arguments` and the persisted audit-trail

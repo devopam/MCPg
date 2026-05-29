@@ -158,36 +158,54 @@ class Settings:
 # `prefer` try TLS but fall back to plaintext on failure. Only
 # `require` / `verify-ca` / `verify-full` actually guarantee TLS.
 _INSECURE_SSLMODES = frozenset({"disable", "allow", "prefer"})
-_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
+# Hosts that don't require TLS — a connection to one of these can't
+# leave the box. An *empty* host (i.e. unset in the DSN) is NOT in
+# this set: libpq falls back to ``PGHOST`` then to a default that
+# may not be loopback, so we refuse to second-guess it and demand
+# an explicit ``MCPG_ALLOW_INSECURE_TLS=true`` override instead.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 def _require_tls_or_loopback(var: str, dsn: str) -> None:
     """Refuse a non-loopback DSN that doesn't enforce TLS.
 
+    Uses ``psycopg.conninfo.conninfo_to_dict`` (rather than
+    ``urllib.parse``) so the check handles every connection-string
+    format libpq itself does — key-value strings
+    (``host=db sslmode=disable``) and multi-host URIs
+    (``postgresql://h1,h2/db``) included.
+
     Bypassable via ``MCPG_ALLOW_INSECURE_TLS=true``; the caller
     consults that knob before invoking this validator.
     """
-    from urllib.parse import parse_qs, urlsplit
+    from psycopg.conninfo import conninfo_to_dict
 
     try:
-        parts = urlsplit(dsn)
-    except ValueError as exc:
-        # Not a parseable URL — let the actual psycopg connect raise
-        # its own clearer error rather than block startup here.
-        raise ConfigError(f"{var} is not a valid URL: {exc}") from None
-    host = (parts.hostname or "").lower()
-    if host in _LOOPBACK_HOSTS:
+        params = conninfo_to_dict(dsn)
+    except Exception as exc:
+        raise ConfigError(f"{var} is not a valid PostgreSQL connection string: {exc}") from None
+
+    # ``host`` may be a comma-separated list of failover candidates;
+    # libpq treats each entry independently. We treat the DSN as
+    # remote if ANY listed host is non-loopback — partial coverage
+    # would be a footgun.
+    raw_host = str(params.get("host", "")).strip()
+    hosts = [h.strip().lower().strip("[]") for h in raw_host.split(",") if h.strip()]
+    if not hosts:
+        raise ConfigError(
+            f"{var} has no explicit host; libpq will fall back to PGHOST / a default "
+            f"that may not be loopback. Set host=localhost / 127.0.0.1 in the DSN, "
+            f"or pass MCPG_ALLOW_INSECURE_TLS=true to override."
+        )
+    remote_hosts = [h for h in hosts if h not in _LOOPBACK_HOSTS]
+    if not remote_hosts:
         return
-    # Default libpq behaviour when sslmode is unset is `prefer`, which
-    # WILL fall back to plaintext on TLS failure — so an unset value
-    # is unsafe for remote hosts, exactly the same as `prefer`.
-    sslmode_values = parse_qs(parts.query).get("sslmode", ["prefer"])
-    sslmode = sslmode_values[-1].lower() if sslmode_values else "prefer"
+    sslmode = str(params.get("sslmode", "prefer")).strip().lower()
     if sslmode in _INSECURE_SSLMODES:
         raise ConfigError(
-            f"{var} points at a remote host ({host}) but its sslmode is {sslmode!r}; "
-            f"set sslmode=require (or verify-ca / verify-full) in the URL, "
-            f"or pass MCPG_ALLOW_INSECURE_TLS=true to override."
+            f"{var} points at a remote host ({', '.join(remote_hosts)}) but its sslmode "
+            f"is {sslmode!r}; set sslmode=require (or verify-ca / verify-full) in the "
+            f"connection string, or pass MCPG_ALLOW_INSECURE_TLS=true to override."
         )
 
 
@@ -457,8 +475,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     # sockets are a different threat model and require their own
     # operator opt-in to be reachable from outside the box anyway.
     if not allow_insecure_tls:
-        for label, dsn in (("MCPG_DATABASE_URL", database_url), *(("MCPG_REPLICA_URLS", u) for u in replica_urls)):
-            _require_tls_or_loopback(label, dsn)
+        _require_tls_or_loopback("MCPG_DATABASE_URL", database_url)
+        for idx, replica_dsn in enumerate(replica_urls):
+            _require_tls_or_loopback(f"MCPG_REPLICA_URLS[{idx}]", replica_dsn)
 
     # Re-arm the audit-trail redaction pattern with the operator's
     # MCPG_AUDIT_REDACT_KEYS extension (if any) so the very first audit
