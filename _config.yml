@@ -1,0 +1,71 @@
+# Jekyll config for the MCPg GitHub Pages site.
+# Site URL: https://devopam.github.io/MCPg/
+#
+# GitHub Pages serves from `main` branch / root. README.md becomes
+# the homepage; everything under docs/ is rendered into the published
+# site automatically.
+
+title: MCPg
+description: A production-grade PostgreSQL Model Context Protocol (MCP) server.
+url: https://devopam.github.io
+baseurl: /MCPg
+
+# Cayman is GitHub's default project-page theme — clean, mobile-friendly,
+# minimal chrome around the prose. Used by countless Python project sites.
+theme: jekyll-theme-cayman
+
+# Tells the cayman theme where the "View on GitHub" button should point.
+repository: devopam/MCPg
+
+# Hide cayman's default "Download .zip / .tar.gz" buttons — for a
+# packaged project, the install path is `pip install mcpg`, not a
+# tarball download.
+show_downloads: false
+
+# Plugins listed here are part of the GitHub Pages allowlist
+# (see https://pages.github.com/versions/). No Gemfile needed.
+plugins:
+  # Rewrites `[text](docs/x.md)`-style links so they resolve on the
+  # published site without us having to edit the source markdown. Key:
+  # the same links still work on the GitHub repo view.
+  - jekyll-relative-links
+  # Lets README.md / docs/*.md be served without YAML front matter.
+  - jekyll-optional-front-matter
+  # Adds <title>, meta description, og:tags from `title` / `description`
+  # above and from each page's first H1.
+  - jekyll-seo-tag
+  # Generates /sitemap.xml automatically.
+  - jekyll-sitemap
+
+relative_links:
+  enabled: true
+  collections: true
+
+optional_front_matter:
+  remove_originals: true
+
+# Keep the published site lean — code, tests, build artefacts, and
+# IDE/CI cruft don't belong on the documentation surface.
+exclude:
+  - .github/
+  - .gitignore
+  - .pre-commit-config.yaml
+  - .ruff_cache/
+  - .pytest_cache/
+  - .mypy_cache/
+  - .venv/
+  - Dockerfile
+  - LICENSE
+  - NOTICE
+  - PLAN.md
+  - benchmarks/
+  - dist/
+  - pyproject.toml
+  - scratch/
+  - src/
+  - tests/
+  - uv.lock
+  - vendor/
+
+# Pretty URLs (so /MCPg/docs/installation/ rather than /MCPg/docs/installation.html).
+permalink: pretty
