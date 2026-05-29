@@ -1,11 +1,48 @@
 [project]
 name = "mcpg"
-version = "0.5.0"
+version = "0.5.1"
 description = "A production-grade PostgreSQL Model Context Protocol (MCP) server."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE", "src/mcpg/_vendor/LICENSE"]
+authors = [
+    {name = "Devopam Mittra", email = "devopam@gmail.com"},
+]
+maintainers = [
+    {name = "Devopam Mittra", email = "devopam@gmail.com"},
+]
+keywords = [
+    "postgresql",
+    "postgres",
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "llm-tools",
+    "database",
+    "claude",
+    "anthropic",
+    "dba",
+    "sql",
+    "rag",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: SQL",
+    "Topic :: Database",
+    "Topic :: Database :: Database Engines/Servers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
+]
 
 dependencies = [
     "mcp[cli]>=1.25.0",
@@ -21,6 +58,18 @@ dependencies = [
     "pyjwt[crypto]>=2.8",
 ]
 
+# Powers the "Project links" sidebar on https://pypi.org/project/mcpg/.
+# Order is preserved on the page; first entry doubles as the page header
+# "Homepage" link.
+[project.urls]
+Homepage = "https://github.com/devopam/MCPg"
+Documentation = "https://github.com/devopam/MCPg#documentation"
+Repository = "https://github.com/devopam/MCPg"
+Issues = "https://github.com/devopam/MCPg/issues"
+Changelog = "https://github.com/devopam/MCPg/blob/main/CHANGELOG.md"
+"Release notes" = "https://github.com/devopam/MCPg/releases"
+Security = "https://github.com/devopam/MCPg/blob/main/SECURITY.md"
+
 [project.scripts]
 mcpg = "mcpg.__main__:main"
 
@@ -30,6 +79,20 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcpg"]
+
+# Keep the sdist tight — ship the source tree + the prose a user
+# actually wants when they unpack from PyPI, and leave dev-only
+# noise (tests / CI / IDE / VCS cruft) on GitHub.
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/mcpg",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "pyproject.toml",
+]
 
 [dependency-groups]
 dev = [
@@ -42,6 +105,10 @@ dev = [
     "pre-commit>=4.0.0",
     "bandit>=1.7.8",
     "pip-audit>=2.7",
+    # PyPI packaging toolchain — build the sdist/wheel, lint the
+    # rendered metadata, push to PyPI in the publish workflow.
+    "build>=1.2",
+    "twine>=5.1",
 ]
 
 [tool.pytest.ini_options]

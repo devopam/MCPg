@@ -1,0 +1,161 @@
+name: Publish
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+# OIDC token exchange with PyPI Trusted Publishing. ``id-token: write``
+# is the privilege the action trades for a one-time PyPI upload
+# credential; ``contents: read`` is the source checkout.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Sanity check — tag matches pyproject version
+        # Tag is the source of truth for the release; pyproject must
+        # already be bumped to match. Refusing here prevents the very
+        # common "tagged v0.5.1 but forgot to bump" footgun. Read the
+        # field through ``tomllib`` so a stray ``version =`` line in
+        # another table (or quote/spacing reshuffles) can't fool us.
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PYPROJECT_VERSION="$(python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          if [ -z "$PYPROJECT_VERSION" ]; then
+            echo "::error::Could not read project.version from pyproject.toml"
+            exit 1
+          fi
+          if [ "$TAG_VERSION" != "$PYPROJECT_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME (=$TAG_VERSION) does not match pyproject.toml version $PYPROJECT_VERSION"
+            exit 1
+          fi
+      - name: Build
+        run: uv run python -m build
+      - name: Inspect rendered metadata
+        run: uv run twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    name: Publish → TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/mcpg/
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  smoke-testpypi:
+    name: Smoke-test TestPyPI install
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    steps:
+      # ``uv export`` needs the source tree; the smoke install
+      # itself runs against the published artifact.
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install runtime deps from real PyPI (anti-confusion)
+        # TestPyPI is a public sandbox; combining its index with
+        # ``--extra-index-url=pypi`` lets an attacker shadow our
+        # deps with a higher-numbered fake (dependency confusion).
+        # Step 1 pins real PyPI only, dep list canonically derived
+        # from pyproject.toml.
+        run: |
+          uv export --no-dev --no-emit-project --no-hashes \
+            --format requirements-txt > /tmp/mcpg-deps.txt
+          python -m pip install -r /tmp/mcpg-deps.txt
+      - name: Wait for TestPyPI to index the upload
+        # Trusted Publishing returns 200 the moment the file lands,
+        # but the simple index is eventually consistent (~30s typical).
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          for i in $(seq 1 12); do
+            if curl -fsSL "https://test.pypi.org/pypi/mcpg/${VER}/json" >/dev/null 2>&1; then
+              echo "TestPyPI sees mcpg==${VER}"
+              exit 0
+            fi
+            echo "TestPyPI not ready (attempt $i/12)..."
+            sleep 10
+          done
+          echo "::error::TestPyPI never reported mcpg==${VER}"
+          exit 1
+      - name: Install mcpg from TestPyPI (no deps)
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          python -m pip install --no-deps \
+            --index-url https://test.pypi.org/simple/ \
+            "mcpg==${VER}"
+      - name: Import + CLI smoke
+        run: |
+          python -c "import mcpg; print(mcpg.__version__)"
+          mcpg --version
+
+  publish-pypi:
+    name: Publish → PyPI (gated on maintainer approval)
+    needs: smoke-testpypi
+    runs-on: ubuntu-latest
+    # The ``pypi`` environment is configured with a required
+    # reviewer (the maintainer). The workflow pauses on this job
+    # until that approval click lands; that's the last chance to
+    # cancel a bad release after TestPyPI smoke passed.
+    environment:
+      name: pypi
+      url: https://pypi.org/project/mcpg/
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: Create GitHub Release
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Cut release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          # Pull the matching section out of CHANGELOG.md as the
+          # release body. Falls back to a stub if the section is
+          # missing so the release still ships — the maintainer can
+          # edit the body afterwards on the GitHub side.
+          awk "/^## \[${VER}\]/,/^## \[/" CHANGELOG.md | sed '$d' > /tmp/notes.md
+          [ -s /tmp/notes.md ] || echo "See CHANGELOG.md" > /tmp/notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "MCPg ${GITHUB_REF_NAME}" \
+            --notes-file /tmp/notes.md
