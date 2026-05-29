@@ -25,10 +25,16 @@ jobs:
       - name: Sanity check — tag matches pyproject version
         # Tag is the source of truth for the release; pyproject must
         # already be bumped to match. Refusing here prevents the very
-        # common "tagged v0.5.1 but forgot to bump" footgun.
+        # common "tagged v0.5.1 but forgot to bump" footgun. Read the
+        # field through ``tomllib`` so a stray ``version =`` line in
+        # another table (or quote/spacing reshuffles) can't fool us.
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PYPROJECT_VERSION="$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/version = "(.*)"/\1/')"
+          PYPROJECT_VERSION="$(python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          if [ -z "$PYPROJECT_VERSION" ]; then
+            echo "::error::Could not read project.version from pyproject.toml"
+            exit 1
+          fi
           if [ "$TAG_VERSION" != "$PYPROJECT_VERSION" ]; then
             echo "::error::Tag $GITHUB_REF_NAME (=$TAG_VERSION) does not match pyproject.toml version $PYPROJECT_VERSION"
             exit 1
