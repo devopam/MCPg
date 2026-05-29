@@ -118,6 +118,8 @@ class Database:
             self._pool,
             default_role=self._settings.default_role,
             enable_tenancy=enable_tenancy,
+            statement_timeout_ms=self._settings.statement_timeout_ms,
+            lock_timeout_ms=self._settings.lock_timeout_ms,
         )
         if self._replica_pool is None:
             return primary
@@ -126,6 +128,8 @@ class Database:
                 state.pool,
                 default_role=self._settings.default_role,
                 enable_tenancy=enable_tenancy,
+                statement_timeout_ms=self._settings.statement_timeout_ms,
+                lock_timeout_ms=self._settings.lock_timeout_ms,
             )
             for state in self._replica_pool._states
         ]
