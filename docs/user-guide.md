@@ -255,26 +255,68 @@ under the synthetic tool name `__replica_route` with statuses
 
 ## Natural-language SQL
 
-```bash
-export MCPG_NL2SQL_PROVIDER=anthropic    # or: openai | gemini
-export ANTHROPIC_API_KEY=…                # the provider's standard env var
-```
+`translate_nl_to_sql(question, schema, provider=None, execute=false)`
+asks an LLM provider to produce read-only SQL for the supplied
+natural-language question, given the named schema's catalog. The
+generated SQL is passed through the **same SafeSQL allowlist** as
+any hand-written query before any optional execution.
 
-`translate_nl_to_sql(question, schema, execute=false)` asks the
-configured provider to produce SQL for the supplied natural-language
-question, given the named schema's catalog. The generated SQL is
-passed through the **same SafeSQL allowlist** as any hand-written
-query before any optional execution.
+### Provider configuration
 
-| `MCPG_NL2SQL_PROVIDER` | API-key env (auto-detected) | Default model |
+MCPg auto-discovers every configured provider from the environment at
+startup. Set as many of these as you want active — each becomes
+callable through the tool:
+
+| Provider | Set in env | Default model |
 |---|---|---|
 | `anthropic` | `ANTHROPIC_API_KEY` | provider's recent Claude Sonnet |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
-| `gemini` | `GEMINI_API_KEY` → `GOOGLE_API_KEY` | provider's recent Gemini Flash |
+| `gemini` | `GEMINI_API_KEY` (falls back to `GOOGLE_API_KEY`) | provider's recent Gemini Flash |
 
-Override the model with `MCPG_NL2SQL_MODEL` and point at an
-OpenAI-compatible self-hosted endpoint (Ollama, vLLM, OpenRouter)
-with `MCPG_NL2SQL_BASE_URL` — works with the `openai` provider.
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...      # configures anthropic
+export OPENAI_API_KEY=sk-...             # configures openai too
+# Both available; MCPg auto-picks anthropic as the default
+# (preference order: anthropic → openai → gemini).
+```
+
+To pin a specific default, set `MCPG_NL2SQL_PROVIDER` explicitly:
+
+```bash
+export MCPG_NL2SQL_PROVIDER=openai       # default is now openai
+```
+
+`MCPG_NL2SQL_API_KEY` (when set) supplies the key for the configured
+default provider; it requires `MCPG_NL2SQL_PROVIDER` to also be set so
+MCPg knows which provider it's for.
+
+### Per-call routing
+
+Multiple providers configured? Any caller can route per-call by
+passing the optional `provider=` argument:
+
+```
+translate_nl_to_sql(question, schema, provider="anthropic")
+translate_nl_to_sql(question, schema, provider="openai")
+translate_nl_to_sql(question, schema, provider="gemini")
+translate_nl_to_sql(question, schema)              # uses default
+```
+
+This is the recommended shape for **one MCPg server, many MCP
+clients** — set every vendor key on the host, run one MCPg over the
+HTTP transport, let each agent / IDE pick its preferred LLM per call.
+`get_server_info()` reports `nl2sql_default_provider` and
+`nl2sql_available_providers` so a caller can introspect.
+
+### Model + endpoint overrides
+
+Override the default provider's model with `MCPG_NL2SQL_MODEL`, or
+point at an OpenAI-compatible self-hosted endpoint (Ollama, vLLM,
+OpenRouter) with `MCPG_NL2SQL_BASE_URL`. Both apply **only** when the
+call targets the default provider — an explicit `provider="openai"`
+call when the default is `anthropic` falls back to OpenAI's default
+model + endpoint, since the operator's overrides are
+provider-specific.
 The per-call response budget is capped by `MCPG_NL2SQL_MAX_TOKENS`
 (default 2048, hard limit 16384).
 

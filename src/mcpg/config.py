@@ -95,13 +95,23 @@ class Settings:
     # failure the call falls back to the primary once and the
     # replica is degraded for 30s.
     replica_urls: tuple[str, ...] = ()
-    # NL→SQL helper. ``nl2sql_provider`` is one of "anthropic", "openai",
-    # "gemini"; unset means the tool reports unavailable. ``nl2sql_api_key``
-    # falls back to ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY /
-    # GOOGLE_API_KEY when not set explicitly. ``nl2sql_base_url`` lets the
-    # OpenAI path target a self-hosted endpoint (Ollama, vLLM, OpenRouter).
+    # NL→SQL helper.
+    # ``nl2sql_provider`` is the DEFAULT provider used when the
+    # ``translate_nl_to_sql`` tool is called without an explicit ``provider``
+    # argument. ``nl2sql_api_keys`` is the full set of (provider, key) pairs
+    # MCPg discovered at startup — every configured provider is callable
+    # via the tool's ``provider=`` argument, not just the default. Operators
+    # set ``ANTHROPIC_API_KEY`` / ``OPENAI_API_KEY`` / ``GEMINI_API_KEY`` (or
+    # ``GOOGLE_API_KEY``) in the env and MCPg makes each one available; when
+    # ``MCPG_NL2SQL_PROVIDER`` is unset, MCPg picks a default in preference
+    # order anthropic → openai → gemini. ``MCPG_NL2SQL_API_KEY``, when set,
+    # supplies the key for the configured default provider (and requires
+    # ``MCPG_NL2SQL_PROVIDER`` to be set so MCPg knows which provider to
+    # assign it to). ``nl2sql_model`` / ``nl2sql_base_url`` apply only when
+    # the call uses the default provider; an explicit ``provider=`` override
+    # falls back to that provider's default model.
     nl2sql_provider: str | None = None
-    nl2sql_api_key: str | None = None
+    nl2sql_api_keys: tuple[tuple[str, str], ...] = ()
     nl2sql_model: str | None = None
     nl2sql_base_url: str | None = None
     nl2sql_max_tokens: int = 2048
@@ -142,7 +152,7 @@ class Settings:
             f"allowed_roles={self.allowed_roles!r}, "
             f"replica_urls={tuple(obfuscate_password(u) for u in self.replica_urls)!r}, "
             f"nl2sql_provider={self.nl2sql_provider!r}, "
-            f"nl2sql_api_key={'set' if self.nl2sql_api_key else 'unset'!r}, "
+            f"nl2sql_api_keys={sorted(p for p, _ in self.nl2sql_api_keys)!r}, "
             f"nl2sql_model={self.nl2sql_model!r}, "
             f"nl2sql_base_url={self.nl2sql_base_url!r}, "
             f"nl2sql_max_tokens={self.nl2sql_max_tokens}, "
@@ -406,28 +416,60 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             raise ConfigError(f"MCPG_NL2SQL_PROVIDER must be one of: anthropic, openai, gemini (got {raw!r})")
         nl2sql_provider = candidate
 
-    # API key falls back to the vendor's conventional env var so users
-    # don't have to duplicate it. Order matters when multiple are set;
-    # the explicit MCPG_NL2SQL_API_KEY always wins.
-    nl2sql_api_key: str | None = None
+    # Discover every provider whose conventional vendor env var is set.
+    # Each becomes callable via ``translate_nl_to_sql(provider=...)``,
+    # not just the configured default. Operator can also point one
+    # provider at an explicit key via ``MCPG_NL2SQL_API_KEY`` —
+    # which always wins over the vendor-conventional fallback.
+    api_keys: dict[str, str] = {}
+    if anthropic_key := (env.get("ANTHROPIC_API_KEY") or "").strip():
+        api_keys["anthropic"] = anthropic_key
+    if openai_key := (env.get("OPENAI_API_KEY") or "").strip():
+        api_keys["openai"] = openai_key
+    gemini_key = (env.get("GEMINI_API_KEY") or "").strip() or (env.get("GOOGLE_API_KEY") or "").strip()
+    if gemini_key:
+        api_keys["gemini"] = gemini_key
+
     if (raw := env.get("MCPG_NL2SQL_API_KEY")) is not None:
         stripped = raw.strip()
         if not stripped:
             raise ConfigError("MCPG_NL2SQL_API_KEY must not be blank when set")
-        nl2sql_api_key = stripped
-    elif nl2sql_provider == "anthropic":
-        nl2sql_api_key = (env.get("ANTHROPIC_API_KEY") or "").strip() or None
-    elif nl2sql_provider == "openai":
-        nl2sql_api_key = (env.get("OPENAI_API_KEY") or "").strip() or None
-    elif nl2sql_provider == "gemini":
-        # Either GEMINI_API_KEY or the more common GOOGLE_API_KEY.
-        nl2sql_api_key = (env.get("GEMINI_API_KEY") or "").strip() or (env.get("GOOGLE_API_KEY") or "").strip() or None
+        if nl2sql_provider is None:
+            raise ConfigError(
+                "MCPG_NL2SQL_API_KEY is set but MCPG_NL2SQL_PROVIDER is not — "
+                "MCPg can't tell which provider this key is for. Either set "
+                "MCPG_NL2SQL_PROVIDER (anthropic|openai|gemini) too, or drop "
+                "MCPG_NL2SQL_API_KEY and use the vendor-conventional env var "
+                "(ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY) so the "
+                "provider is implicit."
+            )
+        # Explicit key targets the configured default provider.
+        api_keys[nl2sql_provider] = stripped
 
-    if nl2sql_provider is not None and nl2sql_api_key is None:
+    # Auto-pick a default when MCPG_NL2SQL_PROVIDER is unset but at
+    # least one vendor key is present. Preference order is documented
+    # in README + docs/user-guide.md.
+    if nl2sql_provider is None and api_keys:
+        for candidate in ("anthropic", "openai", "gemini"):
+            if candidate in api_keys:
+                nl2sql_provider = candidate
+                break
+
+    if nl2sql_provider is not None and nl2sql_provider not in api_keys:
+        vendor_var = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "gemini": "GEMINI_API_KEY (or GOOGLE_API_KEY)",
+        }[nl2sql_provider]
         raise ConfigError(
             f"MCPG_NL2SQL_PROVIDER={nl2sql_provider!r} but no API key found; "
-            "set MCPG_NL2SQL_API_KEY (or the vendor's conventional env var)"
+            f"set {vendor_var} in the environment, or set MCPG_NL2SQL_API_KEY "
+            "explicitly."
         )
+
+    # Settings expects a stable, immutable order so the repr is stable
+    # too — sort by provider name.
+    nl2sql_api_keys = tuple(sorted(api_keys.items()))
 
     nl2sql_model: str | None = None
     if (raw := env.get("MCPG_NL2SQL_MODEL")) is not None:
@@ -536,7 +578,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         allowed_roles=allowed_roles,
         replica_urls=replica_urls,
         nl2sql_provider=nl2sql_provider,
-        nl2sql_api_key=nl2sql_api_key,
+        nl2sql_api_keys=nl2sql_api_keys,
         nl2sql_model=nl2sql_model,
         nl2sql_base_url=nl2sql_base_url,
         nl2sql_max_tokens=nl2sql_max_tokens,

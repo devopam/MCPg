@@ -152,7 +152,8 @@ everything else has a safe default.
 | HTTP transport with bearer auth | `MCPG_TRANSPORT=streamable-http` + `MCPG_HTTP_AUTH_TOKEN=…` |
 | Multi-tenant SaaS | `MCPG_DEFAULT_ROLE=tenant_a` + `MCPG_ALLOWED_ROLES=tenant_a,tenant_b,…` |
 | Read-replica fan-out | `MCPG_REPLICA_URLS=postgresql://…?sslmode=require,postgresql://…?sslmode=require` |
-| NL→SQL via Anthropic | `MCPG_NL2SQL_PROVIDER=anthropic` (uses `ANTHROPIC_API_KEY` automatically) |
+| NL→SQL — single provider | Set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` / `GEMINI_API_KEY`). MCPg auto-picks the default. |
+| NL→SQL — multiple providers, caller picks | Set all vendor keys you want active. Each call to `translate_nl_to_sql` can pass `provider="anthropic"\|"openai"\|"gemini"`. |
 
 ### Full reference
 
@@ -241,12 +242,24 @@ everything else has a safe default.
 
 #### Natural-language SQL
 
+MCPg auto-discovers every configured provider from the environment at
+startup. Set as many of `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+`GEMINI_API_KEY` (or `GOOGLE_API_KEY`) as you have — each becomes
+callable. When `MCPG_NL2SQL_PROVIDER` is unset, MCPg picks the default
+in preference order **anthropic → openai → gemini**. The
+`translate_nl_to_sql` tool accepts an optional `provider="…"` argument
+so a caller can route between providers per call; `get_server_info`
+reports which are available.
+
 | Variable | Default | Description |
 |---|---|---|
-| `MCPG_NL2SQL_PROVIDER` | — | `anthropic` \| `openai` \| `gemini`. Unset disables `translate_nl_to_sql`. |
-| `MCPG_NL2SQL_API_KEY` | vendor fallback | Falls back to `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` depending on provider. |
-| `MCPG_NL2SQL_MODEL` | provider default | Override the default model (e.g. `claude-sonnet-4-6`, `gpt-4o-mini`, `gemini-2.5-flash`). |
-| `MCPG_NL2SQL_BASE_URL` | — | OpenAI-compatible endpoint override (Ollama, vLLM, OpenRouter, etc.). Only consulted for the `openai` provider. |
+| `ANTHROPIC_API_KEY` | — | Vendor-conventional key for Anthropic / Claude. |
+| `OPENAI_API_KEY` | — | Vendor-conventional key for OpenAI. |
+| `GEMINI_API_KEY` or `GOOGLE_API_KEY` | — | Vendor-conventional key for Google / Gemini. |
+| `MCPG_NL2SQL_PROVIDER` | auto-picked | `anthropic` \| `openai` \| `gemini`. Pins the default provider used when the tool is called without `provider=`. When unset and any vendor key is in the env, MCPg auto-picks anthropic → openai → gemini. |
+| `MCPG_NL2SQL_API_KEY` | — | Explicit key for the configured `MCPG_NL2SQL_PROVIDER`. Overrides the vendor-conventional env var for that provider only. Requires `MCPG_NL2SQL_PROVIDER` to be set. |
+| `MCPG_NL2SQL_MODEL` | provider default | Override the default model (e.g. `claude-sonnet-4-6`, `gpt-4o-mini`, `gemini-2.5-flash`). Applies only to the default provider. |
+| `MCPG_NL2SQL_BASE_URL` | — | OpenAI-compatible endpoint override (Ollama, vLLM, OpenRouter). Applies only when the default provider is `openai`. |
 | `MCPG_NL2SQL_MAX_TOKENS` | `2048` | Cap on generated tokens (hard limit: 16384). |
 
 ---

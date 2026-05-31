@@ -77,6 +77,8 @@ def test_build_server_info_reports_static_facts() -> None:
         access_mode="read-only",
         transport="stdio",
         database_connected=False,
+        nl2sql_default_provider=None,
+        nl2sql_available_providers=[],
     )
 
 
