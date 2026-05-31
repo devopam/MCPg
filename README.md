@@ -15,11 +15,13 @@ graph queries, data movement, live ops, and more.
 
 ## Why MCPg
 
-- **Safe by default.** Read-only access mode. Every SQL statement parses
-  through a validated AST allowlist before execution. Identifier
-  interpolation flows through a strict `[A-Za-z_][A-Za-z0-9_]*` regex —
-  no string-concat queries anywhere in the codebase. Capabilities like
-  DDL, shell, and `LISTEN/NOTIFY` are off until you opt in.
+- **Safe by default.** Read-only access mode. Every user-supplied SQL
+  statement parses through a validated AST allowlist before execution.
+  Identifier interpolation flows through a strict
+  `[A-Za-z_][A-Za-z0-9_]*` regex — a design constraint that means
+  user input never reaches the database through string concatenation.
+  Capabilities like DDL, shell, and `LISTEN/NOTIFY` are off until you
+  opt in.
 - **One server, broad surface.** Application data access (queries, search,
   cursors, NL→SQL) *and* DBA-grade operations (health checks, index tuning,
   EXPLAIN analysis, locks, vacuum, dumps, replicas, migrations) in a
@@ -442,6 +444,6 @@ MIT — see [`LICENSE`](LICENSE). The vendored SQL-safety kernel at
 `src/mcpg/_vendor/sql/` is also MIT-licensed; see [`NOTICE`](NOTICE)
 for provenance.
 
-> **Disclaimer.** Best effort has been put into making MCPg production
-> grade, but it remains an actively developed project and may contain
-> issues. Refer to the License Terms for indemnity details.
+> **Disclaimer.** Best efforts have been made to bring MCPg to
+> production grade, but it remains an actively developed project and
+> may contain issues. See the License terms for indemnity details.

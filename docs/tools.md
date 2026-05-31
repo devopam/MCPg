@@ -29,7 +29,7 @@ plumbing:
 | `MCPG_REPLICA_URLS` | Comma-separated read-replica DSNs. When set, `force_readonly` queries round-robin across healthy replicas; writes always go to the primary. |
 | `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config (Anthropic / OpenAI / Gemini). |
 
-## Tool index (114 tools)
+## Tool index (117 tools)
 
 | Category | Tools |
 |---|---|
@@ -39,7 +39,7 @@ plumbing:
 | **Query intelligence** | `run_select`, `run_select_parallel`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql` |
 | **Server-side cursors** | `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors` |
 | **Composite + diagnostic** | `summarize_table`, `why_is_this_slow`, `find_unused_objects`, `find_sensitive_columns`, `detect_n_plus_one`, `lint_naming_conventions`, `test_rls_for_role`, `list_locks`, `find_blocking_chains`, `read_pg_stat_io` |
-| **Health & tuning** | `check_database_health`, `analyze_workload`, `recommend_indexes`, `run_advisors` |
+| **Health & tuning** | `check_database_health`, `audit_database`, `analyze_workload`, `recommend_indexes`, `run_advisors` |
 | **Search** | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `hybrid_search`, `geo_search` |
 | **Vector tuning advisors** | `recommend_vector_index`, `analyze_vector_search`, `analyze_vector_table`, `recommend_vector_quantization` |
 | **Apache AGE graph + Cypher** | `list_graphs`, `describe_graph`, `run_cypher`, `create_graph` (gated), `drop_graph` (gated) |
@@ -447,7 +447,7 @@ Lists rows from `mcpg_audit.events` (newest first). Returns `[]` when
 
 ## ORM-DSL exporters
 
-Every exporter is **read-only**. They share a v1 coverage boundary:
+Every exporter is **read-only**. They share a common coverage boundary:
 base tables, columns with PG-native types, primary keys, single-column
 intra-schema foreign keys, and enum types. Cross-schema FKs and
 composite FKs are documented v1 gaps for all of them. Views, foreign
