@@ -194,7 +194,7 @@ def test_default_role_must_appear_in_allowed_roles_when_both_set() -> None:
 def test_nl2sql_defaults_to_unset_and_zero_overhead() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
     assert settings.nl2sql_provider is None
-    assert settings.nl2sql_api_key is None
+    assert settings.nl2sql_api_keys == ()
     assert settings.nl2sql_model is None
     assert settings.nl2sql_max_tokens == 2048
 
@@ -229,7 +229,7 @@ def test_nl2sql_explicit_api_key_wins_over_vendor_fallback() -> None:
             "ANTHROPIC_API_KEY": "vendor-fallback",
         }
     )
-    assert settings.nl2sql_api_key == "explicit-key"
+    assert dict(settings.nl2sql_api_keys)["anthropic"] == "explicit-key"
 
 
 def test_nl2sql_falls_back_to_anthropic_api_key_env() -> None:
@@ -240,7 +240,7 @@ def test_nl2sql_falls_back_to_anthropic_api_key_env() -> None:
             "ANTHROPIC_API_KEY": "fallback",
         }
     )
-    assert settings.nl2sql_api_key == "fallback"
+    assert dict(settings.nl2sql_api_keys)["anthropic"] == "fallback"
 
 
 def test_nl2sql_falls_back_to_openai_api_key_env() -> None:
@@ -251,7 +251,7 @@ def test_nl2sql_falls_back_to_openai_api_key_env() -> None:
             "OPENAI_API_KEY": "fallback",
         }
     )
-    assert settings.nl2sql_api_key == "fallback"
+    assert dict(settings.nl2sql_api_keys)["openai"] == "fallback"
 
 
 def test_nl2sql_falls_back_to_gemini_or_google_api_key_env() -> None:
@@ -262,18 +262,18 @@ def test_nl2sql_falls_back_to_gemini_or_google_api_key_env() -> None:
             "GOOGLE_API_KEY": "google-fallback",
         }
     )
-    assert settings.nl2sql_api_key == "google-fallback"
+    assert dict(settings.nl2sql_api_keys)["gemini"] == "google-fallback"
 
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _DB_URL,
             "MCPG_NL2SQL_PROVIDER": "gemini",
             "GEMINI_API_KEY": "gemini-fallback",
-            # GOOGLE_API_KEY also set — GEMINI wins because it's checked first.
+            # GOOGLE_API_KEY also set — GEMINI_API_KEY wins because it's checked first.
             "GOOGLE_API_KEY": "google-fallback",
         }
     )
-    assert settings.nl2sql_api_key == "gemini-fallback"
+    assert dict(settings.nl2sql_api_keys)["gemini"] == "gemini-fallback"
 
 
 def test_nl2sql_rejects_max_tokens_above_hard_cap() -> None:
@@ -298,7 +298,93 @@ def test_nl2sql_api_key_never_appears_in_repr() -> None:
     )
     rendered = repr(settings)
     assert "sk-not-a-real-key-secret" not in rendered
-    assert "nl2sql_api_key='set'" in rendered
+    # The repr surfaces only the list of configured providers, not the keys.
+    assert "nl2sql_api_keys=['anthropic']" in rendered
+
+
+# --- multi-provider behaviour (the "one server, many IDEs" shape) -------
+
+
+def test_nl2sql_auto_picks_anthropic_when_only_its_vendor_key_present() -> None:
+    # Operator hasn't set MCPG_NL2SQL_PROVIDER; only ANTHROPIC_API_KEY in env.
+    # MCPg auto-picks anthropic as the default.
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "ANTHROPIC_API_KEY": "sk-ant-…",
+        }
+    )
+    assert settings.nl2sql_provider == "anthropic"
+    assert dict(settings.nl2sql_api_keys) == {"anthropic": "sk-ant-…"}
+
+
+def test_nl2sql_auto_picks_in_preference_order_anthropic_openai_gemini() -> None:
+    # All three keys present, no explicit provider — default to anthropic.
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "ANTHROPIC_API_KEY": "sk-ant",
+            "OPENAI_API_KEY": "sk-oa",
+            "GEMINI_API_KEY": "sk-gm",
+        }
+    )
+    assert settings.nl2sql_provider == "anthropic"
+    assert sorted(dict(settings.nl2sql_api_keys)) == ["anthropic", "gemini", "openai"]
+
+    # Drop anthropic — falls through to openai.
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "OPENAI_API_KEY": "sk-oa",
+            "GEMINI_API_KEY": "sk-gm",
+        }
+    )
+    assert settings.nl2sql_provider == "openai"
+
+    # Drop both — falls through to gemini.
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "GEMINI_API_KEY": "sk-gm",
+        }
+    )
+    assert settings.nl2sql_provider == "gemini"
+
+
+def test_nl2sql_explicit_provider_overrides_preference_order() -> None:
+    # All three configured, operator pins openai as the default.
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_PROVIDER": "openai",
+            "ANTHROPIC_API_KEY": "sk-ant",
+            "OPENAI_API_KEY": "sk-oa",
+            "GEMINI_API_KEY": "sk-gm",
+        }
+    )
+    assert settings.nl2sql_provider == "openai"
+    # All three remain accessible via the tool's `provider=` arg.
+    assert sorted(dict(settings.nl2sql_api_keys)) == ["anthropic", "gemini", "openai"]
+
+
+def test_nl2sql_api_key_without_provider_is_rejected() -> None:
+    # Without MCPG_NL2SQL_PROVIDER, MCPg can't know which provider
+    # MCPG_NL2SQL_API_KEY is for — refuse to start with a clear message.
+    with pytest.raises(ConfigError, match="MCPG_NL2SQL_API_KEY is set but MCPG_NL2SQL_PROVIDER"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_NL2SQL_API_KEY": "stray",
+            }
+        )
+
+
+def test_nl2sql_no_keys_means_tool_reports_no_provider() -> None:
+    # No vendor keys, no MCPG_NL2SQL_PROVIDER — Settings reports unset
+    # and the tool will error at call time (not at startup).
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.nl2sql_provider is None
+    assert settings.nl2sql_api_keys == ()
 
 
 # --- replica routing (Phase 1.6) -----------------------------------------

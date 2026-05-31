@@ -174,7 +174,8 @@ the minimum set per common scenario.
 | **HTTP transport** with OIDC | `MCPG_TRANSPORT=streamable-http` + `MCPG_AUTH_MODE=oidc` + `MCPG_OIDC_ISSUER=…` + `MCPG_OIDC_AUDIENCE=…` |
 | **Multi-tenant SaaS** | `MCPG_DEFAULT_ROLE=tenant_a` + `MCPG_ALLOWED_ROLES=tenant_a,tenant_b,…` |
 | **Read-replica fan-out** | `MCPG_REPLICA_URLS=postgresql://…?sslmode=require,postgresql://…?sslmode=require` |
-| **NL→SQL** via Anthropic | `MCPG_NL2SQL_PROVIDER=anthropic` (auto-uses `ANTHROPIC_API_KEY`) |
+| **NL→SQL** — single provider | Set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` / `GEMINI_API_KEY`). MCPg auto-picks the default. |
+| **NL→SQL** — multi-provider routing | Set all the vendor keys you want active; callers pass `provider="anthropic"\|"openai"\|"gemini"` per call. |
 | **Audit persistence** | `MCPG_AUDIT_PERSIST=true` |
 | **Prometheus metrics** | (always on for HTTP transports — `GET /metrics`) |
 

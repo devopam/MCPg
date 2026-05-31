@@ -76,7 +76,8 @@ run_select(sql, max_rows=1000)
 run_select_parallel(statements, parallel_limit=8)    # concurrent fan-out; one bad query doesn't abort the rest
 explain_query(sql, format="json")
 analyze_query_plan(sql)                              # walks the EXPLAIN tree
-translate_nl_to_sql(question, schema, execute=false) # NL → SQL via Anthropic / OpenAI / Gemini
+translate_nl_to_sql(question, schema, provider=null, execute=false)
+                                                     # NL → SQL; provider routes per call across configured Anthropic / OpenAI / Gemini
 ```
 
 ## "Stream a huge result set" (server-side cursors)

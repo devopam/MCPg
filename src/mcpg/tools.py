@@ -74,6 +74,8 @@ class ServerInfo:
     access_mode: str
     transport: str
     database_connected: bool
+    nl2sql_default_provider: str | None
+    nl2sql_available_providers: list[str]
 
 
 def build_server_info(app: AppContext) -> ServerInfo:
@@ -83,6 +85,8 @@ def build_server_info(app: AppContext) -> ServerInfo:
         access_mode=app.settings.access_mode.value,
         transport=app.settings.transport.value,
         database_connected=app.database.is_connected,
+        nl2sql_default_provider=app.settings.nl2sql_provider,
+        nl2sql_available_providers=[p for p, _ in app.settings.nl2sql_api_keys],
     )
 
 
@@ -1329,45 +1333,74 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         name="translate_nl_to_sql",
         description=(
             "Translate a natural-language question into a read-only "
-            "PostgreSQL query against `schema`. The configured LLM "
-            "provider (anthropic / openai / gemini, set via "
-            "MCPG_NL2SQL_PROVIDER) sees a compact brief of the schema "
-            "(tables, columns, foreign keys) and is instructed to "
-            "return JSON with `sql` and `explanation`. When "
-            "execute=true, the generated SQL goes through the SAME "
-            "safety allowlist as run_select before running — writes / "
-            "DDL / multi-statement input are rejected even if the "
-            "model produced them. Returns the SQL, model rationale, "
-            "and (when executed) rows / columns / row_count. "
-            "table_filter narrows the brief to a known subset when "
-            "the question is clearly scoped. When the server isn't "
-            "configured with a provider + API key, returns an error "
-            "rather than guessing."
+            "PostgreSQL query against `schema`. The LLM provider "
+            "(anthropic / openai / gemini) sees a compact brief of "
+            "the schema (tables, columns, foreign keys) and is "
+            "instructed to return JSON with `sql` and `explanation`. "
+            "When execute=true, the generated SQL goes through the "
+            "SAME safety allowlist as run_select before running — "
+            "writes / DDL / multi-statement input are rejected even "
+            "if the model produced them. Returns the SQL, model "
+            "rationale, and (when executed) rows / columns / "
+            "row_count. table_filter narrows the brief to a known "
+            "subset when the question is clearly scoped. "
+            "`provider`, when supplied, selects which configured "
+            "LLM provider to call (use this to route between "
+            "anthropic / openai / gemini per-call when multiple are "
+            "configured); when omitted, MCPg uses the default "
+            "(MCPG_NL2SQL_PROVIDER, otherwise the first available "
+            "in preference order anthropic → openai → gemini). Call "
+            "get_server_info to see which providers are configured."
         ),
     )
     async def translate_nl_to_sql(
         ctx: _Ctx,
         question: str,
         schema: str,
+        provider: str | None = None,
         execute: bool = False,
         table_filter: list[str] | None = None,
         max_rows: int = query.DEFAULT_MAX_ROWS,
     ) -> dict[str, Any]:
         settings = ctx.request_context.lifespan_context.settings
-        if settings.nl2sql_provider is None or settings.nl2sql_api_key is None:
+        api_keys = dict(settings.nl2sql_api_keys)
+
+        chosen = (provider or settings.nl2sql_provider or "").strip().lower() or None
+        if chosen is None:
+            # No provider arg AND no default configured AND no vendor keys
+            # in the env — provider= alone can't fix this, the operator
+            # needs to set at least one vendor API key.
             raise nl2sql.NL2SQLError(
-                "translate_nl_to_sql is not configured; set MCPG_NL2SQL_PROVIDER "
-                "and MCPG_NL2SQL_API_KEY (or the vendor's conventional env var)"
+                "translate_nl_to_sql has no provider configured. Set at "
+                "least one of ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+                "GEMINI_API_KEY (or GOOGLE_API_KEY) in the server's "
+                "environment. The tool's provider= argument selects "
+                "between providers that are already configured — it can't "
+                "supply credentials on its own."
             )
-        provider = nl2sql.build_provider(
-            settings.nl2sql_provider,
-            settings.nl2sql_api_key,
-            base_url=settings.nl2sql_base_url,
-        )
-        model = settings.nl2sql_model or nl2sql.DEFAULT_MODELS[settings.nl2sql_provider]
+        if not nl2sql.is_valid_provider(chosen):
+            raise nl2sql.NL2SQLError(f"unknown NL→SQL provider {chosen!r}; supported: anthropic, openai, gemini")
+        api_key = api_keys.get(chosen)
+        if api_key is None:
+            configured = sorted(api_keys) or ["(none)"]
+            raise nl2sql.NL2SQLError(
+                f"provider {chosen!r} is not configured (currently configured: "
+                f"{', '.join(configured)}). Set {nl2sql.VENDOR_ENV_VAR_HINT[chosen]} "
+                "in the environment, or pick a configured provider via the "
+                "provider= argument."
+            )
+
+        # The operator's MCPG_NL2SQL_MODEL / MCPG_NL2SQL_BASE_URL overrides
+        # only apply when this call uses the default provider — overriding
+        # an Anthropic-shaped model id on an OpenAI call would just break.
+        is_default = chosen == settings.nl2sql_provider
+        model = settings.nl2sql_model if (is_default and settings.nl2sql_model) else nl2sql.DEFAULT_MODELS[chosen]
+        base_url = settings.nl2sql_base_url if is_default else None
+
+        llm = nl2sql.build_provider(chosen, api_key, base_url=base_url)
         result = await nl2sql.translate_nl_to_sql(
             _driver(ctx),
-            provider=provider,
+            provider=llm,
             model=model,
             question=question,
             schema=schema,

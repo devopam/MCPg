@@ -6,6 +6,40 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-provider routing for `translate_nl_to_sql`.** MCPg now
+  auto-discovers every configured NL→SQL provider from the
+  environment at startup (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY` / `GOOGLE_API_KEY`) — each one becomes callable
+  through the tool, not just the configured default. The tool gains
+  an optional `provider="anthropic"|"openai"|"gemini"` argument so a
+  caller can route per-call across configured providers; without it,
+  MCPg falls back to `MCPG_NL2SQL_PROVIDER` (the default), then to
+  the first available in preference order **anthropic → openai →
+  gemini**. `get_server_info` surfaces `nl2sql_default_provider` and
+  `nl2sql_available_providers` so agents can introspect.
+
+  Enables the "one MCPg server, many MCP clients" deployment shape:
+  set every vendor key on the host, run one MCPg over HTTP, let each
+  agent / IDE pick its preferred LLM per call.
+
+### Changed
+
+- **`Settings.nl2sql_api_key` (single value) → `Settings.nl2sql_api_keys`
+  (tuple of `(provider, key)` pairs).** Backward-incompatible only
+  for code that imports `Settings` directly — the env-var surface
+  stays compatible: `MCPG_NL2SQL_PROVIDER` + vendor-conventional env
+  vars still work as before, and `MCPG_NL2SQL_API_KEY` (when set)
+  still supplies the key for the configured default provider.
+  `MCPG_NL2SQL_API_KEY` now requires `MCPG_NL2SQL_PROVIDER` to also
+  be set (MCPg can't tell which provider a stray key belongs to);
+  startup fails with a clear message if only the key is set.
+
+- **`MCPG_NL2SQL_PROVIDER` is now optional** when at least one
+  vendor key is in the env — MCPg auto-picks a default. Setting it
+  explicitly still pins the default.
+
 ## [0.5.1] - 2026-05-29
 
 Inaugural PyPI release. Three landings since 0.5.0: security
