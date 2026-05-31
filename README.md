@@ -1,159 +1,447 @@
 # MCPg
 
-A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
-server for **PostgreSQL** — letting AI agents safely inspect, query, operate,
-and tune a Postgres database.\*
+**A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
+server for PostgreSQL.** Lets AI agents safely inspect, query, operate, and
+tune a Postgres database — over 100 tools spanning catalog introspection,
+query intelligence, natural-language SQL, structural diffs, hybrid search,
+graph queries, data movement, live ops, and more.
 
-> **Status:** v0.5.0 released; trunk at **114 MCP tools**. Beyond
-> v0.5.0's surface (NL→SQL via Anthropic / OpenAI / Gemini,
-> per-request `SET ROLE` multi-tenancy, server-side cursors, hybrid
-> vector+FTS search, TimescaleDB wrappers, HTTP bearer-token auth,
-> Prometheus `/metrics`, RLS testing, FK cascade graphs, and the
-> rest of the Tier-A/B/C shortlist), trunk adds **Apache AGE graph
-> + Cypher** (six new tools — `list_graphs`, `describe_graph`,
-> `create_graph`, `drop_graph`, `run_cypher`,
-> `generate_graph_diagram`), **read-replica routing**
-> (`MCPG_REPLICA_URLS` round-robins read-only queries across
-> replicas with degraded-replica detection and primary fallback),
-> and **OIDC / JWT bearer-token validation**
-> (`MCPG_AUTH_MODE=oidc` swaps the static token for full JWT
-> validation against an OIDC issuer's JWKS, with optional role-claim
-> mapping that composes with the tenancy driver). CI matrix runs the
-> integration suite against **PostgreSQL 14, 15, 16, 17, and 18**.
-> See [`docs/cookbook.md`](docs/cookbook.md) for common agent
-> recipes, [`docs/tour.md`](docs/tour.md) for the tool tour,
-> [`CHANGELOG.md`](CHANGELOG.md) and
-> [`docs/PROGRESS.md`](docs/PROGRESS.md) for detail.
+[![PyPI version](https://img.shields.io/pypi/v/mcpg.svg)](https://pypi.org/project/mcpg/)
+[![Python versions](https://img.shields.io/pypi/pyversions/mcpg.svg)](https://pypi.org/project/mcpg/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/devopam/MCPg/actions/workflows/ci.yml/badge.svg)](https://github.com/devopam/MCPg/actions/workflows/ci.yml)
 
-## Quick start
+---
+
+## Why MCPg
+
+- **Safe by default.** Read-only access mode. Every SQL statement parses
+  through a validated AST allowlist before execution. Identifier
+  interpolation flows through a strict `[A-Za-z_][A-Za-z0-9_]*` regex —
+  no string-concat queries anywhere in the codebase. Capabilities like
+  DDL, shell, and `LISTEN/NOTIFY` are off until you opt in.
+- **One server, broad surface.** Application data access (queries, search,
+  cursors, NL→SQL) *and* DBA-grade operations (health checks, index tuning,
+  EXPLAIN analysis, locks, vacuum, dumps, replicas, migrations) in a
+  single MCP server. Agents don't have to switch tools to switch tasks.
+- **PostgreSQL-native everything.** No ORM, no abstraction tax — uses
+  `psycopg3` directly, speaks every `pg_*` system view, integrates with
+  TimescaleDB, pgvector, PostGIS, Apache AGE, and `pg_stat_statements`
+  where they're available, and degrades gracefully when they aren't.
+- **Production-shaped, not demo-shaped.** Connection pooling, per-request
+  `SET ROLE` multi-tenancy, read-replica routing with degraded-host
+  detection, server-side cursors with dedicated connections,
+  rate-limiting, audit trail with regex redaction, PG TLS enforcement
+  on startup, OIDC JWT bearer auth, per-session statement / lock
+  timeouts.
+- **Observability built in.** Prometheus `/metrics` endpoint on the
+  HTTP transport surfaces `mcpg_tool_calls_total{tool,status}` +
+  `mcpg_tool_duration_seconds`. Every tool call records a structured
+  audit event with credential-redacted arguments.
+- **Test-driven, multi-version.** 800+ unit tests plus an integration
+  suite that runs against a real PostgreSQL container in CI — matrix
+  covers PG **14, 15, 16, 17, 18** on every push.
+
+---
+
+## Install
+
+### From PyPI (recommended)
+
+```bash
+pip install mcpg
+# or, in an isolated venv exposed globally:
+uv tool install mcpg
+```
+
+Verify:
+
+```bash
+mcpg --version
+```
+
+### Docker
+
+```bash
+docker build -t mcpg https://github.com/devopam/MCPg.git
+docker run --rm -p 8000:8000 \
+    -e MCPG_DATABASE_URL=postgresql://user:pass@host:5432/db \
+    -e MCPG_ACCESS_MODE=read-only \
+    mcpg
+```
+
+Multi-stage image: runtime stage drops the build toolchain, runs as
+`uid=10001 / gid=10001` with `nologin` shell, application files
+root-owned and read-only to the runtime user.
+
+### From source (developers)
 
 ```bash
 git clone https://github.com/devopam/MCPg && cd MCPg
 uv sync
-MCPG_DATABASE_URL=postgresql://localhost/mydb uv run mcpg
 ```
 
-See the [Installation Guide](docs/installation.md) and
-[User Guide](docs/user-guide.md) to get started.
+`uv sync` creates a venv with all runtime + dev dependencies and exposes
+the `mcpg` console script.
 
-## Goals
+More detail in the [Installation Guide](docs/installation.md).
 
-- **Safe by default** — read-only access mode, every SQL statement parsed and
-  validated; no string-interpolated queries.
-- **Broad scope** — both an application data access layer and a database
-  operations toolkit (health checks, index tuning, EXPLAIN analysis), gated by
-  an access mode.
-- **Test-driven** — every feature backed by tests against a real Postgres
-  (PG 14–17 in CI).
-- **Production-ready** — connection pooling, scalability, multi-tenancy,
-  thorough documentation.
+---
 
-## Capability surface
+## Quick start
+
+### Wire MCPg into Claude Desktop (stdio transport)
+
+Drop this into your `claude_desktop_config.json` (macOS:
+`~/Library/Application Support/Claude/claude_desktop_config.json`;
+Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "mcpg": {
+      "command": "uvx",
+      "args": ["mcpg"],
+      "env": {
+        "MCPG_DATABASE_URL": "postgresql://user:pass@localhost:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The MCPg toolset is now available to the model.
+You can ask Claude things like:
+
+> *"What schemas exist in this database? For each one, summarise the
+> three biggest tables."*
+
+> *"Why is this query slow?
+> `SELECT * FROM orders WHERE customer_id = 42 ORDER BY created_at DESC`"*
+
+### Run as an HTTP server (for IDE integrations, web apps, etc.)
+
+```bash
+MCPG_DATABASE_URL=postgresql://user:pass@localhost:5432/mydb \
+MCPG_TRANSPORT=streamable-http \
+MCPG_HTTP_PORT=8000 \
+mcpg
+```
+
+Then point any MCP-aware client at `http://localhost:8000`. Set
+`MCPG_HTTP_AUTH_TOKEN=...` for a static bearer, or
+`MCPG_AUTH_MODE=oidc` for full JWT validation against an OIDC issuer.
+
+---
+
+## Configuration
+
+MCPg is configured **entirely through environment variables** — no
+config file, no flags. The only required one is `MCPG_DATABASE_URL`;
+everything else has a safe default.
+
+### Common scenarios
+
+| Scenario | Set |
+|---|---|
+| Local exploration, read-only | `MCPG_DATABASE_URL` |
+| Read-write app data access | `MCPG_ACCESS_MODE=restricted` |
+| DBA toolkit (DDL, vacuum, etc.) | `MCPG_ACCESS_MODE=unrestricted` + `MCPG_ALLOW_DDL=true` |
+| HTTP transport with bearer auth | `MCPG_TRANSPORT=streamable-http` + `MCPG_HTTP_AUTH_TOKEN=…` |
+| Multi-tenant SaaS | `MCPG_DEFAULT_ROLE=tenant_a` + `MCPG_ALLOWED_ROLES=tenant_a,tenant_b,…` |
+| Read-replica fan-out | `MCPG_REPLICA_URLS=postgresql://…?sslmode=require,postgresql://…?sslmode=require` |
+| NL→SQL via Anthropic | `MCPG_NL2SQL_PROVIDER=anthropic` (uses `ANTHROPIC_API_KEY` automatically) |
+
+### Full reference
+
+#### Core
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_DATABASE_URL` | **required** | Primary PostgreSQL DSN. Supports URI (`postgresql://…`) and keyword (`host=… user=…`) forms. Remote hosts require `sslmode=require` (or stronger). |
+| `MCPG_ACCESS_MODE` | `read-only` | `read-only` \| `restricted` (allows write tools) \| `unrestricted` (also unlocks DBA tools when paired with the gate vars). |
+| `MCPG_TRANSPORT` | `stdio` | `stdio` (default, for Claude Desktop) \| `streamable-http` \| `sse`. |
+| `MCPG_LOG_LEVEL` | `INFO` | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL`. |
+| `MCPG_HTTP_HOST` | `127.0.0.1` | Bind address for HTTP transports. Set to `0.0.0.0` inside containers. |
+| `MCPG_HTTP_PORT` | `8000` | Listen port for HTTP transports (1–65535). |
+
+#### Capability gates (opt-in for higher-blast-radius tools)
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_ALLOW_DDL` | `false` | Expose DDL tools (`run_ddl`, `create_graph`, `drop_graph`, hypertable tools, migration tools). Requires `MCPG_ACCESS_MODE=unrestricted`. |
+| `MCPG_ALLOW_SHELL` | `false` | Expose subprocess-backed tools (`dump_database`, `restore_database`, `run_pg_binary`). Required PG client binaries must be on `PATH`. |
+| `MCPG_ALLOW_LISTEN` | `false` | Expose `LISTEN/NOTIFY` tools (`subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions`). |
+
+#### Authentication (HTTP transports only)
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_AUTH_MODE` | `static` | `static` (compare bearer to `MCPG_HTTP_AUTH_TOKEN`) \| `oidc` (full JWT validation). |
+| `MCPG_HTTP_AUTH_TOKEN` | — | Required bearer token when `MCPG_AUTH_MODE=static`. Constant-time compare. |
+| `MCPG_OIDC_ISSUER` | — | OIDC issuer URL (required when `MCPG_AUTH_MODE=oidc`). |
+| `MCPG_OIDC_AUDIENCE` | — | Expected `aud` claim (required when `MCPG_AUTH_MODE=oidc`). |
+| `MCPG_OIDC_JWKS_URL` | discovered | Override JWKS endpoint (auto-discovered from issuer's `.well-known` otherwise). |
+| `MCPG_OIDC_ROLE_CLAIM` | — | JWT claim whose value becomes the per-request PG role (`SET LOCAL ROLE`). Composes with the tenancy driver. |
+
+#### Multi-tenancy (`SET ROLE`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_DEFAULT_ROLE` | — | Static PG role applied to every query. Identifier-validated. |
+| `MCPG_ALLOWED_ROLES` | — | Comma-separated allowlist. When set, the `X-MCPG-Role` header / OIDC role claim must be in this list. |
+
+#### Read replicas
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_REPLICA_URLS` | — | Comma-separated replica DSNs. `force_readonly` queries round-robin across healthy replicas; primary fallback on failure; 30 s degraded-replica retry window. |
+
+#### Pool / timeouts / TLS
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_POOL_MIN_SIZE` | `1` | Minimum pool connections. |
+| `MCPG_POOL_MAX_SIZE` | `5` | Maximum pool connections. Must be ≥ `MCPG_POOL_MIN_SIZE`. |
+| `MCPG_STATEMENT_TIMEOUT_MS` | `30000` | Per-session `statement_timeout` set on connection checkout. Runaway queries self-terminate. |
+| `MCPG_LOCK_TIMEOUT_MS` | `5000` | Per-session `lock_timeout`. Hanging lock waits self-terminate. |
+| `MCPG_ALLOW_INSECURE_TLS` | `false` | Bypass the startup TLS check that refuses remote DSNs without `sslmode=require` (or stronger). Loopback hosts are always exempt. |
+
+#### Subprocess tools (`MCPG_ALLOW_SHELL=true` only)
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_SHELL_TIMEOUT_SEC` | `60` | Max wall-clock for `pg_dump` / `pg_restore` / `psql` invocations. |
+| `MCPG_SHELL_MAX_OUTPUT_BYTES` | `67108864` | (64 MiB) Cap on captured stdout per subprocess call. |
+
+#### LISTEN/NOTIFY (`MCPG_ALLOW_LISTEN=true` only)
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_LISTEN_QUEUE_MAX` | `1000` | Per-channel buffer; oldest notifications dropped on overflow. |
+
+#### Audit
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_AUDIT_PERSIST` | `false` | When true, every `run_write` / `run_ddl` call persists to a `mcpg_audit.events` table (auto-created idempotently). |
+| `MCPG_AUDIT_REDACT_KEYS` | — | Comma-separated regex fragments added to the secret-name pattern (defaults already cover `password`, `passwd`, `secret`, `token`, `api[_-]?key`, `bearer`, `authorization`, `database_url`, `dsn`, `conninfo`). |
+
+#### Rate limiting
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_RATE_LIMIT_ENABLED` | `false` | Enable token-bucket per-tool rate limiting. |
+| `MCPG_RATE_LIMIT_MAX_REQUESTS` | `60` | Global cap per window across all tools. |
+| `MCPG_RATE_LIMIT_WINDOW_SECONDS` | `60` | Window length for the global quota. |
+| `MCPG_RATE_LIMIT_HEAVY_MAX` | `5` | Cap for heavy tools (`run_write`, `run_ddl`, `dump_database`, etc.). |
+| `MCPG_RATE_LIMIT_HEAVY_WINDOW` | `60` | Window length for the heavy-tool quota. |
+
+#### Natural-language SQL
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_NL2SQL_PROVIDER` | — | `anthropic` \| `openai` \| `gemini`. Unset disables `translate_nl_to_sql`. |
+| `MCPG_NL2SQL_API_KEY` | vendor fallback | Falls back to `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` depending on provider. |
+| `MCPG_NL2SQL_MODEL` | provider default | Override the default model (e.g. `claude-sonnet-4-6`, `gpt-4o-mini`, `gemini-2.5-flash`). |
+| `MCPG_NL2SQL_BASE_URL` | — | OpenAI-compatible endpoint override (Ollama, vLLM, OpenRouter, etc.). Only consulted for the `openai` provider. |
+| `MCPG_NL2SQL_MAX_TOKENS` | `2048` | Cap on generated tokens (hard limit: 16384). |
+
+---
+
+## Usage examples
+
+The MCP tools are invoked by the agent (Claude, Cursor, Continue, …)
+in response to your natural-language instructions. A handful of
+illustrative round-trips:
+
+### Inspect the schema
+
+> **You:** What tables live in the `public` schema, and which ones are
+> the biggest by row count?
+
+> **Agent (using `list_tables` + `summarize_table` × N):**
+> Six tables: `customers` (1.2M rows), `orders` (4.7M), `line_items`
+> (18.3M), `products` (340), `addresses` (1.4M), `audit_log`
+> (45.8M — the largest, accumulates without retention).
+
+### Diagnose a slow query
+
+> **You:** Why does
+> `SELECT * FROM orders o JOIN line_items l ON o.id = l.order_id WHERE o.created_at > now() - interval '7 days'`
+> take 8 seconds?
+
+> **Agent (using `why_is_this_slow` + `recommend_indexes`):**
+> `EXPLAIN ANALYZE` shows a sequential scan over `orders` (4.7M rows)
+> filtered by `created_at`. There's no index on `orders.created_at`.
+> Recommended:
+> `CREATE INDEX CONCURRENTLY orders_created_at_idx ON orders (created_at DESC);`
+> Expected improvement: ~95% reduction (index scan touches ~33K rows
+> instead of full table). Run `validate_migration` on it before applying
+> to confirm there's no locking surprise.
+
+### Translate plain English to SQL
+
+> **You:** Find customers who placed an order this month but never
+> in the previous three months — show me their email and current
+> lifetime spend.
+
+> **Agent (using `translate_nl_to_sql`):**
+> ```sql
+> SELECT c.email, SUM(l.price * l.quantity) AS lifetime_spend
+> FROM customers c
+> JOIN orders o ON o.customer_id = c.id
+> JOIN line_items l ON l.order_id = o.id
+> WHERE EXISTS (
+>   SELECT 1 FROM orders o2 WHERE o2.customer_id = c.id
+>     AND o2.created_at >= date_trunc('month', now()))
+>   AND NOT EXISTS (
+>   SELECT 1 FROM orders o3 WHERE o3.customer_id = c.id
+>     AND o3.created_at >= date_trunc('month', now()) - interval '3 months'
+>     AND o3.created_at <  date_trunc('month', now()))
+> GROUP BY c.email;
+> ```
+
+### Picture the schema
+
+> **You:** Draw me an ER diagram of the `public` schema.
+
+> **Agent (using `generate_schema_diagram`):** *Returns a Mermaid
+> diagram you can paste straight into GitHub / Notion / Obsidian.*
+
+### Audit the database
+
+> **You:** How healthy is this database right now?
+
+> **Agent (using `audit_database`):** Returns a graded report:
+> *Memory & I/O score 92 (GOOD), Transaction & Connection 78 (WARNING:
+> rollback rate 0.4%, look at app logs), Concurrency & Locks 60
+> (CRITICAL: 14 backends waiting), Cleanliness & Bloat 88 (GOOD), Slow
+> queries 70 (WARNING: top query template runs 5000×, mean 90 ms —
+> see `optimize_query`).*
+
+### Run a guarded write
+
+> **You:** Soft-delete every order older than 5 years.
+
+> **Agent (using `run_write` with `MCPG_AUDIT_PERSIST=true`):** Validates
+> the statement through the safe-SQL kernel, runs it inside a transaction,
+> returns affected row count, persists the call (sql + arguments —
+> with secrets regex-redacted — + status) to `mcpg_audit.events` for
+> after-the-fact review.
+
+For dozens more recipes — multi-tenant routing, RLS testing, NL→SQL,
+hybrid vector + FTS search, Apache AGE Cypher, TimescaleDB, ORM schema
+exports, server-side cursors — see [`docs/cookbook.md`](docs/cookbook.md).
+
+---
+
+## What's in the box
+
+Compact category list. For the full, current tool reference see
+[`docs/tools.md`](docs/tools.md); for a guided walkthrough see
+[`docs/tour.md`](docs/tour.md).
 
 - **Catalog introspection** — schemas, tables, columns, indexes,
   constraints, views, functions, triggers, sequences, partitions,
-  policies, roles, grants, enums, domains, composite types, foreign-data
-  wrappers, foreign servers, foreign tables, user mappings,
-  publications, subscriptions, foreign keys, extensions, generated
-  columns.
-- **Visualisation** — `generate_schema_diagram` (Mermaid ER) +
-  `generate_fk_cascade_graph` (Mermaid blast-radius graph of
-  ON DELETE / ON UPDATE CASCADE FKs) + `generate_graph_diagram`
-  (Mermaid view of an Apache AGE property graph).
-- **Structural diff** — `compare_schemas` returns a typed diff
-  between two schemas; `validate_migration` re-runs a candidate
-  against a transient sample of real rows so failures the diff
-  misses (NOT NULL on existing NULLs, CHECK violations, type
-  narrowings) surface before apply.
+  policies, roles, grants, enums, domains, composite types, FDWs,
+  publications, subscriptions, extensions, generated columns.
 - **Query intelligence** — `run_select`, `run_select_parallel`,
   `explain_query`, `analyze_query_plan`, `why_is_this_slow`,
   `recommend_indexes`, `analyze_workload`, `check_database_health`,
-  `detect_n_plus_one`.
-- **NL → SQL** — `translate_nl_to_sql` (Anthropic / OpenAI /
-  Gemini via `MCPG_NL2SQL_PROVIDER`). Generated SQL passes through
-  the same `SafeSqlDriver` allowlist as `run_select` before execution.
-- **Server-side cursors** — `open_cursor` / `fetch_cursor` /
-  `close_cursor` / `list_cursors` for pageable reads over millions
-  of rows; each cursor holds a dedicated connection so long-lived
-  cursors can't starve the main pool.
+  `detect_n_plus_one`, `audit_database`.
 - **Search** — `fuzzy_search` (trigram), `full_text_search`,
-  `vector_search` + `vector_range_search` + `hybrid_search`
-  (pgvector + FTS via reciprocal-rank fusion), `geo_search`
-  (PostGIS k-NN).
+  `vector_search`, `hybrid_search` (pgvector + FTS via RRF),
+  `geo_search` (PostGIS k-NN).
+- **Natural language → SQL** — `translate_nl_to_sql` (Anthropic,
+  OpenAI, or Gemini; output passes through the same safe-SQL kernel
+  as hand-written queries).
+- **Visualisation** — `generate_schema_diagram` (ER),
+  `generate_fk_cascade_graph` (blast-radius of `ON DELETE CASCADE`),
+  `generate_graph_diagram` (Apache AGE property graphs).
+- **Structural diff & migrations** — `compare_schemas`,
+  `validate_migration`, staged `prepare_migration` /
+  `complete_migration` / `cancel_migration` workflow.
 - **Apache AGE graph + Cypher** — `list_graphs`, `describe_graph`,
   `run_cypher`, `create_graph`, `drop_graph`, `generate_graph_diagram`.
-  Write tools gated under `MCPG_ALLOW_DDL`.
-- **Composite + advisor tools** — `summarize_table` (one-call snapshot),
+- **Composite + advisor tools** — `summarize_table`,
   `find_unused_objects`, `find_sensitive_columns` (PII heuristic),
-  `lint_naming_conventions`, `test_rls_for_role` (debug RLS as a
-  target role), `list_locks`, `find_blocking_chains`,
-  `read_pg_stat_io` (PG16+), `generate_test_data` (synthetic INSERT
-  generator).
-- **Live ops & maintenance** (gated) — `list_active_queries`,
+  `lint_naming_conventions`, `test_rls_for_role`, `list_locks`,
+  `find_blocking_chains`, `read_pg_stat_io` (PG16+),
+  `generate_test_data`.
+- **Live ops & maintenance** — `list_active_queries`,
   `run_maintenance` (VACUUM/ANALYZE), `cancel_query`,
   `terminate_backend`, `run_write`, `run_ddl`, `enable_extension`.
-- **Data movement** — `export_query` / `export_table` (in-process
-  CSV/JSON), `dump_database` / `restore_database` (subprocess gate),
-  `import_csv` / `import_json` (COPY FROM STDIN + parametrised
-  executemany), `copy_table_between_databases` (cross-DB pipeline).
-- **Event streams** (gated) — `subscribe_channel` /
-  `poll_notifications` / `unsubscribe_channel` /
-  `list_notification_subscriptions` bridge PostgreSQL `LISTEN` / `NOTIFY`
-  into the MCP tool-poll model.
-- **Staged migrations** (gated) — `prepare_migration` clones a target
-  schema into a shadow, applies the candidate SQL there, and surfaces
-  the structural diff for review; `validate_migration` applies the
-  candidate to a transient shadow with sample data; `complete_migration` /
-  `cancel_migration` / `list_pending_migrations` round out the workflow.
-- **TimescaleDB hypertables** (gated) — `list_hypertables`,
-  `list_chunks`, `create_hypertable`, `add_compression_policy`,
-  `add_retention_policy`. Degrade to `available=false` when the
-  extension isn't installed.
-- **ORM bridges** — eight read-only catalog → DSL exporters:
-  `generate_prisma_schema`, `generate_drizzle_schema`,
-  `generate_sqlalchemy_models`, `generate_sqlc_schema`,
-  `generate_diesel_schema`, `generate_jooq_config`,
-  `generate_ent_schemas`, `generate_ecto_schemas`.
-- **Observability** — Prometheus `/metrics` endpoint on the HTTP
-  transport + `get_metrics_exposition` MCP tool for stdio. Three
-  series: `mcpg_tool_calls_total{tool,status}` (counter),
-  `mcpg_tool_duration_seconds_*` (histogram).
-- **HTTP auth** — `MCPG_HTTP_AUTH_TOKEN` for static bearer (default
-  `MCPG_AUTH_MODE=static`); `MCPG_AUTH_MODE=oidc` for full JWT
-  validation against an OIDC issuer's JWKS, with optional
-  `MCPG_OIDC_ROLE_CLAIM` → PG role mapping.
-- **Multi-tenancy via `SET ROLE`** — `MCPG_DEFAULT_ROLE` (static)
-  and the `X-MCPG-Role` HTTP header drive a tenant driver that
-  wraps every query in `BEGIN ... SET LOCAL ROLE "<role>" ...` so
-  one MCPg process can serve N tenants from a single pool.
-- **Read-replica routing** — `MCPG_REPLICA_URLS` round-robins
-  `force_readonly` queries across replicas with degraded-replica
-  detection + primary fallback; `list_replicas` reports per-replica
-  health.
+- **Data movement** — `export_query` / `export_table` (CSV/JSON),
+  `dump_database` / `restore_database`, `import_csv` / `import_json`
+  (COPY FROM STDIN), `copy_table_between_databases`.
+- **Server-side cursors** — `open_cursor`, `fetch_cursor`,
+  `close_cursor`, `list_cursors` for pageable reads over millions
+  of rows.
+- **TimescaleDB** — `list_hypertables`, `list_chunks`,
+  `create_hypertable`, `add_compression_policy`,
+  `add_retention_policy`.
+- **ORM schema exporters** — Prisma, Drizzle, SQLAlchemy, sqlc,
+  Diesel, jOOQ, Ent, Ecto.
+- **Event streams** — `subscribe_channel`, `poll_notifications`,
+  `unsubscribe_channel`, `list_notification_subscriptions` bridging
+  PostgreSQL `LISTEN/NOTIFY` into the MCP poll model.
+- **Observability** — Prometheus `/metrics` endpoint +
+  `get_metrics_exposition` tool for stdio; structured audit trail
+  with regex-based credential redaction.
+
+---
 
 ## Documentation
 
-- [`docs/installation.md`](docs/installation.md) — Installation Guide
-- [`docs/user-guide.md`](docs/user-guide.md) — User Guide
-- [`docs/tour.md`](docs/tour.md) — compact tool tour (start here for discovery)
-- [`docs/cookbook.md`](docs/cookbook.md) — practical agent recipes (start here for common workflows)
-- [`docs/tools.md`](docs/tools.md) — reference for every MCP tool
-- [`docs/architecture.md`](docs/architecture.md) — Architecture Document
-- [`docs/security.md`](docs/security.md) — threat model and security controls
-- [`docs/scaling.md`](docs/scaling.md) — scaling characteristics and tuning
+- [`docs/installation.md`](docs/installation.md) — install + configure
+- [`docs/tour.md`](docs/tour.md) — guided tool tour
+- [`docs/cookbook.md`](docs/cookbook.md) — practical agent recipes
+- [`docs/tools.md`](docs/tools.md) — complete tool reference
+- [`docs/architecture.md`](docs/architecture.md) — how the pieces fit together
+- [`docs/scaling.md`](docs/scaling.md) — pool sizing, replicas, performance
+- [`docs/security-hardening.md`](docs/security-hardening.md) — security feature roadmap
+- [`docs/release-process.md`](docs/release-process.md) — how releases ship to PyPI
 - [`docs/adr/`](docs/adr/) — architecture decision records
-- [`PLAN.md`](PLAN.md) — master plan and phased roadmap
-- [`docs/PROGRESS.md`](docs/PROGRESS.md) — live progress tracker (resume point)
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — development setup and workflow
-- [`CHANGELOG.md`](CHANGELOG.md) — release notes
-- [`docs/release-notes-0.5.0.md`](docs/release-notes-0.5.0.md) — v0.5.0 release summary
-- [`docs/release-notes-0.4.0.md`](docs/release-notes-0.4.0.md) — v0.4.0 release summary
-- [`docs/release-notes-0.3.0.md`](docs/release-notes-0.3.0.md) — v0.3.0 release summary
+- Browse at **https://devopam.github.io/MCPg/**
+
+---
+
+## Security
+
+- Vulnerability reporting: see [`SECURITY.md`](SECURITY.md). 90-day
+  coordinated-disclosure window; reports to `devopam@gmail.com`.
+- Defence-in-depth: capability gates, SafeSQL kernel, identifier
+  allowlist, audit redaction, PG TLS enforcement at startup,
+  rate-limiting, OIDC JWT validation, per-session timeouts.
+- See [`docs/security-hardening.md`](docs/security-hardening.md) for
+  the living roadmap of shipped (✅) and queued (⬜) hardening items.
+
+---
+
+## Release notes & changelog
+
+See [`CHANGELOG.md`](CHANGELOG.md) for the full version history,
+[`docs/release-process.md`](docs/release-process.md) for how releases
+are cut, and the [GitHub Releases](https://github.com/devopam/MCPg/releases)
+page for downloadable artifacts.
+
+---
+
+## Contributing
+
+Pull requests welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for
+the dev-loop setup, test conventions, and the per-PR review
+checklist.
+
+---
 
 ## License
 
 MIT — see [`LICENSE`](LICENSE). The vendored SQL-safety kernel at
-`src/mcpg/_vendor/sql/` is also MIT-licensed; see
-[`NOTICE`](NOTICE) for provenance.
+`src/mcpg/_vendor/sql/` is also MIT-licensed; see [`NOTICE`](NOTICE)
+for provenance.
 
-\* : While best intent has been put to make it production grade, it is still a developmental project and is expected to have issues. Please refer to License Terms for details on indemnity. 
+> **Disclaimer.** Best effort has been put into making MCPg production
+> grade, but it remains an actively developed project and may contain
+> issues. Refer to the License Terms for indemnity details.
