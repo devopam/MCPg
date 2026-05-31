@@ -1,141 +1,320 @@
 # MCPg Installation Guide
 
-How to install and configure the MCPg PostgreSQL MCP server. This is a living
-document — it is updated as installation and configuration options change.
+How to install, configure, and verify MCPg. The complete
+`MCPG_*` environment-variable reference lives in the
+[README](../README.md#configuration); this guide focuses on
+**getting a working install** and the most common configuration
+paths.
+
+---
 
 ## Prerequisites
 
-- **Python 3.12 or newer**.
-- **PostgreSQL 14–18** reachable from where MCPg runs. (Older versions may
-  work but are not tested.)
-- **[uv](https://docs.astral.sh/uv/)** for installing from source.
-- Optionally **Docker**, to run MCPg as a container.
+- **Python 3.12 or newer** (3.12 + 3.13 are tested in CI).
+- **PostgreSQL 14–18** reachable from where MCPg runs. CI matrix
+  covers all five versions on every push. Older versions may work
+  but aren't tested.
+- A **least-privilege database role** for MCPg to connect with —
+  see [Database privileges](#database-privileges) below.
+- Optional, depending on path:
+  - **[uv](https://docs.astral.sh/uv/)** for source installs or for
+    `uv tool install mcpg`.
+  - **Docker** if you'd rather run MCPg in a container.
 
-## Install from PyPI (recommended)
+---
+
+## Install
+
+### Option 1 — From PyPI (recommended)
 
 ```bash
 pip install mcpg
-# or, if you prefer uv:
+```
+
+Or, with `uv`'s globally-isolated tool install:
+
+```bash
 uv tool install mcpg
 ```
 
-`pip install mcpg` puts the `mcpg` console script on your PATH and pulls
-the runtime deps (`mcp[cli]`, `psycopg[binary]`, `psycopg-pool`, `pglast`,
-`httpx`, `pyjwt[crypto]`). Verify with:
+Either path puts an `mcpg` console script on your `PATH` and pulls
+the runtime dependencies (`mcp[cli]`, `psycopg[binary]`,
+`psycopg-pool`, `pglast`, `httpx`, `pyjwt[crypto]`).
+
+Verify the install:
 
 ```bash
 mcpg --version
+# → mcpg 0.5.1
 ```
 
-`uv tool install mcpg` is the equivalent for the `uv` toolchain — it
-isolates MCPg in its own venv and exposes the `mcpg` script globally,
-without affecting other Python projects on the same machine.
-
-## Install from source
+### Option 2 — Docker
 
 ```bash
-git clone https://github.com/devopam/MCPg
-cd MCPg
-uv sync
-```
-
-`uv sync` creates a virtual environment and installs MCPg with the `mcpg`
-console script. Pick this path if you want to follow `main`, run the test
-suite, or develop against the codebase.
-
-## Install with Docker
-
-```bash
-docker build -t mcpg .
+docker build -t mcpg https://github.com/devopam/MCPg.git
 docker run --rm -p 8000:8000 \
     -e MCPG_DATABASE_URL=postgresql://user:pass@host:5432/db \
     -e MCPG_ACCESS_MODE=read-only \
     mcpg
 ```
 
-The image runs as an unprivileged user and defaults to the streamable-HTTP
-transport bound to `0.0.0.0:8000`.
+The image is a hardened multi-stage build: the runtime stage drops
+the build toolchain and runs as `uid=10001 / gid=10001` with a
+`nologin` shell. Application files are root-owned and read-only to
+the runtime user.
+
+### Option 3 — From source (developers)
+
+```bash
+git clone https://github.com/devopam/MCPg && cd MCPg
+uv sync
+uv run mcpg --version
+```
+
+`uv sync` creates a virtual environment with all runtime + dev
+dependencies. Pick this path to follow `main`, run the test suite,
+or contribute.
+
+---
+
+## Quick start
+
+The minimum to get running locally:
+
+```bash
+export MCPG_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mydb
+mcpg
+```
+
+That starts MCPg on the **stdio** transport in **read-only** mode,
+ready to be consumed by an MCP client (Claude Desktop, Cursor,
+Continue, etc.). See the next section for how to wire it into a
+specific client.
+
+For HTTP-based clients:
+
+```bash
+export MCPG_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mydb
+export MCPG_TRANSPORT=streamable-http
+export MCPG_HTTP_PORT=8000
+export MCPG_HTTP_AUTH_TOKEN=...    # optional but strongly recommended
+mcpg
+```
+
+---
+
+## Wire it into an MCP client
+
+### Claude Desktop (`stdio`)
+
+`claude_desktop_config.json` (macOS:
+`~/Library/Application Support/Claude/claude_desktop_config.json`;
+Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "mcpg": {
+      "command": "uvx",
+      "args": ["mcpg"],
+      "env": {
+        "MCPG_DATABASE_URL": "postgresql://user:pass@localhost:5432/mydb",
+        "MCPG_ACCESS_MODE": "read-only"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop after editing the file. (If you've installed
+MCPg via `pip install mcpg`, you can use `"command": "mcpg"` with no
+`args`.)
+
+### Cursor, Continue, or any HTTP MCP client
+
+```bash
+export MCPG_DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
+export MCPG_TRANSPORT=streamable-http
+export MCPG_HTTP_AUTH_TOKEN=<random_long_token>
+mcpg
+```
+
+Configure the client to connect to `http://<host>:8000/mcp` and
+send `Authorization: Bearer <random_long_token>`.
+
+For production HTTP deployments, prefer OIDC over a static token —
+set `MCPG_AUTH_MODE=oidc`, `MCPG_OIDC_ISSUER`, `MCPG_OIDC_AUDIENCE`,
+and optionally `MCPG_OIDC_ROLE_CLAIM` to map JWT claims to PG
+roles. The OIDC flow validates JWTs against the issuer's JWKS
+(asymmetric algorithms only — RS256/ES256 families).
+
+---
 
 ## Configuration
 
-MCPg is configured entirely through environment variables.
+MCPg is configured **entirely through environment variables**. The
+only required one is `MCPG_DATABASE_URL`; all others have safe
+defaults.
 
-**Core:**
+The full reference (all 38 `MCPG_*` variables, grouped by area, with
+defaults and descriptions) is in the
+[README](../README.md#configuration). The summaries below give you
+the minimum set per common scenario.
 
-| Variable             | Default       | Description |
-|----------------------|---------------|-------------|
-| `MCPG_DATABASE_URL`  | *(required)*  | PostgreSQL connection URL (`postgresql://user:pass@host:port/db`) |
-| `MCPG_ACCESS_MODE`   | `read-only`   | `read-only`, `restricted`, or `unrestricted` |
-| `MCPG_ALLOW_DDL`     | `false`       | Unlock `run_ddl`, `enable_extension`, migrations, TimescaleDB writes, AGE writes (also needs `unrestricted`) |
-| `MCPG_ALLOW_SHELL`   | `false`       | Unlock `dump_database`, `restore_database`, `copy_table_between_databases` (also needs `unrestricted`) |
-| `MCPG_ALLOW_LISTEN`  | `false`       | Unlock the LISTEN/NOTIFY family (also needs `unrestricted`) |
-| `MCPG_TRANSPORT`     | `stdio`       | `stdio`, `streamable-http`, or `sse` |
-| `MCPG_HTTP_HOST`     | `127.0.0.1`   | Bind host for the HTTP transports |
-| `MCPG_HTTP_PORT`     | `8000`        | Bind port for the HTTP transports |
-| `MCPG_POOL_MIN_SIZE` | `1`           | Minimum pooled connections |
-| `MCPG_POOL_MAX_SIZE` | `5`           | Maximum pooled connections (peak query concurrency) |
-| `MCPG_AUDIT_PERSIST` | `false`       | Write the audit trail to `mcpg.audit_events` table (otherwise in-memory only) |
-| `MCPG_LOG_LEVEL`     | `INFO`        | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
+### Common scenarios
 
-**HTTP authn + multi-tenancy (HTTP transports only):**
+| Scenario | Set |
+|---|---|
+| **Local exploration**, read-only | `MCPG_DATABASE_URL` |
+| **Read-write app access** | `MCPG_ACCESS_MODE=restricted` |
+| **DBA toolkit** (DDL, vacuum, etc.) | `MCPG_ACCESS_MODE=unrestricted` + `MCPG_ALLOW_DDL=true` |
+| **Dump / restore** subprocess tools | `MCPG_ACCESS_MODE=unrestricted` + `MCPG_ALLOW_SHELL=true` |
+| **`LISTEN/NOTIFY`** event streams | `MCPG_ACCESS_MODE=unrestricted` + `MCPG_ALLOW_LISTEN=true` |
+| **HTTP transport** with static bearer | `MCPG_TRANSPORT=streamable-http` + `MCPG_HTTP_AUTH_TOKEN=…` |
+| **HTTP transport** with OIDC | `MCPG_TRANSPORT=streamable-http` + `MCPG_AUTH_MODE=oidc` + `MCPG_OIDC_ISSUER=…` + `MCPG_OIDC_AUDIENCE=…` |
+| **Multi-tenant SaaS** | `MCPG_DEFAULT_ROLE=tenant_a` + `MCPG_ALLOWED_ROLES=tenant_a,tenant_b,…` |
+| **Read-replica fan-out** | `MCPG_REPLICA_URLS=postgresql://…?sslmode=require,postgresql://…?sslmode=require` |
+| **NL→SQL** via Anthropic | `MCPG_NL2SQL_PROVIDER=anthropic` (auto-uses `ANTHROPIC_API_KEY`) |
+| **Audit persistence** | `MCPG_AUDIT_PERSIST=true` |
+| **Prometheus metrics** | (always on for HTTP transports — `GET /metrics`) |
 
-| Variable | Default | Description |
-|---|---|---|
-| `MCPG_HTTP_AUTH_TOKEN` | unset | Static bearer token. Required when `MCPG_AUTH_MODE=static` (the default) and the HTTP transport is in use. |
-| `MCPG_AUTH_MODE` | `static` | `static` (constant-time token compare) or `oidc` (full JWT validation). |
-| `MCPG_OIDC_ISSUER` / `MCPG_OIDC_AUDIENCE` | unset | Required when `auth_mode=oidc`. The issuer's `/.well-known/openid-configuration` is fetched and cached at startup. |
-| `MCPG_OIDC_JWKS_URL` | unset | Optional override — skip OIDC discovery and point straight at the JWKS endpoint. |
-| `MCPG_OIDC_ROLE_CLAIM` | unset | When set, the named JWT claim becomes the per-request PG role (composes with multi-tenancy). |
-| `MCPG_DEFAULT_ROLE` | unset | Static default PG role for `SET LOCAL ROLE`-driven multi-tenancy. |
-| `MCPG_ALLOWED_ROLES` | empty | Comma-separated allowlist for `MCPG_DEFAULT_ROLE` and the `X-MCPG-Role` header / OIDC role claim. |
+### TLS enforcement (important)
 
-**Read-replica routing:**
+By default MCPg **refuses to start** if `MCPG_DATABASE_URL` (or any
+entry in `MCPG_REPLICA_URLS`) points at a **non-loopback host**
+without TLS enforcement. PostgreSQL's libpq accepts plaintext
+fallback under `sslmode=disable | allow | prefer` (and an unset
+`sslmode` defaults to `prefer`) — which means a misconfigured
+production DSN can leak credentials over the network without anyone
+noticing.
 
-| Variable | Default | Description |
-|---|---|---|
-| `MCPG_REPLICA_URLS` | unset | Comma-separated read-replica DSNs. When set, `force_readonly` queries round-robin across healthy replicas; writes always go to the primary. Failed replicas degrade for 30 s and self-heal. |
+To fix at the DSN level (recommended):
 
-**Natural-language → SQL (optional):**
+```
+postgresql://user:pass@db.example.com:5432/app?sslmode=require
+```
 
-| Variable | Default | Description |
-|---|---|---|
-| `MCPG_NL2SQL_PROVIDER` | unset | `anthropic`, `openai`, or `gemini`. Unset → `translate_nl_to_sql` reports unavailable. |
-| `MCPG_NL2SQL_API_KEY` | unset | API key. Falls back to `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` if unset. |
-| `MCPG_NL2SQL_MODEL` | provider-default | Override the model id (e.g. `claude-sonnet-4-6`, `gpt-4o-mini`, `gemini-2.0-flash`). |
-| `MCPG_NL2SQL_BASE_URL` | provider-default | OpenAI-compatible endpoint override (Ollama, vLLM, OpenRouter, ...). |
-| `MCPG_NL2SQL_MAX_TOKENS` | `2048` | Per-call response budget. Hard cap 16384. |
+…or `verify-ca` / `verify-full` for stricter validation. Loopback
+hosts (`localhost`, `127.0.0.1`, `::1`) are always exempt.
 
-**Listener tuning:**
+If you genuinely need to run plaintext for a temporary dev /
+internal use, the explicit opt-out is:
 
-| Variable | Default | Description |
-|---|---|---|
-| `MCPG_LISTEN_QUEUE_MAX` | `1000` | Max queued NOTIFY messages per subscription. |
-| `MCPG_SHELL_TIMEOUT_SEC` | `60` | Hard timeout for `dump_database` / `restore_database` / etc. |
-| `MCPG_SHELL_MAX_OUTPUT_BYTES` | `64 MiB` | Hard cap on subprocess output the agent receives. |
+```bash
+export MCPG_ALLOW_INSECURE_TLS=true
+```
 
-A missing or invalid variable causes a clear `configuration error` on
-startup, naming the offending variable. Credentials are never written to
-logs — the settings repr and the audit log redact them.
+The startup error message names exactly which DSN failed the check
+(including the replica index if it was one of your
+`MCPG_REPLICA_URLS` entries).
 
 ### Database privileges
 
-Connect MCPg with a **least-privilege database role** — ideally one granted
-only the privileges the workload needs. MCPg's access-mode enforcement is a
-second line of defence, not a substitute for correct database-side
-permissions. See [`security.md`](security.md).
+Connect MCPg with a **least-privilege database role** — ideally one
+granted only the privileges the workload needs.
+
+MCPg's access-mode enforcement (`read-only` / `restricted` /
+`unrestricted`) and capability gates (`MCPG_ALLOW_DDL` /
+`MCPG_ALLOW_SHELL` / `MCPG_ALLOW_LISTEN`) are a **second line of
+defence**, not a substitute for correct database-side permissions.
+A misconfigured `unrestricted + MCPG_ALLOW_DDL=true` deployment with
+a superuser DSN is by-design root access; ensure that combination
+matches operator intent.
+
+Typical setup for a read-only deployment:
+
+```sql
+CREATE ROLE mcpg_reader LOGIN PASSWORD 'change-me';
+GRANT CONNECT ON DATABASE mydb TO mcpg_reader;
+GRANT USAGE ON SCHEMA public TO mcpg_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcpg_reader;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT ON TABLES TO mcpg_reader;
+```
+
+See [`security.md`](security.md) for the full threat model and
+[`security-hardening.md`](security-hardening.md) for the shipped
+and queued hardening features.
+
+---
 
 ## Verify the installation
 
 ```bash
-MCPG_DATABASE_URL=postgresql://localhost/mydb uv run mcpg
+MCPG_DATABASE_URL=postgresql://localhost/mydb mcpg
 ```
 
-The server starts on the configured transport (`stdio` by default). To
-confirm it can reach the database, connect an MCP client and call
-`get_server_info` — see the [User Guide](user-guide.md).
+On stdio (the default), the server waits silently for an MCP
+client to attach. To exercise a tool round-trip, point a client at
+it and call `get_server_info` — see the
+[User Guide](user-guide.md#connecting-an-mcp-client).
+
+For HTTP transports, MCPg also exposes:
+
+- `GET /healthz` → liveness probe.
+- `GET /readyz` → readiness probe (verifies a pool connection).
+- `GET /metrics` → Prometheus-format metrics
+  (`mcpg_tool_calls_total{tool,status}` and
+  `mcpg_tool_duration_seconds_*`).
+
+---
+
+## Troubleshooting
+
+- **Startup error: "configuration error: …"**
+  A required env var is missing or invalid; the message names it.
+  See the [README env-var reference](../README.md#configuration).
+- **Startup error: "…points at a remote host … but its sslmode is
+  `prefer`"**
+  TLS enforcement caught a plaintext-capable DSN. Add
+  `?sslmode=require` to the DSN, or set
+  `MCPG_ALLOW_INSECURE_TLS=true` if it's intentional.
+- **`mcpg: command not found`** after a `pip install mcpg`
+  Your Python `bin/` is not on `PATH`. Either activate the venv or
+  use `python -m mcpg`.
+- **A write tool is missing**
+  Set `MCPG_ACCESS_MODE=unrestricted` plus the matching gate:
+  `MCPG_ALLOW_DDL=true` for DDL / migrations / extensions,
+  `MCPG_ALLOW_SHELL=true` for `dump_database` / `restore_database` /
+  `copy_table_between_databases`, `MCPG_ALLOW_LISTEN=true` for
+  `subscribe_channel` / `poll_notifications` / …
+- **`fuzzy_search` / `analyze_workload` / `vector_search` reports
+  `available: false`**
+  The corresponding PostgreSQL extension (`pg_trgm` /
+  `pg_stat_statements` / `vector` / `postgis` / `timescaledb` /
+  `age`) isn't installed in your database. MCPg degrades
+  gracefully rather than failing — install the extension when
+  ready.
+- **A query is rejected by `run_select`**
+  Only safe read-only statements pass the SafeSQL allowlist; writes,
+  DDL, and multi-statement input are refused by design. Use
+  `run_write` / `run_ddl` (under `unrestricted` mode) for those.
+- **Connection failures**
+  Verify `MCPG_DATABASE_URL` and that the database is reachable.
+  Errors are logged with the password redacted.
+- **`prepare_migration` refuses with "cannot run inside a
+  transaction"**
+  The candidate SQL contains a `CONCURRENTLY` / `VACUUM` /
+  `ALTER SYSTEM` statement. The staged-migration workflow always
+  wraps the candidate in `BEGIN ... COMMIT`; for those, use
+  `run_ddl` directly.
+- **`mcpg --version` doesn't print anything**
+  Pre-v0.5.1 builds shipped without the `--version` flag. Update
+  with `pip install --upgrade mcpg`.
+
+---
 
 ## Next steps
 
-- [User Guide](user-guide.md) — concepts, connecting a client, using the tools
-- [Tool Reference](tools.md) — every MCP tool and its parameters
-- [Architecture](architecture.md) — how MCPg is built
+- [User Guide](user-guide.md) — concepts, connecting clients, and a
+  feature-by-feature walkthrough.
+- [Tool Tour](tour.md) — compact discovery of every tool MCPg
+  registers, grouped by intent.
+- [Cookbook](cookbook.md) — task-oriented recipes for common
+  workflows.
+- [Tool Reference](tools.md) — exhaustive per-tool documentation.
+- [Security model](security.md) and the
+  [security hardening roadmap](security-hardening.md).
+- [Release process](release-process.md) — how new versions ship to
+  PyPI.
+- [Architecture](architecture.md) — module map and design.

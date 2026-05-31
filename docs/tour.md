@@ -1,12 +1,15 @@
 # MCPg tool tour
 
 A compact one-page tour of every tool MCPg exposes, organised by
-**what an agent typically wants to do**. Use this as a discovery surface;
-the full reference is in [`tools.md`](tools.md).
+**what an agent typically wants to do**. Use this as a discovery
+surface; the full reference is in [`tools.md`](tools.md), and
+task-oriented recipes live in [`cookbook.md`](cookbook.md).
 
-**114 tools** as of trunk (post-v0.5.0; +Apache AGE, replicas, OIDC).
-Numbers in `()` after each tool show roughly how parameters land —
-required ones first, common defaults afterwards.
+**117 tools** as of trunk. Each line shows the tool name + how its
+parameters land (required first, common defaults after). Capability
+gates are noted in section titles where they apply.
+
+---
 
 ## "What's in this database?"
 
@@ -38,7 +41,7 @@ list_publications()                  # logical replication
 list_subscriptions()
 list_extensions()
 list_available_extensions()
-list_generated_columns(schema)       # GENERATED ALWAYS AS ... STORED columns
+list_generated_columns(schema)       # GENERATED ALWAYS AS … STORED columns
 ```
 
 ## "Show me the shape"
@@ -48,15 +51,16 @@ Visualisation + structural diff.
 ```
 generate_schema_diagram(schema)                      # Mermaid ER text
 generate_fk_cascade_graph(schema, include_all=false) # Mermaid graph of CASCADE / SET NULL / SET DEFAULT FKs
-compare_schemas(left_schema, right_schema)           # added/removed/changed
+compare_schemas(left_schema, right_schema)           # added / removed / changed
 ```
 
 ## "Lint the schema"
 
 ```
-run_advisors(schema)                                 # PK / unindexed-FK / dup-index / nullable-tstz
-lint_naming_conventions(schema)                      # snake_case vs camelCase vs PascalCase outliers + index prefix rule
-find_sensitive_columns(schema)                       # PII / secret heuristic (credential / financial / contact / ... )
+run_advisors(schema)                                 # PK / unindexed-FK / dup-index / nullable-tstz / graph indices
+lint_naming_conventions(schema)                      # snake_case vs camelCase outliers + index prefix rule
+find_sensitive_columns(schema)                       # PII / secret heuristic
+find_unused_objects(schema)                          # zero-scan tables and user indexes
 ```
 
 ## "Test row-level security as a specific role"
@@ -77,10 +81,13 @@ translate_nl_to_sql(question, schema, execute=false) # NL → SQL via Anthropic 
 
 ## "Stream a huge result set" (server-side cursors)
 
+Each cursor owns a dedicated connection so long-lived cursors can't
+starve the main pool. 5-minute idle TTL.
+
 ```
 open_cursor(sql)                                     # validates via the run_select allowlist
 fetch_cursor(cursor_id, batch_size=100)              # exhausted=true → stop polling
-close_cursor(cursor_id)                              # idempotent; 5-min idle TTL anyway
+close_cursor(cursor_id)                              # idempotent
 list_cursors()                                       # show every open cursor
 ```
 
@@ -88,10 +95,9 @@ list_cursors()                                       # show every open cursor
 
 ```
 check_database_health()                              # connections + cache + dead tuples + invalid indexes + replication lag + bloat
+audit_database(schema, log_table=null)               # comprehensive 5-category DBA report with scores + top issues + recommendations
 analyze_workload(top_n=10)                           # slow queries from pg_stat_statements
 recommend_indexes()                                  # missing-index heuristics
-run_advisors(schema)                                 # aggregate of the above (per schema)
-find_unused_objects(schema)                          # zero-scan tables and user indexes
 list_active_queries()                                # who's running what right now
 list_locks(limit=100)                                # pg_locks joined with pg_stat_activity (waiters first)
 find_blocking_chains(limit=50)                       # (blocked, blocking) pairs via pg_blocking_pids
@@ -102,28 +108,30 @@ list_replicas()                                      # health of every read-repl
 
 ## "Tell me everything about this table / why is this query slow"
 
+Composite tools — one call replaces 5–10.
+
 ```
-summarize_table(schema, table, sample_rows=5)        # columns + PK + FKs + indexes + stats + sample, one call
-why_is_this_slow(sql)                                # EXPLAIN + plan analysis + locks + cache + suggestions, one call
+summarize_table(schema, table, sample_rows=5)        # columns + PK + FKs + indexes + stats + sample
+why_is_this_slow(sql)                                # EXPLAIN + plan analysis + locks + cache + index suggestions
 ```
 
 ## "Search for something"
 
 ```
-fuzzy_search(schema, table, column, query)           # pg_trgm trigram
-full_text_search(schema, table, column, query)       # tsvector / tsquery
+fuzzy_search(schema, table, column, query)                                # pg_trgm trigram
+full_text_search(schema, table, column, query)                            # tsvector / tsquery, web-search syntax
 vector_search(schema, table, column, query_vector, k=10, operator="<->")  # pgvector k-NN
 vector_range_search(schema, table, column, query_vector, max_distance)    # pgvector threshold
 hybrid_search(schema, table, vector_col, text_col, query_vector, text_query)
-                                                     # vector + FTS fused via RRF
-geo_search(schema, table, column, lon, lat, k=10)    # PostGIS k-NN
+                                                                          # vector + FTS fused via RRF
+geo_search(schema, table, column, lon, lat, k=10)                         # PostGIS k-NN
 ```
 
 ## "Tune pgvector"
 
 ```
-recommend_vector_index(schema, table, column)        # HNSW vs IVFFlat heuristics
-recommend_vector_quantization(schema)                # vector -> halfvec storage advisor
+recommend_vector_index(schema, table, column)                             # HNSW vs IVFFlat heuristics
+recommend_vector_quantization(schema)                                     # vector → halfvec / bit storage advisor
 analyze_vector_search(schema, table, column, query_vector)
 analyze_vector_table(schema, table)
 ```
@@ -164,7 +172,7 @@ list_notification_subscriptions()
 prepare_migration(name, target_schema, candidate_sql, ttl_minutes=60)
                                                      # returns id + shadow + diff
 validate_migration(target_schema, candidate_sql, sample_rows_per_table=100)
-                                                     # applies to a transient shadow with real-shape sample data
+                                                     # applies to a transient shadow with sampled real data
 complete_migration(migration_id)                     # applies to target
 cancel_migration(migration_id)                       # drops shadow
 list_pending_migrations()
@@ -187,9 +195,9 @@ generate_ent_schemas(schema)                         # one .go per table (Go)
 generate_ecto_schemas(schema, app_module="MyApp")    # one .ex per table (Elixir)
 ```
 
-All eight share v1 coverage: base tables, columns, primary keys,
-single-column intra-schema FKs, enums. Cross-schema and composite FKs
-are documented gaps.
+All eight cover: base tables, columns, primary keys, single-column
+intra-schema FKs, and enums. Cross-schema and composite FKs are
+documented gaps.
 
 ## "Write to the database" (`unrestricted` mode)
 
@@ -211,7 +219,7 @@ enable_extension(name)                               # allowlisted extensions on
 ```
 pg_cron.schedule(name, schedule, command)
 pg_cron.unschedule(name_or_id)
-pg_cron.update(name_or_id, ...)
+pg_cron.update(name_or_id, …)
 ```
 
 ## "Manage partitions" (`unrestricted` + `MCPG_ALLOW_DDL=true` + pg_partman installed)
@@ -258,8 +266,12 @@ list_replicas()                                             # per-replica health
 ```
 list_audit_events(limit=100, tool=null)              # MCPG_AUDIT_PERSIST=true required
 get_server_info()                                    # version, mode, transport, DB state
-get_metrics_exposition()                             # Prometheus text-format snapshot
 ```
+
+The `mcpg --version` shell flag (also `-V`) prints the version when
+you're filing a bug report.
+
+---
 
 ## Reading more
 
@@ -267,5 +279,6 @@ get_metrics_exposition()                             # Prometheus text-format sn
 - [`tools.md`](tools.md) — full parameter / return shape per tool.
 - [`user-guide.md`](user-guide.md) — narrative walkthrough.
 - [`security.md`](security.md) — threat model + access-mode boundaries.
+- [`security-hardening.md`](security-hardening.md) — shipped vs queued hardening roadmap.
 - [`architecture.md`](architecture.md) — design + module map.
 - [`adr/`](adr/) — accepted architecture decision records.
