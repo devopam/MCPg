@@ -14,6 +14,7 @@ from enum import StrEnum
 from os import environ
 
 from mcpg._vendor.sql import obfuscate_password
+from mcpg.nl2sql import VENDOR_ENV_VAR_HINT
 
 # PG role names must be safe identifiers — we inline them into
 # ``SET ROLE "<name>"`` so anything outside ``[A-Za-z_][A-Za-z0-9_]*``
@@ -456,15 +457,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
                 break
 
     if nl2sql_provider is not None and nl2sql_provider not in api_keys:
-        vendor_var = {
-            "anthropic": "ANTHROPIC_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "gemini": "GEMINI_API_KEY (or GOOGLE_API_KEY)",
-        }[nl2sql_provider]
         raise ConfigError(
             f"MCPG_NL2SQL_PROVIDER={nl2sql_provider!r} but no API key found; "
-            f"set {vendor_var} in the environment, or set MCPG_NL2SQL_API_KEY "
-            "explicitly."
+            f"set {VENDOR_ENV_VAR_HINT[nl2sql_provider]} in the environment, "
+            "or set MCPG_NL2SQL_API_KEY explicitly."
         )
 
     # Settings expects a stable, immutable order so the repr is stable

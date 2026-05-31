@@ -1367,26 +1367,27 @@ def _register_query(server: FastMCP[AppContext]) -> None:
 
         chosen = (provider or settings.nl2sql_provider or "").strip().lower() or None
         if chosen is None:
+            # No provider arg AND no default configured AND no vendor keys
+            # in the env — provider= alone can't fix this, the operator
+            # needs to set at least one vendor API key.
             raise nl2sql.NL2SQLError(
-                "translate_nl_to_sql has no provider configured. Set one of "
-                "ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY (or "
-                "GOOGLE_API_KEY) in the environment, or pass provider=... in "
-                "the call."
+                "translate_nl_to_sql has no provider configured. Set at "
+                "least one of ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+                "GEMINI_API_KEY (or GOOGLE_API_KEY) in the server's "
+                "environment. The tool's provider= argument selects "
+                "between providers that are already configured — it can't "
+                "supply credentials on its own."
             )
         if not nl2sql.is_valid_provider(chosen):
             raise nl2sql.NL2SQLError(f"unknown NL→SQL provider {chosen!r}; supported: anthropic, openai, gemini")
         api_key = api_keys.get(chosen)
         if api_key is None:
             configured = sorted(api_keys) or ["(none)"]
-            vendor_var = {
-                "anthropic": "ANTHROPIC_API_KEY",
-                "openai": "OPENAI_API_KEY",
-                "gemini": "GEMINI_API_KEY (or GOOGLE_API_KEY)",
-            }[chosen]
             raise nl2sql.NL2SQLError(
                 f"provider {chosen!r} is not configured (currently configured: "
-                f"{', '.join(configured)}). Set {vendor_var} in the environment, "
-                "or pick a configured provider via the provider= argument."
+                f"{', '.join(configured)}). Set {nl2sql.VENDOR_ENV_VAR_HINT[chosen]} "
+                "in the environment, or pick a configured provider via the "
+                "provider= argument."
             )
 
         # The operator's MCPG_NL2SQL_MODEL / MCPG_NL2SQL_BASE_URL overrides

@@ -17,11 +17,11 @@ import pytest
 from _fakes import FakeDatabase, FakeDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from mcpg.config import load_settings
+from mcpg.config import Settings, load_settings
 from mcpg.server import create_server
 
 
-def _settings_with(env_extra: dict[str, str]) -> object:
+def _settings_with(env_extra: dict[str, str]) -> Settings:
     return load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", **env_extra})
 
 
@@ -55,6 +55,32 @@ async def test_translate_nl_to_sql_errors_when_caller_picks_unconfigured_provide
     assert "'openai' is not configured" in msg
     assert "anthropic" in msg  # tells the caller what IS configured
     assert "OPENAI_API_KEY" in msg
+
+
+@pytest.mark.parametrize("provider_arg", ["Anthropic", " ANTHROPIC ", "  anthropic\t"])
+async def test_translate_nl_to_sql_normalises_provider_arg_case_and_whitespace(provider_arg: str) -> None:
+    # Anthropic is the only configured provider. A mixed-case /
+    # whitespace-padded `provider=` should still resolve to it — the
+    # caller getting an "unknown provider" or "not configured" error
+    # because of stray whitespace would be surprising. Hitting the same
+    # code path as the lower-case form means we don't get one of those
+    # errors; we get an "openai is not configured" error only when the
+    # name itself is wrong.
+    settings = _settings_with({"ANTHROPIC_API_KEY": "sk-ant"})
+    server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        # We can't easily assert success here without mocking the LLM
+        # HTTP call, but we CAN assert that the resolution step doesn't
+        # error on case / whitespace — i.e. we don't get an
+        # "unknown provider" or "not configured" message. Any error we
+        # do see should be from the downstream HTTP call.
+        result = await client.call_tool(
+            "translate_nl_to_sql",
+            {"question": "x", "schema": "public", "provider": provider_arg},
+        )
+        msg = "\n".join(block.text for block in result.content if hasattr(block, "text"))
+        assert "unknown NL→SQL provider" not in msg
+        assert "is not configured" not in msg
 
 
 async def test_translate_nl_to_sql_errors_on_unknown_provider_name() -> None:

@@ -49,6 +49,17 @@ DEFAULT_MODELS: dict[str, str] = {
     "gemini": "gemini-2.0-flash",
 }
 
+# Human-readable env-var hint per provider, used in error messages
+# when MCPg needs to tell the operator which env var to set to
+# enable a given provider. Single source of truth so the wording
+# stays consistent between startup validation (config.py) and
+# runtime tool errors (tools.py).
+VENDOR_ENV_VAR_HINT: dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "gemini": "GEMINI_API_KEY (or GOOGLE_API_KEY)",
+}
+
 # Conservative budget — NL→SQL responses are usually a few hundred
 # tokens of JSON. Override via ``MCPG_NL2SQL_MAX_TOKENS``.
 DEFAULT_MAX_TOKENS = 2048
