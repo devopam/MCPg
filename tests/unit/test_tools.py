@@ -1,5 +1,7 @@
 """Tests for MCP tools."""
 
+from typing import Any
+
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakePool
 from mcp.shared.memory import create_connected_server_and_client_session
@@ -173,11 +175,13 @@ async def test_run_ddl_requires_unrestricted_mode_and_the_allow_ddl_opt_in(
     assert ("run_ddl" in names) is expected
 
 
-async def test_heavy_diagnostics_gating_and_caching() -> None:
-    settings = load_settings({
-        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
-        "MCPG_ENABLE_HEAVY_DIAGNOSTICS": "false",
-    })
+async def test_heavy_diagnostics_gating() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_ENABLE_HEAVY_DIAGNOSTICS": "false",
+        }
+    )
     server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
 
     async with create_connected_server_and_client_session(server) as client:
@@ -189,3 +193,49 @@ async def test_heavy_diagnostics_gating_and_caching() -> None:
         result = await client.call_tool("run_advisors", {"schema": "public"})
         assert result.isError is True
         assert "disabled by the server administrator" in result.content[0].text
+
+
+async def test_heavy_diagnostics_caching(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    When heavy diagnostics are enabled, multiple invocations of a heavy tool like
+    run_advisors in the same session should hit the cache after the first call.
+    """
+    # Import here to avoid circular imports at module import time if any
+    from mcpg.tools import advisors
+
+    original_run_advisors = advisors.run_advisors
+    calls: dict[str, int] = {"count": 0}
+
+    async def wrapped_run_advisors(*args: Any, **kwargs: Any) -> Any:
+        import inspect
+
+        calls["count"] += 1
+        result = original_run_advisors(*args, **kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+    monkeypatch.setattr(advisors, "run_advisors", wrapped_run_advisors)
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            # Heavy diagnostics must be enabled to exercise caching, not gating
+            "MCPG_ENABLE_HEAVY_DIAGNOSTICS": "true",
+        }
+    )
+    server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        # First call should invoke the underlying implementation
+        first = await client.call_tool("run_advisors", {"schema": "public"})
+        assert first.isError is False
+
+        # Second call with the same arguments should be served from cache
+        second = await client.call_tool("run_advisors", {"schema": "public"})
+        assert second.isError is False
+
+        # The cached response should be identical and the underlying function
+        # should only have been invoked once.
+        assert second.content == first.content
+        assert calls["count"] == 1

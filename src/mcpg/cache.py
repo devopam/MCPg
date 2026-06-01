@@ -85,6 +85,7 @@ class RedisCache:
             return
         try:
             import redis.asyncio as aioredis  # type: ignore
+
             self._client = aioredis.from_url(self._redis_url, decode_responses=True)
             self._initialized = True
         except ImportError:
@@ -99,7 +100,7 @@ class RedisCache:
         if not self._client:
             return None
         try:
-            raw = await self._client.get(key)
+            raw = await self._client.get(f"mcpg:cache:{key}")
             if raw is None:
                 return None
             return json.loads(raw)
@@ -113,7 +114,7 @@ class RedisCache:
             return
         try:
             raw = json.dumps(value)
-            await self._client.set(key, raw, ex=ttl)
+            await self._client.set(f"mcpg:cache:{key}", raw, ex=ttl)
         except Exception as e:
             logger.warning(f"Error setting Redis cache for key {key!r}: {e}")
 
@@ -122,9 +123,11 @@ class RedisCache:
         if not self._client:
             return
         try:
-            await self._client.flushdb()
+            # Safely delete only keys belonging to this application's cache namespace
+            async for key in self._client.scan_iter("mcpg:cache:*"):
+                await self._client.delete(key)
         except Exception as e:
-            logger.warning(f"Error flushing Redis cache: {e}")
+            logger.warning(f"Error clearing Redis cache: {e}")
 
     async def close(self) -> None:
         if self._client:

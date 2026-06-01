@@ -1,5 +1,6 @@
 import asyncio
 from unittest.mock import patch
+
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -9,20 +10,20 @@ from mcpg.server import create_server
 
 
 @pytest.mark.asyncio
-async def test_concurrent_load_and_caching_integration(
-    connected_database: Database, database_url: str
-) -> None:
+async def test_concurrent_load_and_caching_integration(connected_database: Database, database_url: str) -> None:
     # 1. Load settings with caching enabled
-    settings = load_settings({
-        "MCPG_DATABASE_URL": database_url,
-        "MCPG_CACHE_ENABLED": "true",
-        "MCPG_CACHE_TTL_SECONDS": "60",
-    })
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": database_url,
+            "MCPG_CACHE_ENABLED": "true",
+            "MCPG_CACHE_TTL_SECONDS": "60",
+        }
+    )
     server = create_server(settings, database=connected_database)
 
     # 2. Get the sql driver to spy on catalog queries
     spied_driver = connected_database.driver()
-    
+
     # Wrap execute_query to spy on database calls
     original_execute = spied_driver.execute_query
     call_count = 0
@@ -40,7 +41,7 @@ async def test_concurrent_load_and_caching_integration(
             # A. Warm up the cache for a specific schema query
             warmup_res = await client.call_tool("list_tables", {"schema": "public"})
             assert warmup_res.isError is False
-            
+
             # Record the execute calls for the warmup
             warmup_calls = call_count
             assert warmup_calls > 0, "Warmup should have queried the database"
