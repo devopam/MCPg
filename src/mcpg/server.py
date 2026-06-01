@@ -78,13 +78,26 @@ def make_lifespan(
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP[AppContext]) -> AsyncIterator[AppContext]:
-        async with database, listen_manager, cursor_manager:
-            yield AppContext(
-                settings=settings,
-                database=database,
-                listen_manager=listen_manager,
-                cursor_manager=cursor_manager,
-            )
+        from mcpg.cache import CacheManager
+
+        cache_manager = CacheManager(
+            enabled=settings.cache_enabled,
+            ttl_seconds=settings.cache_ttl_seconds,
+            maxsize=settings.cache_maxsize,
+            redis_url=settings.redis_url,
+        )
+        await cache_manager.start()
+        try:
+            async with database, listen_manager, cursor_manager:
+                yield AppContext(
+                    settings=settings,
+                    database=database,
+                    listen_manager=listen_manager,
+                    cursor_manager=cursor_manager,
+                    cache=cache_manager,
+                )
+        finally:
+            await cache_manager.close()
 
     return lifespan
 

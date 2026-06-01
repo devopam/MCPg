@@ -240,6 +240,16 @@ everything else has a safe default.
 | `MCPG_RATE_LIMIT_HEAVY_MAX` | `5` | Cap for heavy tools (`run_write`, `run_ddl`, `dump_database`, etc.). |
 | `MCPG_RATE_LIMIT_HEAVY_WINDOW` | `60` | Window length for the heavy-tool quota. |
 
+#### Caching & Feature flags
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_CACHE_ENABLED` | `true` | Enable or disable the adaptive cache layer. |
+| `MCPG_CACHE_TTL_SECONDS` | `300` | Default cache Time-To-Live in seconds. |
+| `MCPG_CACHE_MAXSIZE` | `1024` | Maximum LRU capacity bound for the memory cache. |
+| `MCPG_REDIS_URL` | — | Optional Redis backend connection string for external, multi-node caching. |
+| `MCPG_ENABLE_HEAVY_DIAGNOSTICS` | `true` | Toggle computationally heavy diagnostic, diagram, and advisor tools. |
+
 #### Natural-language SQL
 
 MCPg auto-discovers every configured provider from the environment at

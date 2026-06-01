@@ -171,3 +171,21 @@ async def test_run_ddl_requires_unrestricted_mode_and_the_allow_ddl_opt_in(
         names = {tool.name for tool in (await client.list_tools()).tools}
 
     assert ("run_ddl" in names) is expected
+
+
+async def test_heavy_diagnostics_gating_and_caching() -> None:
+    settings = load_settings({
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_ENABLE_HEAVY_DIAGNOSTICS": "false",
+    })
+    server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        # Introspection should still work or not be blocked by heavy diagnostics (it should be registered)
+        names = {tool.name for tool in (await client.list_tools()).tools}
+        assert "run_advisors" in names
+
+        # A gated tool like run_advisors should fail with the friendly error message
+        result = await client.call_tool("run_advisors", {"schema": "public"})
+        assert result.isError is True
+        assert "disabled by the server administrator" in result.content[0].text

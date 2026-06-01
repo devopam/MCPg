@@ -488,6 +488,32 @@ error immediately rather than queueing.
 
 ---
 
+## Caching
+
+```bash
+export MCPG_CACHE_ENABLED=true             # enable or disable caching (default: true)
+export MCPG_CACHE_TTL_SECONDS=300          # default cache TTL in seconds (default: 300)
+export MCPG_CACHE_MAXSIZE=1024             # maximum LRU cache entry capacity (default: 1024)
+export MCPG_REDIS_URL=redis://localhost:6379/0  # optional Redis connection string for external caching
+```
+
+MCPg provides a high-performance caching layer to save context window tokens and prevent database connection pool saturation from duplicate schema reads:
+* **Adaptive Caching**: Wraps all schema introspection, diagram generators, property graphs, and DBA performance advisors.
+* **Automatic Invalidation**: Any write or DDL statement executed on the database automatically clears the entire cache to prevent serving stale metadata.
+* **Optional Redis Backend**: Soft-dependency Redis async support. If `redis` is configured but the library is not installed, the server logs a warning and falls back to a thread-safe, memory-bounded in-memory LRU cache rather than crashing.
+
+---
+
+## Feature Flags
+
+```bash
+export MCPG_ENABLE_HEAVY_DIAGNOSTICS=true   # toggle computationally heavy diagnostics (default: true)
+```
+
+Enables operational gating for administrators over expensive diagnostic tools. When set to `false`, diagnostic, diagramming, and advisor tools (`run_advisors`, `recommend_indexes`, `generate_schema_diagram`, etc.) remain registered for client discovery but raise a friendly, administrator-disabled `RuntimeError` at call-time.
+
+---
+
 ## Security defaults
 
 MCPg ships with defence-in-depth defaults:

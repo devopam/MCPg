@@ -1,9 +1,6 @@
-"""Shared application context exposed to every tool invocation."""
+from dataclasses import dataclass, field
 
-from __future__ import annotations
-
-from dataclasses import dataclass
-
+from mcpg.cache import CacheManager
 from mcpg.config import Settings
 from mcpg.cursors import CursorManager
 from mcpg.database import Database
@@ -18,3 +15,4 @@ class AppContext:
     database: Database
     listen_manager: ListenManager
     cursor_manager: CursorManager
+    cache: CacheManager = field(default_factory=lambda: CacheManager(enabled=False))
