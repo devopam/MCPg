@@ -127,6 +127,11 @@ class Settings:
     allow_insecure_tls: bool = False
     statement_timeout_ms: int = 30000
     lock_timeout_ms: int = 5000
+    cache_enabled: bool = True
+    cache_ttl_seconds: int = 300
+    cache_maxsize: int = 1024
+    redis_url: str | None = None
+    enable_heavy_diagnostics: bool = True
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -164,7 +169,12 @@ class Settings:
             f"rate_limit_heavy_window={self.rate_limit_heavy_window}, "
             f"allow_insecure_tls={self.allow_insecure_tls}, "
             f"statement_timeout_ms={self.statement_timeout_ms}, "
-            f"lock_timeout_ms={self.lock_timeout_ms})"
+            f"lock_timeout_ms={self.lock_timeout_ms}, "
+            f"cache_enabled={self.cache_enabled}, "
+            f"cache_ttl_seconds={self.cache_ttl_seconds}, "
+            f"cache_maxsize={self.cache_maxsize}, "
+            f"redis_url={self.redis_url!r}, "
+            f"enable_heavy_diagnostics={self.enable_heavy_diagnostics})"
         )
 
 
@@ -548,6 +558,24 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     configure_redaction(env)
 
+    cache_enabled = True
+    if (raw := env.get("MCPG_CACHE_ENABLED")) is not None:
+        cache_enabled = _parse_bool("MCPG_CACHE_ENABLED", raw)
+
+    cache_ttl_seconds = 300
+    if (raw := env.get("MCPG_CACHE_TTL_SECONDS")) is not None:
+        cache_ttl_seconds = _parse_positive_int("MCPG_CACHE_TTL_SECONDS", raw)
+
+    cache_maxsize = 1024
+    if (raw := env.get("MCPG_CACHE_MAXSIZE")) is not None:
+        cache_maxsize = _parse_positive_int("MCPG_CACHE_MAXSIZE", raw)
+
+    redis_url = env.get("MCPG_REDIS_URL", "").strip() or None
+
+    enable_heavy_diagnostics = True
+    if (raw := env.get("MCPG_ENABLE_HEAVY_DIAGNOSTICS")) is not None:
+        enable_heavy_diagnostics = _parse_bool("MCPG_ENABLE_HEAVY_DIAGNOSTICS", raw)
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -586,4 +614,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         allow_insecure_tls=allow_insecure_tls,
         statement_timeout_ms=statement_timeout_ms,
         lock_timeout_ms=lock_timeout_ms,
+        cache_enabled=cache_enabled,
+        cache_ttl_seconds=cache_ttl_seconds,
+        cache_maxsize=cache_maxsize,
+        redis_url=redis_url,
+        enable_heavy_diagnostics=enable_heavy_diagnostics,
     )

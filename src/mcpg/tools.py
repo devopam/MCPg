@@ -7,8 +7,9 @@ unit-tested directly. This module holds the thin MCP wrappers and
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, TypeVar, cast
 
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
@@ -90,6 +91,52 @@ def build_server_info(app: AppContext) -> ServerInfo:
     )
 
 
+T = TypeVar("T")
+
+
+async def _cached_call(  # noqa: UP047
+    ctx: _Ctx,
+    key_prefix: str,
+    func: Callable[[], Awaitable[T]],
+    *key_args: Any,
+) -> T:
+    """Execute and cache the result of the given callable if caching is enabled."""
+    cache = ctx.request_context.lifespan_context.cache
+    if not cache.is_enabled():
+        return await func()
+
+    import hashlib
+    import json
+
+    from mcpg.tenancy import resolve_role
+
+    settings = ctx.request_context.lifespan_context.settings
+    role = resolve_role(settings.default_role) or "none"
+
+    # Hash serialized arguments + request tenant role to prevent key collisions and privilege leak
+    arg_bytes = json.dumps({"args": key_args, "role": role}, sort_keys=True).encode("utf-8")
+    arg_hash = hashlib.sha256(arg_bytes).hexdigest()
+    key = f"{key_prefix}:{arg_hash}"
+
+    cached = await cache.get(key)
+    if cached is not None:
+        return cast(T, cached)
+
+    result = await func()
+    await cache.set(key, result)
+    return result
+
+
+def _check_heavy_diagnostics(ctx: _Ctx, tool_name: str) -> None:
+    """Raise a RuntimeError if heavy diagnostics are disabled by settings."""
+    settings = ctx.request_context.lifespan_context.settings
+    if not settings.enable_heavy_diagnostics:
+        raise RuntimeError(
+            f"The tool {tool_name!r} has been disabled by the server administrator "
+            "(MCPG_ENABLE_HEAVY_DIAGNOSTICS is set to false)."
+        )
+
+
 def _driver(ctx: _Ctx) -> SqlDriver:
     """Return the SQL driver for the current request."""
     return ctx.request_context.lifespan_context.database.driver()
@@ -127,74 +174,104 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         description="List database schemas, excluding PostgreSQL's own schemas unless include_system is true.",
     )
     async def list_schemas(ctx: _Ctx, include_system: bool = False) -> list[dict[str, Any]]:
-        schemas = await introspection.list_schemas(_driver(ctx), include_system=include_system)
-        return [asdict(schema) for schema in schemas]
+        async def _run() -> list[dict[str, Any]]:
+            schemas = await introspection.list_schemas(_driver(ctx), include_system=include_system)
+            return [asdict(schema) for schema in schemas]
+
+        return await _cached_call(ctx, "list_schemas", _run, include_system)
 
     @server.tool(
         name="list_tables",
         description="List the tables and views in a schema, flagging partitioned tables and partitions.",
     )
     async def list_tables(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        tables = await introspection.list_tables(_driver(ctx), schema)
-        return [asdict(table) for table in tables]
+        async def _run() -> list[dict[str, Any]]:
+            tables = await introspection.list_tables(_driver(ctx), schema)
+            return [asdict(table) for table in tables]
+
+        return await _cached_call(ctx, "list_tables", _run, schema)
 
     @server.tool(name="describe_table", description="Describe the columns of a table, in ordinal order.")
     async def describe_table(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
-        columns = await introspection.describe_table(_driver(ctx), schema, table)
-        return [asdict(column) for column in columns]
+        async def _run() -> list[dict[str, Any]]:
+            columns = await introspection.describe_table(_driver(ctx), schema, table)
+            return [asdict(column) for column in columns]
+
+        return await _cached_call(ctx, "describe_table", _run, schema, table)
 
     @server.tool(name="list_indexes", description="List the indexes defined on a table.")
     async def list_indexes(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
-        indexes = await introspection.list_indexes(_driver(ctx), schema, table)
-        return [asdict(index) for index in indexes]
+        async def _run() -> list[dict[str, Any]]:
+            indexes = await introspection.list_indexes(_driver(ctx), schema, table)
+            return [asdict(index) for index in indexes]
+
+        return await _cached_call(ctx, "list_indexes", _run, schema, table)
 
     @server.tool(
         name="list_constraints",
         description="List a table's constraints — primary/foreign keys, unique, check, exclusion.",
     )
     async def list_constraints(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
-        constraints = await introspection.list_constraints(_driver(ctx), schema, table)
-        return [asdict(constraint) for constraint in constraints]
+        async def _run() -> list[dict[str, Any]]:
+            constraints = await introspection.list_constraints(_driver(ctx), schema, table)
+            return [asdict(constraint) for constraint in constraints]
+
+        return await _cached_call(ctx, "list_constraints", _run, schema, table)
 
     @server.tool(
         name="list_foreign_keys",
         description="List foreign keys in a schema, resolved to columns and referenced table.",
     )
     async def list_foreign_keys(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        fks = await introspection.list_foreign_keys(_driver(ctx), schema)
-        return [asdict(fk) for fk in fks]
+        async def _run() -> list[dict[str, Any]]:
+            fks = await introspection.list_foreign_keys(_driver(ctx), schema)
+            return [asdict(fk) for fk in fks]
+
+        return await _cached_call(ctx, "list_foreign_keys", _run, schema)
 
     @server.tool(
         name="list_views",
         description="List the views and materialized views in a schema, with their definitions.",
     )
     async def list_views(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        views = await introspection.list_views(_driver(ctx), schema)
-        return [asdict(view) for view in views]
+        async def _run() -> list[dict[str, Any]]:
+            views = await introspection.list_views(_driver(ctx), schema)
+            return [asdict(view) for view in views]
+
+        return await _cached_call(ctx, "list_views", _run, schema)
 
     @server.tool(
         name="list_functions",
         description="List the functions and procedures defined in a schema.",
     )
     async def list_functions(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        functions = await introspection.list_functions(_driver(ctx), schema)
-        return [asdict(function) for function in functions]
+        async def _run() -> list[dict[str, Any]]:
+            functions = await introspection.list_functions(_driver(ctx), schema)
+            return [asdict(function) for function in functions]
+
+        return await _cached_call(ctx, "list_functions", _run, schema)
 
     @server.tool(
         name="list_triggers",
         description="List the user-defined triggers on a table.",
     )
     async def list_triggers(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
-        triggers = await introspection.list_triggers(_driver(ctx), schema, table)
-        return [asdict(trigger) for trigger in triggers]
+        async def _run() -> list[dict[str, Any]]:
+            triggers = await introspection.list_triggers(_driver(ctx), schema, table)
+            return [asdict(trigger) for trigger in triggers]
+
+        return await _cached_call(ctx, "list_triggers", _run, schema, table)
 
     @server.tool(
         name="list_partitions",
         description="Describe how a table is partitioned (strategy and bounds) and list its partitions.",
     )
     async def list_partitions(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
-        partition_set = await introspection.list_partitions(_driver(ctx), schema, table)
-        return asdict(partition_set)
+        async def _run() -> dict[str, Any]:
+            partition_set = await introspection.list_partitions(_driver(ctx), schema, table)
+            return asdict(partition_set)
+
+        return await _cached_call(ctx, "list_partitions", _run, schema, table)
 
     @server.tool(
         name="list_roles",
@@ -202,117 +279,162 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         "unless include_system is true.",
     )
     async def list_roles(ctx: _Ctx, include_system: bool = False) -> list[dict[str, Any]]:
-        roles = await introspection.list_roles(_driver(ctx), include_system=include_system)
-        return [asdict(role) for role in roles]
+        async def _run() -> list[dict[str, Any]]:
+            roles = await introspection.list_roles(_driver(ctx), include_system=include_system)
+            return [asdict(role) for role in roles]
+
+        return await _cached_call(ctx, "list_roles", _run, include_system)
 
     @server.tool(
         name="list_grants",
         description="List the privileges granted on a table — who may do what to it.",
     )
     async def list_grants(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
-        grants = await introspection.list_grants(_driver(ctx), schema, table)
-        return [asdict(grant) for grant in grants]
+        async def _run() -> list[dict[str, Any]]:
+            grants = await introspection.list_grants(_driver(ctx), schema, table)
+            return [asdict(grant) for grant in grants]
+
+        return await _cached_call(ctx, "list_grants", _run, schema, table)
 
     @server.tool(
         name="list_policies",
         description="List the Row-Level-Security policies on a table, and whether row security is enabled.",
     )
     async def list_policies(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
-        policy_set = await introspection.list_policies(_driver(ctx), schema, table)
-        return asdict(policy_set)
+        async def _run() -> dict[str, Any]:
+            policy_set = await introspection.list_policies(_driver(ctx), schema, table)
+            return asdict(policy_set)
+
+        return await _cached_call(ctx, "list_policies", _run, schema, table)
 
     @server.tool(
         name="list_sequences",
         description="List the sequences defined in a schema, with their range, increment, and last value.",
     )
     async def list_sequences(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        sequences = await introspection.list_sequences(_driver(ctx), schema)
-        return [asdict(sequence) for sequence in sequences]
+        async def _run() -> list[dict[str, Any]]:
+            sequences = await introspection.list_sequences(_driver(ctx), schema)
+            return [asdict(sequence) for sequence in sequences]
+
+        return await _cached_call(ctx, "list_sequences", _run, schema)
 
     @server.tool(
         name="list_enums",
         description="List the enum types in a schema, with their labels in sort order.",
     )
     async def list_enums(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        enums = await introspection.list_enums(_driver(ctx), schema)
-        return [asdict(enum) for enum in enums]
+        async def _run() -> list[dict[str, Any]]:
+            enums = await introspection.list_enums(_driver(ctx), schema)
+            return [asdict(enum) for enum in enums]
+
+        return await _cached_call(ctx, "list_enums", _run, schema)
 
     @server.tool(
         name="list_domains",
         description="List the domain types in a schema, with base type, default, and check constraints.",
     )
     async def list_domains(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        domains = await introspection.list_domains(_driver(ctx), schema)
-        return [asdict(domain) for domain in domains]
+        async def _run() -> list[dict[str, Any]]:
+            domains = await introspection.list_domains(_driver(ctx), schema)
+            return [asdict(domain) for domain in domains]
+
+        return await _cached_call(ctx, "list_domains", _run, schema)
 
     @server.tool(
         name="list_composite_types",
         description="List the standalone composite types in a schema with their attributes.",
     )
     async def list_composite_types(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        types = await introspection.list_composite_types(_driver(ctx), schema)
-        return [asdict(t) for t in types]
+        async def _run() -> list[dict[str, Any]]:
+            types = await introspection.list_composite_types(_driver(ctx), schema)
+            return [asdict(t) for t in types]
+
+        return await _cached_call(ctx, "list_composite_types", _run, schema)
 
     @server.tool(
         name="list_foreign_data_wrappers",
         description="List the foreign-data wrappers installed in the database.",
     )
     async def list_foreign_data_wrappers(ctx: _Ctx) -> list[dict[str, Any]]:
-        wrappers = await introspection.list_foreign_data_wrappers(_driver(ctx))
-        return [asdict(wrapper) for wrapper in wrappers]
+        async def _run() -> list[dict[str, Any]]:
+            wrappers = await introspection.list_foreign_data_wrappers(_driver(ctx))
+            return [asdict(wrapper) for wrapper in wrappers]
+
+        return await _cached_call(ctx, "list_foreign_data_wrappers", _run)
 
     @server.tool(
         name="list_foreign_servers",
         description="List the foreign servers defined in the database, with their FDW and options.",
     )
     async def list_foreign_servers(ctx: _Ctx) -> list[dict[str, Any]]:
-        servers = await introspection.list_foreign_servers(_driver(ctx))
-        return [asdict(server_info) for server_info in servers]
+        async def _run() -> list[dict[str, Any]]:
+            servers = await introspection.list_foreign_servers(_driver(ctx))
+            return [asdict(server_info) for server_info in servers]
+
+        return await _cached_call(ctx, "list_foreign_servers", _run)
 
     @server.tool(
         name="list_foreign_tables",
         description="List the foreign tables in a schema, with their server and options.",
     )
     async def list_foreign_tables(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        tables = await introspection.list_foreign_tables(_driver(ctx), schema)
-        return [asdict(table) for table in tables]
+        async def _run() -> list[dict[str, Any]]:
+            tables = await introspection.list_foreign_tables(_driver(ctx), schema)
+            return [asdict(table) for table in tables]
+
+        return await _cached_call(ctx, "list_foreign_tables", _run, schema)
 
     @server.tool(
         name="list_user_mappings",
         description="List role-to-foreign-server mappings; the catch-all appears as user='public'.",
     )
     async def list_user_mappings(ctx: _Ctx) -> list[dict[str, Any]]:
-        mappings = await introspection.list_user_mappings(_driver(ctx))
-        return [asdict(mapping) for mapping in mappings]
+        async def _run() -> list[dict[str, Any]]:
+            mappings = await introspection.list_user_mappings(_driver(ctx))
+            return [asdict(mapping) for mapping in mappings]
+
+        return await _cached_call(ctx, "list_user_mappings", _run)
 
     @server.tool(
         name="list_publications",
         description="List logical-replication publications with the tables and operations they include.",
     )
     async def list_publications(ctx: _Ctx) -> list[dict[str, Any]]:
-        publications = await introspection.list_publications(_driver(ctx))
-        return [asdict(publication) for publication in publications]
+        async def _run() -> list[dict[str, Any]]:
+            publications = await introspection.list_publications(_driver(ctx))
+            return [asdict(publication) for publication in publications]
+
+        return await _cached_call(ctx, "list_publications", _run)
 
     @server.tool(
         name="list_subscriptions",
         description="List logical-replication subscriptions; requires superuser to see any rows.",
     )
     async def list_subscriptions(ctx: _Ctx) -> list[dict[str, Any]]:
-        subscriptions = await introspection.list_subscriptions(_driver(ctx))
-        return [asdict(subscription) for subscription in subscriptions]
+        async def _run() -> list[dict[str, Any]]:
+            subscriptions = await introspection.list_subscriptions(_driver(ctx))
+            return [asdict(subscription) for subscription in subscriptions]
+
+        return await _cached_call(ctx, "list_subscriptions", _run)
 
     @server.tool(name="list_extensions", description="List the extensions installed in the database.")
     async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
-        extensions = await introspection.list_extensions(_driver(ctx))
-        return [asdict(extension) for extension in extensions]
+        async def _run() -> list[dict[str, Any]]:
+            extensions = await introspection.list_extensions(_driver(ctx))
+            return [asdict(extension) for extension in extensions]
+
+        return await _cached_call(ctx, "list_extensions", _run)
 
     @server.tool(
         name="list_available_extensions",
         description="List every extension available to the database, with whether it is installed.",
     )
     async def list_available_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
-        extensions = await introspection.list_available_extensions(_driver(ctx))
-        return [asdict(extension) for extension in extensions]
+        async def _run() -> list[dict[str, Any]]:
+            extensions = await introspection.list_available_extensions(_driver(ctx))
+            return [asdict(extension) for extension in extensions]
+
+        return await _cached_call(ctx, "list_available_extensions", _run)
 
     @server.tool(
         name="list_generated_columns",
@@ -325,8 +447,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def list_generated_columns(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        cols = await introspection.list_generated_columns(_driver(ctx), schema)
-        return [asdict(c) for c in cols]
+        async def _run() -> list[dict[str, Any]]:
+            cols = await introspection.list_generated_columns(_driver(ctx), schema)
+            return [asdict(c) for c in cols]
+
+        return await _cached_call(ctx, "list_generated_columns", _run, schema)
 
     @server.tool(
         name="list_locks",
@@ -379,7 +504,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def get_compact_schema(ctx: _Ctx, schema: str) -> str:
-        return await introspection.get_compact_schema(_driver(ctx), schema)
+        async def _run() -> str:
+            return await introspection.get_compact_schema(_driver(ctx), schema)
+
+        return await _cached_call(ctx, "get_compact_schema", _run, schema)
 
 
 def _register_diagrams(server: FastMCP[AppContext]) -> None:
@@ -392,7 +520,12 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def generate_schema_diagram(ctx: _Ctx, schema: str, include_partitions: bool = False) -> str:
-        return await diagrams.generate_schema_diagram(_driver(ctx), schema, include_partitions=include_partitions)
+        _check_heavy_diagnostics(ctx, "generate_schema_diagram")
+
+        async def _run() -> str:
+            return await diagrams.generate_schema_diagram(_driver(ctx), schema, include_partitions=include_partitions)
+
+        return await _cached_call(ctx, "generate_schema_diagram", _run, schema, include_partitions)
 
     @server.tool(
         name="generate_fk_cascade_graph",
@@ -409,7 +542,12 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def generate_fk_cascade_graph(ctx: _Ctx, schema: str, include_all: bool = False) -> str:
-        return await diagrams.generate_fk_cascade_graph(_driver(ctx), schema, include_all=include_all)
+        _check_heavy_diagnostics(ctx, "generate_fk_cascade_graph")
+
+        async def _run() -> str:
+            return await diagrams.generate_fk_cascade_graph(_driver(ctx), schema, include_all=include_all)
+
+        return await _cached_call(ctx, "generate_fk_cascade_graph", _run, schema, include_all)
 
 
 def _register_schema_diff(server: FastMCP[AppContext]) -> None:
@@ -624,8 +762,13 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def run_advisors(ctx: _Ctx, schema: str) -> dict[str, Any]:
-        report = await advisors.run_advisors(_driver(ctx), schema)
-        return asdict(report)
+        _check_heavy_diagnostics(ctx, "run_advisors")
+
+        async def _run() -> dict[str, Any]:
+            report = await advisors.run_advisors(_driver(ctx), schema)
+            return asdict(report)
+
+        return await _cached_call(ctx, "run_advisors", _run, schema)
 
     @server.tool(
         name="find_unused_objects",
@@ -640,8 +783,13 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def find_unused_objects(ctx: _Ctx, schema: str) -> dict[str, Any]:
-        report = await advisors.find_unused_objects(_driver(ctx), schema)
-        return asdict(report)
+        _check_heavy_diagnostics(ctx, "find_unused_objects")
+
+        async def _run() -> dict[str, Any]:
+            report = await advisors.find_unused_objects(_driver(ctx), schema)
+            return asdict(report)
+
+        return await _cached_call(ctx, "find_unused_objects", _run, schema)
 
     @server.tool(
         name="find_sensitive_columns",
@@ -658,8 +806,13 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def find_sensitive_columns(ctx: _Ctx, schema: str) -> dict[str, Any]:
-        report = await advisors.find_sensitive_columns(_driver(ctx), schema)
-        return asdict(report)
+        _check_heavy_diagnostics(ctx, "find_sensitive_columns")
+
+        async def _run() -> dict[str, Any]:
+            report = await advisors.find_sensitive_columns(_driver(ctx), schema)
+            return asdict(report)
+
+        return await _cached_call(ctx, "find_sensitive_columns", _run, schema)
 
     @server.tool(
         name="lint_naming_conventions",
@@ -675,8 +828,13 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def lint_naming_conventions(ctx: _Ctx, schema: str) -> dict[str, Any]:
-        report = await naming.lint_naming_conventions(_driver(ctx), schema)
-        return asdict(report)
+        _check_heavy_diagnostics(ctx, "lint_naming_conventions")
+
+        async def _run() -> dict[str, Any]:
+            report = await naming.lint_naming_conventions(_driver(ctx), schema)
+            return asdict(report)
+
+        return await _cached_call(ctx, "lint_naming_conventions", _run, schema)
 
     @server.tool(
         name="test_rls_for_role",
@@ -692,8 +850,13 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     async def test_rls_for_role(
         ctx: _Ctx, schema: str, table: str, role: str, sample_size: int = rls.DEFAULT_RLS_SAMPLE_SIZE
     ) -> dict[str, Any]:
-        result = await rls.test_rls_for_role(_driver(ctx), schema, table, role, sample_size=sample_size)
-        return asdict(result)
+        _check_heavy_diagnostics(ctx, "test_rls_for_role")
+
+        async def _run() -> dict[str, Any]:
+            result = await rls.test_rls_for_role(_driver(ctx), schema, table, role, sample_size=sample_size)
+            return asdict(result)
+
+        return await _cached_call(ctx, "test_rls_for_role", _run, schema, table, role, sample_size)
 
     @server.tool(
         name="generate_test_data",
@@ -723,8 +886,13 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def optimize_query(ctx: _Ctx, sql: str) -> dict[str, Any]:
-        res = await advisors.optimize_query(_driver(ctx), sql)
-        return asdict(res)
+        _check_heavy_diagnostics(ctx, "optimize_query")
+
+        async def _run() -> dict[str, Any]:
+            res = await advisors.optimize_query(_driver(ctx), sql)
+            return asdict(res)
+
+        return await _cached_call(ctx, "optimize_query", _run, sql)
 
 
 def _register_composite(server: FastMCP[AppContext]) -> None:
@@ -756,8 +924,13 @@ def _register_composite(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def why_is_this_slow(ctx: _Ctx, sql: str) -> dict[str, Any]:
-        result = await composite.why_is_this_slow(_driver(ctx), sql)
-        return asdict(result)
+        _check_heavy_diagnostics(ctx, "why_is_this_slow")
+
+        async def _run() -> dict[str, Any]:
+            result = await composite.why_is_this_slow(_driver(ctx), sql)
+            return asdict(result)
+
+        return await _cached_call(ctx, "why_is_this_slow", _run, sql)
 
 
 def _register_data_movement(server: FastMCP[AppContext]) -> None:
@@ -824,6 +997,7 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
             delimiter=delimiter,
             columns=columns,
         )
+        await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
     @server.tool(
@@ -848,6 +1022,7 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
             content,
             columns=columns,
         )
+        await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
 
@@ -923,6 +1098,7 @@ def _register_migrations(server: FastMCP[AppContext]) -> None:
     )
     async def complete_migration(ctx: _Ctx, migration_id: str) -> dict[str, Any]:
         result = await migrations.complete_migration(_driver(ctx), migration_id)
+        await ctx.request_context.lifespan_context.cache.clear()
         return {
             "id": result.id,
             "target_schema": result.target_schema,
@@ -1020,6 +1196,7 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
             chunk_time_interval=chunk_time_interval,
             if_not_exists=if_not_exists,
         )
+        await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
     @server.tool(
@@ -1035,6 +1212,7 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
         ctx: _Ctx, schema: str, table: str, compress_after: str = "7 days"
     ) -> dict[str, Any]:
         result = await timescaledb.add_compression_policy(_driver(ctx), schema, table, compress_after=compress_after)
+        await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
     @server.tool(
@@ -1047,6 +1225,7 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
     )
     async def add_retention_policy(ctx: _Ctx, schema: str, table: str, drop_after: str = "30 days") -> dict[str, Any]:
         result = await timescaledb.add_retention_policy(_driver(ctx), schema, table, drop_after=drop_after)
+        await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
 
@@ -1153,6 +1332,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             max_output_bytes=app.settings.shell_max_output_bytes,
             format=format,
         )
+        await app.cache.clear()
         return asdict(result)
 
     @server.tool(
@@ -1189,6 +1369,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             timeout_sec=app.settings.shell_timeout_sec,
             max_output_bytes=app.settings.shell_max_output_bytes,
         )
+        await app.cache.clear()
         return asdict(result)
 
 
@@ -1434,8 +1615,13 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def audit_database(ctx: _Ctx, schema: str, log_table: str | None = None) -> dict[str, Any]:
-        report = await audit.audit_database(_driver(ctx), schema, log_table=log_table)
-        return asdict(report)
+        _check_heavy_diagnostics(ctx, "audit_database")
+
+        async def _run() -> dict[str, Any]:
+            report = await audit.audit_database(_driver(ctx), schema, log_table=log_table)
+            return asdict(report)
+
+        return await _cached_call(ctx, "audit_database", _run, schema, log_table)
 
     @server.tool(
         name="analyze_workload",
@@ -1446,8 +1632,13 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def analyze_workload(ctx: _Ctx, limit: int = workload.DEFAULT_LIMIT) -> dict[str, Any]:
-        report = await workload.analyze_workload(_driver(ctx), limit=limit)
-        return asdict(report)
+        _check_heavy_diagnostics(ctx, "analyze_workload")
+
+        async def _run() -> dict[str, Any]:
+            report = await workload.analyze_workload(_driver(ctx), limit=limit)
+            return asdict(report)
+
+        return await _cached_call(ctx, "analyze_workload", _run, limit)
 
     @server.tool(
         name="detect_n_plus_one",
@@ -1471,14 +1662,19 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         min_total_ms: float = workload.DEFAULT_MIN_TOTAL_MS,
         limit: int = workload.DEFAULT_NPLUSONE_LIMIT,
     ) -> dict[str, Any]:
-        report = await workload.detect_n_plus_one(
-            _driver(ctx),
-            min_calls=min_calls,
-            max_rows_per_call=max_rows_per_call,
-            min_total_ms=min_total_ms,
-            limit=limit,
-        )
-        return asdict(report)
+        _check_heavy_diagnostics(ctx, "detect_n_plus_one")
+
+        async def _run() -> dict[str, Any]:
+            report = await workload.detect_n_plus_one(
+                _driver(ctx),
+                min_calls=min_calls,
+                max_rows_per_call=max_rows_per_call,
+                min_total_ms=min_total_ms,
+                limit=limit,
+            )
+            return asdict(report)
+
+        return await _cached_call(ctx, "detect_n_plus_one", _run, min_calls, max_rows_per_call, min_total_ms, limit)
 
     @server.tool(
         name="recommend_indexes",
@@ -1487,8 +1683,13 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     async def recommend_indexes(
         ctx: _Ctx, min_live_tuples: int = indexing.DEFAULT_MIN_LIVE_TUPLES
     ) -> list[dict[str, Any]]:
-        recommendations = await indexing.recommend_indexes(_driver(ctx), min_live_tuples=min_live_tuples)
-        return [asdict(recommendation) for recommendation in recommendations]
+        _check_heavy_diagnostics(ctx, "recommend_indexes")
+
+        async def _run() -> list[dict[str, Any]]:
+            recommendations = await indexing.recommend_indexes(_driver(ctx), min_live_tuples=min_live_tuples)
+            return [asdict(recommendation) for recommendation in recommendations]
+
+        return await _cached_call(ctx, "recommend_indexes", _run, min_live_tuples)
 
     @server.tool(
         name="fuzzy_search",
@@ -1721,6 +1922,7 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
     )
     async def schedule_cron_job(ctx: _Ctx, name: str, schedule: str, command: str) -> dict[str, Any]:
         result = await cron.schedule_cron_job(_driver(ctx), name, schedule, command)
+        await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
     @server.tool(
@@ -1732,6 +1934,7 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
     )
     async def unschedule_cron_job(ctx: _Ctx, name: str) -> dict[str, Any]:
         removed = await cron.unschedule_cron_job(_driver(ctx), name)
+        await ctx.request_context.lifespan_context.cache.clear()
         return {"name": name, "removed": removed}
 
 
@@ -1758,6 +1961,7 @@ def _register_partman(server: FastMCP[AppContext]) -> None:
             partition_interval,
             partition_type=partition_type,
         )
+        await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
     @server.tool(
@@ -1771,6 +1975,7 @@ def _register_partman(server: FastMCP[AppContext]) -> None:
     )
     async def partman_run_maintenance(ctx: _Ctx, parent_table: str | None = None) -> dict[str, Any]:
         result = await partman.partman_run_maintenance(_driver(ctx), parent_table)
+        await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
     @server.tool(
@@ -1795,6 +2000,7 @@ def _register_partman(server: FastMCP[AppContext]) -> None:
             retention,
             control_is_time=control_is_time,
         )
+        await ctx.request_context.lifespan_context.cache.clear()
         return {"parent_table": parent_table, "dropped": dropped}
 
 
@@ -1812,6 +2018,7 @@ def _register_write(server: FastMCP[AppContext]) -> None:
     async def run_write(ctx: _Ctx, sql: str) -> dict[str, Any]:
         app = ctx.request_context.lifespan_context
         result = await write.run_write(_driver(ctx), sql, audit_persist=app.settings.audit_persist)
+        await app.cache.clear()
         return asdict(result)
 
 
@@ -1826,6 +2033,7 @@ def _register_maintenance(server: FastMCP[AppContext]) -> None:
     async def run_maintenance(ctx: _Ctx, operation: str, schema: str, table: str) -> dict[str, Any]:
         database = ctx.request_context.lifespan_context.database
         result = await maintenance.run_maintenance(database, operation, schema, table)
+        await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
 
@@ -1874,6 +2082,7 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
             schema=schema,
             table=table,
         )
+        await app.cache.clear()
         return asdict(result)
 
     @server.tool(
@@ -1886,6 +2095,7 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
     )
     async def enable_extension(ctx: _Ctx, name: str) -> dict[str, Any]:
         result = await extensions.enable_extension(_driver(ctx), name)
+        await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
 
@@ -1933,9 +2143,14 @@ def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def generate_graph_diagram(ctx: _Ctx, graph_name: str, limit: int = 50) -> str:
-        app = ctx.request_context.lifespan_context
-        res = await graph_diagram.generate_graph_diagram(app, graph_name, limit=limit)
-        return res["mermaid"]
+        _check_heavy_diagnostics(ctx, "generate_graph_diagram")
+
+        async def _run() -> str:
+            app = ctx.request_context.lifespan_context
+            res = await graph_diagram.generate_graph_diagram(app, graph_name, limit=limit)
+            return res["mermaid"]
+
+        return await _cached_call(ctx, "generate_graph_diagram", _run, graph_name, limit)
 
 
 def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
@@ -1949,6 +2164,7 @@ def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
     async def create_graph(ctx: _Ctx, graph_name: str) -> dict[str, Any]:
         app = ctx.request_context.lifespan_context
         res = await graph_mgmt.create_graph(app, graph_name)
+        await app.cache.clear()
         return dict(res)
 
     @server.tool(
@@ -1961,6 +2177,7 @@ def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
     async def drop_graph(ctx: _Ctx, graph_name: str, cascade: bool = True) -> dict[str, Any]:
         app = ctx.request_context.lifespan_context
         res = await graph_mgmt.drop_graph(app, graph_name, cascade=cascade)
+        await app.cache.clear()
         return dict(res)
 
 
