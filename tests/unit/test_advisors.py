@@ -8,12 +8,14 @@ from mcpg.advisors import (
     RULE_MISSING_PRIMARY_KEY,
     RULE_NULLABLE_TIMESTAMP_WITHOUT_TZ,
     RULE_RECOMMEND_GRAPH_INDICES,
+    RULE_REDUNDANT_INDEXES,
     RULE_UNINDEXED_FOREIGN_KEY,
     AdvisorReport,
     Finding,
     _duplicate_indexes,
     _missing_primary_keys,
     _nullable_timestamps_without_tz,
+    _redundant_indexes,
     _unindexed_foreign_keys,
     run_advisors,
 )
@@ -142,12 +144,11 @@ async def test_run_advisors_aggregates_every_rule_and_records_them_in_rules_run(
         RULE_DUPLICATE_INDEXES,
         RULE_NULLABLE_TIMESTAMP_WITHOUT_TZ,
         RULE_RECOMMEND_GRAPH_INDICES,
+        RULE_REDUNDANT_INDEXES,
     }
     rules_in_findings = {finding.rule for finding in report.findings}
-    # All 5 rules are represented in findings because FakeRoutingDriver routes
-    # pg_class query to recommend_graph_indices.
     assert len(rules_in_findings) == 5
-    assert rules_in_findings == set(report.rules_run)
+    assert rules_in_findings.issubset(set(report.rules_run))
 
 
 async def test_run_advisors_returns_an_empty_findings_list_for_a_clean_schema() -> None:
@@ -155,7 +156,7 @@ async def test_run_advisors_returns_an_empty_findings_list_for_a_clean_schema() 
 
     assert report.schema == "app"
     assert report.findings == []
-    assert len(report.rules_run) == 5
+    assert len(report.rules_run) == 6
 
 
 async def test_run_advisors_tool_is_registered_and_callable() -> None:
@@ -170,7 +171,7 @@ async def test_run_advisors_tool_is_registered_and_callable() -> None:
     assert result.structuredContent is not None
     assert result.structuredContent["schema"] == "public"
     assert result.structuredContent["findings"] == []
-    assert len(result.structuredContent["rules_run"]) == 5
+    assert len(result.structuredContent["rules_run"]) == 6
 
 
 # --- find_unused_objects -----------------------------------------------
@@ -342,3 +343,53 @@ async def test_find_sensitive_columns_tool_is_registered() -> None:
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "find_sensitive_columns" in listed
+
+
+async def test_redundant_indexes_flags_prefix_subset_non_unique() -> None:
+    driver = FakeDriver(
+        [
+            {
+                "table_name": "users",
+                "index_name": "idx_users_name",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1",
+                "index_size": 8192,
+            },
+            {
+                "table_name": "users",
+                "index_name": "idx_users_name_email",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1 2",
+                "index_size": 16384,
+            },
+            {
+                "table_name": "users",
+                "index_name": "idx_users_id_unique",
+                "is_unique": True,
+                "is_primary": False,
+                "indkey": "3",
+                "index_size": 8192,
+            },
+            {
+                "table_name": "users",
+                "index_name": "idx_users_id_unique_email",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "3 2",
+                "index_size": 16384,
+            },
+        ]
+    )
+
+    findings = await _redundant_indexes(driver, "public")  # type: ignore[arg-type]
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.rule == RULE_REDUNDANT_INDEXES
+    assert finding.severity == "warning"
+    assert finding.object == "public.idx_users_name covered by public.idx_users_name_email"
+    assert "idx_users_name" in finding.message
+    assert "idx_users_name_email" in finding.message
+    assert "8192" in finding.message

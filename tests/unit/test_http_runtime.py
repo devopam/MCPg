@@ -454,3 +454,68 @@ def test_build_http_app_in_oidc_mode_blocks_requests_without_a_valid_jwt() -> No
         assert response.status_code == 200
         response = client.get("/healthz")
         assert response.status_code == 200
+
+
+# --- HTTP hardening middlewares (Security headers, CORS, request size limit) ---
+
+
+def test_security_headers_middleware_adds_headers() -> None:
+    from mcpg.http_runtime import _SecurityHeadersMiddleware
+
+    inner = _bare_app()
+    app = Starlette(routes=inner.router.routes)
+    app.add_middleware(_SecurityHeadersMiddleware, hsts_max_age=31536000)
+
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
+        assert response.headers["content-security-policy"] == "default-src 'self'"
+        assert response.headers["x-frame-options"] == "DENY"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["referrer-policy"] == "no-referrer"
+        assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+
+
+def test_request_size_limit_middleware_blocks_large_requests() -> None:
+    from mcpg.http_runtime import _RequestSizeLimitMiddleware
+
+    async def _post_handler(_request: object) -> PlainTextResponse:
+        return PlainTextResponse("ok")
+
+    app = Starlette(routes=[Route("/", _post_handler, methods=["POST"])])
+    app.add_middleware(_RequestSizeLimitMiddleware, max_bytes=10)
+
+    with TestClient(app) as client:
+        # Fits in limit (size 2) -> 200
+        response = client.post("/", content="ok")
+        assert response.status_code == 200
+
+        # Exceeds limit (size 26) -> 413
+        response = client.post("/", content="abcdefghijklmnopqrstuvwxyz")
+        assert response.status_code == 413
+        assert "request_entity_too_large" in response.text
+
+
+def test_cors_middleware_integration() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOWED_ORIGINS": "http://localhost:3000, https://app.example.com",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    with TestClient(wrapped) as client:
+        # Preflight options request from allowed origin
+        headers = {
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "Authorization",
+        }
+        response = client.options("/", headers=headers)
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "http://localhost:3000"

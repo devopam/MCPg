@@ -38,27 +38,32 @@ class AuditedFastMCP(FastMCP[AppContext]):
     """A FastMCP server that records an audit event for every tool call."""
 
     rate_limiter: RateLimiter
+    in_flight_calls: int = 0
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[ContentBlock] | dict[str, Any]:
-        # Enforce rate limiting if configured
-        if hasattr(self, "rate_limiter"):
-            allowed = await self.rate_limiter.consume(name)
-            if not allowed:
-                raise RuntimeError(f"Rate limit exceeded for tool {name!r}. Please try again later.")
-
-        metrics = get_metrics()
-        start = time.monotonic()
+        self.in_flight_calls += 1
         try:
-            result = await super().call_tool(name, arguments)
-        except Exception as exc:
+            # Enforce rate limiting if configured
+            if hasattr(self, "rate_limiter"):
+                allowed = await self.rate_limiter.consume(name)
+                if not allowed:
+                    raise RuntimeError(f"Rate limit exceeded for tool {name!r}. Please try again later.")
+
+            metrics = get_metrics()
+            start = time.monotonic()
+            try:
+                result = await super().call_tool(name, arguments)
+            except Exception as exc:
+                duration = time.monotonic() - start
+                audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(exc)))
+                metrics.record_call(name, "error", duration)
+                raise
             duration = time.monotonic() - start
-            audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(exc)))
-            metrics.record_call(name, "error", duration)
-            raise
-        duration = time.monotonic() - start
-        audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="ok"))
-        metrics.record_call(name, "ok", duration)
-        return result
+            audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="ok"))
+            metrics.record_call(name, "ok", duration)
+            return result
+        finally:
+            self.in_flight_calls -= 1
 
 
 def make_lifespan(
@@ -97,6 +102,27 @@ def make_lifespan(
                     cache=cache_manager,
                 )
         finally:
+            if hasattr(_server, "in_flight_calls"):
+                import asyncio
+                import logging
+
+                logger = logging.getLogger("mcpg.server")
+
+                drain_start = time.monotonic()
+                drain_timeout = settings.shutdown_drain_seconds
+
+                while _server.in_flight_calls > 0:
+                    elapsed = time.monotonic() - drain_start
+                    if elapsed >= drain_timeout:
+                        logger.warning(
+                            "Shutdown drain timed out after %ds; force exiting with %d tool calls in-flight",
+                            drain_timeout,
+                            _server.in_flight_calls,
+                        )
+                        break
+                    logger.info("Waiting for %d in-flight tool calls to drain...", _server.in_flight_calls)
+                    await asyncio.sleep(0.1)
+
             await cache_manager.close()
 
     return lifespan

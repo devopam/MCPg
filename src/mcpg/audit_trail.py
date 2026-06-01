@@ -17,12 +17,17 @@ Persistence is opt-in. With the default ``audit_persist=False``,
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from os import environ
 from typing import Any
 
 from mcpg._vendor.sql import SqlDriver, obfuscate_password
 from mcpg.audit import is_secret_key
+from mcpg.config import _parse_bool
 
 AUDIT_SCHEMA = "mcpg_audit"
 AUDIT_TABLE = "events"
@@ -111,8 +116,19 @@ async def ensure_audit_table(driver: SqlDriver) -> None:
         "  arguments jsonb NOT NULL, "
         "  status text NOT NULL, "
         "  error text, "
-        "  result jsonb"
+        "  result jsonb, "
+        "  prev_hmac text, "
+        "  event_hmac text"
         ")",
+        force_readonly=False,
+    )
+    # Idempotently add the integrity columns if the table already exists without them
+    await driver.execute_query(
+        f"ALTER TABLE {_QUALIFIED} ADD COLUMN IF NOT EXISTS prev_hmac text",
+        force_readonly=False,
+    )
+    await driver.execute_query(
+        f"ALTER TABLE {_QUALIFIED} ADD COLUMN IF NOT EXISTS event_hmac text",
         force_readonly=False,
     )
     _ENSURED_DRIVER_IDS.add(id(driver))
@@ -137,14 +153,61 @@ async def record_audit(
     await ensure_audit_table(driver)
     safe_args = _redact(arguments)
     safe_result = _redact(result) if result is not None else None
+
+    # Check if integrity signature chain is enabled
+    audit_integrity = False
+    if (raw := environ.get("MCPG_AUDIT_INTEGRITY")) is not None:
+        try:
+            audit_integrity = _parse_bool("MCPG_AUDIT_INTEGRITY", raw)
+        except Exception:
+            pass
+
+    key_str = environ.get("MCPG_AUDIT_HMAC_KEY", "").strip()
+    audit_hmac_key = key_str if key_str else None
+
+    prev_hmac: str | None = None
+    event_hmac: str | None = None
+    now_dt = datetime.now(UTC)
+
+    if audit_integrity and audit_hmac_key is not None:
+        # Fetch the event_hmac of the immediately preceding row
+        prev_rows = await driver.execute_query(
+            f"SELECT event_hmac FROM {_QUALIFIED} ORDER BY id DESC LIMIT 1",
+            force_readonly=True,
+        )
+        prev_hmac = ""
+        if prev_rows:
+            prev_hmac = prev_rows[0].cells.get("event_hmac") or ""
+
+        # Formulate deterministic payload byte string of the current event
+        occurred_at_str = now_dt.isoformat()
+        payload_data = {
+            "occurred_at": occurred_at_str,
+            "tool": tool,
+            "arguments": safe_args,
+            "status": status,
+            "error": error,
+            "result": safe_result,
+        }
+        payload_bytes = json.dumps(payload_data, sort_keys=True, default=str).encode("utf-8")
+
+        # Compute HMAC signature
+        key_bytes = audit_hmac_key.encode("utf-8")
+        data_to_sign = prev_hmac.encode("utf-8") + payload_bytes
+        event_hmac = hmac.new(key_bytes, data_to_sign, hashlib.sha256).hexdigest()
+
     await driver.execute_query(
-        f"INSERT INTO {_QUALIFIED} (tool, arguments, status, error, result) VALUES (%s, %s::jsonb, %s, %s, %s::jsonb)",
+        f"INSERT INTO {_QUALIFIED} (tool, arguments, status, error, result, occurred_at, prev_hmac, event_hmac) "
+        "VALUES (%s, %s::jsonb, %s, %s, %s::jsonb, %s, %s, %s)",
         params=[
             tool,
             json.dumps(safe_args, default=str),
             status,
             error,
             json.dumps(safe_result, default=str) if safe_result is not None else None,
+            now_dt,
+            prev_hmac,
+            event_hmac,
         ],
         force_readonly=False,
     )

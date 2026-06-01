@@ -581,3 +581,64 @@ def test_replica_url_error_includes_index_for_diagnostics() -> None:
                 ),
             }
         )
+
+
+def test_new_config_parameters_loads_and_validates() -> None:
+    # Test safe defaults
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.http_max_body_bytes == 1048576
+    assert settings.http_allowed_origins == ()
+    assert settings.http_hsts_max_age == 31536000
+    assert settings.shutdown_drain_seconds == 30
+    assert settings.audit_hmac_key is None
+    assert settings.audit_integrity is False
+
+    # Test explicit parsed values
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_HTTP_MAX_BODY_BYTES": "2097152",
+            "MCPG_HTTP_ALLOWED_ORIGINS": "http://localhost:3000, https://app.example.com",
+            "MCPG_HTTP_HSTS_MAX_AGE": "86400",
+            "MCPG_SHUTDOWN_DRAIN_SECONDS": "15",
+            "MCPG_AUDIT_HMAC_KEY": "my-secret-key",
+            "MCPG_AUDIT_INTEGRITY": "true",
+        }
+    )
+    assert settings.http_max_body_bytes == 2097152
+    assert settings.http_allowed_origins == ("http://localhost:3000", "https://app.example.com")
+    assert settings.http_hsts_max_age == 86400
+    assert settings.shutdown_drain_seconds == 15
+    assert settings.audit_hmac_key == "my-secret-key"
+    assert settings.audit_integrity is True
+
+    # Test blank HMAC key raises
+    with pytest.raises(ConfigError, match="MCPG_AUDIT_HMAC_KEY"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_AUDIT_HMAC_KEY": "   ",
+            }
+        )
+
+    # Test audit integrity true without HMAC key raises
+    with pytest.raises(ConfigError, match="MCPG_AUDIT_INTEGRITY"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_AUDIT_INTEGRITY": "true",
+            }
+        )
+
+    # Test invalid HSTS max age raises
+    with pytest.raises(ConfigError, match="MCPG_HTTP_HSTS_MAX_AGE"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_HTTP_HSTS_MAX_AGE": "-10",
+            }
+        )
+
+    # Test obfuscated audit HMAC key in repr
+    assert "my-secret-key" not in repr(settings)
+    assert "audit_hmac_key='set'" in repr(settings)
