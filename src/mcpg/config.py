@@ -141,6 +141,8 @@ class Settings:
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
+        http_auth_token_repr = "set" if self.http_auth_token else "unset"
+        audit_hmac_key_repr = "set" if self.audit_hmac_key else "unset"
         return (
             f"Settings(database_url={obfuscate_password(self.database_url)!r}, "
             f"access_mode={self.access_mode.value!r}, "
@@ -154,7 +156,7 @@ class Settings:
             f"listen_queue_max={self.listen_queue_max}, "
             f"audit_persist={self.audit_persist}, "
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size}, "
-            f"http_auth_token={'set' if self.http_auth_token else 'unset'!r}, "
+            f"http_auth_token={http_auth_token_repr!r}, "
             f"auth_mode={self.auth_mode!r}, "
             f"oidc_issuer={self.oidc_issuer!r}, "
             f"oidc_audience={self.oidc_audience!r}, "
@@ -185,7 +187,7 @@ class Settings:
             f"http_allowed_origins={self.http_allowed_origins!r}, "
             f"http_hsts_max_age={self.http_hsts_max_age}, "
             f"shutdown_drain_seconds={self.shutdown_drain_seconds}, "
-            f"audit_hmac_key={'set' if self.audit_hmac_key else 'unset'!r}, "
+            f"audit_hmac_key={audit_hmac_key_repr!r}, "
             f"audit_integrity={self.audit_integrity})"
         )
 

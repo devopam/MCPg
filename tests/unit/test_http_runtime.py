@@ -519,3 +519,106 @@ def test_cors_middleware_integration() -> None:
         response = client.options("/", headers=headers)
         assert response.status_code == 200
         assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+
+
+def test_security_headers_middleware_override_behavior() -> None:
+    from mcpg.http_runtime import _SecurityHeadersMiddleware
+
+    # An app that explicitly sets one of the security headers (e.g. CSP)
+    async def _custom_app(scope: dict[str, object], receive: object, send: object) -> None:
+        if scope["type"] == "http":
+
+            async def custom_send(message: dict[str, object]) -> None:
+                if message["type"] == "http.response.start":
+                    headers = list(message.get("headers", []))
+                    headers.append((b"content-security-policy", b"default-src 'none'"))
+                    headers.append((b"x-frame-options", b"SAMEORIGIN"))
+                    message["headers"] = headers
+                await send(message)  # type: ignore[operator]
+
+            await _bare_app()(scope, receive, custom_send)
+        else:
+            await _bare_app()(scope, receive, send)
+
+    app = Starlette()
+    app.add_middleware(_SecurityHeadersMiddleware, hsts_max_age=31536000)
+    app.mount("/", _custom_app)
+
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
+        # The inner app's custom headers must not be overwritten by the middleware
+        assert response.headers["content-security-policy"] == "default-src 'none'"
+        assert response.headers["x-frame-options"] == "SAMEORIGIN"
+        # Other default headers should still be set
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["referrer-policy"] == "no-referrer"
+
+
+def test_security_headers_middleware_hsts_disabled() -> None:
+    from mcpg.http_runtime import _SecurityHeadersMiddleware
+
+    inner = _bare_app()
+    app = Starlette(routes=inner.router.routes)
+    app.add_middleware(_SecurityHeadersMiddleware, hsts_max_age=0)
+
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
+        # strict-transport-security should NOT be present since max-age is 0
+        assert "strict-transport-security" not in response.headers
+
+
+def test_security_headers_middleware_non_http_scope() -> None:
+    from mcpg.http_runtime import _SecurityHeadersMiddleware
+
+    async def _dummy_app(scope: dict[str, object], receive: object, send: object) -> None:
+        pass
+
+    middleware = _SecurityHeadersMiddleware(_dummy_app, hsts_max_age=3600)
+    scope = {"type": "websocket"}
+
+    # Running this should not raise any exceptions or add HTTP headers
+    import asyncio
+
+    asyncio.run(middleware(scope, None, None))
+
+
+def test_cors_middleware_negative_and_default_config() -> None:
+    # 1. Unset/empty allowed origins -> No CORS headers should be returned
+    settings_empty = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOWED_ORIGINS": "",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    wrapped_empty = build_http_app(_Stub(), settings_empty, kind="streamable-http")
+    with TestClient(wrapped_empty) as client:
+        headers = {
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+        }
+        response = client.options("/", headers=headers)
+        # Without an allowlist, CORS middleware is not registered, so no CORS preflight headers
+        assert "access-control-allow-origin" not in response.headers
+
+    # 2. Request origin not in allowlist -> Origin not echoed back (CORS rejected)
+    settings_allowlist = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOWED_ORIGINS": "https://app.example.com",
+        }
+    )
+    wrapped_allowlist = build_http_app(_Stub(), settings_allowlist, kind="streamable-http")
+    with TestClient(wrapped_allowlist) as client:
+        headers = {
+            "Origin": "http://disallowed-attacker.com",
+            "Access-Control-Request-Method": "GET",
+        }
+        response = client.options("/", headers=headers)
+        assert response.status_code == 400 or "access-control-allow-origin" not in response.headers

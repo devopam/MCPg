@@ -340,6 +340,12 @@ class _SecurityHeadersMiddleware:
         await self._app(scope, receive, send_wrapper)  # type: ignore[operator]
 
 
+class _RequestTooLargeError(Exception):
+    """Raised when the request body exceeds the configured maximum size."""
+
+    pass
+
+
 class _RequestSizeLimitMiddleware:
     """ASGI middleware that caps request body size to prevent DoS."""
 
@@ -376,16 +382,13 @@ class _RequestSizeLimitMiddleware:
                 if isinstance(body, bytes):
                     bytes_received += len(body)
                 if bytes_received > self._max_bytes:
-                    raise RuntimeError("Request Entity Too Large")
+                    raise _RequestTooLargeError()
             return message
 
         try:
             await self._app(scope, receive_wrapper, send)  # type: ignore[operator]
-        except RuntimeError as exc:
-            if str(exc) == "Request Entity Too Large":
-                await _send_413(send, "request body too large")
-            else:
-                raise
+        except _RequestTooLargeError:
+            await _send_413(send, "request body too large")
 
 
 def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlette:

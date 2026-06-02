@@ -29,7 +29,12 @@ async def verify_audit_chain(driver: SqlDriver) -> dict[str, Any]:
     Returns:
         A dict with 'status' (either 'ok' or 'tampered'), and details if tampered.
     """
-    key_str = environ.get("MCPG_AUDIT_HMAC_KEY", "").strip()
+    settings = getattr(driver, "settings", None)
+    if settings is not None:
+        key_str = settings.audit_hmac_key or ""
+    else:
+        key_str = environ.get("MCPG_AUDIT_HMAC_KEY", "").strip()
+
     if not key_str:
         return {
             "status": "error",
@@ -68,7 +73,11 @@ async def verify_audit_chain(driver: SqlDriver) -> dict[str, Any]:
     for row in rows:
         row_id = row.cells["id"]
         occurred_at = row.cells["occurred_at"]
-        if hasattr(occurred_at, "isoformat"):
+        if hasattr(occurred_at, "astimezone"):
+            from datetime import UTC
+
+            occurred_at_str = occurred_at.astimezone(UTC).isoformat()
+        elif hasattr(occurred_at, "isoformat"):
             occurred_at_str = occurred_at.isoformat()
         else:
             occurred_at_str = str(occurred_at)

@@ -393,3 +393,179 @@ async def test_redundant_indexes_flags_prefix_subset_non_unique() -> None:
     assert "idx_users_name" in finding.message
     assert "idx_users_name_email" in finding.message
     assert "8192" in finding.message
+
+
+async def test_redundant_indexes_no_redundancy_returns_empty() -> None:
+    from mcpg.advisors import _redundant_indexes
+
+    driver = FakeDriver(
+        [
+            {
+                "table_name": "users",
+                "index_name": "idx_users_name_email",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1 2",
+                "index_size": 8192,
+            },
+            {
+                "table_name": "users",
+                "index_name": "idx_users_email_age",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "2 3",
+                "index_size": 8192,
+            },
+        ]
+    )
+
+    findings = await _redundant_indexes(driver, "public")  # type: ignore[arg-type]
+    assert findings == []
+
+
+async def test_redundant_indexes_skips_empty_or_null_indkey() -> None:
+    from mcpg.advisors import _redundant_indexes
+
+    driver = FakeDriver(
+        [
+            {
+                "table_name": "users",
+                "index_name": "idx_users_empty_indkey",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "",
+                "index_size": 4096,
+            },
+            {
+                "table_name": "users",
+                "index_name": "idx_users_null_indkey",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": None,
+                "index_size": 4096,
+            },
+            # Valid non-redundant index to ensure things don't crash
+            {
+                "table_name": "users",
+                "index_name": "idx_users_name",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1",
+                "index_size": 8192,
+            },
+        ]
+    )
+
+    findings = await _redundant_indexes(driver, "public")  # type: ignore[arg-type]
+    assert findings == []
+
+
+async def test_redundant_indexes_scoped_per_table() -> None:
+    from mcpg.advisors import _redundant_indexes
+
+    driver = FakeDriver(
+        [
+            {
+                "table_name": "users",
+                "index_name": "idx_users_name",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1",
+                "index_size": 4096,
+            },
+            {
+                "table_name": "users",
+                "index_name": "idx_users_name_email",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1 2",
+                "index_size": 8192,
+            },
+            # different table, same columns - should not falsely relate or conflict
+            {
+                "table_name": "orders",
+                "index_name": "idx_orders_user_id",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1",
+                "index_size": 4096,
+            },
+            {
+                "table_name": "orders",
+                "index_name": "idx_orders_user_id_status",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1 2",
+                "index_size": 8192,
+            },
+        ]
+    )
+
+    findings = await _redundant_indexes(driver, "public")  # type: ignore[arg-type]
+    users_findings = [f for f in findings if "users" in f.object]
+    orders_findings = [f for f in findings if "orders" in f.object]
+
+    assert len(users_findings) == 1
+    assert len(orders_findings) == 1
+
+
+async def test_redundant_indexes_with_partial_and_expression_indexes() -> None:
+    from mcpg.advisors import _redundant_indexes
+
+    driver = FakeDriver(
+        [
+            # Partial index on active users
+            {
+                "table_name": "users",
+                "index_name": "idx_users_active_name",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1",
+                "index_size": 4096,
+                "indpred": "active = true",
+                "indexprs": None,
+            },
+            # Global index covering active and inactive
+            {
+                "table_name": "users",
+                "index_name": "idx_users_global_name_email",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1 2",
+                "index_size": 8192,
+                "indpred": None,
+                "indexprs": None,
+            },
+            # Expression index using lower(email)
+            {
+                "table_name": "users",
+                "index_name": "idx_users_lower_email",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "0",  # 0 indicates an expression
+                "index_size": 4096,
+                "indpred": None,
+                "indexprs": "lower(email)",
+            },
+            # Different expression index
+            {
+                "table_name": "users",
+                "index_name": "idx_users_lower_name",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "0 2",
+                "index_size": 8192,
+                "indpred": None,
+                "indexprs": "lower(name)",
+            },
+        ]
+    )
+
+    findings = await _redundant_indexes(driver, "public")  # type: ignore[arg-type]
+
+    # Global index idx_users_global_name_email should successfully cover the partial index idx_users_active_name
+    assert any("idx_users_active_name covered by" in f.object for f in findings)
+
+    # Expression index lower(email) (cols [0]) must NOT be covered by lower(name) (cols [0, 2])
+    # because their expressions differ!
+    assert not any("idx_users_lower_email" in f.object for f in findings)

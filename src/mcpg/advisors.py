@@ -251,7 +251,9 @@ async def _redundant_indexes(driver: SqlDriver, schema: str) -> list[Finding]:
         "  ix.indisunique AS is_unique, "
         "  ix.indisprimary AS is_primary, "
         "  ix.indkey::text AS indkey, "
-        "  pg_relation_size(i.oid) AS index_size "
+        "  pg_relation_size(i.oid) AS index_size, "
+        "  ix.indpred::text AS indpred, "
+        "  ix.indexprs::text AS indexprs "
         "FROM pg_index ix "
         "JOIN pg_class i ON i.oid = ix.indexrelid "
         "JOIN pg_class c ON c.oid = ix.indrelid "
@@ -276,6 +278,8 @@ async def _redundant_indexes(driver: SqlDriver, schema: str) -> list[Finding]:
                 "is_primary": row.cells["is_primary"],
                 "indkey_str": row.cells["indkey"] or "",
                 "size": row.cells["index_size"] or 0,
+                "indpred": row.cells.get("indpred"),
+                "indexprs": row.cells.get("indexprs"),
             }
         )
 
@@ -305,6 +309,13 @@ async def _redundant_indexes(driver: SqlDriver, schema: str) -> list[Finding]:
                 cols_b = idx_b["cols"]
                 # If B starts with A and has more columns, then A is redundant!
                 if len(cols_b) > len(cols_a) and cols_b[: len(cols_a)] == cols_a:
+                    # Ensure partial index predicates match, or B is a global index covering A
+                    if idx_b["indpred"] and idx_b["indpred"] != idx_a["indpred"]:
+                        continue
+                    # Ensure expressions match if any are present
+                    if (0 in cols_a) and idx_a["indexprs"] != idx_b["indexprs"]:
+                        continue
+
                     findings.append(
                         Finding(
                             rule=RULE_REDUNDANT_INDEXES,
