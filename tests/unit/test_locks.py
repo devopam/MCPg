@@ -134,7 +134,7 @@ async def test_walk_blocking_chains_linear_chain() -> None:
             "unnest(pg_blocking_pids": [
                 {
                     "blocked_pid": 200,
-                    "blocked_query": "UPDATE widget SET x = 1",
+                    "blocked_query": "UPDATE `widget` SET x = 1",
                     "blocked_application_name": "appA",
                     "blocked_wait_event": "transactionid",
                     "blocked_state": "active",
@@ -171,6 +171,7 @@ async def test_walk_blocking_chains_linear_chain() -> None:
     assert report.nodes[200].pid == 200
     assert report.nodes[200].application_name == "appA"
 
+    assert "200[\"PID 200 (appA) [active]<br/>`UPDATE 'widget' SET x = 1`\"]" in report.mermaid
     assert '200 -->|"transactionid"| 201' in report.mermaid
     assert '201 -->|"transactionid"| 202' in report.mermaid
     assert "class 202 root;" in report.mermaid

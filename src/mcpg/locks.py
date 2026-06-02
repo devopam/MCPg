@@ -253,12 +253,20 @@ def _build_blocking_graph(rows: Sequence[Any]) -> _BlockingGraph:
 
 
 def _find_roots(all_pids: set[int], in_degrees: dict[int, int], out_degrees: dict[int, int]) -> list[int]:
-    """Find root blockers (block others, but are not blocked themselves)."""
+    """Find root blockers.
+
+    These are "sink" nodes in the dependency graph (edges are directed from blocked to blocking).
+    A root blocker blocks others (in_degree > 0) but is not blocked themselves (out_degree == 0).
+    """
     return sorted(pid for pid in all_pids if in_degrees.get(pid, 0) > 0 and out_degrees.get(pid, 0) == 0)
 
 
-def _find_leaves(all_pids: set[int], in_degrees: dict[int, int], out_degrees: dict[int, int]) -> list[int]:
-    """Find leaf nodes (blocked, but do not block anyone else)."""
+def _find_sources(all_pids: set[int], in_degrees: dict[int, int], out_degrees: dict[int, int]) -> list[int]:
+    """Find source nodes in the dependency graph.
+
+    These represent "blocked" PIDs that do not block any other PID themselves (in_degree == 0, out_degree > 0).
+    They represent the starting points of linear blocking paths.
+    """
     return sorted(pid for pid in all_pids if in_degrees.get(pid, 0) == 0 and out_degrees.get(pid, 0) > 0)
 
 
@@ -305,8 +313,8 @@ def _find_cycles(adj: dict[int, list[int]], all_pids: set[int]) -> list[list[int
     return cycles
 
 
-def _trace_paths(adj: dict[int, list[int]], leaves: list[int]) -> list[list[int]]:
-    """Trace linear blocking paths from leaf nodes down to root blockers or cycle points."""
+def _trace_paths(adj: dict[int, list[int]], sources: list[int]) -> list[list[int]]:
+    """Trace linear blocking paths starting from source nodes (blocked PIDs) to root blockers or cycle points."""
     paths: list[list[int]] = []
     current: list[int] = []
 
@@ -323,8 +331,8 @@ def _trace_paths(adj: dict[int, list[int]], leaves: list[int]) -> list[list[int]
                     dfs(neighbor)
         current.pop()
 
-    for leaf in leaves:
-        dfs(leaf)
+    for source in sources:
+        dfs(source)
 
     return paths
 
@@ -346,7 +354,7 @@ def _to_mermaid(
         detail = nodes[pid]
         query_snippet = ""
         if detail.query:
-            q = detail.query.strip().replace("\n", " ").replace('"', "'")
+            q = detail.query.strip().replace("\n", " ").replace('"', "'").replace("`", "'")
             if len(q) > 60:
                 q = q[:57] + "..."
             query_snippet = f"<br/>`{q}`"
@@ -407,10 +415,10 @@ async def walk_blocking_chains(driver: SqlDriver, *, limit: int = DEFAULT_BLOCKI
 
     graph = _build_blocking_graph(rows or [])
     roots = _find_roots(graph.all_pids, graph.in_degrees, graph.out_degrees)
-    leaves = _find_leaves(graph.all_pids, graph.in_degrees, graph.out_degrees)
+    sources = _find_sources(graph.all_pids, graph.in_degrees, graph.out_degrees)
     cycles = _find_cycles(graph.adj, graph.all_pids)
     cycle_pids = {pid for cyc in cycles for pid in cyc}
-    paths = _trace_paths(graph.adj, leaves)
+    paths = _trace_paths(graph.adj, sources)
     mermaid_str = _to_mermaid(rows or [], graph.nodes, graph.all_pids, roots, cycle_pids)
 
     return BlockingGraphReport(
