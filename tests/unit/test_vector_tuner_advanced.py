@@ -82,3 +82,58 @@ async def test_analyze_hnsw_recall_tool_is_registered() -> None:
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "analyze_hnsw_recall" in listed
+
+
+async def test_analyze_hnsw_recall_string_vector_and_pk_fallback() -> None:
+    # 1. ext installed: present
+    # 2. primary key detect: return empty rows (no pk) -> fall back to 'id'
+    # 3. ground truth query (enable_indexscan = off): returns ids [1, 2]
+    # 4. approx HNSW sweep queries:
+    #    - returns [1, 2] -> 100% recall
+    routes = {
+        ("pg_extension", None): [{"present": 1}],
+        ("indisprimary = true", None): [],  # Empty -> PK column fallback to 'id'
+        ("enable_indexscan = off", None): [{"id": 1}, {"id": 2}],
+        ("ef_search = 16", None): [{"id": 1}, {"id": 2}],
+        ("ef_search = 32", None): [{"id": 1}, {"id": 2}],
+        ("ef_search = 64", None): [{"id": 1}, {"id": 2}],
+        ("ef_search = 128", None): [{"id": 1}, {"id": 2}],
+        ("ef_search = 256", None): [{"id": 1}, {"id": 2}],
+    }
+    driver = FakeParamRoutingDriver(routes)
+
+    # Pass query_vector as a string instead of a list
+    curve = await analyze_hnsw_recall(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "items",
+        "embedding",
+        "[0.1, 0.2]",
+        k=2,
+    )
+
+    assert len(curve) == 5
+    assert curve[0]["recall"] == 1.0
+
+
+async def test_analyze_hnsw_recall_empty_table_returns_empty_curve() -> None:
+    # 1. ext installed: present
+    # 2. primary key detect: return attname 'id'
+    # 3. ground truth query (enable_indexscan = off): returns no rows (empty table)
+    routes = {
+        ("pg_extension", None): [{"present": 1}],
+        ("indisprimary = true", None): [{"pk_column": "id"}],
+        ("enable_indexscan = off", None): [],
+    }
+    driver = FakeParamRoutingDriver(routes)
+
+    curve = await analyze_hnsw_recall(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "items",
+        "embedding",
+        [0.1, 0.2],
+        k=5,
+    )
+
+    assert curve == []
