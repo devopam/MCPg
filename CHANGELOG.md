@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Pluggable secrets backend (`MCPG_SECRETS_BACKEND`).** A
+  `SecretsProvider` abstraction (`mcpg.secrets`) that the secrets read
+  in `load_settings` route through — the NL→SQL provider API
+  keys, `MCPG_HTTP_AUTH_TOKEN`, and `MCPG_AUDIT_HMAC_KEY`. Two
+  backends ship: `env` (default — unchanged behaviour, zero new
+  deps) and `file`, which overlays a JSON (or YAML, when PyYAML is
+  importable) `name → value` map from `MCPG_SECRETS_FILE_PATH` on
+  top of the environment (a name in the file wins; anything absent
+  falls back to its env var). Cloud backends (Vault / AWS / GCP)
+  will follow behind optional extras using the same switch.
+  `Settings.secrets_backend` records the active choice (values never
+  appear in `repr`).
+
 - **`verify_connection_encryption` tool.** Reports whether MCPg's own
   connection to PostgreSQL is TLS-encrypted — negotiated protocol
   version, cipher, and key bits from `pg_stat_ssl` — plus a
