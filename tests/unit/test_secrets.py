@@ -19,7 +19,7 @@ _DB_URL = "postgresql://user:secret@localhost:5432/app"
 
 
 def test_default_backend_is_env() -> None:
-    provider = build_secrets_provider({"FOO": "bar"})
+    provider, _backend = build_secrets_provider({"FOO": "bar"})
     assert isinstance(provider, EnvSecretsProvider)
     assert provider.get("FOO") == "bar"
     assert provider.get("MISSING") is None
@@ -50,7 +50,7 @@ def test_file_backend_loads_json_and_overlays_env(tmp_path) -> None:  # type: ig
         # Not in the file — must fall through to env:
         "OPENAI_API_KEY": "openai-from-env",
     }
-    provider = build_secrets_provider(env)
+    provider, _backend = build_secrets_provider(env)
     assert isinstance(provider, FileSecretsProvider)
     assert provider.get("ANTHROPIC_API_KEY") == "from-file"  # file wins
     assert provider.get("MCPG_AUDIT_HMAC_KEY") == "hmac-from-file"
@@ -61,7 +61,7 @@ def test_file_backend_loads_json_and_overlays_env(tmp_path) -> None:  # type: ig
 def test_file_backend_coerces_scalar_values_to_str(tmp_path) -> None:  # type: ignore[no-untyped-def]
     path = tmp_path / "secrets.json"
     path.write_text(json.dumps({"PORT_SECRET": 5432, "FLAG": True}))
-    provider = build_secrets_provider({"MCPG_SECRETS_BACKEND": "file", "MCPG_SECRETS_FILE_PATH": str(path)})
+    provider, _backend = build_secrets_provider({"MCPG_SECRETS_BACKEND": "file", "MCPG_SECRETS_FILE_PATH": str(path)})
     assert provider.get("PORT_SECRET") == "5432"
     assert provider.get("FLAG") == "True"
 
@@ -83,8 +83,36 @@ def test_file_backend_rejects_nested_values(tmp_path) -> None:  # type: ignore[n
 def test_file_backend_rejects_malformed_json(tmp_path) -> None:  # type: ignore[no-untyped-def]
     path = tmp_path / "secrets.json"
     path.write_text("{not valid json")
-    with pytest.raises(SecretsError, match="not valid JSON"):
+    with pytest.raises(SecretsError, match="not valid JSON") as excinfo:
         build_secrets_provider({"MCPG_SECRETS_BACKEND": "file", "MCPG_SECRETS_FILE_PATH": str(path)})
+    # The parse-error message must NOT echo source text — only the file
+    # path + line/column. (Sourcery security note on PR #41.)
+    assert "not valid json" not in str(excinfo.value)
+
+
+def test_file_backend_parse_error_does_not_leak_source_text(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    # A malformed JSON file whose error point lies inside what could be a
+    # secret value: a stock JSONDecodeError message would include the
+    # offending character. Our wrapper must keep it out of the message.
+    path = tmp_path / "secrets.json"
+    path.write_text('{"PASSWORD": "hunter2-with-stray-quote " extra"}')
+    with pytest.raises(SecretsError, match="not valid JSON") as excinfo:
+        build_secrets_provider({"MCPG_SECRETS_BACKEND": "file", "MCPG_SECRETS_FILE_PATH": str(path)})
+    message = str(excinfo.value)
+    assert "hunter2" not in message
+    assert "PASSWORD" not in message
+
+
+def test_file_backend_yaml_parse_error_does_not_leak_source_text(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    pytest.importorskip("yaml")
+    path = tmp_path / "secrets.yaml"
+    # Unbalanced quote inside what could be a secret value.
+    path.write_text('PASSWORD: "hunter2-unclosed\nOTHER: ok\n')
+    with pytest.raises(SecretsError, match="not valid YAML") as excinfo:
+        build_secrets_provider({"MCPG_SECRETS_BACKEND": "file", "MCPG_SECRETS_FILE_PATH": str(path)})
+    message = str(excinfo.value)
+    assert "hunter2" not in message
+    assert "PASSWORD" not in message
 
 
 def test_file_backend_missing_file_raises() -> None:
@@ -96,7 +124,7 @@ def test_file_backend_loads_yaml_when_pyyaml_available(tmp_path) -> None:  # typ
     pytest.importorskip("yaml")
     path = tmp_path / "secrets.yaml"
     path.write_text("ANTHROPIC_API_KEY: sk-ant-yaml\nMCPG_HTTP_AUTH_TOKEN: tok-yaml\n")
-    provider = build_secrets_provider({"MCPG_SECRETS_BACKEND": "file", "MCPG_SECRETS_FILE_PATH": str(path)})
+    provider, _backend = build_secrets_provider({"MCPG_SECRETS_BACKEND": "file", "MCPG_SECRETS_FILE_PATH": str(path)})
     assert provider.get("ANTHROPIC_API_KEY") == "sk-ant-yaml"
     assert provider.get("MCPG_HTTP_AUTH_TOKEN") == "tok-yaml"
 
@@ -121,7 +149,7 @@ def test_file_backend_rejects_non_string_key(tmp_path) -> None:  # type: ignore[
 def test_file_backend_skips_null_values(tmp_path) -> None:  # type: ignore[no-untyped-def]
     path = tmp_path / "secrets.json"
     path.write_text(json.dumps({"PRESENT": "yes", "ABSENT": None}))
-    provider = build_secrets_provider({"MCPG_SECRETS_BACKEND": "file", "MCPG_SECRETS_FILE_PATH": str(path)})
+    provider, _backend = build_secrets_provider({"MCPG_SECRETS_BACKEND": "file", "MCPG_SECRETS_FILE_PATH": str(path)})
     assert provider.get("PRESENT") == "yes"
     # A null value is skipped entirely, so lookup falls through to env (None here).
     assert provider.get("ABSENT") is None

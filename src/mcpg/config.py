@@ -328,12 +328,13 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     # Secret *values* (API keys, bearer token, audit HMAC key) resolve
     # through the configured secrets backend; non-secret config still
     # comes straight from ``env``. A SecretsError is surfaced as a
-    # ConfigError so startup fails with one consistent error type.
+    # ConfigError so startup fails with one consistent error type. The
+    # builder returns the normalised backend name so we don't re-parse
+    # MCPG_SECRETS_BACKEND ourselves.
     try:
-        secrets = build_secrets_provider(env)
+        secrets, secrets_backend = build_secrets_provider(env)
     except SecretsError as exc:
         raise ConfigError(str(exc)) from exc
-    secrets_backend = (env.get("MCPG_SECRETS_BACKEND") or "env").strip().lower()
 
     database_url = env.get("MCPG_DATABASE_URL", "").strip()
     if not database_url:

@@ -179,7 +179,7 @@ Secret Manager have to inject them through their orchestrator
 sidecar rather than letting MCPg fetch them directly.
 
 **Solution.** A `SecretsProvider` protocol (`mcpg.secrets`) picked by
-`MCPG_SECRETS_BACKEND`; the secret reads in `load_settings`
+`MCPG_SECRETS_BACKEND`; the secrets read in `load_settings`
 (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` /
 `GOOGLE_API_KEY` / `MCPG_NL2SQL_API_KEY`, `MCPG_HTTP_AUTH_TOKEN`,
 `MCPG_AUDIT_HMAC_KEY`) route through `provider.get(name)`.

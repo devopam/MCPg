@@ -9,8 +9,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - **Pluggable secrets backend (`MCPG_SECRETS_BACKEND`).** A
-  `SecretsProvider` abstraction (`mcpg.secrets`) that the secret
-  reads in `load_settings` route through — the NL→SQL provider API
+  `SecretsProvider` abstraction (`mcpg.secrets`) that the secrets read
+  in `load_settings` route through — the NL→SQL provider API
   keys, `MCPG_HTTP_AUTH_TOKEN`, and `MCPG_AUDIT_HMAC_KEY`. Two
   backends ship: `env` (default — unchanged behaviour, zero new
   deps) and `file`, which overlays a JSON (or YAML, when PyYAML is

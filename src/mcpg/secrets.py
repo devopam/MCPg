@@ -94,12 +94,24 @@ def _load_overlay(path: str) -> dict[str, str]:
         try:
             data = yaml.safe_load(raw_text)
         except yaml.YAMLError as exc:
-            raise SecretsError(f"MCPG_SECRETS_FILE_PATH ({path!r}) is not valid YAML: {exc}") from exc
+            # Deliberately surface only the file path + structural position
+            # (line/column when available) — the parser's full message can
+            # echo source text and would leak secret values into logs.
+            location = ""
+            problem_mark = getattr(exc, "problem_mark", None)
+            if problem_mark is not None:
+                location = f" at line {problem_mark.line + 1}, column {problem_mark.column + 1}"
+            raise SecretsError(f"MCPG_SECRETS_FILE_PATH ({path!r}) is not valid YAML{location}") from exc
     else:
         try:
             data = json.loads(raw_text)
         except json.JSONDecodeError as exc:
-            raise SecretsError(f"MCPG_SECRETS_FILE_PATH ({path!r}) is not valid JSON: {exc}") from exc
+            # Same as YAML above: include line/column only, never the
+            # exception message — JSONDecodeError.msg can include the
+            # offending character which may be inside a secret value.
+            raise SecretsError(
+                f"MCPG_SECRETS_FILE_PATH ({path!r}) is not valid JSON at line {exc.lineno}, column {exc.colno}"
+            ) from exc
 
     if not isinstance(data, dict):
         raise SecretsError(f"MCPG_SECRETS_FILE_PATH ({path!r}) must contain a top-level object of name -> value pairs")
@@ -120,11 +132,16 @@ def _load_overlay(path: str) -> dict[str, str]:
     return overlay
 
 
-def build_secrets_provider(env: Mapping[str, str]) -> SecretsProvider:
+def build_secrets_provider(env: Mapping[str, str]) -> tuple[SecretsProvider, str]:
     """Construct the secrets provider selected by ``MCPG_SECRETS_BACKEND``.
 
     Defaults to the ``env`` backend (current behaviour). ``file`` loads
     ``MCPG_SECRETS_FILE_PATH`` once at startup.
+
+    Returns:
+        ``(provider, backend_name)`` — the normalised, validated backend
+        name comes back alongside the provider so ``load_settings``
+        doesn't have to re-parse ``MCPG_SECRETS_BACKEND``.
 
     Raises:
         SecretsError: For an unknown backend, a missing file path, or an
@@ -138,6 +155,6 @@ def build_secrets_provider(env: Mapping[str, str]) -> SecretsProvider:
         path = (env.get("MCPG_SECRETS_FILE_PATH") or "").strip()
         if not path:
             raise SecretsError("MCPG_SECRETS_BACKEND=file requires MCPG_SECRETS_FILE_PATH")
-        return FileSecretsProvider(overlay=_load_overlay(path), env=env)
+        return FileSecretsProvider(overlay=_load_overlay(path), env=env), backend
 
-    return EnvSecretsProvider(env=env)
+    return EnvSecretsProvider(env=env), backend
