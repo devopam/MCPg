@@ -29,13 +29,13 @@ plumbing:
 | `MCPG_REPLICA_URLS` | Comma-separated read-replica DSNs. When set, `force_readonly` queries round-robin across healthy replicas; writes always go to the primary. |
 | `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config (Anthropic / OpenAI / Gemini). |
 
-## Tool index (122 tools)
+## Tool index (123 tools)
 
 | Category | Tools |
 |---|---|
 | **Server** | `get_server_info`, `get_metrics_exposition` |
 | **Catalog — schemas / tables / columns** | `list_schemas`, `list_tables`, `describe_table`, `list_indexes`, `list_constraints`, `list_views`, `list_functions`, `list_triggers`, `list_partitions`, `list_roles`, `list_grants`, `list_policies`, `list_sequences`, `list_enums`, `list_domains`, `list_composite_types`, `list_foreign_keys`, `list_foreign_data_wrappers`, `list_foreign_servers`, `list_foreign_tables`, `list_user_mappings`, `list_publications`, `list_subscriptions`, `list_extensions`, `list_available_extensions`, `list_generated_columns` |
-| **Visualisation & structural diff** | `generate_schema_diagram`, `generate_fk_cascade_graph`, `generate_graph_diagram`, `compare_schemas` |
+| **Visualisation & structural diff** | `generate_schema_diagram`, `generate_schema_docs`, `generate_fk_cascade_graph`, `generate_graph_diagram`, `compare_schemas` |
 | **Query intelligence** | `run_select`, `run_select_parallel`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql` |
 | **Server-side cursors** | `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors` |
 | **Composite + diagnostic** | `summarize_table`, `why_is_this_slow`, `find_unused_objects`, `find_sensitive_columns`, `detect_n_plus_one`, `lint_naming_conventions`, `test_rls_for_role`, `list_locks`, `find_blocking_chains`, `read_pg_stat_io` |
@@ -205,6 +205,9 @@ markers; edges point from referenced parent to referencing child. Views
 and foreign tables are excluded; partitions are excluded by default.
 Parameters: `schema` (string), `include_partitions` (bool, default
 `false`).
+
+### `generate_schema_docs`
+Generates a detailed Markdown catalog documentation reference for a schema, listing base tables, columns, constraints, indexes, views, foreign tables, and custom enums. Normalizes multiline comments and escapes pipes for clean Markdown table rendering. Supports an optional `include_samples` flag to fetch up to 3 distinct, non-null, truncated sample values for each column. Parameters: `schema` (string), `include_samples` (bool, default `false`).
 
 ### `compare_schemas`
 Returns the structural diff between two schemas. Reports tables added /

@@ -49,6 +49,7 @@ from mcpg import (
     query,
     rls,
     schema_diff,
+    schema_docs,
     shell,
     sqlalchemy_export,
     sqlc,
@@ -559,6 +560,23 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
             return await diagrams.generate_fk_cascade_graph(_driver(ctx), schema, include_all=include_all)
 
         return await _cached_call(ctx, "generate_fk_cascade_graph", _run, schema, include_all)
+
+    @server.tool(
+        name="generate_schema_docs",
+        description=(
+            "Generate a detailed Markdown reference of a schema's "
+            "tables, columns, constraints, indexes, views, foreign tables, "
+            "and custom enums along with comments / descriptions. Optional "
+            "include_samples fetches a few distinct, non-null values for each column."
+        ),
+    )
+    async def generate_schema_docs(ctx: _Ctx, schema: str, include_samples: bool = False) -> str:
+        _check_heavy_diagnostics(ctx, "generate_schema_docs")
+
+        async def _run() -> str:
+            return await schema_docs.generate_schema_docs(_driver(ctx), schema, include_samples=include_samples)
+
+        return await _cached_call(ctx, "generate_schema_docs", _run, schema, include_samples)
 
 
 def _register_schema_diff(server: FastMCP[AppContext]) -> None:

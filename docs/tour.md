@@ -5,7 +5,7 @@ A compact one-page tour of every tool MCPg exposes, organised by
 surface; the full reference is in [`tools.md`](tools.md), and
 task-oriented recipes live in [`cookbook.md`](cookbook.md).
 
-**122 tools** as of trunk. Each line shows the tool name + how its
+**123 tools** as of trunk. Each line shows the tool name + how its
 parameters land (required first, common defaults after). Capability
 gates are noted in section titles where they apply.
 
@@ -50,6 +50,7 @@ Visualisation + structural diff.
 
 ```
 generate_schema_diagram(schema)                      # Mermaid ER text
+generate_schema_docs(schema, include_samples=false)  # rich Markdown catalog documentation reference
 generate_fk_cascade_graph(schema, include_all=false) # Mermaid graph of CASCADE / SET NULL / SET DEFAULT FKs
 compare_schemas(left_schema, right_schema)           # added / removed / changed
 ```

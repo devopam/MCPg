@@ -313,7 +313,7 @@ async def test_run_pg_binary_spawns_in_a_temp_cwd_with_no_preexec_by_default(
     # A throwaway working directory is always passed; no rlimit preexec
     # unless limits are configured.
     cwd = record["kwargs"]["cwd"]
-    assert cwd.startswith("/")
+    assert os.path.isabs(cwd)
     assert record["kwargs"]["preexec_fn"] is None
     # The temp cwd must be cleaned up by the time run_pg_binary returns.
     assert not os.path.isdir(cwd)

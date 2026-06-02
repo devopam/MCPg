@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`generate_schema_docs` tool (schema documentation).** Generates a
+  comprehensive Markdown catalog reference for a database schema's
+  tables, views, foreign tables, custom enums, constraints, indexes,
+  and comments. Supports an optional `include_samples` flag to sample
+  and display the first few non-null, distinct, truncated values for
+  each column. Gated under heavy diagnostics (`MCPG_ENABLE_HEAVY_DIAGNOSTICS`)
+  and supports caching.
+
 - **`mmr_search` tool (pgvector).** Diversity-aware vector search:
   fetches `fetch_k` nearest candidates by pgvector distance, then
   re-ranks with Maximal Marginal Relevance to return `k` rows that

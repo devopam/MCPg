@@ -180,10 +180,18 @@ def _make_preexec_fn(limits: SubprocessLimits) -> Callable[[], None] | None:
     memory_bytes = limits.memory_mb * 1024 * 1024 if limits.memory_mb is not None else None
 
     def _apply_limits() -> None:  # pragma: no cover - runs in the forked child
+        if resource is None:
+            return
         if cpu_seconds is not None:
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
+            rlimit_cpu = getattr(resource, "RLIMIT_CPU", None)
+            setrlimit = getattr(resource, "setrlimit", None)
+            if rlimit_cpu is not None and setrlimit is not None:
+                setrlimit(rlimit_cpu, (cpu_seconds, cpu_seconds))
         if memory_bytes is not None:
-            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+            rlimit_as = getattr(resource, "RLIMIT_AS", None)
+            setrlimit = getattr(resource, "setrlimit", None)
+            if rlimit_as is not None and setrlimit is not None:
+                setrlimit(rlimit_as, (memory_bytes, memory_bytes))
 
     return _apply_limits
 
