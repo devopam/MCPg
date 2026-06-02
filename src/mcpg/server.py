@@ -145,6 +145,10 @@ def create_server(
             to inject a fake connection factory); otherwise a default
             one is created from ``settings``.
     """
+    from mcpg.obs_logging import setup_logging
+
+    setup_logging(settings)
+
     db = database if database is not None else Database(settings)
     lm = (
         listen_manager

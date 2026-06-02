@@ -10,6 +10,7 @@ query workloads, and server logs, producing a comprehensive diagnostic JSON repo
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import os
 import re
@@ -22,6 +23,19 @@ from mcpg._vendor.sql import SqlDriver, obfuscate_password
 # --- Tool invocation logger (Original Audit Logic) ------------------------
 
 audit_logger = logging.getLogger("mcpg.audit")
+
+_log_format: str = "text"
+
+
+def configure_log_format(format_name: str) -> None:
+    """Configure the active log format for tool invocation logs.
+
+    Idempotent.
+    """
+    global _log_format
+    if format_name in {"text", "json"}:
+        _log_format = format_name
+
 
 # Names whose VALUES are credentials and must be masked before the
 # arguments dict is logged or persisted. Each entry is a regex matched
@@ -126,16 +140,30 @@ def redact_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
 def record(event: AuditEvent) -> None:
     """Emit an audit event to the ``mcpg.audit`` logger."""
     safe_arguments = redact_arguments(event.arguments)
-    if event.error is None:
-        audit_logger.info("tool=%s status=%s arguments=%s", event.tool, event.status, safe_arguments)
+    if _log_format == "json":
+        payload = {
+            "tool": event.tool,
+            "status": event.status,
+            "arguments": safe_arguments,
+        }
+        if event.error is not None:
+            payload["error"] = event.error
+        msg = json.dumps(payload)
+        if event.error is None:
+            audit_logger.info(msg)
+        else:
+            audit_logger.warning(msg)
     else:
-        audit_logger.warning(
-            "tool=%s status=%s arguments=%s error=%s",
-            event.tool,
-            event.status,
-            safe_arguments,
-            event.error,
-        )
+        if event.error is None:
+            audit_logger.info("tool=%s status=%s arguments=%s", event.tool, event.status, safe_arguments)
+        else:
+            audit_logger.warning(
+                "tool=%s status=%s arguments=%s error=%s",
+                event.tool,
+                event.status,
+                safe_arguments,
+                event.error,
+            )
 
 
 # --- DBA Database Performance Auditor (New Tier-A Feature) ----------------
