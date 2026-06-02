@@ -1,5 +1,6 @@
 """Tests for the subprocess execution policy (ADR-0004)."""
 
+import os
 from typing import Any
 
 import pytest
@@ -311,8 +312,11 @@ async def test_run_pg_binary_spawns_in_a_temp_cwd_with_no_preexec_by_default(
 
     # A throwaway working directory is always passed; no rlimit preexec
     # unless limits are configured.
-    assert record["kwargs"]["cwd"].startswith("/")
+    cwd = record["kwargs"]["cwd"]
+    assert cwd.startswith("/")
     assert record["kwargs"]["preexec_fn"] is None
+    # The temp cwd must be cleaned up by the time run_pg_binary returns.
+    assert not os.path.isdir(cwd)
 
 
 async def test_run_pg_binary_passes_a_preexec_fn_when_limits_are_set(
@@ -335,6 +339,28 @@ async def test_run_pg_binary_passes_a_preexec_fn_when_limits_are_set(
     )
 
     assert callable(record["kwargs"]["preexec_fn"])
+
+
+async def test_run_pg_binary_cleans_up_temp_cwd_when_cancelled(monkeypatch: pytest.MonkeyPatch) -> None:
+    # If the asyncio task is cancelled mid-call (the inner await raises
+    # CancelledError), the workdir context manager's finally block must
+    # still remove the temp directory.
+    import asyncio
+
+    captured: dict[str, str] = {}
+
+    async def fake_exec(*args: Any, **kwargs: Any) -> _FakeProcess:
+        captured["cwd"] = kwargs["cwd"]
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr("mcpg.shell.shutil.which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr("mcpg.shell.asyncio.create_subprocess_exec", fake_exec)
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_pg_binary("pg_dump", "--version", timeout_sec=10, max_output_bytes=1024)
+
+    assert captured["cwd"]  # spawn got far enough to record it
+    assert not os.path.isdir(captured["cwd"])
 
 
 async def test_run_pg_binary_enforces_the_bin_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:

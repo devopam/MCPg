@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
@@ -306,7 +307,7 @@ async def _send_413(send: object, reason: str) -> None:
 
 async def _send_504(send: object, reason: str) -> None:
     """Emit a minimal 504 response."""
-    body = f'{{"error": "gateway_timeout", "reason": "{reason}"}}\n'.encode()
+    body = json.dumps({"error": "gateway_timeout", "reason": reason}).encode() + b"\n"
     await send(  # type: ignore[operator]
         {
             "type": "http.response.start",
@@ -443,6 +444,14 @@ class _RequestTimeoutMiddleware:
             async with asyncio.timeout(self._timeout):
                 await self._app(scope, receive, send_wrapper)  # type: ignore[operator]
         except TimeoutError:
+            # On Python 3.11+ ``asyncio.TimeoutError`` IS the builtin
+            # ``TimeoutError`` (the asyncio name is a deprecated alias —
+            # ruff UP041 rejects it), so they can't be distinguished
+            # at catch time. If an inner app ever raises a bare
+            # ``TimeoutError`` we'd mis-attribute it to our cap; this
+            # is preferable to leaking an exception out of the
+            # middleware. Inner apps that want to surface their own
+            # timeout should raise a domain-specific subclass.
             # Only safe to write a status line if the app hasn't already.
             if not started:
                 await _send_504(send, f"request exceeded {self._timeout}s")
