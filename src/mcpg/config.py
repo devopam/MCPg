@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from os import environ
+from os.path import isabs
 
 from mcpg._vendor.sql import obfuscate_password
 from mcpg.nl2sql import VENDOR_ENV_VAR_HINT
@@ -61,6 +62,14 @@ class Settings:
     allow_listen: bool = False
     shell_timeout_sec: int = 60
     shell_max_output_bytes: int = 64 * 1024 * 1024
+    # Subprocess hardening for the shell-gated PG binaries. All opt-in.
+    # ``subprocess_bin_allowlist`` is a tuple of absolute directories the
+    # resolved pg_dump / pg_restore / psql binary must live under (empty
+    # = trust PATH). ``subprocess_cpu_seconds`` / ``subprocess_memory_mb``
+    # apply RLIMIT_CPU / RLIMIT_AS to each child on POSIX (None = inherit).
+    subprocess_bin_allowlist: tuple[str, ...] = ()
+    subprocess_cpu_seconds: int | None = None
+    subprocess_memory_mb: int | None = None
     listen_queue_max: int = 1000
     audit_persist: bool = False
     pool_min_size: int = 1
@@ -135,6 +144,11 @@ class Settings:
     http_max_body_bytes: int = 1048576
     http_allowed_origins: tuple[str, ...] = ()
     http_hsts_max_age: int = 31536000
+    # Per-request wall-clock cap for the HTTP transports. 0 = disabled
+    # (default), because a hard cap also severs long-lived SSE /
+    # streamable-http streams. Set a positive value for plain
+    # request/response deployments that want a DoS backstop.
+    http_request_timeout_seconds: int = 0
     shutdown_drain_seconds: int = 30
     audit_hmac_key: str | None = None
     audit_integrity: bool = False
@@ -153,6 +167,9 @@ class Settings:
             f"allow_listen={self.allow_listen}, "
             f"shell_timeout_sec={self.shell_timeout_sec}, "
             f"shell_max_output_bytes={self.shell_max_output_bytes}, "
+            f"subprocess_bin_allowlist={self.subprocess_bin_allowlist!r}, "
+            f"subprocess_cpu_seconds={self.subprocess_cpu_seconds}, "
+            f"subprocess_memory_mb={self.subprocess_memory_mb}, "
             f"listen_queue_max={self.listen_queue_max}, "
             f"audit_persist={self.audit_persist}, "
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size}, "
@@ -186,6 +203,7 @@ class Settings:
             f"http_max_body_bytes={self.http_max_body_bytes}, "
             f"http_allowed_origins={self.http_allowed_origins!r}, "
             f"http_hsts_max_age={self.http_hsts_max_age}, "
+            f"http_request_timeout_seconds={self.http_request_timeout_seconds}, "
             f"shutdown_drain_seconds={self.shutdown_drain_seconds}, "
             f"audit_hmac_key={audit_hmac_key_repr!r}, "
             f"audit_integrity={self.audit_integrity})"
@@ -337,6 +355,22 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     shell_max_output_bytes = 64 * 1024 * 1024
     if (raw := env.get("MCPG_SHELL_MAX_OUTPUT_BYTES")) is not None:
         shell_max_output_bytes = _parse_positive_int("MCPG_SHELL_MAX_OUTPUT_BYTES", raw)
+
+    subprocess_bin_allowlist: tuple[str, ...] = ()
+    if (raw := env.get("MCPG_SUBPROCESS_BIN_ALLOWLIST")) is not None:
+        dirs = tuple(d.strip() for d in raw.split(",") if d.strip())
+        for d in dirs:
+            if not isabs(d):
+                raise ConfigError(f"MCPG_SUBPROCESS_BIN_ALLOWLIST entries must be absolute paths (got {d!r})")
+        subprocess_bin_allowlist = dirs
+
+    subprocess_cpu_seconds: int | None = None
+    if (raw := env.get("MCPG_SUBPROCESS_CPU_SECONDS")) is not None:
+        subprocess_cpu_seconds = _parse_positive_int("MCPG_SUBPROCESS_CPU_SECONDS", raw)
+
+    subprocess_memory_mb: int | None = None
+    if (raw := env.get("MCPG_SUBPROCESS_MEMORY_MB")) is not None:
+        subprocess_memory_mb = _parse_positive_int("MCPG_SUBPROCESS_MEMORY_MB", raw)
 
     allow_listen = False
     if (raw := env.get("MCPG_ALLOW_LISTEN")) is not None:
@@ -608,6 +642,18 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         except ValueError:
             raise ConfigError(f"MCPG_HTTP_HSTS_MAX_AGE must be a non-negative integer (got {raw!r})") from None
 
+    http_request_timeout_seconds = 0
+    if (raw := env.get("MCPG_HTTP_REQUEST_TIMEOUT_SECONDS")) is not None:
+        try:
+            val = int(raw)
+            if val < 0:
+                raise ValueError()
+            http_request_timeout_seconds = val
+        except ValueError:
+            raise ConfigError(
+                f"MCPG_HTTP_REQUEST_TIMEOUT_SECONDS must be a non-negative integer (got {raw!r})"
+            ) from None
+
     shutdown_drain_seconds = 30
     if (raw := env.get("MCPG_SHUTDOWN_DRAIN_SECONDS")) is not None:
         shutdown_drain_seconds = _parse_positive_int("MCPG_SHUTDOWN_DRAIN_SECONDS", raw)
@@ -638,6 +684,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         allow_listen=allow_listen,
         shell_timeout_sec=shell_timeout_sec,
         shell_max_output_bytes=shell_max_output_bytes,
+        subprocess_bin_allowlist=subprocess_bin_allowlist,
+        subprocess_cpu_seconds=subprocess_cpu_seconds,
+        subprocess_memory_mb=subprocess_memory_mb,
         listen_queue_max=listen_queue_max,
         audit_persist=audit_persist,
         pool_min_size=pool_min_size,
@@ -672,6 +721,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_max_body_bytes=http_max_body_bytes,
         http_allowed_origins=http_allowed_origins,
         http_hsts_max_age=http_hsts_max_age,
+        http_request_timeout_seconds=http_request_timeout_seconds,
         shutdown_drain_seconds=shutdown_drain_seconds,
         audit_hmac_key=audit_hmac_key,
         audit_integrity=audit_integrity,

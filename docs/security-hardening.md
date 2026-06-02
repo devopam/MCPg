@@ -122,7 +122,17 @@ left in place.
 
 ## Queued (next focused PRs)
 
-### ⬜ HTTP hardening (request limits + security headers + CORS)
+> Most of this section has now shipped. Only **Pluggable secrets
+> backend** remains queued; the rest are marked ✅ with the landing
+> note inline.
+
+### ✅ HTTP hardening (request limits + security headers + CORS + timeout)
+**Shipped.** Security headers + request-size limit + CORS allowlist
+landed in the security-diagnostics PR; the opt-in per-request
+timeout (`MCPG_HTTP_REQUEST_TIMEOUT_SECONDS`, default `0` = disabled
+so long-lived SSE / streamable-http streams keep working) landed in
+the security-hardening-queue PR.
+
 **Problem.** The streamable-http / sse transports today have no
 request body size limit, no per-request timeout, no
 `Content-Security-Policy` / `X-Frame-Options` /
@@ -142,7 +152,10 @@ unconditionally (operators can disable per header via env). New
 
 **Effort:** medium (one new middleware module + 6-8 tests).
 
-### [x] Audit log integrity (HMAC chain + verifier tool)
+### ✅ Audit log integrity (HMAC chain + verifier tool)
+**Shipped** in the security-diagnostics PR (columns + tool + a
+process-wide write lock so the chain stays linear under concurrency).
+
 **Problem.** An attacker with write access to `mcpg.audit_events`
 can truncate, alter, or insert events undetected.
 
@@ -180,27 +193,26 @@ plus backend-specific (e.g. `VAULT_ADDR`, `VAULT_TOKEN`,
 `mcpg[vault]`, `mcpg[aws-secrets]`; ~150 LOC core + per-backend
 integrations + 12+ tests).
 
-### ⬜ Subprocess hardening
-**Problem.** `pg_dump` / `pg_restore` / `psql` subprocesses
-inherit the parent's full environment + PATH. A malicious entry
-on PATH could shim one of these binaries.
+### ✅ Subprocess hardening
+**Shipped** in the security-hardening-queue PR. On top of the
+existing minimal-env spawn (only allowlisted `PG*` / `LANG` /
+`LC_ALL` / `PATH` reach the child) and `shutil.which` resolution,
+`run_pg_binary` now:
+- validates the resolved binary's directory against
+  `MCPG_SUBPROCESS_BIN_ALLOWLIST` (empty = trust PATH); a PATH shim
+  in an untrusted dir is rejected. The check compares the resolved
+  *directory* so distro `pg_dump -> pg_wrapper` symlinks still work.
+- applies `RLIMIT_CPU` / `RLIMIT_AS` via a `preexec_fn` when
+  `MCPG_SUBPROCESS_CPU_SECONDS` / `MCPG_SUBPROCESS_MEMORY_MB` are set
+  (POSIX only; a no-op on platforms without the `resource` module).
+- spawns in a throwaway temp working directory, cleaned up after.
 
-**Solution.** Compose subprocess env explicitly:
-- Resolve the binary's absolute path at startup; refuse if outside
-  `MCPG_SUBPROCESS_BIN_ALLOWLIST`.
-- Spawn with a minimal env: `PGHOST` / `PGPORT` / `PGUSER` /
-  `PGPASSWORD` / `PGSSLMODE` / `LANG` / `TZ` only.
-- Drop into a temp working directory.
-- Apply CPU + memory ulimits where the platform supports them
-  (`resource.setrlimit` on Linux/macOS).
+**Env vars:** `MCPG_SUBPROCESS_BIN_ALLOWLIST` (comma-separated
+absolute paths), `MCPG_SUBPROCESS_CPU_SECONDS`,
+`MCPG_SUBPROCESS_MEMORY_MB`. All opt-in; defaults preserve today's
+behaviour.
 
-**Env vars to add:** `MCPG_SUBPROCESS_BIN_ALLOWLIST` (paths),
-`MCPG_SUBPROCESS_CPU_SECONDS`, `MCPG_SUBPROCESS_MEMORY_MB`.
-
-**Effort:** medium (~100 LOC + cross-platform conditionals + 6-8
-tests).
-
-### [x] Graceful shutdown
+### ✅ Graceful shutdown
 **Problem.** On SIGTERM today the server exits immediately,
 abandoning in-flight tool calls and any open cursors.
 
@@ -217,12 +229,13 @@ audit trail, then exits. Configurable max-drain window
 
 ## Posture summary
 
-| Area | Today | After this PR | After roadmap |
-|---|---|---|---|
-| Authn | Static + OIDC | Same | + secrets backend for keys |
-| Authz | Capability gates + tenancy | Same | Same |
-| Transport security | bearer token | + PG TLS enforcement | + HTTP hardening |
-| Audit | Recorded | + arg redaction | + integrity chain |
-| Supply chain | Manual deps | + CI bandit + pip-audit | Same |
-| Lifecycle | Hard exit | Same | Graceful shutdown |
-| Subprocess | Default env | Same | Hardened spawn |
+| Area | Today (on `main`) | Remaining roadmap |
+|---|---|---|
+| Authn | Static + OIDC | + secrets backend for keys |
+| Authz | Capability gates + tenancy | Same |
+| Transport security | bearer token + PG TLS enforcement + HTTP hardening (headers, body limit, CORS, opt-in request timeout) | Same |
+| Audit | Recorded + arg redaction + HMAC integrity chain | Same |
+| Supply chain | CI bandit + pip-audit | Same |
+| Lifecycle | Graceful shutdown draining | Same |
+| Subprocess | Minimal env + bin allowlist + rlimits + temp cwd | Same |
+| Secrets | Env vars | Pluggable backend (Vault / AWS / GCP / file) |

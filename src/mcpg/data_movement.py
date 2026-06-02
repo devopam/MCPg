@@ -31,7 +31,7 @@ from urllib.parse import unquote, urlparse
 from mcpg._vendor.sql import SqlDriver
 from mcpg.database import Database
 from mcpg.query import QueryError, run_select
-from mcpg.shell import ShellError, run_pg_binary
+from mcpg.shell import ShellError, SubprocessLimits, run_pg_binary
 
 # Same identifier allowlist as mcpg.textsearch / mcpg.prisma / mcpg.vector_tuning —
 # refuse names that need delimited-identifier quoting, accept plain ones.
@@ -217,6 +217,7 @@ async def dump_database(
     max_output_bytes: int,
     format: str = "plain",
     schema_only: bool = False,
+    limits: SubprocessLimits | None = None,
 ) -> DumpResult:
     """Run ``pg_dump`` against the database in ``database_url`` and capture stdout.
 
@@ -252,6 +253,7 @@ async def dump_database(
         env=env,
         timeout_sec=timeout_sec,
         max_output_bytes=max_output_bytes,
+        limits=limits,
     )
 
     # For plain format the stdout is SQL text; decode as UTF-8. For
@@ -303,6 +305,7 @@ async def restore_database(
     timeout_sec: int,
     max_output_bytes: int,
     format: str = "plain",
+    limits: SubprocessLimits | None = None,
 ) -> RestoreResult:
     """Restore a dump into the database in ``database_url``.
 
@@ -361,6 +364,7 @@ async def restore_database(
         timeout_sec=timeout_sec,
         max_output_bytes=max_output_bytes,
         stdin=stdin,
+        limits=limits,
     )
 
     stderr_tail = result.stderr.decode("utf-8", errors="replace")
@@ -416,6 +420,7 @@ async def copy_table_between_databases(
     include_data: bool,
     timeout_sec: int,
     max_output_bytes: int,
+    limits: SubprocessLimits | None = None,
 ) -> CopyTableResult:
     """Copy ``schema.table`` from ``source_url`` into ``dest_url``.
 
@@ -480,6 +485,7 @@ async def copy_table_between_databases(
         env=source_env,
         timeout_sec=timeout_sec,
         max_output_bytes=max_output_bytes,
+        limits=limits,
     )
     if dump.output_truncated:
         raise ShellError(
@@ -529,6 +535,7 @@ async def copy_table_between_databases(
         timeout_sec=timeout_sec,
         max_output_bytes=max_output_bytes,
         stdin=dump.stdout,
+        limits=limits,
     )
 
     return CopyTableResult(

@@ -49,6 +49,7 @@ from mcpg import (
     query,
     rls,
     schema_diff,
+    shell,
     sqlalchemy_export,
     sqlc,
     test_data,
@@ -93,6 +94,15 @@ def build_server_info(app: AppContext) -> ServerInfo:
 
 
 T = TypeVar("T")
+
+
+def _subprocess_limits(settings: Settings) -> shell.SubprocessLimits:
+    """Build the subprocess hardening policy from active settings."""
+    return shell.SubprocessLimits(
+        bin_allowlist=settings.subprocess_bin_allowlist,
+        cpu_seconds=settings.subprocess_cpu_seconds,
+        memory_mb=settings.subprocess_memory_mb,
+    )
 
 
 async def _cached_call(  # noqa: UP047
@@ -1337,6 +1347,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             max_output_bytes=app.settings.shell_max_output_bytes,
             format=format,
             schema_only=schema_only,
+            limits=_subprocess_limits(app.settings),
         )
         return asdict(result)
 
@@ -1359,6 +1370,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             timeout_sec=app.settings.shell_timeout_sec,
             max_output_bytes=app.settings.shell_max_output_bytes,
             format=format,
+            limits=_subprocess_limits(app.settings),
         )
         await app.cache.clear()
         return asdict(result)
@@ -1396,6 +1408,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             include_data=include_data,
             timeout_sec=app.settings.shell_timeout_sec,
             max_output_bytes=app.settings.shell_max_output_bytes,
+            limits=_subprocess_limits(app.settings),
         )
         await app.cache.clear()
         return asdict(result)
