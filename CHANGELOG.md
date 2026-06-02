@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`mmr_search` tool (pgvector).** Diversity-aware vector search:
+  fetches `fetch_k` nearest candidates by pgvector distance, then
+  re-ranks with Maximal Marginal Relevance to return `k` rows that
+  are relevant but not near-duplicates — better LLM context than raw
+  top-k. `lambda_mult` (0–1) trades relevance for diversity; both the
+  relevance and diversity terms are cosine similarities computed
+  in-process over candidate embeddings, so the result is independent
+  of the recall-pass `metric`. Each hit carries its `relevance`,
+  `mmr_score`, and selection `rank`. Read-only; `available=false`
+  without the pgvector extension.
+
 - **Pluggable secrets backend (`MCPG_SECRETS_BACKEND`).** A
   `SecretsProvider` abstraction (`mcpg.secrets`) that the secrets read
   in `load_settings` route through — the NL→SQL provider API

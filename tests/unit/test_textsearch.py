@@ -12,6 +12,7 @@ from mcpg.textsearch import (
     GeoMatch,
     HybridMatch,
     HybridSearchResult,
+    MmrSearchResult,
     QuantizationRecommendation,
     SearchError,
     VectorMatch,
@@ -22,6 +23,7 @@ from mcpg.textsearch import (
     fuzzy_search,
     geo_search,
     hybrid_search,
+    mmr_search,
     recommend_vector_quantization,
     vector_range_search,
     vector_search,
@@ -224,6 +226,149 @@ async def test_vector_search_tool_is_callable_from_a_client() -> None:
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["available"] is False
+
+
+# --- MMR search ------------------------------------------------------------
+
+
+def _mmr_candidates() -> dict[str, list[dict[str, object]]]:
+    # query is [1,0]; A is identical, B is near-duplicate of A, C is diverse.
+    return {
+        "pg_extension": [{"present": 1}],
+        "::vector": [
+            {"id": 1, "embedding": [1.0, 0.0], "mcpg_distance": 0.0},
+            {"id": 2, "embedding": [0.99, 0.141], "mcpg_distance": 0.01},
+            {"id": 3, "embedding": [0.0, 1.0], "mcpg_distance": 1.0},
+        ],
+    }
+
+
+async def test_mmr_search_reports_unavailable_without_pgvector() -> None:
+    driver = FakeRoutingDriver({"pg_extension": []})
+
+    result = await mmr_search(driver, "app", "docs", "embedding", [1.0, 0.0])  # type: ignore[arg-type]
+
+    assert result == MmrSearchResult(available=False, matches=[])
+
+
+async def test_mmr_search_pure_relevance_keeps_the_near_duplicate() -> None:
+    # lambda=1 ignores diversity -> top-2 by relevance: A then B.
+    driver = FakeRoutingDriver(_mmr_candidates())
+
+    result = await mmr_search(driver, "app", "docs", "embedding", [1.0, 0.0], k=2, lambda_mult=1.0)  # type: ignore[arg-type]
+
+    assert result.available is True
+    assert [m.row["id"] for m in result.matches] == [1, 2]
+    assert [m.rank for m in result.matches] == [0, 1]
+
+
+async def test_mmr_search_pure_diversity_swaps_in_the_distinct_row() -> None:
+    # lambda=0 maximises diversity -> A first, then C (not the near-dup B).
+    driver = FakeRoutingDriver(_mmr_candidates())
+
+    result = await mmr_search(driver, "app", "docs", "embedding", [1.0, 0.0], k=2, lambda_mult=0.0)  # type: ignore[arg-type]
+
+    assert [m.row["id"] for m in result.matches] == [1, 3]
+
+
+async def test_mmr_search_drops_the_embedding_column_from_rows() -> None:
+    driver = FakeRoutingDriver(_mmr_candidates())
+
+    result = await mmr_search(driver, "app", "docs", "embedding", [1.0, 0.0], k=1)  # type: ignore[arg-type]
+
+    assert "embedding" not in result.matches[0].row
+    assert result.matches[0].row == {"id": 1}
+    # First pick's relevance is cosine to an identical vector -> 1.0.
+    assert result.matches[0].relevance == pytest.approx(1.0)
+
+
+async def test_mmr_search_parses_bracketed_text_embeddings() -> None:
+    # pgvector hands the column back as "[..]" text when no adapter is registered.
+    routes = {
+        "pg_extension": [{"present": 1}],
+        "::vector": [
+            {"id": 1, "embedding": "[1.0,0.0]", "mcpg_distance": 0.0},
+            {"id": 2, "embedding": "[0.0,1.0]", "mcpg_distance": 1.0},
+        ],
+    }
+    result = await mmr_search(FakeRoutingDriver(routes), "app", "docs", "embedding", [1.0, 0.0], k=2)  # type: ignore[arg-type]
+
+    assert [m.row["id"] for m in result.matches] == [1, 2]
+
+
+async def test_mmr_search_fetch_k_defaults_to_a_wider_pool() -> None:
+    driver = FakeRoutingDriver(_mmr_candidates())
+
+    await mmr_search(driver, "app", "docs", "embedding", [1.0, 0.0], k=3)  # type: ignore[arg-type]
+
+    search_call = next(call for call in driver.calls if "::vector" in call[0])
+    # default fetch_k = max(4*k, 20) = 20 for k=3; bound as the LIMIT param.
+    assert search_call[1][-1] == 20
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"metric": "manhattan"}, "metric"),
+        ({"k": 0}, "k must be"),
+        ({"lambda_mult": 1.5}, "lambda_mult"),
+        ({"k": 5, "fetch_k": 2}, "fetch_k"),
+    ],
+)
+async def test_mmr_search_validates_arguments(kwargs: dict[str, object], match: str) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(SearchError, match=match):
+        await mmr_search(driver, "app", "docs", "embedding", [1.0, 0.0], **kwargs)  # type: ignore[arg-type]
+
+
+async def test_mmr_search_rejects_non_finite_query_vector() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(SearchError, match="finite"):
+        await mmr_search(driver, "app", "docs", "embedding", [1.0, float("inf")])  # type: ignore[arg-type]
+
+
+async def test_mmr_search_tool_is_callable_from_a_client() -> None:
+    database = FakeDatabase(FakeRoutingDriver(_mmr_candidates()))
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "mmr_search" in listed
+        result = await client.call_tool(
+            "mmr_search",
+            {"schema": "app", "table": "docs", "column": "embedding", "query_vector": [1.0, 0.0], "k": 2},
+        )
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["available"] is True
+    assert len(result.structuredContent["matches"]) == 2
+
+
+def test_parse_embedding_handles_sequences_strings_and_empties() -> None:
+    from mcpg.textsearch import _parse_embedding
+
+    assert _parse_embedding([1, 2, 3]) == [1.0, 2.0, 3.0]
+    assert _parse_embedding((0.5, 1.5)) == [0.5, 1.5]
+    assert _parse_embedding("[1.0, 2.0]") == [1.0, 2.0]
+    assert _parse_embedding("[]") == []
+    assert _parse_embedding("   ") == []
+
+
+def test_parse_embedding_rejects_unparseable_types() -> None:
+    from mcpg.textsearch import _parse_embedding
+
+    with pytest.raises(SearchError, match="could not parse embedding"):
+        _parse_embedding(object())
+
+
+def test_cosine_similarity_is_zero_for_a_zero_vector() -> None:
+    from mcpg.textsearch import _cosine_similarity
+
+    assert _cosine_similarity([0.0, 0.0], [1.0, 1.0]) == 0.0
+    assert _cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
 
 
 # --- geo search ------------------------------------------------------------

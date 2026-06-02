@@ -5,7 +5,7 @@ A compact one-page tour of every tool MCPg exposes, organised by
 surface; the full reference is in [`tools.md`](tools.md), and
 task-oriented recipes live in [`cookbook.md`](cookbook.md).
 
-**121 tools** as of trunk. Each line shows the tool name + how its
+**122 tools** as of trunk. Each line shows the tool name + how its
 parameters land (required first, common defaults after). Capability
 gates are noted in section titles where they apply.
 
@@ -124,6 +124,8 @@ fuzzy_search(schema, table, column, query)                                # pg_t
 full_text_search(schema, table, column, query)                            # tsvector / tsquery, web-search syntax
 vector_search(schema, table, column, query_vector, k=10, operator="<->")  # pgvector k-NN
 vector_range_search(schema, table, column, query_vector, max_distance)    # pgvector threshold
+mmr_search(schema, table, column, query_vector, k=10, fetch_k=null, lambda_mult=0.5)
+                                                                          # diversity re-rank (Maximal Marginal Relevance)
 hybrid_search(schema, table, vector_col, text_col, query_vector, text_query)
                                                                           # vector + FTS fused via RRF
 geo_search(schema, table, column, lon, lat, k=10)                         # PostGIS k-NN

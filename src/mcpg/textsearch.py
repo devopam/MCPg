@@ -93,6 +93,34 @@ class VectorSearchResult:
 
 
 @dataclass(frozen=True, slots=True)
+class MmrMatch:
+    """One MMR-reranked hit.
+
+    ``relevance`` is the cosine similarity to the query (higher = closer).
+    ``mmr_score`` is the Maximal Marginal Relevance score at the moment
+    the row was selected — ``λ·relevance - (1-λ)·max_sim_to_selected``.
+    ``rank`` is the 0-based selection order.
+    """
+
+    row: dict[str, Any]
+    relevance: float
+    mmr_score: float
+    rank: int
+
+
+@dataclass(frozen=True, slots=True)
+class MmrSearchResult:
+    """The outcome of an MMR search.
+
+    ``available`` is false when the ``vector`` (pgvector) extension is not
+    installed.
+    """
+
+    available: bool
+    matches: list[MmrMatch]
+
+
+@dataclass(frozen=True, slots=True)
 class GeoMatch:
     """One geo-search hit: the row (minus the geometry column) and distance."""
 
@@ -309,6 +337,137 @@ async def vector_range_search(
         cells.pop(column, None)
         matches.append(VectorMatch(distance=distance, row=cells))
     return VectorSearchResult(available=True, matches=matches)
+
+
+# --- MMR re-ranking (pgvector) -------------------------------------------
+
+
+DEFAULT_MMR_LAMBDA = 0.5
+
+
+def _parse_embedding(value: Any) -> list[float]:
+    """Coerce a pgvector cell into a list of floats.
+
+    pgvector hands its column back either as a Python sequence (when the
+    psycopg adapter is registered) or as a bracketed text literal like
+    ``"[0.1,0.2,0.3]"`` otherwise — accept both.
+    """
+    if isinstance(value, (list, tuple)):
+        return [float(v) for v in value]
+    if isinstance(value, str):
+        inner = value.strip().lstrip("[").rstrip("]").strip()
+        if not inner:
+            return []
+        return [float(part) for part in inner.split(",")]
+    raise SearchError(f"could not parse embedding value of type {type(value).__name__}")
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity of two equal-length vectors; 0.0 if either is zero."""
+    dot = 0.0
+    norm_a = 0.0
+    norm_b = 0.0
+    for x, y in zip(a, b, strict=False):
+        dot += x * y
+        norm_a += x * x
+        norm_b += y * y
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / math.sqrt(norm_a * norm_b)
+
+
+async def mmr_search(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    column: str,
+    query_vector: list[float],
+    *,
+    k: int = DEFAULT_LIMIT,
+    fetch_k: int | None = None,
+    lambda_mult: float = DEFAULT_MMR_LAMBDA,
+    metric: str = DEFAULT_VECTOR_METRIC,
+) -> MmrSearchResult:
+    """Re-rank a vector search for diversity via Maximal Marginal Relevance.
+
+    Plain k-NN tends to return near-duplicates; MMR trades a little
+    relevance for variety, which usually improves the context an agent
+    feeds to an LLM. The algorithm fetches ``fetch_k`` nearest candidates
+    by ``metric`` (the recall pass), then greedily picks ``k`` of them
+    maximising ``λ·sim(query, doc) - (1-λ)·max sim(doc, picked)``.
+    ``lambda_mult=1`` is pure relevance (≈ vector_search); ``0`` is pure
+    diversity. Relevance and the diversity penalty are both cosine
+    similarities computed in-process over the candidate embeddings, so
+    the result is independent of which ``metric`` drove the recall pass.
+
+    Args:
+        k: How many rows to return.
+        fetch_k: Candidate pool size for the recall pass; defaults to
+            ``max(4·k, 20)``. Larger gives MMR more to choose from at the
+            cost of a wider initial scan.
+        lambda_mult: Relevance/diversity trade-off in ``[0, 1]``.
+        metric: ``l2``, ``cosine``, or ``inner_product`` for the recall pass.
+
+    Raises:
+        SearchError: On an invalid identifier / metric, a non-finite query
+            value, or out-of-range ``k`` / ``fetch_k`` / ``lambda_mult``.
+    """
+    if not await extension_installed(driver, "vector"):
+        return MmrSearchResult(available=False, matches=[])
+    if metric not in _VECTOR_METRICS:
+        raise SearchError(f"unknown vector metric: {metric!r}")
+    if not all(math.isfinite(value) for value in query_vector):
+        raise SearchError("query_vector must contain only finite numbers")
+    if k < 1:
+        raise SearchError("k must be at least 1")
+    if not 0.0 <= lambda_mult <= 1.0:
+        raise SearchError("lambda_mult must be between 0 and 1")
+    pool = fetch_k if fetch_k is not None else max(4 * k, 20)
+    if pool < k:
+        raise SearchError("fetch_k must be >= k")
+
+    operator = _VECTOR_METRICS[metric]
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    col = _quoted(column, "column")
+    literal = "[" + ",".join(str(float(value)) for value in query_vector) + "]"
+    # Keep the embedding column this time — MMR needs candidate vectors to
+    # measure their similarity to one another.
+    rows = await driver.execute_query(
+        f"SELECT *, {col} {operator} %s::vector AS mcpg_distance "
+        f"FROM {relation} ORDER BY {col} {operator} %s::vector LIMIT %s",
+        params=[literal, literal, pool],
+        force_readonly=True,
+    )
+
+    candidates: list[tuple[dict[str, Any], list[float], float]] = []
+    for row in rows or []:
+        cells = dict(row.cells)
+        cells.pop("mcpg_distance", None)
+        embedding = _parse_embedding(cells.get(column))
+        cells.pop(column, None)  # drop the embedding from the returned row
+        relevance = _cosine_similarity(query_vector, embedding)
+        candidates.append((cells, embedding, relevance))
+
+    matches: list[MmrMatch] = []
+    selected: list[list[float]] = []
+    remaining = list(range(len(candidates)))
+    target = min(k, len(candidates))
+    while len(matches) < target:
+        best_idx = -1
+        best_score = -math.inf
+        for idx in remaining:
+            _, embedding, relevance = candidates[idx]
+            diversity = max((_cosine_similarity(embedding, s) for s in selected), default=0.0)
+            score = lambda_mult * relevance - (1.0 - lambda_mult) * diversity
+            if score > best_score:
+                best_score = score
+                best_idx = idx
+        cells, embedding, relevance = candidates[best_idx]
+        matches.append(MmrMatch(row=cells, relevance=relevance, mmr_score=best_score, rank=len(matches)))
+        selected.append(embedding)
+        remaining.remove(best_idx)
+
+    return MmrSearchResult(available=True, matches=matches)
 
 
 # --- hybrid search (Phase 11.1) ------------------------------------------
