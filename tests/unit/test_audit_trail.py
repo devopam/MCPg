@@ -428,8 +428,8 @@ async def test_prune_audit_events_deletes_old_rows_and_reports_counts() -> None:
     driver = FakeRoutingDriver(
         {
             "FROM pg_class c": [{"present": 1}],
-            # DELETE ... RETURNING — one row per deleted event.
-            "DELETE FROM mcpg_audit.events": [{"cutoff_ts": cutoff_dt} for _ in range(3)],
+            # CTE DELETE returns a single aggregated row (count + cutoff).
+            "DELETE FROM mcpg_audit.events": [{"deleted_count": 3, "cutoff_ts": cutoff_dt}],
             "count(*) AS n": [{"n": 7}],
         }
     )
@@ -486,6 +486,18 @@ async def test_prune_audit_events_tool_is_registered_in_unrestricted_mode() -> N
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["deleted"] == 0
+
+
+@pytest.mark.parametrize("mode", ["read-only", "restricted"])
+async def test_prune_audit_events_tool_is_absent_without_write_capability(mode: str) -> None:
+    # prune deletes rows -> it must only appear in unrestricted mode.
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": mode})
+    server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+
+    assert "prune_audit_events" not in listed
 
 
 # --- capture_columns ------------------------------------------------------

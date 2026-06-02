@@ -57,12 +57,13 @@ class PruneResult:
     """The outcome of a :func:`prune_audit_events` call.
 
     ``deleted`` is the number of rows removed. ``cutoff`` is the
-    ISO-8601 timestamp before which events were pruned. ``remaining``
-    is the row count left in the table afterwards.
+    ISO-8601 timestamp before which events were pruned, or ``None`` when
+    no prune ran (the audit table doesn't exist yet). ``remaining`` is
+    the row count left in the table afterwards.
     """
 
     deleted: int
-    cutoff: str
+    cutoff: str | None
     remaining: int
 
 
@@ -317,22 +318,31 @@ async def prune_audit_events(
             "and truncate out of band."
         )
     if not await _audit_table_exists(driver):
-        return PruneResult(deleted=0, cutoff="", remaining=0)
+        return PruneResult(deleted=0, cutoff=None, remaining=0)
 
+    # Aggregate the delete count inside the CTE rather than RETURNING one
+    # row per deleted event — pruning millions of rows must not
+    # materialise millions of result rows in memory. The query always
+    # returns exactly one row (count over the empty set is 0), so the
+    # cutoff timestamp comes back even when nothing matched.
     rows = await driver.execute_query(
-        f"WITH cutoff AS (SELECT now() - make_interval(days => %s) AS ts) "
-        f"DELETE FROM {_QUALIFIED} WHERE occurred_at < (SELECT ts FROM cutoff) "
-        f"RETURNING (SELECT ts FROM cutoff) AS cutoff_ts",
+        f"WITH cutoff AS (SELECT now() - make_interval(days => %s) AS ts), "
+        f"deleted AS (DELETE FROM {_QUALIFIED} WHERE occurred_at < (SELECT ts FROM cutoff) RETURNING 1) "
+        f"SELECT count(*) AS deleted_count, (SELECT ts FROM cutoff) AS cutoff_ts FROM deleted",
         params=[older_than_days],
         force_readonly=False,
     )
-    deleted = len(rows or [])
-    cutoff = ""
+    deleted = 0
+    cutoff: str | None = None
     if rows:
+        deleted = int(rows[0].cells.get("deleted_count") or 0)
         cutoff_val = rows[0].cells.get("cutoff_ts")
         if cutoff_val is not None:
             cutoff = cutoff_val.isoformat() if hasattr(cutoff_val, "isoformat") else str(cutoff_val)
 
+    # Remaining count is a SEPARATE statement on purpose: a count folded
+    # into the CTE above would read the table at the statement snapshot
+    # (before the DELETE is visible) and report the pre-prune total.
     remaining_rows = await driver.execute_query(
         f"SELECT count(*) AS n FROM {_QUALIFIED}",
         force_readonly=True,

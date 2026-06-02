@@ -54,7 +54,7 @@ not covered there:
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 4.1 | ✅ **Shipped.** Connection-encryption verification tool (`verify_connection_encryption`) — reports `ssl` + protocol/cipher/bits for MCPg's own link plus a cluster encrypted/unencrypted tally, from `pg_stat_ssl`. | S | Medium | Composes with the existing TLS-enforcement startup check. |
+| 4.1 | ✅ **Shipped.** Connection-encryption verification tool (`verify_connection_encryption`) — reports `ssl` + protocol/cipher/bits for MCPg's own link plus a cluster-wide encrypted/unencrypted backend tally, from `pg_stat_ssl`. | S | Medium | Composes with the existing TLS-enforcement startup check. |
 | 4.2 | ✅ **Shipped.** Audit-log retention via `prune_audit_events(older_than_days)` — deletes old `mcpg_audit.events` rows (cron-friendly). Refuses when `MCPG_AUDIT_INTEGRITY` is on, since pruning would break the HMAC chain. | S | Medium | — |
 | 4.3 | IP allowlist for HTTP transport | S | Low | Tiny middleware. Often handled at the reverse-proxy layer instead. |
 | 4.4 | mTLS for the HTTP transport | S | Medium | Cert wiring; commonly done at the proxy layer. |

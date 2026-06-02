@@ -152,11 +152,16 @@ async def verify_connection_encryption(driver: SqlDriver) -> ConnectionEncryptio
     total = int(counts.get("total") or 0)
     encrypted = int(counts.get("encrypted") or 0)
 
+    # Normalise bits to int — keep the dataclass's int | None contract
+    # even if a driver hands back Decimal/str for the key size.
+    bits_value = cell.get("bits")
+    bits = int(bits_value) if ssl_on and bits_value is not None else None
+
     return ConnectionEncryption(
         ssl=ssl_on,
         version=cell.get("version") if ssl_on else None,
         cipher=cell.get("cipher") if ssl_on else None,
-        bits=cell.get("bits") if ssl_on else None,
+        bits=bits,
         total_connections=total,
         encrypted_connections=encrypted,
         unencrypted_connections=total - encrypted,
