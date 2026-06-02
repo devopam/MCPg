@@ -13,7 +13,9 @@ slow / stuck query.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from mcpg._vendor.sql import SqlDriver
 
@@ -190,6 +192,189 @@ class BlockingGraphReport:
     mermaid: str
 
 
+@dataclass(frozen=True, slots=True)
+class _BlockingGraph:
+    """Internal graph structure."""
+
+    nodes: dict[int, BlockingChainDetail]
+    adj: dict[int, list[int]]
+    in_degrees: dict[int, int]
+    out_degrees: dict[int, int]
+    all_pids: set[int]
+
+
+def _make_detail(row: Any, pid: int, prefix: str) -> BlockingChainDetail:
+    """Create a BlockingChainDetail for a blocked or blocking PID from a row."""
+    return BlockingChainDetail(
+        pid=pid,
+        query=str(row.cells[f"{prefix}_query"]) if row.cells[f"{prefix}_query"] is not None else None,
+        application_name=(
+            str(row.cells[f"{prefix}_application_name"])
+            if row.cells[f"{prefix}_application_name"] is not None
+            else None
+        ),
+        wait_event=(str(row.cells[f"{prefix}_wait_event"]) if row.cells[f"{prefix}_wait_event"] is not None else None),
+        state=str(row.cells[f"{prefix}_state"]) if row.cells[f"{prefix}_state"] is not None else None,
+    )
+
+
+def _build_blocking_graph(rows: Sequence[Any]) -> _BlockingGraph:
+    """Reconstruct graph nodes, adjacency lists, and degree counts from database rows."""
+    nodes: dict[int, BlockingChainDetail] = {}
+    adj: dict[int, list[int]] = {}
+    in_degrees: dict[int, int] = {}
+    out_degrees: dict[int, int] = {}
+    all_pids: set[int] = set()
+
+    for row in rows or []:
+        b_pid = int(row.cells["blocked_pid"])
+        blk_pid = int(row.cells["blocking_pid"])
+
+        all_pids.add(b_pid)
+        all_pids.add(blk_pid)
+
+        adj.setdefault(b_pid, []).append(blk_pid)
+
+        out_degrees[b_pid] = out_degrees.get(b_pid, 0) + 1
+        in_degrees[blk_pid] = in_degrees.get(blk_pid, 0) + 1
+
+        if b_pid not in nodes:
+            nodes[b_pid] = _make_detail(row, b_pid, "blocked")
+        if blk_pid not in nodes:
+            nodes[blk_pid] = _make_detail(row, blk_pid, "blocking")
+
+    return _BlockingGraph(
+        nodes=nodes,
+        adj=adj,
+        in_degrees=in_degrees,
+        out_degrees=out_degrees,
+        all_pids=all_pids,
+    )
+
+
+def _find_roots(all_pids: set[int], in_degrees: dict[int, int], out_degrees: dict[int, int]) -> list[int]:
+    """Find root blockers (block others, but are not blocked themselves)."""
+    return sorted(pid for pid in all_pids if in_degrees.get(pid, 0) > 0 and out_degrees.get(pid, 0) == 0)
+
+
+def _find_leaves(all_pids: set[int], in_degrees: dict[int, int], out_degrees: dict[int, int]) -> list[int]:
+    """Find leaf nodes (blocked, but do not block anyone else)."""
+    return sorted(pid for pid in all_pids if in_degrees.get(pid, 0) == 0 and out_degrees.get(pid, 0) > 0)
+
+
+def _normalize_cycle(cycle: list[int]) -> tuple[int, ...]:
+    """Normalize cycle representation to be rotation-invariant and closed."""
+    min_val = min(cycle)
+    min_idx = cycle.index(min_val)
+    normalized = cycle[min_idx:] + cycle[:min_idx]
+    return tuple([*normalized, min_val])
+
+
+def _find_cycles(adj: dict[int, list[int]], all_pids: set[int]) -> list[list[int]]:
+    """DFS simple cycle detection returning deduplicated simple cycles."""
+    cycles: list[list[int]] = []
+    seen: set[tuple[int, ...]] = set()
+    visited_cycles: set[int] = set()
+    path: list[int] = []
+    path_set: set[int] = set()
+
+    def dfs(node: int) -> None:
+        if node in path_set:
+            idx = path.index(node)
+            raw_cycle = path[idx:]
+            key = _normalize_cycle(raw_cycle)
+            if key not in seen:
+                seen.add(key)
+                cycles.append(list(key))
+            return
+
+        if node in visited_cycles:
+            return
+
+        path.append(node)
+        path_set.add(node)
+        for neighbor in adj.get(node, []):
+            dfs(neighbor)
+        path.pop()
+        path_set.remove(node)
+        visited_cycles.add(node)
+
+    for pid in sorted(all_pids):
+        dfs(pid)
+
+    return cycles
+
+
+def _trace_paths(adj: dict[int, list[int]], leaves: list[int]) -> list[list[int]]:
+    """Trace linear blocking paths from leaf nodes down to root blockers or cycle points."""
+    paths: list[list[int]] = []
+    current: list[int] = []
+
+    def dfs(node: int) -> None:
+        current.append(node)
+        neighbors = adj.get(node, [])
+        if not neighbors:
+            paths.append(current.copy())
+        else:
+            for neighbor in neighbors:
+                if neighbor in current:
+                    paths.append([*current, neighbor])
+                else:
+                    dfs(neighbor)
+        current.pop()
+
+    for leaf in leaves:
+        dfs(leaf)
+
+    return paths
+
+
+def _to_mermaid(
+    rows: Sequence[Any],
+    nodes: dict[int, BlockingChainDetail],
+    all_pids: set[int],
+    roots: list[int],
+    cycle_pids: set[int],
+) -> str:
+    """Generate a Mermaid flowchart representing the lock dependency graph."""
+    lines = ["graph TD"]
+    lines.append("  classDef root fill:#ff9999,stroke:#333,stroke-width:2px;")
+    lines.append("  classDef cycle fill:#ffff99,stroke:#333,stroke-width:2px;")
+
+    # Define nodes
+    for pid in sorted(all_pids):
+        detail = nodes[pid]
+        query_snippet = ""
+        if detail.query:
+            q = detail.query.strip().replace("\n", " ").replace('"', "'")
+            if len(q) > 60:
+                q = q[:57] + "..."
+            query_snippet = f"<br/>`{q}`"
+
+        app_str = f" ({detail.application_name})" if detail.application_name else ""
+        state_str = f" [{detail.state or 'unknown'}]"
+        label = f"PID {pid}{app_str}{state_str}{query_snippet}"
+        label_escaped = label.replace('"', '\\"')
+
+        lines.append(f'  {pid}["{label_escaped}"]')
+
+    # Define edges
+    for row in rows or []:
+        b_pid = int(row.cells["blocked_pid"])
+        blk_pid = int(row.cells["blocking_pid"])
+        wait_evt = str(row.cells["blocked_wait_event"]) if row.cells["blocked_wait_event"] is not None else "Lock"
+        lines.append(f'  {b_pid} -->|"{wait_evt}"| {blk_pid}')
+
+    # Apply style classes
+    for r in roots:
+        lines.append(f"  class {r} root;")
+    for c_pid in sorted(cycle_pids):
+        if c_pid not in roots:
+            lines.append(f"  class {c_pid} cycle;")
+
+    return "\n".join(lines)
+
+
 async def walk_blocking_chains(driver: SqlDriver, *, limit: int = DEFAULT_BLOCKING_LIMIT) -> BlockingGraphReport:
     """Analyze the PostgreSQL lock-wait graph.
 
@@ -220,154 +405,18 @@ async def walk_blocking_chains(driver: SqlDriver, *, limit: int = DEFAULT_BLOCKI
         force_readonly=True,
     )
 
-    nodes: dict[int, BlockingChainDetail] = {}
-    adj: dict[int, list[int]] = {}
-    in_degrees: dict[int, int] = {}
-    out_degrees: dict[int, int] = {}
-    all_pids: set[int] = set()
-
-    for row in rows or []:
-        b_pid = int(row.cells["blocked_pid"])
-        blk_pid = int(row.cells["blocking_pid"])
-
-        all_pids.add(b_pid)
-        all_pids.add(blk_pid)
-
-        adj.setdefault(b_pid, []).append(blk_pid)
-
-        out_degrees[b_pid] = out_degrees.get(b_pid, 0) + 1
-        in_degrees[blk_pid] = in_degrees.get(blk_pid, 0) + 1
-
-        if b_pid not in nodes:
-            nodes[b_pid] = BlockingChainDetail(
-                pid=b_pid,
-                query=str(row.cells["blocked_query"]) if row.cells["blocked_query"] is not None else None,
-                application_name=(
-                    str(row.cells["blocked_application_name"])
-                    if row.cells["blocked_application_name"] is not None
-                    else None
-                ),
-                wait_event=(
-                    str(row.cells["blocked_wait_event"]) if row.cells["blocked_wait_event"] is not None else None
-                ),
-                state=str(row.cells["blocked_state"]) if row.cells["blocked_state"] is not None else None,
-            )
-
-        if blk_pid not in nodes:
-            nodes[blk_pid] = BlockingChainDetail(
-                pid=blk_pid,
-                query=str(row.cells["blocking_query"]) if row.cells["blocking_query"] is not None else None,
-                application_name=(
-                    str(row.cells["blocking_application_name"])
-                    if row.cells["blocking_application_name"] is not None
-                    else None
-                ),
-                wait_event=(
-                    str(row.cells["blocking_wait_event"]) if row.cells["blocking_wait_event"] is not None else None
-                ),
-                state=str(row.cells["blocking_state"]) if row.cells["blocking_state"] is not None else None,
-            )
-
-    # 1. Root blockers are PIDs that block others (in_degree > 0) but are not blocked themselves (out_degree == 0)
-    roots = sorted([pid for pid in all_pids if in_degrees.get(pid, 0) > 0 and out_degrees.get(pid, 0) == 0])
-
-    # 2. DFS simple cycle detection
-    cycles: list[list[int]] = []
-    visited_cycles: set[int] = set()
-    path: list[int] = []
-    path_set: set[int] = set()
-
-    def dfs_cycles(node: int) -> None:
-        if node in path_set:
-            idx = path.index(node)
-            cycle = path[idx:]
-            min_val = min(cycle)
-            min_idx = cycle.index(min_val)
-            normalized = cycle[min_idx:] + cycle[:min_idx]
-            full_cycle = [*normalized, min_val]
-            if full_cycle not in cycles:
-                cycles.append(full_cycle)
-            return
-
-        if node in visited_cycles:
-            return
-
-        path.append(node)
-        path_set.add(node)
-
-        for neighbor in adj.get(node, []):
-            dfs_cycles(neighbor)
-
-        path.pop()
-        path_set.remove(node)
-        visited_cycles.add(node)
-
-    for pid in sorted(all_pids):
-        dfs_cycles(pid)
-
-    # 3. Path tracing starting from leaf nodes (in-degree == 0, out-degree > 0)
-    leaves = [pid for pid in all_pids if in_degrees.get(pid, 0) == 0 and out_degrees.get(pid, 0) > 0]
-    paths: list[list[int]] = []
-
-    def trace_path(node: int, current_path: list[int]) -> None:
-        neighbors = adj.get(node, [])
-        if not neighbors:
-            paths.append(current_path)
-            return
-
-        for neighbor in neighbors:
-            if neighbor in current_path:
-                paths.append([*current_path, neighbor])
-                continue
-            trace_path(neighbor, [*current_path, neighbor])
-
-    for leaf in sorted(leaves):
-        trace_path(leaf, [leaf])
-
-    # 4. Mermaid Flowchart construction
-    mermaid_lines = ["graph TD"]
-    mermaid_lines.append("  classDef root fill:#ff9999,stroke:#333,stroke-width:2px;")
-    mermaid_lines.append("  classDef cycle fill:#ffff99,stroke:#333,stroke-width:2px;")
-
+    graph = _build_blocking_graph(rows or [])
+    roots = _find_roots(graph.all_pids, graph.in_degrees, graph.out_degrees)
+    leaves = _find_leaves(graph.all_pids, graph.in_degrees, graph.out_degrees)
+    cycles = _find_cycles(graph.adj, graph.all_pids)
     cycle_pids = {pid for cyc in cycles for pid in cyc}
-
-    # Define nodes
-    for pid in sorted(all_pids):
-        detail = nodes[pid]
-        query_snippet = ""
-        if detail.query:
-            q = detail.query.strip().replace("\n", " ").replace('"', "'")
-            if len(q) > 60:
-                q = q[:57] + "..."
-            query_snippet = f"<br/>`{q}`"
-
-        app_str = f" ({detail.application_name})" if detail.application_name else ""
-        state_str = f" [{detail.state or 'unknown'}]"
-        label = f"PID {pid}{app_str}{state_str}{query_snippet}"
-        label_escaped = label.replace('"', '\\"')
-
-        mermaid_lines.append(f'  {pid}["{label_escaped}"]')
-
-    # Define edges
-    for row in rows or []:
-        b_pid = int(row.cells["blocked_pid"])
-        blk_pid = int(row.cells["blocking_pid"])
-        wait_evt = str(row.cells["blocked_wait_event"]) if row.cells["blocked_wait_event"] is not None else "Lock"
-        mermaid_lines.append(f'  {b_pid} -->|"{wait_evt}"| {blk_pid}')
-
-    # Apply style classes
-    for r in roots:
-        mermaid_lines.append(f"  class {r} root;")
-    for c_pid in sorted(cycle_pids):
-        if c_pid not in roots:
-            mermaid_lines.append(f"  class {c_pid} cycle;")
-
-    mermaid_str = "\n".join(mermaid_lines)
+    paths = _trace_paths(graph.adj, leaves)
+    mermaid_str = _to_mermaid(rows or [], graph.nodes, graph.all_pids, roots, cycle_pids)
 
     return BlockingGraphReport(
         cycles=cycles,
         paths=paths,
         roots=roots,
-        nodes=nodes,
+        nodes=graph.nodes,
         mermaid=mermaid_str,
     )
