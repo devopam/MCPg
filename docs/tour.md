@@ -50,6 +50,7 @@ Visualisation + structural diff.
 
 ```
 generate_schema_diagram(schema)                      # Mermaid ER text
+generate_schema_docs(schema, include_samples=false)  # rich Markdown catalog documentation reference
 generate_fk_cascade_graph(schema, include_all=false) # Mermaid graph of CASCADE / SET NULL / SET DEFAULT FKs
 compare_schemas(left_schema, right_schema)           # added / removed / changed
 ```

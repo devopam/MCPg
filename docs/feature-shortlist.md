@@ -87,7 +87,7 @@ not covered there:
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
 | 8.1 | Test-data factory using catalog + heuristics (`generate_test_row_for(schema, table)`) | M | Medium-High | Pairs with the shadow-migration workflow. |
-| 8.2 | Schema-documentation generator (Markdown table reference from catalog) | S | Medium | Sibling of `generate_schema_diagram`. |
+| 8.2 | ✅ **Shipped.** Schema-documentation generator (Markdown table reference from catalog) | S | Medium | Sibling of `generate_schema_diagram`. |
 
 ## 9. pgvector extensions
 
