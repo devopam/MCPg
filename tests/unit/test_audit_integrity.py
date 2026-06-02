@@ -176,6 +176,38 @@ async def test_verify_audit_chain_tampered_event_hmac_mismatch(monkeypatch: pyte
     assert "event_hmac" in res["reason"]
 
 
+async def test_verify_audit_chain_flags_row_with_blank_event_hmac(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A row whose prev_hmac matches the chain but whose event_hmac is
+    # blank is reported as tampered ("Missing event_hmac signature").
+    monkeypatch.setenv("MCPG_AUDIT_HMAC_KEY", "secret_key")
+    monkeypatch.setenv("MCPG_AUDIT_INTEGRITY", "true")
+
+    now_dt = datetime.datetime.now(datetime.UTC)
+    driver = FakeRoutingDriver(
+        {
+            "FROM pg_class c": [{"present": 1}],
+            "FROM mcpg_audit.events": [
+                {
+                    "id": 1,
+                    "occurred_at": now_dt,
+                    "tool": "run_write",
+                    "arguments": {"sql": "SELECT 1"},
+                    "status": "ok",
+                    "error": None,
+                    "result": None,
+                    "prev_hmac": "",
+                    "event_hmac": "",  # blank signature
+                }
+            ],
+        }
+    )
+
+    res = await verify_audit_chain(driver)  # type: ignore[arg-type]
+    assert res["status"] == "tampered"
+    assert res["broken_at_id"] == 1
+    assert "Missing event_hmac" in res["reason"]
+
+
 async def test_verify_audit_chain_tool_is_registered_in_read_mode() -> None:
     server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
     async with create_connected_server_and_client_session(server) as client:

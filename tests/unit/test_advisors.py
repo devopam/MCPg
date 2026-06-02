@@ -569,3 +569,40 @@ async def test_redundant_indexes_with_partial_and_expression_indexes() -> None:
     # Expression index lower(email) (cols [0]) must NOT be covered by lower(name) (cols [0, 2])
     # because their expressions differ!
     assert not any("idx_users_lower_email" in f.object for f in findings)
+
+
+async def test_redundant_indexes_skips_when_wider_index_has_a_different_predicate() -> None:
+    # A narrow partial index must NOT be reported as covered by a wider
+    # index that carries a *different* WHERE predicate — dropping it would
+    # break queries that rely on the narrow predicate.
+    from mcpg.advisors import _redundant_indexes
+
+    driver = FakeDriver(
+        [
+            {
+                "table_name": "users",
+                "index_name": "idx_users_active",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1",
+                "index_size": 4096,
+                "indpred": "status = 'active'",
+                "indexprs": None,
+            },
+            {
+                "table_name": "users",
+                "index_name": "idx_users_archived_wide",
+                "is_unique": False,
+                "is_primary": False,
+                "indkey": "1 2",
+                "index_size": 8192,
+                "indpred": "status = 'archived'",  # different predicate
+                "indexprs": None,
+            },
+        ]
+    )
+
+    findings = await _redundant_indexes(driver, "public")  # type: ignore[arg-type]
+
+    # Predicates differ -> not redundant.
+    assert findings == []
