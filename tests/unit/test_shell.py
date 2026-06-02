@@ -1,13 +1,16 @@
 """Tests for the subprocess execution policy (ADR-0004)."""
 
+import os
 from typing import Any
 
 import pytest
 
 from mcpg.shell import (
     ShellError,
+    SubprocessLimits,
     SubprocessResult,
     _filter_env,
+    _make_preexec_fn,
     _redact_env,
     _resolve_binary,
     run_pg_binary,
@@ -249,3 +252,124 @@ async def test_run_pg_binary_surfaces_exit_code_when_child_closes_stdin_early(
     assert result.exit_code == 3
     assert result.stderr == b"ERROR: syntax"
     assert result.timed_out is False
+
+
+# --- subprocess hardening: binary-path allowlist --------------------------
+
+
+def test_resolve_binary_accepts_a_path_inside_the_allowlisted_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("mcpg.shell.shutil.which", lambda name: f"/usr/bin/{name}")
+    resolved = _resolve_binary("pg_dump", bin_allowlist=("/usr/bin",))
+    assert resolved == "/usr/bin/pg_dump"
+
+
+def test_resolve_binary_rejects_a_path_outside_the_allowlisted_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A PATH shim resolving to /tmp/evil must be rejected when the
+    # operator pins the binary directory.
+    monkeypatch.setattr("mcpg.shell.shutil.which", lambda name: f"/tmp/evil/{name}")
+    with pytest.raises(ShellError, match="outside MCPG_SUBPROCESS_BIN_ALLOWLIST"):
+        _resolve_binary("pg_dump", bin_allowlist=("/usr/bin", "/usr/local/bin"))
+
+
+# --- subprocess hardening: rlimit preexec_fn ------------------------------
+
+
+def test_make_preexec_fn_is_none_when_no_limits_requested() -> None:
+    assert _make_preexec_fn(SubprocessLimits()) is None
+
+
+def test_make_preexec_fn_applies_cpu_and_memory_rlimits(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcpg.shell as shell_mod
+
+    if shell_mod.resource is None:  # pragma: no cover - non-POSIX
+        pytest.skip("resource module not available on this platform")
+
+    calls: list[tuple[int, tuple[int, int]]] = []
+    monkeypatch.setattr(shell_mod.resource, "setrlimit", lambda which, limit: calls.append((which, limit)))
+
+    fn = _make_preexec_fn(SubprocessLimits(cpu_seconds=5, memory_mb=128))
+    assert fn is not None
+    fn()  # would run in the forked child; here it just records
+
+    whichs = {which for which, _ in calls}
+    assert shell_mod.resource.RLIMIT_CPU in whichs
+    assert shell_mod.resource.RLIMIT_AS in whichs
+    # Memory limit is converted to bytes.
+    as_limit = next(limit for which, limit in calls if which == shell_mod.resource.RLIMIT_AS)
+    assert as_limit == (128 * 1024 * 1024, 128 * 1024 * 1024)
+
+
+# --- subprocess hardening: run_pg_binary spawn wiring ---------------------
+
+
+async def test_run_pg_binary_spawns_in_a_temp_cwd_with_no_preexec_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _FakeProcess(stdout=[b"ok\n"], stderr=b"", returncode=0)
+    record = _patch_exec(monkeypatch, process)
+
+    await run_pg_binary("pg_dump", "--version", timeout_sec=10, max_output_bytes=1024)
+
+    # A throwaway working directory is always passed; no rlimit preexec
+    # unless limits are configured.
+    cwd = record["kwargs"]["cwd"]
+    assert os.path.isabs(cwd)
+    assert record["kwargs"]["preexec_fn"] is None
+    # The temp cwd must be cleaned up by the time run_pg_binary returns.
+    assert not os.path.isdir(cwd)
+
+
+async def test_run_pg_binary_passes_a_preexec_fn_when_limits_are_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mcpg.shell as shell_mod
+
+    if shell_mod.resource is None:  # pragma: no cover - non-POSIX
+        pytest.skip("resource module not available on this platform")
+
+    process = _FakeProcess(stdout=[b"ok\n"], stderr=b"", returncode=0)
+    record = _patch_exec(monkeypatch, process)
+
+    await run_pg_binary(
+        "pg_dump",
+        "--version",
+        timeout_sec=10,
+        max_output_bytes=1024,
+        limits=SubprocessLimits(cpu_seconds=5, memory_mb=64),
+    )
+
+    assert callable(record["kwargs"]["preexec_fn"])
+
+
+async def test_run_pg_binary_cleans_up_temp_cwd_when_cancelled(monkeypatch: pytest.MonkeyPatch) -> None:
+    # If the asyncio task is cancelled mid-call (the inner await raises
+    # CancelledError), the workdir context manager's finally block must
+    # still remove the temp directory.
+    import asyncio
+
+    captured: dict[str, str] = {}
+
+    async def fake_exec(*args: Any, **kwargs: Any) -> _FakeProcess:
+        captured["cwd"] = kwargs["cwd"]
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr("mcpg.shell.shutil.which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr("mcpg.shell.asyncio.create_subprocess_exec", fake_exec)
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_pg_binary("pg_dump", "--version", timeout_sec=10, max_output_bytes=1024)
+
+    assert captured["cwd"]  # spawn got far enough to record it
+    assert not os.path.isdir(captured["cwd"])
+
+
+async def test_run_pg_binary_enforces_the_bin_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("mcpg.shell.shutil.which", lambda name: f"/opt/sneaky/{name}")
+    with pytest.raises(ShellError, match="outside MCPG_SUBPROCESS_BIN_ALLOWLIST"):
+        await run_pg_binary(
+            "pg_dump",
+            "--version",
+            timeout_sec=10,
+            max_output_bytes=1024,
+            limits=SubprocessLimits(bin_allowlist=("/usr/bin",)),
+        )

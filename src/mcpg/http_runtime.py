@@ -21,7 +21,9 @@ guard. ``run_http`` builds the wrapped app and serves it via uvicorn.
 
 from __future__ import annotations
 
+import asyncio
 import hmac
+import json
 import logging
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
@@ -303,6 +305,22 @@ async def _send_413(send: object, reason: str) -> None:
     await send({"type": "http.response.body", "body": body})  # type: ignore[operator]
 
 
+async def _send_504(send: object, reason: str) -> None:
+    """Emit a minimal 504 response."""
+    body = json.dumps({"error": "gateway_timeout", "reason": reason}).encode() + b"\n"
+    await send(  # type: ignore[operator]
+        {
+            "type": "http.response.start",
+            "status": 504,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})  # type: ignore[operator]
+
+
 class _SecurityHeadersMiddleware:
     """ASGI middleware that enforces standard security headers."""
 
@@ -391,6 +409,54 @@ class _RequestSizeLimitMiddleware:
             await _send_413(send, "request body too large")
 
 
+class _RequestTimeoutMiddleware:
+    """ASGI middleware that caps wall-clock time for a single request.
+
+    Off by default (``MCPG_HTTP_REQUEST_TIMEOUT_SECONDS=0``); only
+    installed when a positive timeout is configured. Intended for
+    request/response deployments — note that a hard cap will also cut
+    off long-lived streaming responses, so leave it disabled if you
+    rely on long SSE / streamable-http streams.
+
+    On expiry, if the downstream app has not started the response yet,
+    a 504 is emitted; if bytes were already sent we can only abort the
+    stream (the status line is long gone).
+    """
+
+    def __init__(self, app: object, *, timeout_seconds: int) -> None:
+        self._app = app
+        self._timeout = timeout_seconds
+
+    async def __call__(self, scope: dict[str, object], receive: object, send: object) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        started = False
+
+        async def send_wrapper(message: dict[str, object]) -> None:
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)  # type: ignore[operator]
+
+        try:
+            async with asyncio.timeout(self._timeout):
+                await self._app(scope, receive, send_wrapper)  # type: ignore[operator]
+        except TimeoutError:
+            # On Python 3.11+ ``asyncio.TimeoutError`` IS the builtin
+            # ``TimeoutError`` (the asyncio name is a deprecated alias —
+            # ruff UP041 rejects it), so they can't be distinguished
+            # at catch time. If an inner app ever raises a bare
+            # ``TimeoutError`` we'd mis-attribute it to our cap; this
+            # is preferable to leaking an exception out of the
+            # middleware. Inner apps that want to surface their own
+            # timeout should raise a domain-specific subclass.
+            # Only safe to write a status line if the app hasn't already.
+            if not started:
+                await _send_504(send, f"request exceeded {self._timeout}s")
+
+
 def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlette:
     """Wrap a FastMCP HTTP app with metrics + optional auth.
 
@@ -456,6 +522,10 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
     # Outer middlewares (processed first on request)
     app.add_middleware(_SecurityHeadersMiddleware, hsts_max_age=settings.http_hsts_max_age)
     app.add_middleware(_RequestSizeLimitMiddleware, max_bytes=settings.http_max_body_bytes)
+    # Opt-in per-request wall-clock cap. Disabled (0) by default so the
+    # streamable-http / sse long-lived streams keep working untouched.
+    if settings.http_request_timeout_seconds > 0:
+        app.add_middleware(_RequestTimeoutMiddleware, timeout_seconds=settings.http_request_timeout_seconds)
     if settings.http_allowed_origins:
         from starlette.middleware.cors import CORSMiddleware
 

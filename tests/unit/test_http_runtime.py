@@ -622,3 +622,323 @@ def test_cors_middleware_negative_and_default_config() -> None:
         }
         response = client.options("/", headers=headers)
         assert response.status_code == 400 or "access-control-allow-origin" not in response.headers
+
+
+# --- request size limit: streaming + malformed Content-Length -------------
+
+
+async def _drive(middleware: object, scope: dict[str, object], chunks: list[bytes]) -> list[dict[str, object]]:
+    """Drive an ASGI middleware with a sequence of request-body chunks.
+
+    Returns the list of messages the middleware sent downstream.
+    """
+    sent: list[dict[str, object]] = []
+    pending = list(chunks)
+
+    async def receive() -> dict[str, object]:
+        body = pending.pop(0) if pending else b""
+        return {"type": "http.request", "body": body, "more_body": bool(pending)}
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    async def _inner(scope: dict[str, object], receive: object, send: object) -> None:
+        # Read the whole body (this is what triggers the receive wrapper),
+        # then respond 200.
+        while True:
+            msg = await receive()  # type: ignore[operator]
+            if not msg.get("more_body"):
+                break
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    middleware._app = _inner  # type: ignore[attr-defined]
+    await middleware(scope, receive, send)  # type: ignore[operator]
+    return sent
+
+
+async def test_request_size_limit_streams_413_when_body_exceeds_without_content_length() -> None:
+    # No Content-Length header -> the middleware counts streamed bytes and
+    # raises once the running total exceeds the cap, returning 413.
+    from mcpg.http_runtime import _RequestSizeLimitMiddleware
+
+    mw = _RequestSizeLimitMiddleware(None, max_bytes=10)
+    scope = {"type": "http", "headers": []}
+    sent = await _drive(mw, scope, [b"abcdef", b"ghijkl"])  # 12 bytes total
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 413
+
+
+async def test_request_size_limit_allows_streamed_body_within_cap() -> None:
+    from mcpg.http_runtime import _RequestSizeLimitMiddleware
+
+    mw = _RequestSizeLimitMiddleware(None, max_bytes=100)
+    scope = {"type": "http", "headers": []}
+    sent = await _drive(mw, scope, [b"abc", b"def"])  # 6 bytes total
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 200
+
+
+async def test_request_size_limit_ignores_malformed_content_length() -> None:
+    # A non-integer Content-Length must not crash the middleware; it falls
+    # back to counting streamed bytes (here within the cap -> 200).
+    from mcpg.http_runtime import _RequestSizeLimitMiddleware
+
+    mw = _RequestSizeLimitMiddleware(None, max_bytes=100)
+    scope = {"type": "http", "headers": [(b"content-length", b"not-a-number")]}
+    sent = await _drive(mw, scope, [b"hello"])
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 200
+
+
+# --- OIDC auth middleware: role-claim handling ----------------------------
+
+
+class _FakeVerifier:
+    """Stand-in for OIDCVerifier with a canned verify() outcome."""
+
+    def __init__(self, *, role: str | None = None, raises: bool = False) -> None:
+        self._role = role
+        self._raises = raises
+
+    async def verify(self, token: str) -> object:
+        from mcpg.oidc import OIDCError, VerifiedToken
+
+        if self._raises:
+            raise OIDCError("invalid token")
+        return VerifiedToken(claims={"sub": "u"}, role=self._role)
+
+
+async def _drive_get(middleware: object, *, auth: bytes | None = None) -> list[dict[str, object]]:
+    """Drive a middleware with a single GET request, capturing sent messages."""
+    sent: list[dict[str, object]] = []
+    headers = [(b"authorization", auth)] if auth is not None else []
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    scope = {"type": "http", "path": "/mcp", "headers": headers}
+    await middleware(scope, receive, send)  # type: ignore[operator]
+    return sent
+
+
+async def test_oidc_middleware_passes_through_when_token_has_no_role() -> None:
+    from mcpg.http_runtime import _OIDCAuthMiddleware
+
+    seen: list[str | None] = []
+
+    async def _inner(scope: dict[str, object], receive: object, send: object) -> None:
+        seen.append(current_role.get())
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    mw = _OIDCAuthMiddleware(_inner, verifier=_FakeVerifier(role=None))  # type: ignore[arg-type]
+    sent = await _drive_get(mw, auth=b"Bearer tok")
+
+    assert seen == [None]
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 200
+
+
+async def test_oidc_middleware_sets_and_resets_role_from_claim() -> None:
+    from mcpg.http_runtime import _OIDCAuthMiddleware
+
+    seen: list[str | None] = []
+
+    async def _inner(scope: dict[str, object], receive: object, send: object) -> None:
+        seen.append(current_role.get())
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    mw = _OIDCAuthMiddleware(_inner, verifier=_FakeVerifier(role="tenant_a"))  # type: ignore[arg-type]
+    sent = await _drive_get(mw, auth=b"Bearer tok")
+
+    # Role visible to the inner app, reset afterwards.
+    assert seen == ["tenant_a"]
+    assert current_role.get() is None
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 200
+
+
+async def test_oidc_middleware_rejects_unsafe_role_identifier() -> None:
+    from mcpg.http_runtime import _OIDCAuthMiddleware
+
+    mw = _OIDCAuthMiddleware(None, verifier=_FakeVerifier(role='"; DROP USER alice; --'))  # type: ignore[arg-type]
+    sent = await _drive_get(mw, auth=b"Bearer tok")
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 401
+
+
+async def test_oidc_middleware_returns_401_on_verification_failure() -> None:
+    from mcpg.http_runtime import _OIDCAuthMiddleware
+
+    mw = _OIDCAuthMiddleware(None, verifier=_FakeVerifier(raises=True))  # type: ignore[arg-type]
+    sent = await _drive_get(mw, auth=b"Bearer bad")
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 401
+
+
+# --- build_http_app SSE branch + run_http -----------------------------------
+
+
+def test_build_http_app_supports_sse_kind() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+    class _Stub:
+        def sse_app(self) -> Starlette:
+            return _bare_app()
+
+    app = build_http_app(_Stub(), settings, kind="sse")
+    # /metrics + /healthz are mounted onto whichever app kind we built.
+    with TestClient(app) as client:
+        assert client.get("/healthz").status_code == 200
+
+
+def test_run_http_builds_app_and_serves_via_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcpg import http_runtime
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_HOST": "0.0.0.0",
+            "MCPG_HTTP_PORT": "9999",
+        }
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_run(app: object, *, host: str, port: int) -> None:
+        captured["app"] = app
+        captured["host"] = host
+        captured["port"] = port
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", _fake_run)
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    http_runtime.run_http(_Stub(), settings, kind="streamable-http")
+
+    assert captured["host"] == "0.0.0.0"
+    assert captured["port"] == 9999
+    assert captured["app"] is not None
+
+
+# --- request timeout middleware -------------------------------------------
+
+
+async def test_request_timeout_middleware_returns_504_when_app_is_too_slow() -> None:
+    import asyncio
+
+    from mcpg.http_runtime import _RequestTimeoutMiddleware
+
+    async def _slow_app(scope: dict[str, object], receive: object, send: object) -> None:
+        await asyncio.sleep(10)  # far longer than the 0s cap
+
+    sent: list[dict[str, object]] = []
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    mw = _RequestTimeoutMiddleware(_slow_app, timeout_seconds=0)
+    await mw({"type": "http", "path": "/mcp", "headers": []}, receive, send)
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 504
+
+
+async def test_request_timeout_middleware_passes_through_a_fast_app() -> None:
+    from mcpg.http_runtime import _RequestTimeoutMiddleware
+
+    async def _fast_app(scope: dict[str, object], receive: object, send: object) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    sent: list[dict[str, object]] = []
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    mw = _RequestTimeoutMiddleware(_fast_app, timeout_seconds=5)
+    await mw({"type": "http", "path": "/mcp", "headers": []}, receive, send)
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 200
+
+
+async def test_request_timeout_middleware_passes_through_non_http_scope() -> None:
+    from mcpg.http_runtime import _RequestTimeoutMiddleware
+
+    called = False
+
+    async def _inner(scope: dict[str, object], receive: object, send: object) -> None:
+        nonlocal called
+        called = True
+
+    mw = _RequestTimeoutMiddleware(_inner, timeout_seconds=1)
+    await mw({"type": "lifespan"}, None, None)
+    assert called is True
+
+
+async def test_request_timeout_middleware_does_not_double_send_after_stream_started() -> None:
+    # If the app already sent the response start before timing out, the
+    # middleware must NOT try to write a 504 on top of it.
+    import asyncio
+
+    from mcpg.http_runtime import _RequestTimeoutMiddleware
+
+    async def _streamer(scope: dict[str, object], receive: object, send: object) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await asyncio.sleep(10)  # times out mid-stream
+
+    sent: list[dict[str, object]] = []
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    mw = _RequestTimeoutMiddleware(_streamer, timeout_seconds=0)
+    await mw({"type": "http", "path": "/mcp", "headers": []}, receive, send)
+
+    statuses = [m["status"] for m in sent if m["type"] == "http.response.start"]
+    # Exactly one start, the app's 200 — no 504 stacked on top.
+    assert statuses == [200]
+
+
+def test_build_http_app_installs_request_timeout_only_when_positive() -> None:
+    base = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"}
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    # Disabled (default 0): no timeout middleware in the stack.
+    off = build_http_app(_Stub(), load_settings(base), kind="streamable-http")
+    assert not any(m.cls.__name__ == "_RequestTimeoutMiddleware" for m in off.user_middleware)
+
+    # Enabled: middleware present.
+    on = build_http_app(
+        _Stub(),
+        load_settings({**base, "MCPG_HTTP_REQUEST_TIMEOUT_SECONDS": "5"}),
+        kind="streamable-http",
+    )
+    assert any(m.cls.__name__ == "_RequestTimeoutMiddleware" for m in on.user_middleware)

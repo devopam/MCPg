@@ -1,5 +1,8 @@
 """Tests for the SQL audit-trail module and its MCP read tool."""
 
+import hashlib
+import hmac
+import json
 from typing import Any
 
 import pytest
@@ -10,12 +13,14 @@ from mcpg.audit_trail import (
     AUDIT_SCHEMA,
     AUDIT_TABLE,
     AuditTrailEntry,
+    AuditTrailError,
     SchemaDiffSnapshot,
     _redact,
     _reset_audit_init_cache,
     capture_columns,
     ensure_audit_table,
     list_audit_events,
+    prune_audit_events,
     record_audit,
 )
 from mcpg.config import load_settings
@@ -183,6 +188,179 @@ async def test_record_audit_persists_a_null_result_when_caller_supplies_none() -
     assert params[4] is None  # result column is NULL
 
 
+# --- record_audit HMAC integrity chain -------------------------------------
+
+
+def _expected_event_hmac(
+    *,
+    key: str,
+    prev_hmac: str,
+    occurred_at_str: str,
+    tool: str,
+    arguments: dict[str, Any],
+    status: str,
+    error: str | None,
+    result: dict[str, Any] | None,
+) -> str:
+    """Recompute the event HMAC exactly as ``record_audit`` does."""
+    payload = {
+        "occurred_at": occurred_at_str,
+        "tool": tool,
+        "arguments": arguments,
+        "status": status,
+        "error": error,
+        "result": result,
+    }
+    payload_bytes = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    data_to_sign = prev_hmac.encode("utf-8") + payload_bytes
+    return hmac.new(key.encode("utf-8"), data_to_sign, hashlib.sha256).hexdigest()
+
+
+async def test_record_audit_signs_first_event_with_empty_prev_hmac(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Integrity enabled via the conventional env vars, no driver.settings.
+    monkeypatch.setenv("MCPG_AUDIT_INTEGRITY", "true")
+    monkeypatch.setenv("MCPG_AUDIT_HMAC_KEY", "secret_key")
+    _reset_audit_init_cache()
+    # No prior row routed -> ORDER BY id DESC returns [] -> prev_hmac == "".
+    driver = FakeRoutingDriver({})
+
+    await record_audit(  # type: ignore[arg-type]
+        driver,
+        tool="run_write",
+        arguments={"sql": "SELECT 1"},
+        status="ok",
+    )
+
+    insert = next(call for call in driver.calls if "INSERT INTO" in call[0])
+    params = insert[1]
+    assert params is not None
+    occurred_at_str = params[5].isoformat()
+    # prev_hmac column is "" for the genesis row; event_hmac is signed.
+    assert params[6] == ""
+    assert params[7] == _expected_event_hmac(
+        key="secret_key",
+        prev_hmac="",
+        occurred_at_str=occurred_at_str,
+        tool="run_write",
+        arguments={"sql": "SELECT 1"},
+        status="ok",
+        error=None,
+        result=None,
+    )
+
+
+async def test_record_audit_chains_onto_the_previous_events_hmac(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCPG_AUDIT_INTEGRITY", "true")
+    monkeypatch.setenv("MCPG_AUDIT_HMAC_KEY", "secret_key")
+    _reset_audit_init_cache()
+    # A prior row exists; its event_hmac becomes this row's prev_hmac.
+    driver = FakeRoutingDriver({"ORDER BY id DESC": [{"event_hmac": "PREVHMAC"}]})
+
+    await record_audit(  # type: ignore[arg-type]
+        driver,
+        tool="run_ddl",
+        arguments={"sql": "CREATE TABLE x()"},
+        status="ok",
+    )
+
+    insert = next(call for call in driver.calls if "INSERT INTO" in call[0])
+    params = insert[1]
+    assert params is not None
+    occurred_at_str = params[5].isoformat()
+    assert params[6] == "PREVHMAC"
+    assert params[7] == _expected_event_hmac(
+        key="secret_key",
+        prev_hmac="PREVHMAC",
+        occurred_at_str=occurred_at_str,
+        tool="run_ddl",
+        arguments={"sql": "CREATE TABLE x()"},
+        status="ok",
+        error=None,
+        result=None,
+    )
+
+
+async def test_record_audit_reads_integrity_config_from_driver_settings() -> None:
+    # When the driver carries Settings, record_audit uses those instead
+    # of re-reading the environment.
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_AUDIT_INTEGRITY": "true",
+            "MCPG_AUDIT_HMAC_KEY": "from_settings",
+        }
+    )
+    _reset_audit_init_cache()
+    driver = FakeRoutingDriver({})
+    driver.settings = settings  # type: ignore[attr-defined]
+
+    await record_audit(  # type: ignore[arg-type]
+        driver,
+        tool="run_write",
+        arguments={"sql": "SELECT 1"},
+        status="ok",
+    )
+
+    insert = next(call for call in driver.calls if "INSERT INTO" in call[0])
+    params = insert[1]
+    assert params is not None
+    occurred_at_str = params[5].isoformat()
+    assert params[7] == _expected_event_hmac(
+        key="from_settings",
+        prev_hmac="",
+        occurred_at_str=occurred_at_str,
+        tool="run_write",
+        arguments={"sql": "SELECT 1"},
+        status="ok",
+        error=None,
+        result=None,
+    )
+
+
+async def test_record_audit_treats_malformed_integrity_flag_as_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A non-boolean MCPG_AUDIT_INTEGRITY must not crash record_audit; the
+    # parse error is swallowed and integrity stays off (HMAC columns NULL).
+    monkeypatch.setenv("MCPG_AUDIT_INTEGRITY", "not-a-bool")
+    monkeypatch.setenv("MCPG_AUDIT_HMAC_KEY", "secret_key")
+    _reset_audit_init_cache()
+    driver = FakeRoutingDriver({})
+
+    await record_audit(  # type: ignore[arg-type]
+        driver,
+        tool="run_write",
+        arguments={"sql": "SELECT 1"},
+        status="ok",
+    )
+
+    insert = next(call for call in driver.calls if "INSERT INTO" in call[0])
+    params = insert[1]
+    assert params is not None
+    assert params[7] is None  # event_hmac stays NULL
+
+
+async def test_record_audit_leaves_hmac_columns_null_when_integrity_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Integrity off (default): no prev-row SELECT, and both HMAC columns
+    # are written as NULL.
+    monkeypatch.delenv("MCPG_AUDIT_INTEGRITY", raising=False)
+    monkeypatch.delenv("MCPG_AUDIT_HMAC_KEY", raising=False)
+    _reset_audit_init_cache()
+    driver = FakeRoutingDriver({})
+
+    await record_audit(  # type: ignore[arg-type]
+        driver,
+        tool="run_write",
+        arguments={"sql": "SELECT 1"},
+        status="ok",
+    )
+
+    assert not any("ORDER BY id DESC" in call[0] for call in driver.calls)
+    insert = next(call for call in driver.calls if "INSERT INTO" in call[0])
+    params = insert[1]
+    assert params is not None
+    assert params[6] is None  # prev_hmac
+    assert params[7] is None  # event_hmac
+
+
 # --- list_audit_events ----------------------------------------------------
 
 
@@ -238,6 +416,88 @@ async def test_list_audit_events_filters_by_tool_when_supplied() -> None:
     assert len(select_calls) == 1
     params = select_calls[0][1]
     assert params == ["run_write", 5]
+
+
+# --- prune_audit_events ----------------------------------------------------
+
+
+async def test_prune_audit_events_deletes_old_rows_and_reports_counts() -> None:
+    import datetime
+
+    cutoff_dt = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    driver = FakeRoutingDriver(
+        {
+            "FROM pg_class c": [{"present": 1}],
+            # CTE DELETE returns a single aggregated row (count + cutoff).
+            "DELETE FROM mcpg_audit.events": [{"deleted_count": 3, "cutoff_ts": cutoff_dt}],
+            "count(*) AS n": [{"n": 7}],
+        }
+    )
+
+    result = await prune_audit_events(driver, older_than_days=30)  # type: ignore[arg-type]
+
+    assert result.deleted == 3
+    assert result.remaining == 7
+    assert result.cutoff == cutoff_dt.isoformat()
+    # The DELETE was a write (force_readonly False).
+    delete_call = next(call for call in driver.calls if "DELETE FROM" in call[0])
+    assert delete_call[2] is False
+    assert delete_call[1] == [30]
+
+
+async def test_prune_audit_events_refuses_when_integrity_enabled() -> None:
+    driver = FakeRoutingDriver({"FROM pg_class c": [{"present": 1}]})
+
+    with pytest.raises(AuditTrailError, match="MCPG_AUDIT_INTEGRITY"):
+        await prune_audit_events(driver, older_than_days=30, integrity_enabled=True)  # type: ignore[arg-type]
+
+    # Nothing was deleted — it bailed before touching the table.
+    assert not any("DELETE FROM" in call[0] for call in driver.calls)
+
+
+async def test_prune_audit_events_rejects_non_positive_window() -> None:
+    with pytest.raises(AuditTrailError, match="older_than_days"):
+        await prune_audit_events(FakeDriver(), older_than_days=0)  # type: ignore[arg-type]
+
+
+async def test_prune_audit_events_is_a_noop_when_table_absent() -> None:
+    # Existence check returns no rows -> table not created yet.
+    driver = FakeRoutingDriver({"FROM pg_class c": []})
+
+    result = await prune_audit_events(driver, older_than_days=30)  # type: ignore[arg-type]
+
+    assert result.deleted == 0
+    assert result.remaining == 0
+    assert not any("DELETE FROM" in call[0] for call in driver.calls)
+
+
+async def test_prune_audit_events_tool_is_registered_in_unrestricted_mode() -> None:
+    unrestricted = load_settings(
+        {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
+    )
+    driver = FakeRoutingDriver({"FROM pg_class c": []})
+    server = create_server(unrestricted, database=FakeDatabase(driver))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "prune_audit_events" in listed
+        result = await client.call_tool("prune_audit_events", {"older_than_days": 90})
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["deleted"] == 0
+
+
+@pytest.mark.parametrize("mode", ["read-only", "restricted"])
+async def test_prune_audit_events_tool_is_absent_without_write_capability(mode: str) -> None:
+    # prune deletes rows -> it must only appear in unrestricted mode.
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": mode})
+    server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+
+    assert "prune_audit_events" not in listed
 
 
 # --- capture_columns ------------------------------------------------------

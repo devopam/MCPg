@@ -49,6 +49,7 @@ from mcpg import (
     query,
     rls,
     schema_diff,
+    shell,
     sqlalchemy_export,
     sqlc,
     test_data,
@@ -93,6 +94,15 @@ def build_server_info(app: AppContext) -> ServerInfo:
 
 
 T = TypeVar("T")
+
+
+def _subprocess_limits(settings: Settings) -> shell.SubprocessLimits:
+    """Build the subprocess hardening policy from active settings."""
+    return shell.SubprocessLimits(
+        bin_allowlist=settings.subprocess_bin_allowlist,
+        cpu_seconds=settings.subprocess_cpu_seconds,
+        memory_mb=settings.subprocess_memory_mb,
+    )
 
 
 async def _cached_call(  # noqa: UP047
@@ -1337,6 +1347,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             max_output_bytes=app.settings.shell_max_output_bytes,
             format=format,
             schema_only=schema_only,
+            limits=_subprocess_limits(app.settings),
         )
         return asdict(result)
 
@@ -1359,6 +1370,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             timeout_sec=app.settings.shell_timeout_sec,
             max_output_bytes=app.settings.shell_max_output_bytes,
             format=format,
+            limits=_subprocess_limits(app.settings),
         )
         await app.cache.clear()
         return asdict(result)
@@ -1396,6 +1408,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             include_data=include_data,
             timeout_sec=app.settings.shell_timeout_sec,
             max_output_bytes=app.settings.shell_max_output_bytes,
+            limits=_subprocess_limits(app.settings),
         )
         await app.cache.clear()
         return asdict(result)
@@ -1830,6 +1843,46 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
     @server.tool(
+        name="mmr_search",
+        description=(
+            "Diversity-aware vector search: fetch `fetch_k` nearest "
+            "candidates by pgvector distance, then re-rank with Maximal "
+            "Marginal Relevance to return `k` rows that are relevant but "
+            "not near-duplicates — better LLM context than raw top-k. "
+            "`lambda_mult` in [0,1] trades relevance (1.0) for diversity "
+            "(0.0); default 0.5. Relevance + diversity are cosine "
+            "similarities computed over candidate embeddings, so the "
+            "result is independent of the recall-pass `metric`. Each hit "
+            "carries its relevance, mmr_score, and selection rank. "
+            "Reports available=false if the pgvector extension is not "
+            "installed."
+        ),
+    )
+    async def mmr_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        query_vector: list[float],
+        k: int = textsearch.DEFAULT_LIMIT,
+        fetch_k: int | None = None,
+        lambda_mult: float = textsearch.DEFAULT_MMR_LAMBDA,
+        metric: str = textsearch.DEFAULT_VECTOR_METRIC,
+    ) -> dict[str, Any]:
+        result = await textsearch.mmr_search(
+            _driver(ctx),
+            schema,
+            table,
+            column,
+            query_vector,
+            k=k,
+            fetch_k=fetch_k,
+            lambda_mult=lambda_mult,
+            metric=metric,
+        )
+        return asdict(result)
+
+    @server.tool(
         name="hybrid_search",
         description=(
             "Combine vector and full-text ranking via reciprocal-rank fusion "
@@ -1918,6 +1971,21 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
     async def list_active_queries(ctx: _Ctx) -> list[dict[str, Any]]:
         queries = await liveops.list_active_queries(_driver(ctx))
         return [asdict(active) for active in queries]
+
+    @server.tool(
+        name="verify_connection_encryption",
+        description=(
+            "Report whether MCPg's own connection to PostgreSQL is "
+            "TLS-encrypted, including the negotiated protocol version, "
+            "cipher, and key bits (from pg_stat_ssl). Also returns a "
+            "cluster-wide tally of encrypted vs unencrypted backends "
+            "(a lower bound under non-superuser privileges). Complements "
+            "the startup TLS-enforcement check by confirming the live "
+            "connection actually came up encrypted."
+        ),
+    )
+    async def verify_connection_encryption(ctx: _Ctx) -> dict[str, Any]:
+        return asdict(await liveops.verify_connection_encryption(_driver(ctx)))
 
     @server.tool(
         name="list_replicas",
@@ -2071,6 +2139,26 @@ def _register_maintenance(server: FastMCP[AppContext]) -> None:
         database = ctx.request_context.lifespan_context.database
         result = await maintenance.run_maintenance(database, operation, schema, table)
         await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="prune_audit_events",
+        description=(
+            "Delete persisted audit events older than older_than_days from "
+            "mcpg_audit.events — a cron-friendly retention helper for the "
+            "otherwise-unbounded audit table. Returns the number deleted, the "
+            "cutoff timestamp, and the rows remaining. Refuses to run when "
+            "MCPG_AUDIT_INTEGRITY is enabled (pruning would break the HMAC "
+            "signature chain). Available only in unrestricted mode."
+        ),
+    )
+    async def prune_audit_events(ctx: _Ctx, older_than_days: int) -> dict[str, Any]:
+        settings = ctx.request_context.lifespan_context.settings
+        result = await audit_trail.prune_audit_events(
+            _driver(ctx),
+            older_than_days=older_than_days,
+            integrity_enabled=settings.audit_integrity,
+        )
         return asdict(result)
 
 

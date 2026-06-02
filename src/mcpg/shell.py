@@ -29,8 +29,16 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import tempfile
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Final
+
+try:  # POSIX-only; absent on Windows. Guarded so the import never breaks startup.
+    import resource
+except ImportError:  # pragma: no cover - exercised only on non-POSIX platforms
+    resource = None  # type: ignore[assignment]
 
 _ALLOWED_BINARIES: Final[frozenset[str]] = frozenset({"pg_dump", "pg_restore", "psql"})
 
@@ -65,6 +73,31 @@ class ShellError(Exception):
 
 
 @dataclass(frozen=True, slots=True)
+class SubprocessLimits:
+    """Deployment-wide hardening policy for spawned PG binaries.
+
+    All fields default to "no extra restriction" so the policy is
+    opt-in. Populated from ``MCPG_SUBPROCESS_*`` settings and threaded
+    into :func:`run_pg_binary`.
+
+    Attributes:
+        bin_allowlist: Absolute directory paths the resolved binary
+            MUST live under. Empty means "trust PATH resolution" (the
+            historical behaviour). When set, a binary resolved to a
+            directory outside the allowlist is rejected — this defeats
+            a malicious PATH shim of ``pg_dump`` / ``psql``.
+        cpu_seconds: Per-process CPU-time rlimit (``RLIMIT_CPU``).
+            ``None`` leaves the inherited limit untouched.
+        memory_mb: Per-process address-space rlimit (``RLIMIT_AS``),
+            in mebibytes. ``None`` leaves it untouched.
+    """
+
+    bin_allowlist: tuple[str, ...] = ()
+    cpu_seconds: int | None = None
+    memory_mb: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SubprocessResult:
     """The outcome of a single subprocess invocation.
 
@@ -89,14 +122,70 @@ class SubprocessResult:
     env_redacted: dict[str, str] = field(default_factory=dict)
 
 
-def _resolve_binary(name: str) -> str:
-    """Look up ``name`` on PATH and return the absolute path, or raise."""
+def _resolve_binary(name: str, bin_allowlist: tuple[str, ...] = ()) -> str:
+    """Look up ``name`` on PATH and return the absolute path, or raise.
+
+    When ``bin_allowlist`` is non-empty, the resolved absolute path must
+    live directly under one of the allowlisted directories; otherwise a
+    PATH shim of ``pg_dump`` / ``psql`` is rejected before it can run.
+    """
     if name not in _ALLOWED_BINARIES:
         raise ShellError(f"binary {name!r} is not on the allowlist (expected one of {sorted(_ALLOWED_BINARIES)})")
     resolved = shutil.which(name)
     if resolved is None:
         raise ShellError(f"binary {name!r} not found on PATH; install it on the server")
+    if bin_allowlist:
+        # Compare the *directory* PATH resolved the binary into — not the
+        # realpath of the file, since distro packages legitimately symlink
+        # e.g. /usr/bin/pg_dump -> pg_wrapper outside the bin dir. We only
+        # normalise the directory for symlinks so a PATH shim in an
+        # untrusted dir is still rejected.
+        resolved_dir = os.path.realpath(os.path.dirname(resolved))
+        allowed = {os.path.realpath(d) for d in bin_allowlist}
+        if resolved_dir not in allowed:
+            raise ShellError(
+                f"binary {name!r} resolved to {resolved!r}, which is outside "
+                f"MCPG_SUBPROCESS_BIN_ALLOWLIST ({sorted(bin_allowlist)})"
+            )
     return resolved
+
+
+@contextmanager
+def _subprocess_workdir() -> Iterator[str]:
+    """Create + always remove a throwaway cwd for one subprocess call.
+
+    Localised in a ``try/finally`` so an asyncio cancellation in the
+    middle of ``run_pg_binary`` can't leave the temp directory behind.
+    """
+    workdir = tempfile.mkdtemp(prefix="mcpg-pg-")
+    try:
+        yield workdir
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _make_preexec_fn(limits: SubprocessLimits) -> Callable[[], None] | None:
+    """Build a child-side ``preexec_fn`` applying CPU / memory rlimits.
+
+    Returns ``None`` when no rlimit is requested or the platform lacks
+    the ``resource`` module (Windows), so the spawn path stays unchanged
+    in those cases.
+    """
+    if resource is None:
+        return None
+    if limits.cpu_seconds is None and limits.memory_mb is None:
+        return None
+
+    cpu_seconds = limits.cpu_seconds
+    memory_bytes = limits.memory_mb * 1024 * 1024 if limits.memory_mb is not None else None
+
+    def _apply_limits() -> None:  # pragma: no cover - runs in the forked child
+        if cpu_seconds is not None:
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))  # type: ignore[attr-defined]
+        if memory_bytes is not None:
+            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))  # type: ignore[attr-defined]
+
+    return _apply_limits
 
 
 def _redact_env(env: dict[str, str]) -> dict[str, str]:
@@ -128,6 +217,7 @@ async def run_pg_binary(
     timeout_sec: int,
     max_output_bytes: int,
     stdin: bytes | None = None,
+    limits: SubprocessLimits | None = None,
 ) -> SubprocessResult:
     """Execute an allowlisted PostgreSQL binary with the agreed policy.
 
@@ -153,100 +243,108 @@ async def run_pg_binary(
         ShellError: When ``binary`` is not allowlisted, can't be found
             on PATH, or asyncio can't spawn it.
     """
-    resolved = _resolve_binary(binary)
+    limits = limits or SubprocessLimits()
+    resolved = _resolve_binary(binary, limits.bin_allowlist)
     safe_env = _filter_env(env)
     redacted = _redact_env(safe_env)
-    try:
-        process = await asyncio.create_subprocess_exec(
-            resolved,
-            *argv,
-            stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=safe_env,
-        )
-    except (OSError, FileNotFoundError) as exc:
-        raise ShellError(f"failed to spawn {binary!r}: {exc}") from exc
+    # Spawn in a throwaway working directory so a binary that writes
+    # relative-path files (none of ours do today, but defence in depth)
+    # can't litter the server's CWD. The context manager removes it on
+    # every exit path, including asyncio cancellation.
+    with _subprocess_workdir() as workdir:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                resolved,
+                *argv,
+                stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=safe_env,
+                cwd=workdir,
+                preexec_fn=_make_preexec_fn(limits),
+            )
+        except (OSError, FileNotFoundError) as exc:
+            raise ShellError(f"failed to spawn {binary!r}: {exc}") from exc
 
-    timed_out = False
-    truncated = False
-    output_bytes_seen = 0
-    stdout_chunks: list[bytes] = []
-    # Initialise so an unexpected exception path doesn't leave this
-    # name unbound when we build the SubprocessResult.
-    stderr_bytes: bytes = b""
+        timed_out = False
+        truncated = False
+        output_bytes_seen = 0
+        stdout_chunks: list[bytes] = []
+        # Initialise so an unexpected exception path doesn't leave this
+        # name unbound when we build the SubprocessResult.
+        stderr_bytes: bytes = b""
 
-    async def _read_capped() -> None:
-        nonlocal output_bytes_seen, truncated
-        # Drain stdout into a bytes buffer, but stop appending once
-        # we've hit the cap. We must keep reading so the child doesn't
-        # block on a full pipe, even if we discard the bytes.
-        assert process.stdout is not None
-        while True:
-            chunk = await process.stdout.read(64 * 1024)
-            if not chunk:
+        async def _read_capped() -> None:
+            nonlocal output_bytes_seen, truncated
+            # Drain stdout into a bytes buffer, but stop appending once
+            # we've hit the cap. We must keep reading so the child doesn't
+            # block on a full pipe, even if we discard the bytes.
+            assert process.stdout is not None
+            while True:
+                chunk = await process.stdout.read(64 * 1024)
+                if not chunk:
+                    return
+                output_bytes_seen += len(chunk)
+                if not truncated:
+                    if output_bytes_seen <= max_output_bytes:
+                        stdout_chunks.append(chunk)
+                    else:
+                        overshoot = output_bytes_seen - max_output_bytes
+                        keep = len(chunk) - overshoot
+                        if keep > 0:
+                            stdout_chunks.append(chunk[:keep])
+                        truncated = True
+
+        async def _write_stdin() -> None:
+            # The child may exit early on a SQL error (psql) or invalid
+            # archive (pg_restore) while we're still writing. That closes
+            # the pipe and raises BrokenPipeError / ConnectionResetError
+            # here — if those propagate through asyncio.gather, we never
+            # return the real exit code or stderr, and the agent loses
+            # the diagnostic. Swallow them and let process.wait() +
+            # stderr_task surface the actual failure cause.
+            if stdin is None or process.stdin is None:
                 return
-            output_bytes_seen += len(chunk)
-            if not truncated:
-                if output_bytes_seen <= max_output_bytes:
-                    stdout_chunks.append(chunk)
-                else:
-                    overshoot = output_bytes_seen - max_output_bytes
-                    keep = len(chunk) - overshoot
-                    if keep > 0:
-                        stdout_chunks.append(chunk[:keep])
-                    truncated = True
-
-    async def _write_stdin() -> None:
-        # The child may exit early on a SQL error (psql) or invalid
-        # archive (pg_restore) while we're still writing. That closes
-        # the pipe and raises BrokenPipeError / ConnectionResetError
-        # here — if those propagate through asyncio.gather, we never
-        # return the real exit code or stderr, and the agent loses
-        # the diagnostic. Swallow them and let process.wait() +
-        # stderr_task surface the actual failure cause.
-        if stdin is None or process.stdin is None:
-            return
-        try:
             try:
-                process.stdin.write(stdin)
-                await process.stdin.drain()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-        finally:
-            # Close UNCONDITIONALLY so the child always sees EOF even
-            # when write/drain raised something other than a pipe error
-            # (OSError on saturated pipe, RuntimeError from a closed
-            # loop in tests). Without this, a non-pipe exception would
-            # leave the child blocked reading stdin until the timeout.
-            try:
-                process.stdin.close()
-                await process.stdin.wait_closed()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
+                try:
+                    process.stdin.write(stdin)
+                    await process.stdin.drain()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            finally:
+                # Close UNCONDITIONALLY so the child always sees EOF even
+                # when write/drain raised something other than a pipe error
+                # (OSError on saturated pipe, RuntimeError from a closed
+                # loop in tests). Without this, a non-pipe exception would
+                # leave the child blocked reading stdin until the timeout.
+                try:
+                    process.stdin.close()
+                    await process.stdin.wait_closed()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
 
-    try:
-        async with asyncio.timeout(timeout_sec):
-            stderr_task = asyncio.create_task(process.stderr.read())  # type: ignore[union-attr]
-            # stdin is written concurrently with stdout/stderr draining
-            # — pg_restore (and any consumer) only starts producing
-            # stdout/stderr after it begins reading stdin, so the
-            # earlier "write stdin after wait" ordering would deadlock.
-            await asyncio.gather(_write_stdin(), _read_capped(), stderr_task, process.wait())
-            stderr_bytes = stderr_task.result()
-    except TimeoutError:
-        timed_out = True
-        process.kill()
         try:
-            async with asyncio.timeout(5):
-                await process.wait()
+            async with asyncio.timeout(timeout_sec):
+                stderr_task = asyncio.create_task(process.stderr.read())  # type: ignore[union-attr]
+                # stdin is written concurrently with stdout/stderr draining
+                # — pg_restore (and any consumer) only starts producing
+                # stdout/stderr after it begins reading stdin, so the
+                # earlier "write stdin after wait" ordering would deadlock.
+                await asyncio.gather(_write_stdin(), _read_capped(), stderr_task, process.wait())
+                stderr_bytes = stderr_task.result()
         except TimeoutError:
-            # Best-effort reap; the OS will collect it.
-            pass
-        try:
-            stderr_bytes = await process.stderr.read() if process.stderr else b""
-        except Exception:
-            stderr_bytes = b""
+            timed_out = True
+            process.kill()
+            try:
+                async with asyncio.timeout(5):
+                    await process.wait()
+            except TimeoutError:
+                # Best-effort reap; the OS will collect it.
+                pass
+            try:
+                stderr_bytes = await process.stderr.read() if process.stderr else b""
+            except Exception:
+                stderr_bytes = b""
 
     stdout_bytes = b"".join(stdout_chunks)
     return SubprocessResult(

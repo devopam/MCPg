@@ -81,8 +81,27 @@ jobs:
       # and run as a step because GitHub `services:` cannot build images.
       - name: Start PostgreSQL (pgvector + PostGIS)
         run: |
-          docker build -f .github/ci-postgres.Dockerfile \
-            --build-arg PG_MAJOR=${{ matrix.postgres }} -t mcpg-ci-db .
+          # Docker Hub intermittently times out resolving the
+          # pgvector base-image manifest (observed across the matrix:
+          # "Head https://registry-1.docker.io/...: i/o timeout"). That
+          # is transient infra, not a code failure, so retry the build
+          # with exponential backoff before giving up.
+          build_db() {
+            docker build -f .github/ci-postgres.Dockerfile \
+              --build-arg PG_MAJOR=${{ matrix.postgres }} -t mcpg-ci-db .
+          }
+          attempt=1
+          max_attempts=4
+          until build_db; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "docker build failed after $attempt attempts" >&2
+              exit 1
+            fi
+            backoff=$((2 ** attempt))
+            echo "docker build attempt $attempt failed; retrying in ${backoff}s..." >&2
+            sleep "$backoff"
+            attempt=$((attempt + 1))
+          done
           docker run -d --name mcpg-db -p 5432:5432 \
             -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
             -e POSTGRES_DB=mcpg_test mcpg-ci-db

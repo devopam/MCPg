@@ -1,6 +1,6 @@
 """Tests for live-operations introspection and the list_active_queries tool."""
 
-from _fakes import FakeDatabase, FakeDriver
+from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
@@ -10,6 +10,7 @@ from mcpg.liveops import (
     cancel_query,
     list_active_queries,
     terminate_backend,
+    verify_connection_encryption,
 )
 from mcpg.server import create_server
 
@@ -107,3 +108,59 @@ async def test_backend_control_tools_are_callable_in_unrestricted_mode() -> None
 
     assert cancelled.isError is False
     assert terminated.isError is False
+
+
+# --- verify_connection_encryption -----------------------------------------
+
+
+async def test_verify_connection_encryption_reports_an_encrypted_link() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_backend_pid()": [{"ssl": True, "version": "TLSv1.3", "cipher": "TLS_AES_256_GCM_SHA384", "bits": 256}],
+            "count(*) AS total": [{"total": 5, "encrypted": 4}],
+        }
+    )
+
+    result = await verify_connection_encryption(driver)  # type: ignore[arg-type]
+
+    assert result.ssl is True
+    assert result.version == "TLSv1.3"
+    assert result.cipher == "TLS_AES_256_GCM_SHA384"
+    assert result.bits == 256
+    assert result.total_connections == 5
+    assert result.encrypted_connections == 4
+    assert result.unencrypted_connections == 1
+
+
+async def test_verify_connection_encryption_nulls_cipher_when_plaintext() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_backend_pid()": [{"ssl": False, "version": None, "cipher": None, "bits": None}],
+            "count(*) AS total": [{"total": 2, "encrypted": 0}],
+        }
+    )
+
+    result = await verify_connection_encryption(driver)  # type: ignore[arg-type]
+
+    assert result.ssl is False
+    assert result.version is None and result.cipher is None and result.bits is None
+    assert result.unencrypted_connections == 2
+
+
+async def test_verify_connection_encryption_tool_is_registered_in_read_mode() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_backend_pid()": [{"ssl": True, "version": "TLSv1.3", "cipher": "X", "bits": 256}],
+            "count(*) AS total": [{"total": 1, "encrypted": 1}],
+        }
+    )
+    server = create_server(_SETTINGS, database=FakeDatabase(driver))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "verify_connection_encryption" in listed
+        result = await client.call_tool("verify_connection_encryption", {})
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["ssl"] is True

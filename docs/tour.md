@@ -5,7 +5,7 @@ A compact one-page tour of every tool MCPg exposes, organised by
 surface; the full reference is in [`tools.md`](tools.md), and
 task-oriented recipes live in [`cookbook.md`](cookbook.md).
 
-**117 tools** as of trunk. Each line shows the tool name + how its
+**122 tools** as of trunk. Each line shows the tool name + how its
 parameters land (required first, common defaults after). Capability
 gates are noted in section titles where they apply.
 
@@ -100,6 +100,7 @@ audit_database(schema, log_table=null)               # comprehensive 5-category 
 analyze_workload(top_n=10)                           # slow queries from pg_stat_statements
 recommend_indexes()                                  # missing-index heuristics
 list_active_queries()                                # who's running what right now
+verify_connection_encryption()                       # is MCPg's own link TLS-encrypted? protocol + cipher + cluster tally
 list_locks(limit=100)                                # pg_locks joined with pg_stat_activity (waiters first)
 find_blocking_chains(limit=50)                       # (blocked, blocking) pairs via pg_blocking_pids
 read_pg_stat_io()                                    # PG16+ I/O stats; available=false on PG 14/15
@@ -123,6 +124,8 @@ fuzzy_search(schema, table, column, query)                                # pg_t
 full_text_search(schema, table, column, query)                            # tsvector / tsquery, web-search syntax
 vector_search(schema, table, column, query_vector, k=10, operator="<->")  # pgvector k-NN
 vector_range_search(schema, table, column, query_vector, max_distance)    # pgvector threshold
+mmr_search(schema, table, column, query_vector, k=10, fetch_k=null, lambda_mult=0.5)
+                                                                          # diversity re-rank (Maximal Marginal Relevance)
 hybrid_search(schema, table, vector_col, text_col, query_vector, text_query)
                                                                           # vector + FTS fused via RRF
 geo_search(schema, table, column, lon, lat, k=10)                         # PostGIS k-NN
@@ -205,6 +208,7 @@ documented gaps.
 ```
 run_write(sql)                                       # one INSERT/UPDATE/DELETE; add RETURNING
 run_maintenance(operation, schema, table)            # VACUUM / ANALYZE / REINDEX
+prune_audit_events(older_than_days)                  # retention: delete old mcpg_audit.events rows (refused if integrity on)
 cancel_query(pid)
 terminate_backend(pid)
 ```
@@ -266,6 +270,7 @@ list_replicas()                                             # per-replica health
 
 ```
 list_audit_events(limit=100, tool=null)              # MCPG_AUDIT_PERSIST=true required
+verify_audit_chain()                                 # validate the HMAC integrity chain
 get_server_info()                                    # version, mode, transport, DB state
 ```
 

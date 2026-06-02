@@ -8,6 +8,75 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`mmr_search` tool (pgvector).** Diversity-aware vector search:
+  fetches `fetch_k` nearest candidates by pgvector distance, then
+  re-ranks with Maximal Marginal Relevance to return `k` rows that
+  are relevant but not near-duplicates — better LLM context than raw
+  top-k. `lambda_mult` (0–1) trades relevance for diversity; both the
+  relevance and diversity terms are cosine similarities computed
+  in-process over candidate embeddings, so the result is independent
+  of the recall-pass `metric`. Each hit carries its `relevance`,
+  `mmr_score`, and selection `rank`. Read-only; `available=false`
+  without the pgvector extension.
+
+- **Pluggable secrets backend (`MCPG_SECRETS_BACKEND`).** A
+  `SecretsProvider` abstraction (`mcpg.secrets`) that the secrets read
+  in `load_settings` route through — the NL→SQL provider API
+  keys, `MCPG_HTTP_AUTH_TOKEN`, and `MCPG_AUDIT_HMAC_KEY`. Two
+  backends ship: `env` (default — unchanged behaviour, zero new
+  deps) and `file`, which overlays a JSON (or YAML, when PyYAML is
+  importable) `name → value` map from `MCPG_SECRETS_FILE_PATH` on
+  top of the environment (a name in the file wins; anything absent
+  falls back to its env var). Cloud backends (Vault / AWS / GCP)
+  will follow behind optional extras using the same switch.
+  `Settings.secrets_backend` records the active choice (values never
+  appear in `repr`).
+
+- **`verify_connection_encryption` tool.** Reports whether MCPg's own
+  connection to PostgreSQL is TLS-encrypted — negotiated protocol
+  version, cipher, and key bits from `pg_stat_ssl` — plus a
+  cluster-wide encrypted/unencrypted backend tally. A runtime
+  complement to the startup TLS-enforcement check. Read-only;
+  available in every access mode.
+
+- **`prune_audit_events` retention tool.** Deletes persisted audit
+  events older than `older_than_days` from `mcpg_audit.events`, a
+  cron-friendly cap on the otherwise-unbounded audit table. Returns
+  the number deleted, the cutoff timestamp, and rows remaining.
+  Refuses to run when `MCPG_AUDIT_INTEGRITY` is enabled (pruning
+  would break the HMAC signature chain). Write-gated (unrestricted
+  mode).
+
+- **Subprocess hardening for the shell-gated PG binaries.**
+  `run_pg_binary` now (a) validates the resolved `pg_dump` /
+  `pg_restore` / `psql` directory against
+  `MCPG_SUBPROCESS_BIN_ALLOWLIST` (empty = trust `PATH`), rejecting a
+  PATH shim in an untrusted directory while still allowing distro
+  `pg_dump -> pg_wrapper` symlinks; (b) applies `RLIMIT_CPU` /
+  `RLIMIT_AS` via a `preexec_fn` when `MCPG_SUBPROCESS_CPU_SECONDS` /
+  `MCPG_SUBPROCESS_MEMORY_MB` are set (POSIX only); and (c) spawns in
+  a throwaway temp working directory. All opt-in; defaults preserve
+  prior behaviour.
+
+- **Opt-in per-request HTTP timeout.**
+  `MCPG_HTTP_REQUEST_TIMEOUT_SECONDS` (default `0` = disabled) caps
+  wall-clock time per request on the HTTP transports, returning `504`
+  on expiry. Disabled by default so long-lived SSE / streamable-http
+  streams keep working; intended for plain request/response
+  deployments wanting a DoS backstop. Completes the HTTP-hardening
+  set started in the security-diagnostics release.
+
+- **Advanced security hardening, lifecycles & diagnostics (#37).**
+  HTTP hardening middleware (security headers, request-size limit,
+  CORS allowlist); graceful-shutdown draining of in-flight tool calls
+  (`MCPG_SHUTDOWN_DRAIN_SECONDS`); audit-log HMAC integrity chain with
+  the `verify_audit_chain` tool (`MCPG_AUDIT_INTEGRITY` +
+  `MCPG_AUDIT_HMAC_KEY`); a redundant-index advisor; and an
+  `analyze_hnsw_recall` pgvector tuner.
+
+- **Adaptive caching, feature flags & related (#36).** See the PR for
+  detail.
+
 - **Multi-provider routing for `translate_nl_to_sql`.** MCPg now
   auto-discovers every configured NL→SQL provider from the
   environment at startup (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,

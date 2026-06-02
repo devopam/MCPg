@@ -187,6 +187,15 @@ everything else has a safe default.
 | `MCPG_OIDC_JWKS_URL` | discovered | Override JWKS endpoint (auto-discovered from issuer's `.well-known` otherwise). |
 | `MCPG_OIDC_ROLE_CLAIM` | — | JWT claim whose value becomes the per-request PG role (`SET LOCAL ROLE`). Composes with the tenancy driver. |
 
+#### HTTP hardening (HTTP transports only)
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_HTTP_MAX_BODY_BYTES` | `1048576` | (1 MiB) Request bodies above this get a `413`. Counts streamed bytes, so a missing/lying `Content-Length` can't bypass it. |
+| `MCPG_HTTP_ALLOWED_ORIGINS` | — | Comma-separated CORS allowlist. Unset = no CORS middleware (no cross-origin headers emitted). |
+| `MCPG_HTTP_HSTS_MAX_AGE` | `31536000` | `Strict-Transport-Security` max-age. `0` disables the HSTS header. Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) are always added unless the app already set them. |
+| `MCPG_HTTP_REQUEST_TIMEOUT_SECONDS` | `0` | Per-request wall-clock cap (`504` on expiry). `0` = disabled. Leave off if you rely on long-lived SSE / streamable-http streams — a hard cap also severs those. |
+
 #### Multi-tenancy (`SET ROLE`)
 
 | Variable | Default | Description |
@@ -209,6 +218,7 @@ everything else has a safe default.
 | `MCPG_STATEMENT_TIMEOUT_MS` | `30000` | Per-session `statement_timeout` set on connection checkout. Runaway queries self-terminate. |
 | `MCPG_LOCK_TIMEOUT_MS` | `5000` | Per-session `lock_timeout`. Hanging lock waits self-terminate. |
 | `MCPG_ALLOW_INSECURE_TLS` | `false` | Bypass the startup TLS check that refuses remote DSNs without `sslmode=require` (or stronger). Loopback hosts are always exempt. |
+| `MCPG_SHUTDOWN_DRAIN_SECONDS` | `30` | On SIGTERM, wait up to this long for in-flight tool calls to finish before closing the pool and cursors. |
 
 #### Subprocess tools (`MCPG_ALLOW_SHELL=true` only)
 
@@ -216,6 +226,9 @@ everything else has a safe default.
 |---|---|---|
 | `MCPG_SHELL_TIMEOUT_SEC` | `60` | Max wall-clock for `pg_dump` / `pg_restore` / `psql` invocations. |
 | `MCPG_SHELL_MAX_OUTPUT_BYTES` | `67108864` | (64 MiB) Cap on captured stdout per subprocess call. |
+| `MCPG_SUBPROCESS_BIN_ALLOWLIST` | — | Comma-separated absolute dirs the resolved `pg_dump` / `pg_restore` / `psql` must live under. Empty = trust `PATH`. Defeats a PATH-shim of these binaries. |
+| `MCPG_SUBPROCESS_CPU_SECONDS` | — | Per-child `RLIMIT_CPU` (seconds). POSIX only; unset = inherit. |
+| `MCPG_SUBPROCESS_MEMORY_MB` | — | Per-child `RLIMIT_AS` (MiB). POSIX only; unset = inherit. |
 
 #### LISTEN/NOTIFY (`MCPG_ALLOW_LISTEN=true` only)
 
@@ -229,6 +242,20 @@ everything else has a safe default.
 |---|---|---|
 | `MCPG_AUDIT_PERSIST` | `false` | When true, every `run_write` / `run_ddl` call persists to a `mcpg_audit.events` table (auto-created idempotently). |
 | `MCPG_AUDIT_REDACT_KEYS` | — | Comma-separated regex fragments added to the secret-name pattern (defaults already cover `password`, `passwd`, `secret`, `token`, `api[_-]?key`, `bearer`, `authorization`, `database_url`, `dsn`, `conninfo`). |
+| `MCPG_AUDIT_INTEGRITY` | `false` | When true, each persisted event is signed with an HMAC chained over the previous event; the `verify_audit_chain` tool walks the chain and reports the first break. Requires `MCPG_AUDIT_HMAC_KEY`. |
+| `MCPG_AUDIT_HMAC_KEY` | — | Secret key for the audit HMAC chain. Required when `MCPG_AUDIT_INTEGRITY=true`. Never appears in `repr`/logs. |
+
+#### Secrets backend
+
+By default every secret is read straight from the environment. Set
+`MCPG_SECRETS_BACKEND=file` to instead load API keys / bearer token /
+HMAC key from a mounted file — a name in the file wins; anything absent
+falls back to the env var, so partial files work.
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_SECRETS_BACKEND` | `env` | `env` (read every secret from the environment) \| `file` (overlay a secrets file on top of the environment). |
+| `MCPG_SECRETS_FILE_PATH` | — | Required when `MCPG_SECRETS_BACKEND=file`. Path to a flat `name → value` map: JSON always, or YAML (`.yaml`/`.yml`) when PyYAML is installed. Covers `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `MCPG_NL2SQL_API_KEY`, `MCPG_HTTP_AUTH_TOKEN`, and `MCPG_AUDIT_HMAC_KEY`. |
 
 #### Rate limiting
 
@@ -395,8 +422,10 @@ Compact category list. For the full, current tool reference see
   `find_blocking_chains`, `read_pg_stat_io` (PG16+),
   `generate_test_data`.
 - **Live ops & maintenance** — `list_active_queries`,
-  `run_maintenance` (VACUUM/ANALYZE), `cancel_query`,
-  `terminate_backend`, `run_write`, `run_ddl`, `enable_extension`.
+  `verify_connection_encryption` (TLS status of the live link),
+  `run_maintenance` (VACUUM/ANALYZE), `prune_audit_events`
+  (audit retention), `cancel_query`, `terminate_backend`,
+  `run_write`, `run_ddl`, `enable_extension`.
 - **Data movement** — `export_query` / `export_table` (CSV/JSON),
   `dump_database` / `restore_database`, `import_csv` / `import_json`
   (COPY FROM STDIN), `copy_table_between_databases`.

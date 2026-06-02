@@ -54,8 +54,8 @@ not covered there:
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 4.1 | Connection-encryption verification tool — reports `ssl=on/off` + cipher per connection | S | Medium | Composes with the existing TLS-enforcement startup check. |
-| 4.2 | Audit-log retention / rotation policy in `mcpg_audit.events` | S | Medium | Grows unbounded today; a `prune_audit_events(older_than)` tool + a cron-friendly retention helper. |
+| 4.1 | ✅ **Shipped.** Connection-encryption verification tool (`verify_connection_encryption`) — reports `ssl` + protocol/cipher/bits for MCPg's own link plus a cluster-wide encrypted/unencrypted backend tally, from `pg_stat_ssl`. | S | Medium | Composes with the existing TLS-enforcement startup check. |
+| 4.2 | ✅ **Shipped.** Audit-log retention via `prune_audit_events(older_than_days)` — deletes old `mcpg_audit.events` rows (cron-friendly). Refuses when `MCPG_AUDIT_INTEGRITY` is on, since pruning would break the HMAC chain. | S | Medium | — |
 | 4.3 | IP allowlist for HTTP transport | S | Low | Tiny middleware. Often handled at the reverse-proxy layer instead. |
 | 4.4 | mTLS for the HTTP transport | S | Medium | Cert wiring; commonly done at the proxy layer. |
 
@@ -100,7 +100,7 @@ awareness, and HNSW/IVFFlat detection in `list_indexes`:
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
 | 9.1 | HNSW recall/speed tuner (`analyze_hnsw_recall`) — sweep `ef_search` against a ground-truth set, return recall@k curves | M | High | Lets agents pick the right speed/quality knob without manual tuning. |
-| 9.2 | `mmr_search` — Maximal Marginal Relevance re-ranking on top of vector_search for result diversity | S-M | Medium-High | Quality of agentic RAG flows. |
+| 9.2 | ✅ **Shipped.** `mmr_search` — Maximal Marginal Relevance re-ranking on top of vector_search for result diversity. `lambda_mult` trades relevance for diversity; cosine over candidate embeddings, metric-independent. | S-M | Medium-High | Quality of agentic RAG flows. |
 | 9.3 | `cluster_vectors` — k-means cluster a vector column, return centroids + per-row labels | M | Medium-High | Exploration / segmentation tool. |
 | 9.4 | `detect_vector_outliers` — flag rows whose embedding is far from any cluster centroid | S-M | Medium-High | Data quality + content moderation. |
 | 9.5 | `monitor_embedding_drift` — compare distributional stats of vectors over time windows | M | Medium | Ops / model-quality monitoring. |
@@ -132,6 +132,9 @@ awareness, and HNSW/IVFFlat detection in `list_indexes`:
 
 ## See also
 
+- [`parallel-roadmap.md`](parallel-roadmap.md) — how to pick these
+  items up as **independent parallel PRs**: conflict map, workstreams,
+  and a suggested first batch.
 - [`security-hardening.md`](security-hardening.md) — security
   hardening status with ✅ / 🟡 / ⬜ markers.
 - [`tour.md`](tour.md) and [`tools.md`](tools.md) — current tool
