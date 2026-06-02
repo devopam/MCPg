@@ -132,6 +132,9 @@ awareness, and HNSW/IVFFlat detection in `list_indexes`:
 
 ## See also
 
+- [`parallel-roadmap.md`](parallel-roadmap.md) — how to pick these
+  items up as **independent parallel PRs**: conflict map, workstreams,
+  and a suggested first batch.
 - [`security-hardening.md`](security-hardening.md) — security
   hardening status with ✅ / 🟡 / ⬜ markers.
 - [`tour.md`](tour.md) and [`tools.md`](tools.md) — current tool
