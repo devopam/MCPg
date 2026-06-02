@@ -58,6 +58,7 @@ class Settings:
     http_host: str = "127.0.0.1"
     http_port: int = 8000
     log_level: str = "INFO"
+    log_format: str = "text"
     allow_ddl: bool = False
     allow_shell: bool = False
     allow_listen: bool = False
@@ -167,7 +168,8 @@ class Settings:
             f"access_mode={self.access_mode.value!r}, "
             f"transport={self.transport.value!r}, "
             f"http_host={self.http_host!r}, http_port={self.http_port}, "
-            f"log_level={self.log_level!r}, allow_ddl={self.allow_ddl}, "
+            f"log_level={self.log_level!r}, log_format={self.log_format!r}, "
+            f"allow_ddl={self.allow_ddl}, "
             f"allow_shell={self.allow_shell}, "
             f"allow_listen={self.allow_listen}, "
             f"shell_timeout_sec={self.shell_timeout_sec}, "
@@ -356,6 +358,13 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if log_level not in _LOG_LEVELS:
         valid = ", ".join(sorted(_LOG_LEVELS))
         raise ConfigError(f"MCPG_LOG_LEVEL must be one of: {valid} (got {log_level!r})")
+
+    log_format = "text"
+    if (raw := env.get("MCPG_LOG_FORMAT")) is not None:
+        candidate = raw.strip().lower()
+        if candidate not in {"text", "json"}:
+            raise ConfigError(f"MCPG_LOG_FORMAT must be one of: text, json (got {raw!r})")
+        log_format = candidate
 
     allow_ddl = False
     if (raw := env.get("MCPG_ALLOW_DDL")) is not None:
@@ -619,9 +628,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     # Re-arm the audit-trail redaction pattern with the operator's
     # MCPG_AUDIT_REDACT_KEYS extension (if any) so the very first audit
     # event the server records honours the configured list.
-    from mcpg.audit import configure_redaction
+    from mcpg.audit import configure_log_format, configure_redaction
 
     configure_redaction(env)
+    configure_log_format(log_format)
 
     cache_enabled = True
     if (raw := env.get("MCPG_CACHE_ENABLED")) is not None:
@@ -696,6 +706,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_host=env.get("MCPG_HTTP_HOST", "127.0.0.1"),
         http_port=http_port,
         log_level=log_level,
+        log_format=log_format,
         allow_ddl=allow_ddl,
         allow_shell=allow_shell,
         allow_listen=allow_listen,

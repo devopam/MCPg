@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Structured JSON logging toggle (`MCPG_LOG_FORMAT`).** Adds an opt-in structured
+  JSON logging format. When `MCPG_LOG_FORMAT=json` is set, all logging output from the
+  `mcpg` server is formatted as a structured JSON object. Standard log messages carry
+  `timestamp`, `level`, `logger`, and `message` keys, while `mcpg.audit` tool calls merge
+  the audit payload (`tool`, `status`, `arguments`, `error`) directly into the top level.
+
 - **`walk_blocking_chains` tool (deadlock cycle walker).** Walks and reconstructs
   the active lock-wait graph of the database using `pg_blocking_pids`. Identifies
   all simple deadlock cycles, linear blocking paths leading to root blockers or

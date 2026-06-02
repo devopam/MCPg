@@ -423,6 +423,16 @@ Every tool call — success or failure — is logged to the
 arguments (see below), and outcome. Configure where that logger's
 records are shipped via your deployment's logging stack.
 
+### Log Format
+
+By default, the server writes human-readable log messages. You can toggle structured JSON logging using the `MCPG_LOG_FORMAT` environment variable:
+
+```bash
+export MCPG_LOG_FORMAT=json  # text (default) or json
+```
+
+When set to `json`, all logging events from `mcpg` (including tool execution audit events) are serialized as a single-line JSON object containing standard keys (`timestamp`, `level`, `logger`, `message`). For audit events, the fields (`tool`, `status`, `arguments`, and optionally `error`) are merged directly into the top level of the JSON log record.
+
 ### Persistence
 
 With `MCPG_AUDIT_PERSIST=true`, every `run_write` and `run_ddl` is

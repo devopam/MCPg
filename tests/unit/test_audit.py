@@ -262,3 +262,32 @@ async def test_audit_database_with_pg17_checkpointer_compatibility() -> None:
     assert any("pg_views" in c[0] for c in driver.calls)
     # Verify that it queried the combined pg_stat_checkpointer query
     assert any("pg_stat_checkpointer" in c[0] for c in driver.calls)
+
+
+def test_audit_record_json_format(caplog) -> None:
+    import json
+    import logging
+
+    from mcpg.audit import AuditEvent, configure_log_format, record
+
+    configure_log_format("json")
+    try:
+        event = AuditEvent(tool="my_test_tool", arguments={"foo": "bar"}, status="ok")
+        logger = logging.getLogger("mcpg")
+        old_propagate = logger.propagate
+        logger.propagate = True
+        try:
+            caplog.set_level(logging.INFO)
+            record(event)
+            audit_records = [r for r in caplog.records if r.name == "mcpg.audit"]
+            assert len(audit_records) == 1
+            log_record = audit_records[0]
+            payload = json.loads(log_record.message)
+            assert payload["tool"] == "my_test_tool"
+            assert payload["status"] == "ok"
+            assert payload["arguments"] == {"foo": "bar"}
+            assert "error" not in payload
+        finally:
+            logger.propagate = old_propagate
+    finally:
+        configure_log_format("text")

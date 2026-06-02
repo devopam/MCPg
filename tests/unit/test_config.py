@@ -75,6 +75,21 @@ def test_log_level_is_normalised_to_upper_case() -> None:
     assert settings.log_level == "DEBUG"
 
 
+def test_log_format_defaults_to_text() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.log_format == "text"
+
+
+def test_log_format_parses_json_case_insensitively() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_LOG_FORMAT": "JSON"})
+    assert settings.log_format == "json"
+
+
+def test_invalid_log_format_raises() -> None:
+    with pytest.raises(ConfigError, match="MCPG_LOG_FORMAT"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_LOG_FORMAT": "yaml"})
+
+
 def test_settings_is_immutable() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
     with pytest.raises(AttributeError):

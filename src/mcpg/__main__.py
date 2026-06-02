@@ -29,6 +29,9 @@ def main() -> int:
     except ConfigError as exc:
         print(f"mcpg: configuration error: {exc}", file=sys.stderr)
         return 1
+    from mcpg.obs_logging import setup_logging
+
+    setup_logging(settings)
     run(settings)
     return 0
 
