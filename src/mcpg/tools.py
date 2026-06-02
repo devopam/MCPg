@@ -1843,6 +1843,46 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
     @server.tool(
+        name="mmr_search",
+        description=(
+            "Diversity-aware vector search: fetch `fetch_k` nearest "
+            "candidates by pgvector distance, then re-rank with Maximal "
+            "Marginal Relevance to return `k` rows that are relevant but "
+            "not near-duplicates — better LLM context than raw top-k. "
+            "`lambda_mult` in [0,1] trades relevance (1.0) for diversity "
+            "(0.0); default 0.5. Relevance + diversity are cosine "
+            "similarities computed over candidate embeddings, so the "
+            "result is independent of the recall-pass `metric`. Each hit "
+            "carries its relevance, mmr_score, and selection rank. "
+            "Reports available=false if the pgvector extension is not "
+            "installed."
+        ),
+    )
+    async def mmr_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        query_vector: list[float],
+        k: int = textsearch.DEFAULT_LIMIT,
+        fetch_k: int | None = None,
+        lambda_mult: float = textsearch.DEFAULT_MMR_LAMBDA,
+        metric: str = textsearch.DEFAULT_VECTOR_METRIC,
+    ) -> dict[str, Any]:
+        result = await textsearch.mmr_search(
+            _driver(ctx),
+            schema,
+            table,
+            column,
+            query_vector,
+            k=k,
+            fetch_k=fetch_k,
+            lambda_mult=lambda_mult,
+            metric=metric,
+        )
+        return asdict(result)
+
+    @server.tool(
         name="hybrid_search",
         description=(
             "Combine vector and full-text ranking via reciprocal-rank fusion "
