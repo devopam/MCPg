@@ -5,7 +5,7 @@ A compact one-page tour of every tool MCPg exposes, organised by
 surface; the full reference is in [`tools.md`](tools.md), and
 task-oriented recipes live in [`cookbook.md`](cookbook.md).
 
-**123 tools** as of trunk. Each line shows the tool name + how its
+**124 tools** as of trunk. Each line shows the tool name + how its
 parameters land (required first, common defaults after). Capability
 gates are noted in section titles where they apply.
 
@@ -104,6 +104,7 @@ list_active_queries()                                # who's running what right 
 verify_connection_encryption()                       # is MCPg's own link TLS-encrypted? protocol + cipher + cluster tally
 list_locks(limit=100)                                # pg_locks joined with pg_stat_activity (waiters first)
 find_blocking_chains(limit=50)                       # (blocked, blocking) pairs via pg_blocking_pids
+walk_blocking_chains(limit=50)                       # walks the lock graph, detects cycles, and renders a Mermaid flowchart
 read_pg_stat_io()                                    # PG16+ I/O stats; available=false on PG 14/15
 detect_n_plus_one(min_calls=100)                     # pg_stat_statements walker for ORM lazy-load loops
 list_replicas()                                      # health of every read-replica (when MCPG_REPLICA_URLS set)

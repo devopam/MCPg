@@ -6,10 +6,13 @@ import pytest
 from _fakes import FakeRoutingDriver
 
 from mcpg.locks import (
+    BlockingChainDetail,
+    BlockingGraphReport,
     BlockingPair,
     LockInfo,
     find_blocking_chains,
     list_locks,
+    walk_blocking_chains,
 )
 
 
@@ -107,3 +110,118 @@ async def test_find_blocking_chains_returns_empty_list_when_nothing_blocked() ->
 async def test_find_blocking_chains_rejects_zero_limit() -> None:
     with pytest.raises(ValueError, match="limit"):
         await find_blocking_chains(FakeRoutingDriver({}), limit=0)  # type: ignore[arg-type]
+
+
+async def test_walk_blocking_chains_returns_empty_when_no_blocks() -> None:
+    driver = FakeRoutingDriver({"unnest(pg_blocking_pids": []})
+    report = await walk_blocking_chains(driver)  # type: ignore[arg-type]
+
+    assert isinstance(report, BlockingGraphReport)
+    assert report.cycles == []
+    assert report.paths == []
+    assert report.roots == []
+    assert report.nodes == {}
+    assert report.mermaid == (
+        "graph TD\n"
+        "  classDef root fill:#ff9999,stroke:#333,stroke-width:2px;\n"
+        "  classDef cycle fill:#ffff99,stroke:#333,stroke-width:2px;"
+    )
+
+
+async def test_walk_blocking_chains_linear_chain() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "unnest(pg_blocking_pids": [
+                {
+                    "blocked_pid": 200,
+                    "blocked_query": "UPDATE `widget` SET x = 1",
+                    "blocked_application_name": "appA",
+                    "blocked_wait_event": "transactionid",
+                    "blocked_state": "active",
+                    "blocking_pid": 201,
+                    "blocking_query": "UPDATE widget SET x = 2",
+                    "blocking_application_name": "appB",
+                    "blocking_wait_event": "transactionid",
+                    "blocking_state": "active",
+                },
+                {
+                    "blocked_pid": 201,
+                    "blocked_query": "UPDATE widget SET x = 2",
+                    "blocked_application_name": "appB",
+                    "blocked_wait_event": "transactionid",
+                    "blocked_state": "active",
+                    "blocking_pid": 202,
+                    "blocking_query": "UPDATE widget SET x = 3",
+                    "blocking_application_name": "appC",
+                    "blocking_wait_event": None,
+                    "blocking_state": "idle in transaction",
+                },
+            ]
+        }
+    )
+
+    report = await walk_blocking_chains(driver)  # type: ignore[arg-type]
+
+    assert report.cycles == []
+    assert report.roots == [202]
+    assert report.paths == [[200, 201, 202]]
+    assert len(report.nodes) == 3
+
+    assert isinstance(report.nodes[200], BlockingChainDetail)
+    assert report.nodes[200].pid == 200
+    assert report.nodes[200].application_name == "appA"
+
+    assert "200[\"PID 200 (appA) [active]<br/>`UPDATE 'widget' SET x = 1`\"]" in report.mermaid
+    assert '200 -->|"transactionid"| 201' in report.mermaid
+    assert '201 -->|"transactionid"| 202' in report.mermaid
+    assert "class 202 root;" in report.mermaid
+
+
+async def test_walk_blocking_chains_deadlock_cycle() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "unnest(pg_blocking_pids": [
+                {
+                    "blocked_pid": 200,
+                    "blocked_query": "UPDATE widget SET x = 1",
+                    "blocked_application_name": "appA",
+                    "blocked_wait_event": "transactionid",
+                    "blocked_state": "active",
+                    "blocking_pid": 201,
+                    "blocking_query": "UPDATE widget SET x = 2",
+                    "blocking_application_name": "appB",
+                    "blocking_wait_event": "transactionid",
+                    "blocking_state": "active",
+                },
+                {
+                    "blocked_pid": 201,
+                    "blocked_query": "UPDATE widget SET x = 2",
+                    "blocked_application_name": "appB",
+                    "blocked_wait_event": "transactionid",
+                    "blocked_state": "active",
+                    "blocking_pid": 200,
+                    "blocking_query": "UPDATE widget SET x = 1",
+                    "blocking_application_name": "appA",
+                    "blocking_wait_event": "transactionid",
+                    "blocking_state": "active",
+                },
+            ]
+        }
+    )
+
+    report = await walk_blocking_chains(driver)  # type: ignore[arg-type]
+
+    assert report.cycles == [[200, 201, 200]]
+    assert report.roots == []
+    assert report.paths == []
+    assert len(report.nodes) == 2
+
+    assert '200 -->|"transactionid"| 201' in report.mermaid
+    assert '201 -->|"transactionid"| 200' in report.mermaid
+    assert "class 200 cycle;" in report.mermaid
+    assert "class 201 cycle;" in report.mermaid
+
+
+async def test_walk_blocking_chains_rejects_zero_limit() -> None:
+    with pytest.raises(ValueError, match="limit"):
+        await walk_blocking_chains(FakeRoutingDriver({}), limit=0)  # type: ignore[arg-type]

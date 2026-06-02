@@ -494,6 +494,18 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         return [asdict(row) for row in rows]
 
     @server.tool(
+        name="walk_blocking_chains",
+        description=(
+            "Walk and reconstruct the lock-wait graph of the database. Detects deadlock cycles, "
+            "traces linear blocking paths to their root blockers, and renders a Mermaid flowchart "
+            "representing the lock dependency graph. Read-only."
+        ),
+    )
+    async def walk_blocking_chains(ctx: _Ctx, limit: int = locks.DEFAULT_BLOCKING_LIMIT) -> dict[str, Any]:
+        report = await locks.walk_blocking_chains(_driver(ctx), limit=limit)
+        return asdict(report)
+
+    @server.tool(
         name="read_pg_stat_io",
         description=(
             "Read the pg_stat_io view (PostgreSQL 16+). Reports per "
