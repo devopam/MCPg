@@ -29,8 +29,15 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Final
+
+try:  # POSIX-only; absent on Windows. Guarded so the import never breaks startup.
+    import resource
+except ImportError:  # pragma: no cover - exercised only on non-POSIX platforms
+    resource = None  # type: ignore[assignment]
 
 _ALLOWED_BINARIES: Final[frozenset[str]] = frozenset({"pg_dump", "pg_restore", "psql"})
 
@@ -65,6 +72,31 @@ class ShellError(Exception):
 
 
 @dataclass(frozen=True, slots=True)
+class SubprocessLimits:
+    """Deployment-wide hardening policy for spawned PG binaries.
+
+    All fields default to "no extra restriction" so the policy is
+    opt-in. Populated from ``MCPG_SUBPROCESS_*`` settings and threaded
+    into :func:`run_pg_binary`.
+
+    Attributes:
+        bin_allowlist: Absolute directory paths the resolved binary
+            MUST live under. Empty means "trust PATH resolution" (the
+            historical behaviour). When set, a binary resolved to a
+            directory outside the allowlist is rejected — this defeats
+            a malicious PATH shim of ``pg_dump`` / ``psql``.
+        cpu_seconds: Per-process CPU-time rlimit (``RLIMIT_CPU``).
+            ``None`` leaves the inherited limit untouched.
+        memory_mb: Per-process address-space rlimit (``RLIMIT_AS``),
+            in mebibytes. ``None`` leaves it untouched.
+    """
+
+    bin_allowlist: tuple[str, ...] = ()
+    cpu_seconds: int | None = None
+    memory_mb: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SubprocessResult:
     """The outcome of a single subprocess invocation.
 
@@ -89,14 +121,56 @@ class SubprocessResult:
     env_redacted: dict[str, str] = field(default_factory=dict)
 
 
-def _resolve_binary(name: str) -> str:
-    """Look up ``name`` on PATH and return the absolute path, or raise."""
+def _resolve_binary(name: str, bin_allowlist: tuple[str, ...] = ()) -> str:
+    """Look up ``name`` on PATH and return the absolute path, or raise.
+
+    When ``bin_allowlist`` is non-empty, the resolved absolute path must
+    live directly under one of the allowlisted directories; otherwise a
+    PATH shim of ``pg_dump`` / ``psql`` is rejected before it can run.
+    """
     if name not in _ALLOWED_BINARIES:
         raise ShellError(f"binary {name!r} is not on the allowlist (expected one of {sorted(_ALLOWED_BINARIES)})")
     resolved = shutil.which(name)
     if resolved is None:
         raise ShellError(f"binary {name!r} not found on PATH; install it on the server")
+    if bin_allowlist:
+        # Compare the *directory* PATH resolved the binary into — not the
+        # realpath of the file, since distro packages legitimately symlink
+        # e.g. /usr/bin/pg_dump -> pg_wrapper outside the bin dir. We only
+        # normalise the directory for symlinks so a PATH shim in an
+        # untrusted dir is still rejected.
+        resolved_dir = os.path.realpath(os.path.dirname(resolved))
+        allowed = {os.path.realpath(d) for d in bin_allowlist}
+        if resolved_dir not in allowed:
+            raise ShellError(
+                f"binary {name!r} resolved to {resolved!r}, which is outside "
+                f"MCPG_SUBPROCESS_BIN_ALLOWLIST ({sorted(bin_allowlist)})"
+            )
     return resolved
+
+
+def _make_preexec_fn(limits: SubprocessLimits) -> Callable[[], None] | None:
+    """Build a child-side ``preexec_fn`` applying CPU / memory rlimits.
+
+    Returns ``None`` when no rlimit is requested or the platform lacks
+    the ``resource`` module (Windows), so the spawn path stays unchanged
+    in those cases.
+    """
+    if resource is None:
+        return None
+    if limits.cpu_seconds is None and limits.memory_mb is None:
+        return None
+
+    cpu_seconds = limits.cpu_seconds
+    memory_bytes = limits.memory_mb * 1024 * 1024 if limits.memory_mb is not None else None
+
+    def _apply_limits() -> None:  # pragma: no cover - runs in the forked child
+        if cpu_seconds is not None:
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
+        if memory_bytes is not None:
+            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+
+    return _apply_limits
 
 
 def _redact_env(env: dict[str, str]) -> dict[str, str]:
@@ -128,6 +202,7 @@ async def run_pg_binary(
     timeout_sec: int,
     max_output_bytes: int,
     stdin: bytes | None = None,
+    limits: SubprocessLimits | None = None,
 ) -> SubprocessResult:
     """Execute an allowlisted PostgreSQL binary with the agreed policy.
 
@@ -153,9 +228,14 @@ async def run_pg_binary(
         ShellError: When ``binary`` is not allowlisted, can't be found
             on PATH, or asyncio can't spawn it.
     """
-    resolved = _resolve_binary(binary)
+    limits = limits or SubprocessLimits()
+    resolved = _resolve_binary(binary, limits.bin_allowlist)
     safe_env = _filter_env(env)
     redacted = _redact_env(safe_env)
+    # Spawn in a throwaway working directory so a binary that writes
+    # relative-path files (none of ours do today, but defence in depth)
+    # can't litter the server's CWD. Cleaned up after the call.
+    workdir = tempfile.mkdtemp(prefix="mcpg-pg-")
     try:
         process = await asyncio.create_subprocess_exec(
             resolved,
@@ -164,8 +244,11 @@ async def run_pg_binary(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=safe_env,
+            cwd=workdir,
+            preexec_fn=_make_preexec_fn(limits),
         )
     except (OSError, FileNotFoundError) as exc:
+        shutil.rmtree(workdir, ignore_errors=True)
         raise ShellError(f"failed to spawn {binary!r}: {exc}") from exc
 
     timed_out = False
@@ -248,6 +331,7 @@ async def run_pg_binary(
         except Exception:
             stderr_bytes = b""
 
+    shutil.rmtree(workdir, ignore_errors=True)
     stdout_bytes = b"".join(stdout_chunks)
     return SubprocessResult(
         binary=binary,

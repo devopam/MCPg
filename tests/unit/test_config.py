@@ -642,3 +642,69 @@ def test_new_config_parameters_loads_and_validates() -> None:
     # Test obfuscated audit HMAC key in repr
     assert "my-secret-key" not in repr(settings)
     assert "audit_hmac_key='set'" in repr(settings)
+
+
+# --- subprocess hardening + HTTP request timeout -------------------------
+
+
+def test_subprocess_hardening_defaults_to_open() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.subprocess_bin_allowlist == ()
+    assert settings.subprocess_cpu_seconds is None
+    assert settings.subprocess_memory_mb is None
+
+
+def test_subprocess_hardening_parses_allowlist_and_limits() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_SUBPROCESS_BIN_ALLOWLIST": "/usr/bin, /usr/local/bin",
+            "MCPG_SUBPROCESS_CPU_SECONDS": "30",
+            "MCPG_SUBPROCESS_MEMORY_MB": "512",
+        }
+    )
+    assert settings.subprocess_bin_allowlist == ("/usr/bin", "/usr/local/bin")
+    assert settings.subprocess_cpu_seconds == 30
+    assert settings.subprocess_memory_mb == 512
+
+
+def test_subprocess_bin_allowlist_rejects_relative_paths() -> None:
+    with pytest.raises(ConfigError, match="MCPG_SUBPROCESS_BIN_ALLOWLIST"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_SUBPROCESS_BIN_ALLOWLIST": "/usr/bin, relative/dir",
+            }
+        )
+
+
+def test_subprocess_cpu_seconds_rejects_non_positive() -> None:
+    with pytest.raises(ConfigError, match="MCPG_SUBPROCESS_CPU_SECONDS"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_SUBPROCESS_CPU_SECONDS": "0",
+            }
+        )
+
+
+def test_http_request_timeout_defaults_to_zero_and_parses() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).http_request_timeout_seconds == 0
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_HTTP_REQUEST_TIMEOUT_SECONDS": "20",
+        }
+    )
+    assert settings.http_request_timeout_seconds == 20
+
+
+def test_http_request_timeout_rejects_negative() -> None:
+    with pytest.raises(ConfigError, match="MCPG_HTTP_REQUEST_TIMEOUT_SECONDS"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_HTTP_REQUEST_TIMEOUT_SECONDS": "-5",
+            }
+        )

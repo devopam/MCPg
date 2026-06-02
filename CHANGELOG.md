@@ -8,6 +8,36 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Subprocess hardening for the shell-gated PG binaries.**
+  `run_pg_binary` now (a) validates the resolved `pg_dump` /
+  `pg_restore` / `psql` directory against
+  `MCPG_SUBPROCESS_BIN_ALLOWLIST` (empty = trust `PATH`), rejecting a
+  PATH shim in an untrusted directory while still allowing distro
+  `pg_dump -> pg_wrapper` symlinks; (b) applies `RLIMIT_CPU` /
+  `RLIMIT_AS` via a `preexec_fn` when `MCPG_SUBPROCESS_CPU_SECONDS` /
+  `MCPG_SUBPROCESS_MEMORY_MB` are set (POSIX only); and (c) spawns in
+  a throwaway temp working directory. All opt-in; defaults preserve
+  prior behaviour.
+
+- **Opt-in per-request HTTP timeout.**
+  `MCPG_HTTP_REQUEST_TIMEOUT_SECONDS` (default `0` = disabled) caps
+  wall-clock time per request on the HTTP transports, returning `504`
+  on expiry. Disabled by default so long-lived SSE / streamable-http
+  streams keep working; intended for plain request/response
+  deployments wanting a DoS backstop. Completes the HTTP-hardening
+  set started in the security-diagnostics release.
+
+- **Advanced security hardening, lifecycles & diagnostics (#37).**
+  HTTP hardening middleware (security headers, request-size limit,
+  CORS allowlist); graceful-shutdown draining of in-flight tool calls
+  (`MCPG_SHUTDOWN_DRAIN_SECONDS`); audit-log HMAC integrity chain with
+  the `verify_audit_chain` tool (`MCPG_AUDIT_INTEGRITY` +
+  `MCPG_AUDIT_HMAC_KEY`); a redundant-index advisor; and an
+  `analyze_hnsw_recall` pgvector tuner.
+
+- **Adaptive caching, feature flags & related (#36).** See the PR for
+  detail.
+
 - **Multi-provider routing for `translate_nl_to_sql`.** MCPg now
   auto-discovers every configured NL→SQL provider from the
   environment at startup (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,

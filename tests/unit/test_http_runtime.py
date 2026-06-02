@@ -833,3 +833,112 @@ def test_run_http_builds_app_and_serves_via_uvicorn(monkeypatch: pytest.MonkeyPa
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 9999
     assert captured["app"] is not None
+
+
+# --- request timeout middleware -------------------------------------------
+
+
+async def test_request_timeout_middleware_returns_504_when_app_is_too_slow() -> None:
+    import asyncio
+
+    from mcpg.http_runtime import _RequestTimeoutMiddleware
+
+    async def _slow_app(scope: dict[str, object], receive: object, send: object) -> None:
+        await asyncio.sleep(10)  # far longer than the 0s cap
+
+    sent: list[dict[str, object]] = []
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    mw = _RequestTimeoutMiddleware(_slow_app, timeout_seconds=0)
+    await mw({"type": "http", "path": "/mcp", "headers": []}, receive, send)
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 504
+
+
+async def test_request_timeout_middleware_passes_through_a_fast_app() -> None:
+    from mcpg.http_runtime import _RequestTimeoutMiddleware
+
+    async def _fast_app(scope: dict[str, object], receive: object, send: object) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    sent: list[dict[str, object]] = []
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    mw = _RequestTimeoutMiddleware(_fast_app, timeout_seconds=5)
+    await mw({"type": "http", "path": "/mcp", "headers": []}, receive, send)
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 200
+
+
+async def test_request_timeout_middleware_passes_through_non_http_scope() -> None:
+    from mcpg.http_runtime import _RequestTimeoutMiddleware
+
+    called = False
+
+    async def _inner(scope: dict[str, object], receive: object, send: object) -> None:
+        nonlocal called
+        called = True
+
+    mw = _RequestTimeoutMiddleware(_inner, timeout_seconds=1)
+    await mw({"type": "lifespan"}, None, None)
+    assert called is True
+
+
+async def test_request_timeout_middleware_does_not_double_send_after_stream_started() -> None:
+    # If the app already sent the response start before timing out, the
+    # middleware must NOT try to write a 504 on top of it.
+    import asyncio
+
+    from mcpg.http_runtime import _RequestTimeoutMiddleware
+
+    async def _streamer(scope: dict[str, object], receive: object, send: object) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await asyncio.sleep(10)  # times out mid-stream
+
+    sent: list[dict[str, object]] = []
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    mw = _RequestTimeoutMiddleware(_streamer, timeout_seconds=0)
+    await mw({"type": "http", "path": "/mcp", "headers": []}, receive, send)
+
+    statuses = [m["status"] for m in sent if m["type"] == "http.response.start"]
+    # Exactly one start, the app's 200 — no 504 stacked on top.
+    assert statuses == [200]
+
+
+def test_build_http_app_installs_request_timeout_only_when_positive() -> None:
+    base = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"}
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    # Disabled (default 0): no timeout middleware in the stack.
+    off = build_http_app(_Stub(), load_settings(base), kind="streamable-http")
+    assert not any(m.cls.__name__ == "_RequestTimeoutMiddleware" for m in off.user_middleware)
+
+    # Enabled: middleware present.
+    on = build_http_app(
+        _Stub(),
+        load_settings({**base, "MCPG_HTTP_REQUEST_TIMEOUT_SECONDS": "5"}),
+        kind="streamable-http",
+    )
+    assert any(m.cls.__name__ == "_RequestTimeoutMiddleware" for m in on.user_middleware)
