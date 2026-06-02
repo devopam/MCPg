@@ -296,6 +296,36 @@ async def test_mmr_search_parses_bracketed_text_embeddings() -> None:
     assert [m.row["id"] for m in result.matches] == [1, 2]
 
 
+async def test_mmr_search_skips_rows_with_null_embeddings() -> None:
+    # A NULL in the embedding column must not crash the whole search;
+    # the row is dropped and the rest are reranked normally.
+    routes = {
+        "pg_extension": [{"present": 1}],
+        "::vector": [
+            {"id": 1, "embedding": [1.0, 0.0], "mcpg_distance": 0.0},
+            {"id": 2, "embedding": None, "mcpg_distance": 0.5},
+            {"id": 3, "embedding": [0.0, 1.0], "mcpg_distance": 1.0},
+        ],
+    }
+    result = await mmr_search(FakeRoutingDriver(routes), "app", "docs", "embedding", [1.0, 0.0], k=3)  # type: ignore[arg-type]
+
+    assert [m.row["id"] for m in result.matches] == [1, 3]
+
+
+async def test_mmr_search_raises_when_an_embedding_dim_does_not_match_query() -> None:
+    # A 3-dim row when the query is 2-dim is almost always a schema bug;
+    # surface it clearly instead of silently scoring it via truncation.
+    routes = {
+        "pg_extension": [{"present": 1}],
+        "::vector": [
+            {"id": 1, "embedding": [1.0, 0.0], "mcpg_distance": 0.0},
+            {"id": 2, "embedding": [0.1, 0.2, 0.3], "mcpg_distance": 0.5},
+        ],
+    }
+    with pytest.raises(SearchError, match="dimension 3, expected 2"):
+        await mmr_search(FakeRoutingDriver(routes), "app", "docs", "embedding", [1.0, 0.0], k=2)  # type: ignore[arg-type]
+
+
 async def test_mmr_search_fetch_k_defaults_to_a_wider_pool() -> None:
     driver = FakeRoutingDriver(_mmr_candidates())
 
@@ -369,6 +399,15 @@ def test_cosine_similarity_is_zero_for_a_zero_vector() -> None:
 
     assert _cosine_similarity([0.0, 0.0], [1.0, 1.0]) == 0.0
     assert _cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
+
+
+def test_cosine_similarity_raises_on_dim_mismatch() -> None:
+    # strict=True guards against silently truncating one vector. Callers
+    # are expected to validate dimensions first; this is defence in depth.
+    from mcpg.textsearch import _cosine_similarity
+
+    with pytest.raises(ValueError):
+        _cosine_similarity([1.0, 0.0], [1.0, 0.0, 0.0])
 
 
 # --- geo search ------------------------------------------------------------

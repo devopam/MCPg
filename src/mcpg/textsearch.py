@@ -363,11 +363,17 @@ def _parse_embedding(value: Any) -> list[float]:
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Cosine similarity of two equal-length vectors; 0.0 if either is zero."""
+    """Cosine similarity of two equal-length vectors; 0.0 if either is zero.
+
+    ``zip(..., strict=True)`` is a defence-in-depth check: callers are
+    expected to enforce equal dimensions before calling (mmr_search
+    does); a length mismatch here means an internal invariant broke and
+    should fail loudly rather than silently truncating.
+    """
     dot = 0.0
     norm_a = 0.0
     norm_b = 0.0
-    for x, y in zip(a, b, strict=False):
+    for x, y in zip(a, b, strict=True):
         dot += x * y
         norm_a += x * x
         norm_b += y * y
@@ -440,11 +446,24 @@ async def mmr_search(
     )
 
     candidates: list[tuple[dict[str, Any], list[float], float]] = []
+    expected_dim = len(query_vector)
     for row in rows or []:
         cells = dict(row.cells)
         cells.pop("mcpg_distance", None)
-        embedding = _parse_embedding(cells.get(column))
+        raw_embedding = cells.get(column)
         cells.pop(column, None)  # drop the embedding from the returned row
+        # Rows whose embedding is NULL (the column wasn't populated yet)
+        # are silently skipped — failing the whole search because one row
+        # is missing an embedding would be hostile to data-quality issues
+        # the caller is probably already aware of.
+        if raw_embedding is None:
+            continue
+        embedding = _parse_embedding(raw_embedding)
+        if len(embedding) != expected_dim:
+            raise SearchError(
+                f"row's {column!r} embedding has dimension {len(embedding)}, "
+                f"expected {expected_dim} (matches query_vector length)"
+            )
         relevance = _cosine_similarity(query_vector, embedding)
         candidates.append((cells, embedding, relevance))
 
