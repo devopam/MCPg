@@ -125,7 +125,7 @@ All four are independent.
 
 | PR | Item | New module? | Effort | Notes |
 |---|---|---|---|---|
-| F1 (✅) | Schema-doc generator (8.2) | new `schema_docs.py` | S | Markdown table reference from the catalog; sibling of `generate_schema_diagram`. |
+| F1 (✅ PR #44) | Schema-doc generator (8.2) | new `schema_docs.py` | S | Markdown table reference from the catalog; sibling of `generate_schema_diagram`. |
 | F2 | Auto tool examples in descriptions (3.1) | touches `tools.py` broadly | S | Higher conflict (edits many descriptions) — best done solo, late. |
 | F3 | `seed_table_with_sample_data` (3.2) | extends `test_data.py` | M | Executes inserts (WRITE-gated); sibling of `generate_test_data`. |
 | F4 | Test-data factory `generate_test_row_for` (8.1) | extends `test_data.py` | M | Catalog + heuristics. F3/F4 share `test_data.py` — sequence them. |
