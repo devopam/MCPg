@@ -84,3 +84,67 @@ def test_run_dispatches_sse_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     run(_settings_with(Transport.SSE))
 
     assert seen == ["sse"]
+
+
+async def test_lifespan_waits_for_in_flight_calls_to_drain() -> None:
+    import asyncio
+    import dataclasses
+    import time
+
+    pool = FakePool()
+    db = Database(_SETTINGS, pool=pool)  # type: ignore[arg-type]
+    lm = ListenManager(database_url=_SETTINGS.database_url)
+    cm = CursorManager(database_url=_SETTINGS.database_url)
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+        }
+    )
+    settings = dataclasses.replace(settings, shutdown_drain_seconds=0.5)  # type: ignore[arg-type]
+
+    lifespan = make_lifespan(settings, db, lm, cm)
+    server = create_server(settings)
+    server.in_flight_calls = 1
+
+    async def decrement_later() -> None:
+        await asyncio.sleep(0.2)
+        server.in_flight_calls = 0
+
+    tasks = []
+    start_time = time.monotonic()
+    async with lifespan(server):
+        tasks.append(asyncio.create_task(decrement_later()))
+
+    duration = time.monotonic() - start_time
+    assert duration >= 0.2
+    assert server.in_flight_calls == 0
+
+
+async def test_lifespan_drain_timeout() -> None:
+    import dataclasses
+    import time
+
+    pool = FakePool()
+    db = Database(_SETTINGS, pool=pool)  # type: ignore[arg-type]
+    lm = ListenManager(database_url=_SETTINGS.database_url)
+    cm = CursorManager(database_url=_SETTINGS.database_url)
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+        }
+    )
+    settings = dataclasses.replace(settings, shutdown_drain_seconds=0.2)  # type: ignore[arg-type]
+
+    lifespan = make_lifespan(settings, db, lm, cm)
+    server = create_server(settings)
+    server.in_flight_calls = 1
+
+    start_time = time.monotonic()
+    async with lifespan(server):
+        pass
+
+    duration = time.monotonic() - start_time
+    assert duration >= 0.2
+    assert server.in_flight_calls == 1

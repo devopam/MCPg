@@ -122,6 +122,7 @@ class Database:
             lock_timeout_ms=self._settings.lock_timeout_ms,
         )
         if self._replica_pool is None:
+            primary.settings = self._settings  # type: ignore[attr-defined]
             return primary
         replica_drivers = [
             _make_driver_for_pool(
@@ -133,11 +134,13 @@ class Database:
             )
             for state in self._replica_pool._states
         ]
-        return RoutedSqlDriver(
+        driver = RoutedSqlDriver(
             primary=primary,
             replicas=replica_drivers,
             replica_pool=self._replica_pool,
         )
+        driver.settings = self._settings  # type: ignore[attr-defined]
+        return driver
 
     async def copy_from_stdin(self, sql: str, data: bytes) -> int:
         """Stream ``data`` into a ``COPY ... FROM STDIN`` statement.

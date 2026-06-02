@@ -142,7 +142,7 @@ unconditionally (operators can disable per header via env). New
 
 **Effort:** medium (one new middleware module + 6-8 tests).
 
-### ⬜ Audit log integrity (HMAC chain + verifier tool)
+### [x] Audit log integrity (HMAC chain + verifier tool)
 **Problem.** An attacker with write access to `mcpg.audit_events`
 can truncate, alter, or insert events undetected.
 
@@ -200,7 +200,7 @@ on PATH could shim one of these binaries.
 **Effort:** medium (~100 LOC + cross-platform conditionals + 6-8
 tests).
 
-### ⬜ Graceful shutdown
+### [x] Graceful shutdown
 **Problem.** On SIGTERM today the server exits immediately,
 abandoning in-flight tool calls and any open cursors.
 

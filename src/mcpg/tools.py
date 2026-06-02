@@ -54,6 +54,7 @@ from mcpg import (
     test_data,
     textsearch,
     timescaledb,
+    vector_tuner_advanced,
     vector_tuning,
     workload,
     write,
@@ -618,6 +619,33 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             metric=metric,
         )
         return asdict(report)
+
+    @server.tool(
+        name="analyze_hnsw_recall",
+        description=(
+            "Sweeps ef_search values to measure the latency and recall trade-off curve "
+            "for a given pgvector query vector against exact brute-force ground truth. "
+            "Requires the vector extension."
+        ),
+    )
+    async def analyze_hnsw_recall(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        query_vector: list[float] | str,
+        k: int = 10,
+        metric: str = "l2",
+    ) -> list[dict[str, Any]]:
+        return await vector_tuner_advanced.analyze_hnsw_recall(
+            _driver(ctx),
+            schema,
+            table,
+            column,
+            query_vector,
+            k=k,
+            metric=metric,
+        )
 
 
 def _register_prisma(server: FastMCP[AppContext]) -> None:
@@ -1385,6 +1413,15 @@ def _register_audit_trail(server: FastMCP[AppContext]) -> None:
     async def list_audit_events(ctx: _Ctx, limit: int = 100, tool: str | None = None) -> list[dict[str, Any]]:
         events = await audit_trail.list_audit_events(_driver(ctx), limit=limit, tool=tool)
         return [asdict(event) for event in events]
+
+    @server.tool(
+        name="verify_audit_chain",
+        description="Verify the HMAC-SHA256 signature chain of persisted audit events in mcpg_audit.events.",
+    )
+    async def verify_audit_chain(ctx: _Ctx) -> dict[str, Any]:
+        from mcpg.audit_integrity import verify_audit_chain as vac
+
+        return await vac(_driver(ctx))
 
 
 def _register_query(server: FastMCP[AppContext]) -> None:

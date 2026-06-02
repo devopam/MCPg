@@ -132,9 +132,17 @@ class Settings:
     cache_maxsize: int = 1024
     redis_url: str | None = None
     enable_heavy_diagnostics: bool = True
+    http_max_body_bytes: int = 1048576
+    http_allowed_origins: tuple[str, ...] = ()
+    http_hsts_max_age: int = 31536000
+    shutdown_drain_seconds: int = 30
+    audit_hmac_key: str | None = None
+    audit_integrity: bool = False
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
+        http_auth_token_repr = "set" if self.http_auth_token else "unset"
+        audit_hmac_key_repr = "set" if self.audit_hmac_key else "unset"
         return (
             f"Settings(database_url={obfuscate_password(self.database_url)!r}, "
             f"access_mode={self.access_mode.value!r}, "
@@ -148,7 +156,7 @@ class Settings:
             f"listen_queue_max={self.listen_queue_max}, "
             f"audit_persist={self.audit_persist}, "
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size}, "
-            f"http_auth_token={'set' if self.http_auth_token else 'unset'!r}, "
+            f"http_auth_token={http_auth_token_repr!r}, "
             f"auth_mode={self.auth_mode!r}, "
             f"oidc_issuer={self.oidc_issuer!r}, "
             f"oidc_audience={self.oidc_audience!r}, "
@@ -174,7 +182,13 @@ class Settings:
             f"cache_ttl_seconds={self.cache_ttl_seconds}, "
             f"cache_maxsize={self.cache_maxsize}, "
             f"redis_url={self.redis_url!r}, "
-            f"enable_heavy_diagnostics={self.enable_heavy_diagnostics})"
+            f"enable_heavy_diagnostics={self.enable_heavy_diagnostics}, "
+            f"http_max_body_bytes={self.http_max_body_bytes}, "
+            f"http_allowed_origins={self.http_allowed_origins!r}, "
+            f"http_hsts_max_age={self.http_hsts_max_age}, "
+            f"shutdown_drain_seconds={self.shutdown_drain_seconds}, "
+            f"audit_hmac_key={audit_hmac_key_repr!r}, "
+            f"audit_integrity={self.audit_integrity})"
         )
 
 
@@ -576,6 +590,42 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if (raw := env.get("MCPG_ENABLE_HEAVY_DIAGNOSTICS")) is not None:
         enable_heavy_diagnostics = _parse_bool("MCPG_ENABLE_HEAVY_DIAGNOSTICS", raw)
 
+    http_max_body_bytes = 1048576
+    if (raw := env.get("MCPG_HTTP_MAX_BODY_BYTES")) is not None:
+        http_max_body_bytes = _parse_positive_int("MCPG_HTTP_MAX_BODY_BYTES", raw)
+
+    http_allowed_origins: tuple[str, ...] = ()
+    if (raw := env.get("MCPG_HTTP_ALLOWED_ORIGINS")) is not None:
+        http_allowed_origins = tuple(o.strip() for o in raw.split(",") if o.strip())
+
+    http_hsts_max_age = 31536000
+    if (raw := env.get("MCPG_HTTP_HSTS_MAX_AGE")) is not None:
+        try:
+            val = int(raw)
+            if val < 0:
+                raise ValueError()
+            http_hsts_max_age = val
+        except ValueError:
+            raise ConfigError(f"MCPG_HTTP_HSTS_MAX_AGE must be a non-negative integer (got {raw!r})") from None
+
+    shutdown_drain_seconds = 30
+    if (raw := env.get("MCPG_SHUTDOWN_DRAIN_SECONDS")) is not None:
+        shutdown_drain_seconds = _parse_positive_int("MCPG_SHUTDOWN_DRAIN_SECONDS", raw)
+
+    audit_hmac_key: str | None = None
+    if (raw := env.get("MCPG_AUDIT_HMAC_KEY")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_AUDIT_HMAC_KEY must not be blank when set")
+        audit_hmac_key = stripped
+
+    audit_integrity = False
+    if (raw := env.get("MCPG_AUDIT_INTEGRITY")) is not None:
+        audit_integrity = _parse_bool("MCPG_AUDIT_INTEGRITY", raw)
+
+    if audit_integrity and audit_hmac_key is None:
+        raise ConfigError("MCPG_AUDIT_INTEGRITY=true requires MCPG_AUDIT_HMAC_KEY")
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -619,4 +669,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         cache_maxsize=cache_maxsize,
         redis_url=redis_url,
         enable_heavy_diagnostics=enable_heavy_diagnostics,
+        http_max_body_bytes=http_max_body_bytes,
+        http_allowed_origins=http_allowed_origins,
+        http_hsts_max_age=http_hsts_max_age,
+        shutdown_drain_seconds=shutdown_drain_seconds,
+        audit_hmac_key=audit_hmac_key,
+        audit_integrity=audit_integrity,
     )

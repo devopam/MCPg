@@ -450,6 +450,15 @@ String leaves are passed through the `obfuscate_password` helper so
 an embedded connection-string credential nested anywhere is
 scrubbed.
 
+### Integrity
+
+To prevent tampering (unauthorized alterations, insertions, or deletions) of your persisted audit events, MCPg supports a signature chain:
+
+*   **`MCPG_AUDIT_INTEGRITY=true`** — Enables the HMAC-SHA256 signature chain.
+*   **`MCPG_AUDIT_HMAC_KEY=<key>`** — The secret key used to compute and verify the signature chain (required when integrity is enabled).
+
+When enabled, each event carries a signature computed over the deterministic payload and the preceding event's signature. Verify the entire log using the **`verify_audit_chain`** tool, which sequentially checks each link and reports any tampering or deletions.
+
 ---
 
 ## Observability
@@ -539,6 +548,7 @@ MCPg ships with defence-in-depth defaults:
   constant-time compare, or OIDC JWT validation against the
   issuer's JWKS (asymmetric algorithms only).
 - **Audit redaction** as documented above.
+- **Graceful shutdown draining** (controlled by `MCPG_SHUTDOWN_DRAIN_SECONDS`, default 30 s) ensures the server lifespan exit drains all in-flight tool calls before releasing database connection pools.
 - **Multi-tenancy via `SET ROLE`.** One process can serve many
   tenants without the RLS-meets-pool footgun.
 

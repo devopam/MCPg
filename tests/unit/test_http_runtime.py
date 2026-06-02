@@ -454,3 +454,382 @@ def test_build_http_app_in_oidc_mode_blocks_requests_without_a_valid_jwt() -> No
         assert response.status_code == 200
         response = client.get("/healthz")
         assert response.status_code == 200
+
+
+# --- HTTP hardening middlewares (Security headers, CORS, request size limit) ---
+
+
+def test_security_headers_middleware_adds_headers() -> None:
+    from mcpg.http_runtime import _SecurityHeadersMiddleware
+
+    inner = _bare_app()
+    app = Starlette(routes=inner.router.routes)
+    app.add_middleware(_SecurityHeadersMiddleware, hsts_max_age=31536000)
+
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
+        assert response.headers["content-security-policy"] == "default-src 'self'"
+        assert response.headers["x-frame-options"] == "DENY"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["referrer-policy"] == "no-referrer"
+        assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+
+
+def test_request_size_limit_middleware_blocks_large_requests() -> None:
+    from mcpg.http_runtime import _RequestSizeLimitMiddleware
+
+    async def _post_handler(_request: object) -> PlainTextResponse:
+        return PlainTextResponse("ok")
+
+    app = Starlette(routes=[Route("/", _post_handler, methods=["POST"])])
+    app.add_middleware(_RequestSizeLimitMiddleware, max_bytes=10)
+
+    with TestClient(app) as client:
+        # Fits in limit (size 2) -> 200
+        response = client.post("/", content="ok")
+        assert response.status_code == 200
+
+        # Exceeds limit (size 26) -> 413
+        response = client.post("/", content="abcdefghijklmnopqrstuvwxyz")
+        assert response.status_code == 413
+        assert "request_entity_too_large" in response.text
+
+
+def test_cors_middleware_integration() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOWED_ORIGINS": "http://localhost:3000, https://app.example.com",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    with TestClient(wrapped) as client:
+        # Preflight options request from allowed origin
+        headers = {
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "Authorization",
+        }
+        response = client.options("/", headers=headers)
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+
+
+def test_security_headers_middleware_override_behavior() -> None:
+    from mcpg.http_runtime import _SecurityHeadersMiddleware
+
+    # An app that explicitly sets one of the security headers (e.g. CSP)
+    async def _custom_app(scope: dict[str, object], receive: object, send: object) -> None:
+        if scope["type"] == "http":
+
+            async def custom_send(message: dict[str, object]) -> None:
+                if message["type"] == "http.response.start":
+                    headers = list(message.get("headers", []))
+                    headers.append((b"content-security-policy", b"default-src 'none'"))
+                    headers.append((b"x-frame-options", b"SAMEORIGIN"))
+                    message["headers"] = headers
+                await send(message)  # type: ignore[operator]
+
+            await _bare_app()(scope, receive, custom_send)
+        else:
+            await _bare_app()(scope, receive, send)
+
+    app = Starlette()
+    app.add_middleware(_SecurityHeadersMiddleware, hsts_max_age=31536000)
+    app.mount("/", _custom_app)
+
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
+        # The inner app's custom headers must not be overwritten by the middleware
+        assert response.headers["content-security-policy"] == "default-src 'none'"
+        assert response.headers["x-frame-options"] == "SAMEORIGIN"
+        # Other default headers should still be set
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["referrer-policy"] == "no-referrer"
+
+
+def test_security_headers_middleware_hsts_disabled() -> None:
+    from mcpg.http_runtime import _SecurityHeadersMiddleware
+
+    inner = _bare_app()
+    app = Starlette(routes=inner.router.routes)
+    app.add_middleware(_SecurityHeadersMiddleware, hsts_max_age=0)
+
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
+        # strict-transport-security should NOT be present since max-age is 0
+        assert "strict-transport-security" not in response.headers
+
+
+def test_security_headers_middleware_non_http_scope() -> None:
+    from mcpg.http_runtime import _SecurityHeadersMiddleware
+
+    async def _dummy_app(scope: dict[str, object], receive: object, send: object) -> None:
+        pass
+
+    middleware = _SecurityHeadersMiddleware(_dummy_app, hsts_max_age=3600)
+    scope = {"type": "websocket"}
+
+    # Running this should not raise any exceptions or add HTTP headers
+    import asyncio
+
+    asyncio.run(middleware(scope, None, None))
+
+
+def test_cors_middleware_negative_and_default_config() -> None:
+    # 1. Unset/empty allowed origins -> No CORS headers should be returned
+    settings_empty = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOWED_ORIGINS": "",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    wrapped_empty = build_http_app(_Stub(), settings_empty, kind="streamable-http")
+    with TestClient(wrapped_empty) as client:
+        headers = {
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+        }
+        response = client.options("/", headers=headers)
+        # Without an allowlist, CORS middleware is not registered, so no CORS preflight headers
+        assert "access-control-allow-origin" not in response.headers
+
+    # 2. Request origin not in allowlist -> Origin not echoed back (CORS rejected)
+    settings_allowlist = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOWED_ORIGINS": "https://app.example.com",
+        }
+    )
+    wrapped_allowlist = build_http_app(_Stub(), settings_allowlist, kind="streamable-http")
+    with TestClient(wrapped_allowlist) as client:
+        headers = {
+            "Origin": "http://disallowed-attacker.com",
+            "Access-Control-Request-Method": "GET",
+        }
+        response = client.options("/", headers=headers)
+        assert response.status_code == 400 or "access-control-allow-origin" not in response.headers
+
+
+# --- request size limit: streaming + malformed Content-Length -------------
+
+
+async def _drive(middleware: object, scope: dict[str, object], chunks: list[bytes]) -> list[dict[str, object]]:
+    """Drive an ASGI middleware with a sequence of request-body chunks.
+
+    Returns the list of messages the middleware sent downstream.
+    """
+    sent: list[dict[str, object]] = []
+    pending = list(chunks)
+
+    async def receive() -> dict[str, object]:
+        body = pending.pop(0) if pending else b""
+        return {"type": "http.request", "body": body, "more_body": bool(pending)}
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    async def _inner(scope: dict[str, object], receive: object, send: object) -> None:
+        # Read the whole body (this is what triggers the receive wrapper),
+        # then respond 200.
+        while True:
+            msg = await receive()  # type: ignore[operator]
+            if not msg.get("more_body"):
+                break
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    middleware._app = _inner  # type: ignore[attr-defined]
+    await middleware(scope, receive, send)  # type: ignore[operator]
+    return sent
+
+
+async def test_request_size_limit_streams_413_when_body_exceeds_without_content_length() -> None:
+    # No Content-Length header -> the middleware counts streamed bytes and
+    # raises once the running total exceeds the cap, returning 413.
+    from mcpg.http_runtime import _RequestSizeLimitMiddleware
+
+    mw = _RequestSizeLimitMiddleware(None, max_bytes=10)
+    scope = {"type": "http", "headers": []}
+    sent = await _drive(mw, scope, [b"abcdef", b"ghijkl"])  # 12 bytes total
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 413
+
+
+async def test_request_size_limit_allows_streamed_body_within_cap() -> None:
+    from mcpg.http_runtime import _RequestSizeLimitMiddleware
+
+    mw = _RequestSizeLimitMiddleware(None, max_bytes=100)
+    scope = {"type": "http", "headers": []}
+    sent = await _drive(mw, scope, [b"abc", b"def"])  # 6 bytes total
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 200
+
+
+async def test_request_size_limit_ignores_malformed_content_length() -> None:
+    # A non-integer Content-Length must not crash the middleware; it falls
+    # back to counting streamed bytes (here within the cap -> 200).
+    from mcpg.http_runtime import _RequestSizeLimitMiddleware
+
+    mw = _RequestSizeLimitMiddleware(None, max_bytes=100)
+    scope = {"type": "http", "headers": [(b"content-length", b"not-a-number")]}
+    sent = await _drive(mw, scope, [b"hello"])
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 200
+
+
+# --- OIDC auth middleware: role-claim handling ----------------------------
+
+
+class _FakeVerifier:
+    """Stand-in for OIDCVerifier with a canned verify() outcome."""
+
+    def __init__(self, *, role: str | None = None, raises: bool = False) -> None:
+        self._role = role
+        self._raises = raises
+
+    async def verify(self, token: str) -> object:
+        from mcpg.oidc import OIDCError, VerifiedToken
+
+        if self._raises:
+            raise OIDCError("invalid token")
+        return VerifiedToken(claims={"sub": "u"}, role=self._role)
+
+
+async def _drive_get(middleware: object, *, auth: bytes | None = None) -> list[dict[str, object]]:
+    """Drive a middleware with a single GET request, capturing sent messages."""
+    sent: list[dict[str, object]] = []
+    headers = [(b"authorization", auth)] if auth is not None else []
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    scope = {"type": "http", "path": "/mcp", "headers": headers}
+    await middleware(scope, receive, send)  # type: ignore[operator]
+    return sent
+
+
+async def test_oidc_middleware_passes_through_when_token_has_no_role() -> None:
+    from mcpg.http_runtime import _OIDCAuthMiddleware
+
+    seen: list[str | None] = []
+
+    async def _inner(scope: dict[str, object], receive: object, send: object) -> None:
+        seen.append(current_role.get())
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    mw = _OIDCAuthMiddleware(_inner, verifier=_FakeVerifier(role=None))  # type: ignore[arg-type]
+    sent = await _drive_get(mw, auth=b"Bearer tok")
+
+    assert seen == [None]
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 200
+
+
+async def test_oidc_middleware_sets_and_resets_role_from_claim() -> None:
+    from mcpg.http_runtime import _OIDCAuthMiddleware
+
+    seen: list[str | None] = []
+
+    async def _inner(scope: dict[str, object], receive: object, send: object) -> None:
+        seen.append(current_role.get())
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    mw = _OIDCAuthMiddleware(_inner, verifier=_FakeVerifier(role="tenant_a"))  # type: ignore[arg-type]
+    sent = await _drive_get(mw, auth=b"Bearer tok")
+
+    # Role visible to the inner app, reset afterwards.
+    assert seen == ["tenant_a"]
+    assert current_role.get() is None
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 200
+
+
+async def test_oidc_middleware_rejects_unsafe_role_identifier() -> None:
+    from mcpg.http_runtime import _OIDCAuthMiddleware
+
+    mw = _OIDCAuthMiddleware(None, verifier=_FakeVerifier(role='"; DROP USER alice; --'))  # type: ignore[arg-type]
+    sent = await _drive_get(mw, auth=b"Bearer tok")
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 401
+
+
+async def test_oidc_middleware_returns_401_on_verification_failure() -> None:
+    from mcpg.http_runtime import _OIDCAuthMiddleware
+
+    mw = _OIDCAuthMiddleware(None, verifier=_FakeVerifier(raises=True))  # type: ignore[arg-type]
+    sent = await _drive_get(mw, auth=b"Bearer bad")
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts and starts[0]["status"] == 401
+
+
+# --- build_http_app SSE branch + run_http -----------------------------------
+
+
+def test_build_http_app_supports_sse_kind() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+    class _Stub:
+        def sse_app(self) -> Starlette:
+            return _bare_app()
+
+    app = build_http_app(_Stub(), settings, kind="sse")
+    # /metrics + /healthz are mounted onto whichever app kind we built.
+    with TestClient(app) as client:
+        assert client.get("/healthz").status_code == 200
+
+
+def test_run_http_builds_app_and_serves_via_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcpg import http_runtime
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_HOST": "0.0.0.0",
+            "MCPG_HTTP_PORT": "9999",
+        }
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_run(app: object, *, host: str, port: int) -> None:
+        captured["app"] = app
+        captured["host"] = host
+        captured["port"] = port
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", _fake_run)
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    http_runtime.run_http(_Stub(), settings, kind="streamable-http")
+
+    assert captured["host"] == "0.0.0.0"
+    assert captured["port"] == 9999
+    assert captured["app"] is not None

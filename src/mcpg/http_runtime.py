@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import hmac
 import logging
-from typing import TYPE_CHECKING
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, cast
 
 from mcpg.config import Settings
 from mcpg.observability import render_prometheus
@@ -286,6 +287,110 @@ async def _send_401(send: object, reason: str) -> None:
     await send({"type": "http.response.body", "body": body})  # type: ignore[operator]
 
 
+async def _send_413(send: object, reason: str) -> None:
+    """Emit a minimal 413 response."""
+    body = f'{{"error": "request_entity_too_large", "reason": "{reason}"}}\n'.encode()
+    await send(  # type: ignore[operator]
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})  # type: ignore[operator]
+
+
+class _SecurityHeadersMiddleware:
+    """ASGI middleware that enforces standard security headers."""
+
+    def __init__(self, app: object, *, hsts_max_age: int = 31536000) -> None:
+        self._app = app
+        self._hsts_max_age = hsts_max_age
+
+    async def __call__(self, scope: dict[str, object], receive: object, send: object) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        async def send_wrapper(message: dict[str, object]) -> None:
+            if message["type"] == "http.response.start":
+                raw_headers = message.get("headers") or []
+                headers: list[tuple[bytes, bytes]] = list(cast(Iterable[Any], raw_headers))
+                existing_keys = {k.lower() for k, _ in headers}
+
+                if b"content-security-policy" not in existing_keys:
+                    headers.append((b"content-security-policy", b"default-src 'self'"))
+                if b"x-frame-options" not in existing_keys:
+                    headers.append((b"x-frame-options", b"DENY"))
+                if b"x-content-type-options" not in existing_keys:
+                    headers.append((b"x-content-type-options", b"nosniff"))
+                if b"referrer-policy" not in existing_keys:
+                    headers.append((b"referrer-policy", b"no-referrer"))
+                if self._hsts_max_age > 0 and b"strict-transport-security" not in existing_keys:
+                    hsts_val = f"max-age={self._hsts_max_age}; includeSubDomains".encode()
+                    headers.append((b"strict-transport-security", hsts_val))
+
+                message["headers"] = headers
+
+            await send(message)  # type: ignore[operator]
+
+        await self._app(scope, receive, send_wrapper)  # type: ignore[operator]
+
+
+class _RequestTooLargeError(Exception):
+    """Raised when the request body exceeds the configured maximum size."""
+
+    pass
+
+
+class _RequestSizeLimitMiddleware:
+    """ASGI middleware that caps request body size to prevent DoS."""
+
+    def __init__(self, app: object, *, max_bytes: int) -> None:
+        self._app = app
+        self._max_bytes = max_bytes
+
+    async def __call__(self, scope: dict[str, object], receive: object, send: object) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        headers: list[tuple[bytes, bytes]] = scope.get("headers", [])  # type: ignore[assignment]
+        content_length = -1
+        for key, value in headers:
+            if key.lower() == b"content-length":
+                try:
+                    content_length = int(value)
+                except ValueError:
+                    pass
+                break
+
+        if content_length > self._max_bytes:
+            await _send_413(send, "request body too large")
+            return
+
+        bytes_received = 0
+
+        async def receive_wrapper() -> dict[str, object]:
+            nonlocal bytes_received
+            message = cast(dict[str, object], await receive())  # type: ignore[operator]
+            if message["type"] == "http.request":
+                body = message.get("body", b"")
+                if isinstance(body, bytes):
+                    bytes_received += len(body)
+                if bytes_received > self._max_bytes:
+                    raise _RequestTooLargeError()
+            return message
+
+        try:
+            await self._app(scope, receive_wrapper, send)  # type: ignore[operator]
+        except _RequestTooLargeError:
+            await _send_413(send, "request body too large")
+
+
 def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlette:
     """Wrap a FastMCP HTTP app with metrics + optional auth.
 
@@ -347,6 +452,21 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
                 "bearer tokens on every request.",
                 kind,
             )
+
+    # Outer middlewares (processed first on request)
+    app.add_middleware(_SecurityHeadersMiddleware, hsts_max_age=settings.http_hsts_max_age)
+    app.add_middleware(_RequestSizeLimitMiddleware, max_bytes=settings.http_max_body_bytes)
+    if settings.http_allowed_origins:
+        from starlette.middleware.cors import CORSMiddleware
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.http_allowed_origins),
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
     # FastMCP types streamable_http_app() / sse_app() as Starlette already,
     # but mypy under strict mode loses the type through the .add_middleware
     # call (returns None). Cast through Any to settle the return type

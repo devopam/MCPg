@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from mcpg._vendor.sql import SqlDriver
 from mcpg.query import QueryError, analyze_query_plan
@@ -35,6 +36,7 @@ RULE_UNINDEXED_FOREIGN_KEY = "unindexed_foreign_key"
 RULE_DUPLICATE_INDEXES = "duplicate_indexes"
 RULE_NULLABLE_TIMESTAMP_WITHOUT_TZ = "nullable_timestamp_without_tz"
 RULE_RECOMMEND_GRAPH_INDICES = "recommend_graph_indices"
+RULE_REDUNDANT_INDEXES = "redundant_indexes"
 
 _RULES = (
     RULE_MISSING_PRIMARY_KEY,
@@ -42,6 +44,7 @@ _RULES = (
     RULE_DUPLICATE_INDEXES,
     RULE_NULLABLE_TIMESTAMP_WITHOUT_TZ,
     RULE_RECOMMEND_GRAPH_INDICES,
+    RULE_REDUNDANT_INDEXES,
 )
 
 
@@ -235,6 +238,100 @@ async def _recommend_graph_indices(driver: SqlDriver, schema: str) -> list[Findi
     ]
 
 
+async def _redundant_indexes(driver: SqlDriver, schema: str) -> list[Finding]:
+    """Identify B-Tree indexes whose columns are a leading prefix of another index.
+
+    Operators can drop prefix-redundant indexes to reclaim disk space and reduce
+    write-amplification overhead without affecting query-planning efficacy.
+    """
+    rows = await driver.execute_query(
+        "SELECT "
+        "  c.relname AS table_name, "
+        "  i.relname AS index_name, "
+        "  ix.indisunique AS is_unique, "
+        "  ix.indisprimary AS is_primary, "
+        "  ix.indkey::text AS indkey, "
+        "  pg_relation_size(i.oid) AS index_size, "
+        "  ix.indpred::text AS indpred, "
+        "  ix.indexprs::text AS indexprs "
+        "FROM pg_index ix "
+        "JOIN pg_class i ON i.oid = ix.indexrelid "
+        "JOIN pg_class c ON c.oid = ix.indrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_am am ON am.oid = i.relam "
+        "WHERE n.nspname = %s AND am.amname = 'btree' "
+        "ORDER BY c.relname, ix.indkey::text",
+        params=[schema],
+        force_readonly=True,
+    )
+    if not rows:
+        return []
+
+    # Group by table
+    by_table: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        t_name = row.cells["table_name"]
+        by_table.setdefault(t_name, []).append(
+            {
+                "name": row.cells["index_name"],
+                "is_unique": row.cells["is_unique"],
+                "is_primary": row.cells["is_primary"],
+                "indkey_str": row.cells["indkey"] or "",
+                "size": row.cells["index_size"] or 0,
+                "indpred": row.cells.get("indpred"),
+                "indexprs": row.cells.get("indexprs"),
+            }
+        )
+
+    findings: list[Finding] = []
+
+    for t_name, indexes in by_table.items():
+        # Parse column vectors
+        parsed_indexes = []
+        for idx in indexes:
+            cols = [int(x) for x in idx["indkey_str"].split()]
+            parsed_indexes.append({**idx, "cols": cols})
+
+        # Compare each pair of indexes
+        for idx_a in parsed_indexes:
+            # Only recommend dropping if it is not primary or unique
+            if idx_a["is_primary"] or idx_a["is_unique"]:
+                continue
+
+            cols_a = idx_a["cols"]
+            if not cols_a:
+                continue
+
+            for idx_b in parsed_indexes:
+                if idx_a["name"] == idx_b["name"]:
+                    continue
+
+                cols_b = idx_b["cols"]
+                # If B starts with A and has more columns, then A is redundant!
+                if len(cols_b) > len(cols_a) and cols_b[: len(cols_a)] == cols_a:
+                    # Ensure partial index predicates match, or B is a global index covering A
+                    if idx_b["indpred"] and idx_b["indpred"] != idx_a["indpred"]:
+                        continue
+                    # Ensure expressions match if any are present
+                    if (0 in cols_a) and idx_a["indexprs"] != idx_b["indexprs"]:
+                        continue
+
+                    findings.append(
+                        Finding(
+                            rule=RULE_REDUNDANT_INDEXES,
+                            severity="warning",
+                            object=f"{schema}.{idx_a['name']} covered by {schema}.{idx_b['name']}",
+                            message=(
+                                f"index {idx_a['name']!r} on table {t_name!r} is a prefix subset of "
+                                f"index {idx_b['name']!r} (redundant, size: {idx_a['size']} bytes)"
+                            ),
+                        )
+                    )
+                    break  # Only report once per redundant index
+
+    return findings
+
+
 async def run_advisors(driver: SqlDriver, schema: str) -> AdvisorReport:
     """Run every advisor rule against ``schema`` and aggregate the findings."""
     findings: list[Finding] = []
@@ -243,6 +340,7 @@ async def run_advisors(driver: SqlDriver, schema: str) -> AdvisorReport:
     findings.extend(await _duplicate_indexes(driver, schema))
     findings.extend(await _nullable_timestamps_without_tz(driver, schema))
     findings.extend(await _recommend_graph_indices(driver, schema))
+    findings.extend(await _redundant_indexes(driver, schema))
     return AdvisorReport(schema=schema, rules_run=list(_RULES), findings=findings)
 
 
