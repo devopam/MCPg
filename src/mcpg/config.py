@@ -16,6 +16,7 @@ from os.path import isabs
 
 from mcpg._vendor.sql import obfuscate_password
 from mcpg.nl2sql import VENDOR_ENV_VAR_HINT
+from mcpg.secrets import SecretsError, build_secrets_provider
 
 # PG role names must be safe identifiers — we inline them into
 # ``SET ROLE "<name>"`` so anything outside ``[A-Za-z_][A-Za-z0-9_]*``
@@ -152,6 +153,10 @@ class Settings:
     shutdown_drain_seconds: int = 30
     audit_hmac_key: str | None = None
     audit_integrity: bool = False
+    # Which secrets backend resolved API keys / bearer token / HMAC key
+    # at startup: "env" (default) or "file". Recorded for observability;
+    # the actual values never appear here.
+    secrets_backend: str = "env"
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -206,7 +211,8 @@ class Settings:
             f"http_request_timeout_seconds={self.http_request_timeout_seconds}, "
             f"shutdown_drain_seconds={self.shutdown_drain_seconds}, "
             f"audit_hmac_key={audit_hmac_key_repr!r}, "
-            f"audit_integrity={self.audit_integrity})"
+            f"audit_integrity={self.audit_integrity}, "
+            f"secrets_backend={self.secrets_backend!r})"
         )
 
 
@@ -319,6 +325,16 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     """
     env = environ if env is None else env
 
+    # Secret *values* (API keys, bearer token, audit HMAC key) resolve
+    # through the configured secrets backend; non-secret config still
+    # comes straight from ``env``. A SecretsError is surfaced as a
+    # ConfigError so startup fails with one consistent error type.
+    try:
+        secrets = build_secrets_provider(env)
+    except SecretsError as exc:
+        raise ConfigError(str(exc)) from exc
+    secrets_backend = (env.get("MCPG_SECRETS_BACKEND") or "env").strip().lower()
+
     database_url = env.get("MCPG_DATABASE_URL", "").strip()
     if not database_url:
         raise ConfigError("MCPG_DATABASE_URL is required")
@@ -396,7 +412,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         raise ConfigError(f"MCPG_POOL_MAX_SIZE ({pool_max_size}) must be >= MCPG_POOL_MIN_SIZE ({pool_min_size})")
 
     http_auth_token: str | None = None
-    if (raw := env.get("MCPG_HTTP_AUTH_TOKEN")) is not None:
+    if (raw := secrets.get("MCPG_HTTP_AUTH_TOKEN")) is not None:
         stripped = raw.strip()
         if not stripped:
             raise ConfigError("MCPG_HTTP_AUTH_TOKEN must not be blank when set")
@@ -481,15 +497,15 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     # provider at an explicit key via ``MCPG_NL2SQL_API_KEY`` —
     # which always wins over the vendor-conventional fallback.
     api_keys: dict[str, str] = {}
-    if anthropic_key := (env.get("ANTHROPIC_API_KEY") or "").strip():
+    if anthropic_key := (secrets.get("ANTHROPIC_API_KEY") or "").strip():
         api_keys["anthropic"] = anthropic_key
-    if openai_key := (env.get("OPENAI_API_KEY") or "").strip():
+    if openai_key := (secrets.get("OPENAI_API_KEY") or "").strip():
         api_keys["openai"] = openai_key
-    gemini_key = (env.get("GEMINI_API_KEY") or "").strip() or (env.get("GOOGLE_API_KEY") or "").strip()
+    gemini_key = (secrets.get("GEMINI_API_KEY") or "").strip() or (secrets.get("GOOGLE_API_KEY") or "").strip()
     if gemini_key:
         api_keys["gemini"] = gemini_key
 
-    if (raw := env.get("MCPG_NL2SQL_API_KEY")) is not None:
+    if (raw := secrets.get("MCPG_NL2SQL_API_KEY")) is not None:
         stripped = raw.strip()
         if not stripped:
             raise ConfigError("MCPG_NL2SQL_API_KEY must not be blank when set")
@@ -659,7 +675,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         shutdown_drain_seconds = _parse_positive_int("MCPG_SHUTDOWN_DRAIN_SECONDS", raw)
 
     audit_hmac_key: str | None = None
-    if (raw := env.get("MCPG_AUDIT_HMAC_KEY")) is not None:
+    if (raw := secrets.get("MCPG_AUDIT_HMAC_KEY")) is not None:
         stripped = raw.strip()
         if not stripped:
             raise ConfigError("MCPG_AUDIT_HMAC_KEY must not be blank when set")
@@ -725,4 +741,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         shutdown_drain_seconds=shutdown_drain_seconds,
         audit_hmac_key=audit_hmac_key,
         audit_integrity=audit_integrity,
+        secrets_backend=secrets_backend,
     )

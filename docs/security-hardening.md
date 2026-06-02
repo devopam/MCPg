@@ -171,27 +171,29 @@ break. Persistence schema gains `prev_hmac` + `event_hmac` columns.
 **Effort:** medium (schema migration + HMAC computation +
 verifier tool + 5-7 tests).
 
-### ⬜ Pluggable secrets backend
+### 🟡 Pluggable secrets backend
 **Problem.** API keys for the NL→SQL providers, OIDC client
 secrets (future), and the static bearer token all live in env vars.
 Deployments that use HashiCorp Vault / AWS Secrets Manager / GCP
 Secret Manager have to inject them through their orchestrator
 sidecar rather than letting MCPg fetch them directly.
 
-**Solution.** Define a `SecretsProvider` protocol; ship four
-implementations: `env` (today), `file` (mount a JSON / YAML file
-of name→value), `vault` (HashiCorp), `aws` (Secrets Manager),
-`gcp` (Secret Manager). The active provider is picked by
-`MCPG_SECRETS_BACKEND`. Settings that today read env vars route
-through `provider.get(name)`.
+**Solution.** A `SecretsProvider` protocol (`mcpg.secrets`) picked by
+`MCPG_SECRETS_BACKEND`; the secret reads in `load_settings`
+(`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` /
+`GOOGLE_API_KEY` / `MCPG_NL2SQL_API_KEY`, `MCPG_HTTP_AUTH_TOKEN`,
+`MCPG_AUDIT_HMAC_KEY`) route through `provider.get(name)`.
 
-**Env vars to add:** `MCPG_SECRETS_BACKEND=env|file|vault|aws|gcp`,
-plus backend-specific (e.g. `VAULT_ADDR`, `VAULT_TOKEN`,
-`MCPG_SECRETS_FILE_PATH`, `AWS_SECRETS_MANAGER_REGION`).
+**✅ Shipped:** `env` (default, unchanged) and `file` (overlay a
+JSON / YAML `name → value` map via `MCPG_SECRETS_FILE_PATH`, env
+fallback for unlisted names). Zero new required dependencies — YAML
+is read only when PyYAML happens to be importable.
 
-**Effort:** large (4 new optional dep families behind extras like
-`mcpg[vault]`, `mcpg[aws-secrets]`; ~150 LOC core + per-backend
-integrations + 12+ tests).
+**⬜ Remaining:** the cloud backends — `vault` (HashiCorp), `aws`
+(Secrets Manager), `gcp` (Secret Manager) — each behind an optional
+extra (`mcpg[vault]`, `mcpg[aws-secrets]`, `mcpg[gcp-secrets]`),
+selected by the same `MCPG_SECRETS_BACKEND` switch. The DSN itself
+is not yet routed through the provider.
 
 ### ✅ Subprocess hardening
 **Shipped** in the security-hardening-queue PR. On top of the
@@ -238,4 +240,4 @@ audit trail, then exits. Configurable max-drain window
 | Supply chain | CI bandit + pip-audit | Same |
 | Lifecycle | Graceful shutdown draining | Same |
 | Subprocess | Minimal env + bin allowlist + rlimits + temp cwd | Same |
-| Secrets | Env vars | Pluggable backend (Vault / AWS / GCP / file) |
+| Secrets | Env vars + file overlay (`MCPG_SECRETS_BACKEND`) | + cloud backends (Vault / AWS / GCP) |

@@ -245,6 +245,18 @@ everything else has a safe default.
 | `MCPG_AUDIT_INTEGRITY` | `false` | When true, each persisted event is signed with an HMAC chained over the previous event; the `verify_audit_chain` tool walks the chain and reports the first break. Requires `MCPG_AUDIT_HMAC_KEY`. |
 | `MCPG_AUDIT_HMAC_KEY` | — | Secret key for the audit HMAC chain. Required when `MCPG_AUDIT_INTEGRITY=true`. Never appears in `repr`/logs. |
 
+#### Secrets backend
+
+By default every secret is read straight from the environment. Set
+`MCPG_SECRETS_BACKEND=file` to instead load API keys / bearer token /
+HMAC key from a mounted file — a name in the file wins; anything absent
+falls back to the env var, so partial files work.
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_SECRETS_BACKEND` | `env` | `env` (read every secret from the environment) \| `file` (overlay a secrets file on top of the environment). |
+| `MCPG_SECRETS_FILE_PATH` | — | Required when `MCPG_SECRETS_BACKEND=file`. Path to a flat `name → value` map: JSON always, or YAML (`.yaml`/`.yml`) when PyYAML is installed. Covers `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `MCPG_NL2SQL_API_KEY`, `MCPG_HTTP_AUTH_TOKEN`, and `MCPG_AUDIT_HMAC_KEY`. |
+
 #### Rate limiting
 
 | Variable | Default | Description |

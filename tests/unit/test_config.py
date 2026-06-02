@@ -137,9 +137,11 @@ def test_pool_max_below_min_raises() -> None:
 
 
 def test_repr_does_not_leak_the_password() -> None:
-    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    # Use a distinctive password — "secret" would collide with the
+    # legitimate ``secrets_backend`` repr field.
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://user:hunter2pw@localhost:5432/app"})
     rendered = repr(settings)
-    assert "secret" not in rendered
+    assert "hunter2pw" not in rendered
     assert "****" in rendered
 
 
