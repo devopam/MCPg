@@ -48,6 +48,24 @@ _QUALIFIED = f"{AUDIT_SCHEMA}.{AUDIT_TABLE}"
 _MASK = "****"
 
 
+class AuditTrailError(Exception):
+    """Raised when an audit-trail maintenance operation is rejected."""
+
+
+@dataclass(frozen=True, slots=True)
+class PruneResult:
+    """The outcome of a :func:`prune_audit_events` call.
+
+    ``deleted`` is the number of rows removed. ``cutoff`` is the
+    ISO-8601 timestamp before which events were pruned. ``remaining``
+    is the row count left in the table afterwards.
+    """
+
+    deleted: int
+    cutoff: str
+    remaining: int
+
+
 @dataclass(frozen=True, slots=True)
 class AuditTrailEntry:
     """A persisted SQL audit row read back from ``mcpg_audit.events``."""
@@ -264,6 +282,64 @@ async def list_audit_events(driver: SqlDriver, *, limit: int = 100, tool: str | 
         )
         for row in rows or []
     ]
+
+
+async def prune_audit_events(
+    driver: SqlDriver,
+    *,
+    older_than_days: int,
+    integrity_enabled: bool = False,
+) -> PruneResult:
+    """Delete persisted audit events older than ``older_than_days``.
+
+    A cron-friendly retention helper for the unbounded
+    ``mcpg_audit.events`` table. The cutoff is ``now() - interval`` in
+    the database's clock.
+
+    Refuses to run when ``integrity_enabled`` is true: the HMAC chain
+    anchors its first row on an empty ``prev_hmac``, so deleting the
+    oldest rows would leave a row whose ``prev_hmac`` references a
+    now-gone event — :func:`mcpg.audit_integrity.verify_audit_chain`
+    would then (correctly) report tampering. Operators who need both
+    retention and integrity should export-then-truncate out of band;
+    re-anchoring the chain in place is deferred.
+
+    Returns a :class:`PruneResult`; pruning a not-yet-created table is a
+    no-op (``deleted=0``).
+    """
+    if older_than_days < 1:
+        raise AuditTrailError("older_than_days must be at least 1")
+    if integrity_enabled:
+        raise AuditTrailError(
+            "refusing to prune mcpg_audit.events while MCPG_AUDIT_INTEGRITY is enabled: "
+            "deleting the oldest rows would break the HMAC signature chain and make "
+            "verify_audit_chain report tampering. Disable integrity to prune, or export "
+            "and truncate out of band."
+        )
+    if not await _audit_table_exists(driver):
+        return PruneResult(deleted=0, cutoff="", remaining=0)
+
+    rows = await driver.execute_query(
+        f"WITH cutoff AS (SELECT now() - make_interval(days => %s) AS ts) "
+        f"DELETE FROM {_QUALIFIED} WHERE occurred_at < (SELECT ts FROM cutoff) "
+        f"RETURNING (SELECT ts FROM cutoff) AS cutoff_ts",
+        params=[older_than_days],
+        force_readonly=False,
+    )
+    deleted = len(rows or [])
+    cutoff = ""
+    if rows:
+        cutoff_val = rows[0].cells.get("cutoff_ts")
+        if cutoff_val is not None:
+            cutoff = cutoff_val.isoformat() if hasattr(cutoff_val, "isoformat") else str(cutoff_val)
+
+    remaining_rows = await driver.execute_query(
+        f"SELECT count(*) AS n FROM {_QUALIFIED}",
+        force_readonly=True,
+    )
+    remaining = int(remaining_rows[0].cells.get("n") or 0) if remaining_rows else 0
+
+    return PruneResult(deleted=deleted, cutoff=cutoff, remaining=remaining)
 
 
 async def _audit_table_exists(driver: SqlDriver) -> bool:

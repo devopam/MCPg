@@ -1933,6 +1933,21 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
         return [asdict(active) for active in queries]
 
     @server.tool(
+        name="verify_connection_encryption",
+        description=(
+            "Report whether MCPg's own connection to PostgreSQL is "
+            "TLS-encrypted, including the negotiated protocol version, "
+            "cipher, and key bits (from pg_stat_ssl). Also returns a "
+            "cluster-wide tally of encrypted vs unencrypted backends "
+            "(a lower bound under non-superuser privileges). Complements "
+            "the startup TLS-enforcement check by confirming the live "
+            "connection actually came up encrypted."
+        ),
+    )
+    async def verify_connection_encryption(ctx: _Ctx) -> dict[str, Any]:
+        return asdict(await liveops.verify_connection_encryption(_driver(ctx)))
+
+    @server.tool(
         name="list_replicas",
         description=(
             "Report the health of every configured read replica. Each "
@@ -2084,6 +2099,26 @@ def _register_maintenance(server: FastMCP[AppContext]) -> None:
         database = ctx.request_context.lifespan_context.database
         result = await maintenance.run_maintenance(database, operation, schema, table)
         await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="prune_audit_events",
+        description=(
+            "Delete persisted audit events older than older_than_days from "
+            "mcpg_audit.events — a cron-friendly retention helper for the "
+            "otherwise-unbounded audit table. Returns the number deleted, the "
+            "cutoff timestamp, and the rows remaining. Refuses to run when "
+            "MCPG_AUDIT_INTEGRITY is enabled (pruning would break the HMAC "
+            "signature chain). Available only in unrestricted mode."
+        ),
+    )
+    async def prune_audit_events(ctx: _Ctx, older_than_days: int) -> dict[str, Any]:
+        settings = ctx.request_context.lifespan_context.settings
+        result = await audit_trail.prune_audit_events(
+            _driver(ctx),
+            older_than_days=older_than_days,
+            integrity_enabled=settings.audit_integrity,
+        )
         return asdict(result)
 
 

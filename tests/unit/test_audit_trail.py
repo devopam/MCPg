@@ -13,12 +13,14 @@ from mcpg.audit_trail import (
     AUDIT_SCHEMA,
     AUDIT_TABLE,
     AuditTrailEntry,
+    AuditTrailError,
     SchemaDiffSnapshot,
     _redact,
     _reset_audit_init_cache,
     capture_columns,
     ensure_audit_table,
     list_audit_events,
+    prune_audit_events,
     record_audit,
 )
 from mcpg.config import load_settings
@@ -414,6 +416,76 @@ async def test_list_audit_events_filters_by_tool_when_supplied() -> None:
     assert len(select_calls) == 1
     params = select_calls[0][1]
     assert params == ["run_write", 5]
+
+
+# --- prune_audit_events ----------------------------------------------------
+
+
+async def test_prune_audit_events_deletes_old_rows_and_reports_counts() -> None:
+    import datetime
+
+    cutoff_dt = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    driver = FakeRoutingDriver(
+        {
+            "FROM pg_class c": [{"present": 1}],
+            # DELETE ... RETURNING — one row per deleted event.
+            "DELETE FROM mcpg_audit.events": [{"cutoff_ts": cutoff_dt} for _ in range(3)],
+            "count(*) AS n": [{"n": 7}],
+        }
+    )
+
+    result = await prune_audit_events(driver, older_than_days=30)  # type: ignore[arg-type]
+
+    assert result.deleted == 3
+    assert result.remaining == 7
+    assert result.cutoff == cutoff_dt.isoformat()
+    # The DELETE was a write (force_readonly False).
+    delete_call = next(call for call in driver.calls if "DELETE FROM" in call[0])
+    assert delete_call[2] is False
+    assert delete_call[1] == [30]
+
+
+async def test_prune_audit_events_refuses_when_integrity_enabled() -> None:
+    driver = FakeRoutingDriver({"FROM pg_class c": [{"present": 1}]})
+
+    with pytest.raises(AuditTrailError, match="MCPG_AUDIT_INTEGRITY"):
+        await prune_audit_events(driver, older_than_days=30, integrity_enabled=True)  # type: ignore[arg-type]
+
+    # Nothing was deleted — it bailed before touching the table.
+    assert not any("DELETE FROM" in call[0] for call in driver.calls)
+
+
+async def test_prune_audit_events_rejects_non_positive_window() -> None:
+    with pytest.raises(AuditTrailError, match="older_than_days"):
+        await prune_audit_events(FakeDriver(), older_than_days=0)  # type: ignore[arg-type]
+
+
+async def test_prune_audit_events_is_a_noop_when_table_absent() -> None:
+    # Existence check returns no rows -> table not created yet.
+    driver = FakeRoutingDriver({"FROM pg_class c": []})
+
+    result = await prune_audit_events(driver, older_than_days=30)  # type: ignore[arg-type]
+
+    assert result.deleted == 0
+    assert result.remaining == 0
+    assert not any("DELETE FROM" in call[0] for call in driver.calls)
+
+
+async def test_prune_audit_events_tool_is_registered_in_unrestricted_mode() -> None:
+    unrestricted = load_settings(
+        {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
+    )
+    driver = FakeRoutingDriver({"FROM pg_class c": []})
+    server = create_server(unrestricted, database=FakeDatabase(driver))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "prune_audit_events" in listed
+        result = await client.call_tool("prune_audit_events", {"older_than_days": 90})
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["deleted"] == 0
 
 
 # --- capture_columns ------------------------------------------------------
