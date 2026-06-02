@@ -126,3 +126,21 @@ def test_setup_logging_configures_logger() -> None:
     assert len(logger.handlers) == 1
     assert isinstance(logger.handlers[0].formatter, JSONFormatter)
     assert logger.propagate is False
+
+
+def test_setup_logging_synchronizes_audit_format() -> None:
+    from mcpg.audit import configure_log_format
+
+    configure_log_format("text")
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_LOG_FORMAT": "json",
+        }
+    )
+    setup_logging(settings)
+
+    from mcpg.audit import _log_format as current_format
+
+    assert current_format == "json"

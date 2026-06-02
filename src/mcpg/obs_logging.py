@@ -53,6 +53,10 @@ def setup_logging(settings: Settings) -> None:
     in re-entrant test environments, sets the configured log level, and sets
     up either standard text or structured JSON formatting on stderr.
     """
+    from mcpg.audit import configure_log_format
+
+    configure_log_format(settings.log_format)
+
     logger = logging.getLogger("mcpg")
     logger.setLevel(settings.log_level)
 
