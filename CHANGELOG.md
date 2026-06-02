@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`walk_blocking_chains` tool (deadlock cycle walker).** Walks and reconstructs
+  the active lock-wait graph of the database using `pg_blocking_pids`. Identifies
+  all simple deadlock cycles, linear blocking paths leading to root blockers or
+  cycles, list of root blocker PIDs, and renders a styling-annotated Mermaid
+  flowchart representing the lock dependency graph. Read-only.
+
 - **`generate_schema_docs` tool (schema documentation).** Generates a
   comprehensive Markdown catalog reference for a database schema's
   tables, views, foreign tables, custom enums, constraints, indexes,

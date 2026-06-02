@@ -108,7 +108,7 @@ them** (or coordinate) to avoid colliding on `build_http_app`.
 | D1 | Logical replication writes (2.1) | new `replication.py` | M | `create/drop_publication`, `create/drop_subscription`; DDL-gated. |
 | D2 | `pg_buffercache` integration (2.2) | extends `io_stats.py` | S | Buffer-level cache analysis (needs the extension). |
 | D3 | WAL inspection `pg_walinspect` (2.3) | new small module | S | Niche; replication debugging. |
-| D4 | Deadlock-cycle walker (2.4) | extends `locks.py` | S-M | Reconstruct cycles beyond `find_blocking_chains` pairs. |
+| D4 (✅) | Deadlock-cycle walker (2.4) | extends `locks.py` | S-M | Reconstruct cycles beyond `find_blocking_chains` pairs. |
 
 All four are independent.
 
