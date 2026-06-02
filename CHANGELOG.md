@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`verify_connection_encryption` tool.** Reports whether MCPg's own
+  connection to PostgreSQL is TLS-encrypted — negotiated protocol
+  version, cipher, and key bits from `pg_stat_ssl` — plus a
+  cluster-wide encrypted/unencrypted backend tally. A runtime
+  complement to the startup TLS-enforcement check. Read-only;
+  available in every access mode.
+
+- **`prune_audit_events` retention tool.** Deletes persisted audit
+  events older than `older_than_days` from `mcpg_audit.events`, a
+  cron-friendly cap on the otherwise-unbounded audit table. Returns
+  the number deleted, the cutoff timestamp, and rows remaining.
+  Refuses to run when `MCPG_AUDIT_INTEGRITY` is enabled (pruning
+  would break the HMAC signature chain). Write-gated (unrestricted
+  mode).
+
 - **Subprocess hardening for the shell-gated PG binaries.**
   `run_pg_binary` now (a) validates the resolved `pg_dump` /
   `pg_restore` / `psql` directory against

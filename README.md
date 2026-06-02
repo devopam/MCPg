@@ -410,8 +410,10 @@ Compact category list. For the full, current tool reference see
   `find_blocking_chains`, `read_pg_stat_io` (PG16+),
   `generate_test_data`.
 - **Live ops & maintenance** — `list_active_queries`,
-  `run_maintenance` (VACUUM/ANALYZE), `cancel_query`,
-  `terminate_backend`, `run_write`, `run_ddl`, `enable_extension`.
+  `verify_connection_encryption` (TLS status of the live link),
+  `run_maintenance` (VACUUM/ANALYZE), `prune_audit_events`
+  (audit retention), `cancel_query`, `terminate_backend`,
+  `run_write`, `run_ddl`, `enable_extension`.
 - **Data movement** — `export_query` / `export_table` (CSV/JSON),
   `dump_database` / `restore_database`, `import_csv` / `import_json`
   (COPY FROM STDIN), `copy_table_between_databases`.

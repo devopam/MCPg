@@ -106,3 +106,63 @@ async def terminate_backend(driver: SqlDriver, pid: int) -> BackendActionResult:
     )
     succeeded = bool((rows or [])[0].cells["ok"])
     return BackendActionResult(pid=pid, action="terminate_backend", succeeded=succeeded)
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectionEncryption:
+    """TLS status of the MCPg→PostgreSQL connection (+ cluster overview).
+
+    The per-connection fields describe *this* backend's link, read from
+    ``pg_stat_ssl`` for ``pg_backend_pid()``. ``cipher`` / ``version`` /
+    ``bits`` are ``None`` when the connection is not encrypted. The
+    ``*_connections`` counts summarise every backend visible in
+    ``pg_stat_ssl`` — a non-superuser may only see its own row, so the
+    counts are a lower bound under restricted privileges.
+    """
+
+    ssl: bool
+    version: str | None
+    cipher: str | None
+    bits: int | None
+    total_connections: int
+    encrypted_connections: int
+    unencrypted_connections: int
+
+
+async def verify_connection_encryption(driver: SqlDriver) -> ConnectionEncryption:
+    """Report whether the active connection is TLS-encrypted, plus a cluster tally.
+
+    Composes with the startup TLS-enforcement check (which refuses
+    insecure DSNs): this confirms, at runtime, that the negotiated
+    connection actually came up encrypted and surfaces the protocol +
+    cipher for an auditor.
+    """
+    own = await driver.execute_query(
+        "SELECT ssl, version, cipher, bits FROM pg_stat_ssl WHERE pid = pg_backend_pid()",
+        force_readonly=True,
+    )
+    cell = own[0].cells if own else {}
+    ssl_on = bool(cell.get("ssl"))
+
+    tally = await driver.execute_query(
+        "SELECT count(*) AS total, count(*) FILTER (WHERE ssl) AS encrypted FROM pg_stat_ssl",
+        force_readonly=True,
+    )
+    counts = tally[0].cells if tally else {}
+    total = int(counts.get("total") or 0)
+    encrypted = int(counts.get("encrypted") or 0)
+
+    # Normalise bits to int — keep the dataclass's int | None contract
+    # even if a driver hands back Decimal/str for the key size.
+    bits_value = cell.get("bits")
+    bits = int(bits_value) if ssl_on and bits_value is not None else None
+
+    return ConnectionEncryption(
+        ssl=ssl_on,
+        version=cell.get("version") if ssl_on else None,
+        cipher=cell.get("cipher") if ssl_on else None,
+        bits=bits,
+        total_connections=total,
+        encrypted_connections=encrypted,
+        unencrypted_connections=total - encrypted,
+    )
