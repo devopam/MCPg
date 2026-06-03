@@ -14,6 +14,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 - **Zero-Downtime Migration Cookbook.** Added a comprehensive guide under `docs/cookbook.md` outlining recipes for safe, zero-downtime operations in PostgreSQL (such as concurrent indexes, validating constraints/FKs using `NOT VALID` + `VALIDATE CONSTRAINT`, column renames, and type changes).
 
+- **`cross_table_similarity` tool (pgvector).** Locates a specific
+  row in `source_schema.source_table` by `source_id_column =
+  source_id_value`, reads its embedding from
+  `source_embedding_column`, and issues a pgvector k-NN against
+  `target_schema.target_table.target_embedding_column`. Both columns
+  must be `vector(N)` with matching `N` — checked from the catalog
+  up front so a mismatch fails with a clear error rather than a
+  pgvector cast error on the inner query. Returns
+  `source_embedding_found=false` distinctly from
+  "no neighbours". Read-only; `available=false` without pgvector.
+  Lives in `mcpg.vector_ops`.
+
 - **`read_migration_history` tool.** Adds a read-only tool to inspect and parse the native migration bookkeeping tables of popular migration frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). Reports migration history records with full framework-specific metadata fields.
 
 - **`pg_walinspect` integration.** Adds `read_pg_wal_records` and

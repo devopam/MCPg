@@ -146,6 +146,10 @@ analyze_vector_search(schema, table, column, query_vector)
 analyze_vector_table(schema, table)
 analyze_distance_metric(schema, table, column, sample_size=1000)          # cosine / l2 / inner_product picker
                                                                           # from the magnitude distribution
+cross_table_similarity(source_schema, source_table, source_embedding_column,
+                       source_id_column, source_id_value,
+                       target_schema, target_table, target_embedding_column, k=10)
+                                                                          # given a row in A, k-NN against B
 ```
 
 ## "Move data in / out"

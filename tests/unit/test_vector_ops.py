@@ -1,21 +1,25 @@
-"""Tests for mcpg.vector_ops (pgvector analytics + the analyze_distance_metric tool)."""
+"""Tests for mcpg.vector_ops (pgvector analytics + tool wiring)."""
 
 import math
 
 import pytest
-from _fakes import FakeDatabase, FakeRoutingDriver
+from _fakes import FakeDatabase, FakeParamRoutingDriver, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.server import create_server
 from mcpg.vector_ops import (
     DEFAULT_SAMPLE_SIZE,
+    CrossTableMatch,
+    CrossTableSimilarityResult,
     DistanceMetricRecommendation,
     VectorOpsError,
     _l2_norm,
     _parse_embedding,
     _pick_metric,
+    _vector_literal,
     analyze_distance_metric,
+    cross_table_similarity,
 )
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
@@ -287,3 +291,284 @@ async def test_analyze_distance_metric_tool_reports_unavailable_via_client() -> 
     assert result.structuredContent is not None
     assert result.structuredContent["available"] is False
     assert "pgvector extension" in result.structuredContent["rationale"]
+
+
+# --- helper: _vector_literal ----------------------------------------------
+
+
+def test_vector_literal_formats_floats_in_bracketed_text() -> None:
+    assert _vector_literal([1, 2, 3]) == "[1.0,2.0,3.0]"
+    assert _vector_literal([0.1, 0.2]) == "[0.1,0.2]"
+
+
+# --- cross_table_similarity -----------------------------------------------
+
+
+_SRC_DIM_LOOKUP = "FROM pg_attribute a"
+_KNN_QUERY = "ORDER BY"
+_SRC_ROW_FETCH = '"src_id" = '
+
+
+def _xt_routes(
+    *,
+    src_dim: int | None = 4,
+    tgt_dim: int | None = 4,
+    src_embedding: object | None = [1.0, 0.0, 0.0, 0.0],
+    knn_rows: list[dict[str, object]] | None = None,
+) -> dict[tuple[str, tuple[object, ...] | None], list[dict[str, object]]]:
+    """Standard routes for a cross_table_similarity call.
+
+    src/tgt columns: src_schema.src_table.src_emb / tgt_schema.tgt_table.tgt_emb.
+    Each catalog lookup is routed by its (schema, table, column) params so
+    src and tgt can return different dimensions.
+    """
+    src_dim_row: list[dict[str, object]] = [{"type_name": "vector", "type_mod": src_dim}] if src_dim is not None else []
+    tgt_dim_row: list[dict[str, object]] = [{"type_name": "vector", "type_mod": tgt_dim}] if tgt_dim is not None else []
+    src_row: list[dict[str, object]] = [{"embedding": src_embedding}] if src_embedding is not None else []
+    knn = knn_rows or []
+    return {
+        ("pg_extension", None): [{"present": 1}],
+        # Catalog dim lookups distinguished by the (schema, table, column) bind tuple.
+        (_SRC_DIM_LOOKUP, ("src_schema", "src_table", "src_emb")): src_dim_row,
+        (_SRC_DIM_LOOKUP, ("tgt_schema", "tgt_table", "tgt_emb")): tgt_dim_row,
+        # Source row fetch routes on the WHERE-clause identifier substring.
+        (_SRC_ROW_FETCH, None): src_row,
+        # k-NN against the target table.
+        (_KNN_QUERY, None): knn,
+    }
+
+
+async def test_cross_table_similarity_reports_unavailable_without_pgvector() -> None:
+    driver = FakeParamRoutingDriver({("pg_extension", None): []})
+
+    result = await cross_table_similarity(
+        driver,  # type: ignore[arg-type]
+        source_schema="src_schema",
+        source_table="src_table",
+        source_embedding_column="src_emb",
+        source_id_column="src_id",
+        source_id_value=1,
+        target_schema="tgt_schema",
+        target_table="tgt_table",
+        target_embedding_column="tgt_emb",
+    )
+
+    assert result == CrossTableSimilarityResult(
+        available=False, source_embedding_found=False, source_dimension=0, matches=[]
+    )
+
+
+async def test_cross_table_similarity_returns_knn_rows_minus_embedding_column() -> None:
+    knn = [
+        {"id": 10, "title": "alpha", "tgt_emb": "[1.0,0.0,0.0,0.0]", "mcpg_distance": 0.0},
+        {"id": 11, "title": "beta", "tgt_emb": "[0.0,1.0,0.0,0.0]", "mcpg_distance": 1.41},
+    ]
+    driver = FakeParamRoutingDriver(_xt_routes(knn_rows=knn))
+
+    result = await cross_table_similarity(
+        driver,  # type: ignore[arg-type]
+        source_schema="src_schema",
+        source_table="src_table",
+        source_embedding_column="src_emb",
+        source_id_column="src_id",
+        source_id_value=1,
+        target_schema="tgt_schema",
+        target_table="tgt_table",
+        target_embedding_column="tgt_emb",
+        k=2,
+    )
+
+    assert result.available is True
+    assert result.source_embedding_found is True
+    assert result.source_dimension == 4
+    assert result.matches == [
+        CrossTableMatch(distance=0.0, row={"id": 10, "title": "alpha"}),
+        CrossTableMatch(distance=1.41, row={"id": 11, "title": "beta"}),
+    ]
+
+
+async def test_cross_table_similarity_binds_the_source_embedding_as_a_pgvector_literal() -> None:
+    driver = FakeParamRoutingDriver(_xt_routes(knn_rows=[]))
+
+    await cross_table_similarity(
+        driver,  # type: ignore[arg-type]
+        source_schema="src_schema",
+        source_table="src_table",
+        source_embedding_column="src_emb",
+        source_id_column="src_id",
+        source_id_value=42,
+        target_schema="tgt_schema",
+        target_table="tgt_table",
+        target_embedding_column="tgt_emb",
+        k=5,
+    )
+
+    knn_call = next(call for call in driver.calls if "ORDER BY" in call[0])
+    # Two bind copies (SELECT distance + ORDER BY distance) plus the LIMIT.
+    assert knn_call[1] == ["[1.0,0.0,0.0,0.0]", "[1.0,0.0,0.0,0.0]", 5]
+
+
+async def test_cross_table_similarity_returns_not_found_when_source_id_misses() -> None:
+    driver = FakeParamRoutingDriver(_xt_routes(src_embedding=None))
+
+    result = await cross_table_similarity(
+        driver,  # type: ignore[arg-type]
+        source_schema="src_schema",
+        source_table="src_table",
+        source_embedding_column="src_emb",
+        source_id_column="src_id",
+        source_id_value=999,
+        target_schema="tgt_schema",
+        target_table="tgt_table",
+        target_embedding_column="tgt_emb",
+    )
+
+    assert result.available is True
+    assert result.source_embedding_found is False
+    assert result.matches == []
+    # Crucially: no k-NN query was issued — the missing source row short-circuits.
+    assert not any("ORDER BY" in call[0] for call in driver.calls)
+
+
+async def test_cross_table_similarity_raises_on_unknown_metric() -> None:
+    driver = FakeParamRoutingDriver(_xt_routes())
+    with pytest.raises(VectorOpsError, match="unknown vector metric"):
+        await cross_table_similarity(
+            driver,  # type: ignore[arg-type]
+            source_schema="src_schema",
+            source_table="src_table",
+            source_embedding_column="src_emb",
+            source_id_column="src_id",
+            source_id_value=1,
+            target_schema="tgt_schema",
+            target_table="tgt_table",
+            target_embedding_column="tgt_emb",
+            metric="manhattan",
+        )
+
+
+async def test_cross_table_similarity_rejects_non_positive_k() -> None:
+    driver = FakeParamRoutingDriver(_xt_routes())
+    with pytest.raises(VectorOpsError, match="k must be"):
+        await cross_table_similarity(
+            driver,  # type: ignore[arg-type]
+            source_schema="src_schema",
+            source_table="src_table",
+            source_embedding_column="src_emb",
+            source_id_column="src_id",
+            source_id_value=1,
+            target_schema="tgt_schema",
+            target_table="tgt_table",
+            target_embedding_column="tgt_emb",
+            k=0,
+        )
+
+
+async def test_cross_table_similarity_raises_when_source_column_is_not_vector() -> None:
+    driver = FakeParamRoutingDriver(_xt_routes(src_dim=None))
+    with pytest.raises(VectorOpsError, match=r"src_schema\.src_table\.src_emb is not a pgvector"):
+        await cross_table_similarity(
+            driver,  # type: ignore[arg-type]
+            source_schema="src_schema",
+            source_table="src_table",
+            source_embedding_column="src_emb",
+            source_id_column="src_id",
+            source_id_value=1,
+            target_schema="tgt_schema",
+            target_table="tgt_table",
+            target_embedding_column="tgt_emb",
+        )
+
+
+async def test_cross_table_similarity_raises_when_target_column_is_not_vector() -> None:
+    driver = FakeParamRoutingDriver(_xt_routes(tgt_dim=None))
+    with pytest.raises(VectorOpsError, match=r"tgt_schema\.tgt_table\.tgt_emb is not a pgvector"):
+        await cross_table_similarity(
+            driver,  # type: ignore[arg-type]
+            source_schema="src_schema",
+            source_table="src_table",
+            source_embedding_column="src_emb",
+            source_id_column="src_id",
+            source_id_value=1,
+            target_schema="tgt_schema",
+            target_table="tgt_table",
+            target_embedding_column="tgt_emb",
+        )
+
+
+async def test_cross_table_similarity_raises_on_dimension_mismatch_up_front() -> None:
+    driver = FakeParamRoutingDriver(_xt_routes(src_dim=4, tgt_dim=8))
+    with pytest.raises(VectorOpsError, match=r"dimension mismatch.*vector\(4\).*vector\(8\)"):
+        await cross_table_similarity(
+            driver,  # type: ignore[arg-type]
+            source_schema="src_schema",
+            source_table="src_table",
+            source_embedding_column="src_emb",
+            source_id_column="src_id",
+            source_id_value=1,
+            target_schema="tgt_schema",
+            target_table="tgt_table",
+            target_embedding_column="tgt_emb",
+        )
+    # The mismatch is caught before the source row is even fetched.
+    assert not any('"src_id" = ' in call[0] for call in driver.calls)
+
+
+async def test_cross_table_similarity_raises_when_source_row_has_unparseable_embedding() -> None:
+    driver = FakeParamRoutingDriver(_xt_routes(src_embedding="not-a-vector-literal"))
+    with pytest.raises(VectorOpsError, match="NULL or unparseable embedding"):
+        await cross_table_similarity(
+            driver,  # type: ignore[arg-type]
+            source_schema="src_schema",
+            source_table="src_table",
+            source_embedding_column="src_emb",
+            source_id_column="src_id",
+            source_id_value=1,
+            target_schema="tgt_schema",
+            target_table="tgt_table",
+            target_embedding_column="tgt_emb",
+        )
+
+
+@pytest.mark.parametrize("bad", ['x"; DROP TABLE y', "1bad", "a-b"])
+async def test_cross_table_similarity_rejects_unsafe_identifiers(bad: str) -> None:
+    driver = FakeParamRoutingDriver(_xt_routes())
+    with pytest.raises(VectorOpsError, match="invalid"):
+        await cross_table_similarity(
+            driver,  # type: ignore[arg-type]
+            source_schema=bad,
+            source_table="src_table",
+            source_embedding_column="src_emb",
+            source_id_column="src_id",
+            source_id_value=1,
+            target_schema="tgt_schema",
+            target_table="tgt_table",
+            target_embedding_column="tgt_emb",
+        )
+
+
+async def test_cross_table_similarity_tool_is_listed_and_callable() -> None:
+    database = FakeDatabase(FakeParamRoutingDriver(_xt_routes(knn_rows=[])))
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "cross_table_similarity" in listed
+        result = await client.call_tool(
+            "cross_table_similarity",
+            {
+                "source_schema": "src_schema",
+                "source_table": "src_table",
+                "source_embedding_column": "src_emb",
+                "source_id_column": "src_id",
+                "source_id_value": 1,
+                "target_schema": "tgt_schema",
+                "target_table": "tgt_table",
+                "target_embedding_column": "tgt_emb",
+            },
+        )
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["available"] is True
+    assert result.structuredContent["source_embedding_found"] is True
