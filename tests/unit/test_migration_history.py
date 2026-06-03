@@ -257,3 +257,38 @@ async def test_read_migration_history_tool() -> None:
         data = json.loads(res.content[0].text)
         assert data["alembic"] == [{"version_num": "ae12d34199f"}]
         assert data["flyway"] is None
+
+
+async def test_read_migration_history_multi_schema_accumulation() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "information_schema.tables": [
+                {"table_schema": "public", "table_name": "alembic_version"},
+                {"table_schema": "tenant1", "table_name": "alembic_version"},
+            ],
+            '"public"."alembic_version"': [{"version_num": "public_version"}],
+            '"tenant1"."alembic_version"': [{"version_num": "tenant1_version"}],
+        }
+    )
+
+    report = await read_migration_history(driver)  # type: ignore[arg-type]
+
+    assert report.alembic == [
+        AlembicMigration(version_num="public_version"),
+        AlembicMigration(version_num="tenant1_version"),
+    ]
+
+
+async def test_read_migration_history_escaped_identifiers() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "information_schema.tables": [{"table_schema": 'tenant"1', "table_name": "alembic_version"}],
+            'tenant""1': [{"version_num": "escaped_version"}],
+        }
+    )
+
+    report = await read_migration_history(driver)  # type: ignore[arg-type]
+
+    assert len(driver.calls) == 2
+    assert '"tenant""1"."alembic_version"' in driver.calls[1][0]
+    assert report.alembic == [AlembicMigration(version_num="escaped_version")]

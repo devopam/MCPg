@@ -114,6 +114,10 @@ def _maybe_str(value: object) -> str | None:
     return str(value)
 
 
+def _quote_ident(name: str) -> str:
+    return f'"{name.replace(chr(34), chr(34) * 2)}"'
+
+
 async def read_migration_history(
     driver: SqlDriver,
     schema: str | None = None,
@@ -161,14 +165,21 @@ async def read_migration_history(
     sequelize: list[SequelizeMigration] | None = None
 
     for s, t in discovered:
+        quoted_s = _quote_ident(s)
+        quoted_t = _quote_ident(t)
+
         if t == "alembic_version":
             try:
                 # Alembic has just a single version_num column (typically 1 row)
                 alembic_rows = await driver.execute_query(
-                    f'SELECT version_num::text AS version_num FROM "{s}"."{t}"',
+                    f"SELECT version_num::text AS version_num FROM {quoted_s}.{quoted_t}",
                     force_readonly=True,
                 )
-                alembic = [AlembicMigration(version_num=str(row.cells["version_num"])) for row in alembic_rows or []]
+                if alembic is None:
+                    alembic = []
+                alembic.extend(
+                    [AlembicMigration(version_num=str(row.cells["version_num"])) for row in alembic_rows or []]
+                )
             except Exception:
                 pass
 
@@ -178,58 +189,70 @@ async def read_migration_history(
                     f"SELECT installed_rank, version, description, type, script, "
                     f"       checksum, installed_by, installed_on::text AS installed_on, "
                     f"       execution_time, success "
-                    f'FROM "{s}"."{t}" ORDER BY installed_rank',
+                    f"FROM {quoted_s}.{quoted_t} ORDER BY installed_rank",
                     force_readonly=True,
                 )
-                flyway = [
-                    FlywayMigration(
-                        installed_rank=int(row.cells["installed_rank"]),
-                        version=_maybe_str(row.cells.get("version")),
-                        description=_maybe_str(row.cells.get("description")),
-                        type=str(row.cells["type"]),
-                        script=str(row.cells["script"]),
-                        checksum=_maybe_int(row.cells.get("checksum")),
-                        installed_by=str(row.cells["installed_by"]),
-                        installed_on=str(row.cells["installed_on"]),
-                        execution_time=int(row.cells["execution_time"]),
-                        success=bool(row.cells["success"]),
-                    )
-                    for row in flyway_rows or []
-                ]
+                if flyway is None:
+                    flyway = []
+                flyway.extend(
+                    [
+                        FlywayMigration(
+                            installed_rank=int(row.cells["installed_rank"]),
+                            version=_maybe_str(row.cells.get("version")),
+                            description=_maybe_str(row.cells.get("description")),
+                            type=str(row.cells["type"]),
+                            script=str(row.cells["script"]),
+                            checksum=_maybe_int(row.cells.get("checksum")),
+                            installed_by=str(row.cells["installed_by"]),
+                            installed_on=str(row.cells["installed_on"]),
+                            execution_time=int(row.cells["execution_time"]),
+                            success=bool(row.cells["success"]),
+                        )
+                        for row in flyway_rows or []
+                    ]
+                )
             except Exception:
                 pass
 
         elif t == "__diesel_schema_migrations":
             try:
                 diesel_rows = await driver.execute_query(
-                    f'SELECT version, run_on::text AS run_on FROM "{s}"."{t}" ORDER BY version',
+                    f"SELECT version, run_on::text AS run_on FROM {quoted_s}.{quoted_t} ORDER BY version",
                     force_readonly=True,
                 )
-                diesel = [
-                    DieselMigration(
-                        version=str(row.cells["version"]),
-                        run_on=str(row.cells["run_on"]),
-                    )
-                    for row in diesel_rows or []
-                ]
+                if diesel is None:
+                    diesel = []
+                diesel.extend(
+                    [
+                        DieselMigration(
+                            version=str(row.cells["version"]),
+                            run_on=str(row.cells["run_on"]),
+                        )
+                        for row in diesel_rows or []
+                    ]
+                )
             except Exception:
                 pass
 
         elif t == "django_migrations":
             try:
                 django_rows = await driver.execute_query(
-                    f'SELECT id, app, name, applied::text AS applied FROM "{s}"."{t}" ORDER BY id',
+                    f"SELECT id, app, name, applied::text AS applied FROM {quoted_s}.{quoted_t} ORDER BY id",
                     force_readonly=True,
                 )
-                django = [
-                    DjangoMigration(
-                        id=int(row.cells["id"]),
-                        app=str(row.cells["app"]),
-                        name=str(row.cells["name"]),
-                        applied=str(row.cells["applied"]),
-                    )
-                    for row in django_rows or []
-                ]
+                if django is None:
+                    django = []
+                django.extend(
+                    [
+                        DjangoMigration(
+                            id=int(row.cells["id"]),
+                            app=str(row.cells["app"]),
+                            name=str(row.cells["name"]),
+                            applied=str(row.cells["applied"]),
+                        )
+                        for row in django_rows or []
+                    ]
+                )
             except Exception:
                 pass
 
@@ -239,22 +262,26 @@ async def read_migration_history(
                     f"SELECT id, checksum, finished_at::text AS finished_at, migration_name, "
                     f"       logs, rolled_back_at::text AS rolled_back_at, started_at::text AS started_at, "
                     f"       applied_steps_count "
-                    f'FROM "{s}"."{t}" ORDER BY started_at',
+                    f"FROM {quoted_s}.{quoted_t} ORDER BY started_at",
                     force_readonly=True,
                 )
-                prisma = [
-                    PrismaMigration(
-                        id=str(row.cells["id"]),
-                        checksum=str(row.cells["checksum"]),
-                        finished_at=_maybe_str(row.cells.get("finished_at")),
-                        migration_name=str(row.cells["migration_name"]),
-                        logs=_maybe_str(row.cells.get("logs")),
-                        rolled_back_at=_maybe_str(row.cells.get("rolled_back_at")),
-                        started_at=str(row.cells["started_at"]),
-                        applied_steps_count=int(row.cells["applied_steps_count"]),
-                    )
-                    for row in prisma_rows or []
-                ]
+                if prisma is None:
+                    prisma = []
+                prisma.extend(
+                    [
+                        PrismaMigration(
+                            id=str(row.cells["id"]),
+                            checksum=str(row.cells["checksum"]),
+                            finished_at=_maybe_str(row.cells.get("finished_at")),
+                            migration_name=str(row.cells["migration_name"]),
+                            logs=_maybe_str(row.cells.get("logs")),
+                            rolled_back_at=_maybe_str(row.cells.get("rolled_back_at")),
+                            started_at=str(row.cells["started_at"]),
+                            applied_steps_count=int(row.cells["applied_steps_count"]),
+                        )
+                        for row in prisma_rows or []
+                    ]
+                )
             except Exception:
                 pass
 
@@ -262,44 +289,54 @@ async def read_migration_history(
             try:
                 # golang-migrate
                 gm_rows = await driver.execute_query(
-                    f'SELECT version, dirty FROM "{s}"."{t}" ORDER BY version',
+                    f"SELECT version, dirty FROM {quoted_s}.{quoted_t} ORDER BY version",
                     force_readonly=True,
                 )
-                golang_migrate = [
-                    GolangMigrateMigration(
-                        version=int(row.cells["version"]),
-                        dirty=bool(row.cells["dirty"]),
-                    )
-                    for row in gm_rows or []
-                ]
+                if golang_migrate is None:
+                    golang_migrate = []
+                golang_migrate.extend(
+                    [
+                        GolangMigrateMigration(
+                            version=int(row.cells["version"]),
+                            dirty=bool(row.cells["dirty"]),
+                        )
+                        for row in gm_rows or []
+                    ]
+                )
             except Exception:
                 pass
 
         elif t == "goose_db_version":
             try:
                 goose_rows = await driver.execute_query(
-                    f'SELECT id, version_id, is_applied, tstamp::text AS tstamp FROM "{s}"."{t}" ORDER BY id',
+                    f"SELECT id, version_id, is_applied, tstamp::text AS tstamp FROM {quoted_s}.{quoted_t} ORDER BY id",
                     force_readonly=True,
                 )
-                goose = [
-                    GooseMigration(
-                        id=int(row.cells["id"]),
-                        version_id=int(row.cells["version_id"]),
-                        is_applied=bool(row.cells["is_applied"]),
-                        tstamp=_maybe_str(row.cells.get("tstamp")),
-                    )
-                    for row in goose_rows or []
-                ]
+                if goose is None:
+                    goose = []
+                goose.extend(
+                    [
+                        GooseMigration(
+                            id=int(row.cells["id"]),
+                            version_id=int(row.cells["version_id"]),
+                            is_applied=bool(row.cells["is_applied"]),
+                            tstamp=_maybe_str(row.cells.get("tstamp")),
+                        )
+                        for row in goose_rows or []
+                    ]
+                )
             except Exception:
                 pass
 
         elif t == "SequelizeMeta":
             try:
                 seq_rows = await driver.execute_query(
-                    f'SELECT name FROM "{s}"."{t}" ORDER BY name',
+                    f"SELECT name FROM {quoted_s}.{quoted_t} ORDER BY name",
                     force_readonly=True,
                 )
-                sequelize = [SequelizeMigration(name=str(row.cells["name"])) for row in seq_rows or []]
+                if sequelize is None:
+                    sequelize = []
+                sequelize.extend([SequelizeMigration(name=str(row.cells["name"])) for row in seq_rows or []])
             except Exception:
                 pass
 
