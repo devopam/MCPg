@@ -175,6 +175,9 @@ storage advisor).
   issues, and prescriptive recommendations.
 - `analyze_workload` — slowest query templates from
   `pg_stat_statements`.
+- `read_pg_buffercache_summary` and `read_pg_buffercache_relations` —
+  shared buffer cache usage summary and relation-level breakdown
+  (requires the `pg_buffercache` extension).
 - `recommend_indexes` — missing-index heuristics.
 - `find_unused_objects(schema)` — zero-scan tables and user
   indexes; great for "what can I drop?".
@@ -591,7 +594,7 @@ roadmap of shipped (✅) and queued (⬜) hardening items.
 - **A write tool is missing.** Set `MCPG_ACCESS_MODE=unrestricted`
   plus the matching gate (`MCPG_ALLOW_DDL=true`,
   `MCPG_ALLOW_SHELL=true`, or `MCPG_ALLOW_LISTEN=true`).
-- **`fuzzy_search` / `analyze_workload` / `vector_search` reports
+- **`fuzzy_search` / `analyze_workload` / `vector_search` / `read_pg_buffercache_summary` / `read_pg_buffercache_relations` reports
   `available: false`.** The corresponding extension isn't
   installed in the target DB. MCPg degrades gracefully — install
   when ready.

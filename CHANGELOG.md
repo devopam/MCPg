@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`pg_buffercache` integration.** Adds `read_pg_buffercache_summary` and
+  `read_pg_buffercache_relations` tools to analyze shared buffer cache usage
+  at the cluster and relation levels. Degrades gracefully if the extension
+  is not installed (`available=false`). Adds `pg_buffercache` to the list of
+  programmatically enableable extensions.
+
 - **`analyze_distance_metric` tool (pgvector).** Samples up to
   `sample_size` (default 1000) non-NULL embeddings from
   `schema.table.column`, computes each one's L2 norm, and recommends

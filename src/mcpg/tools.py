@@ -522,6 +522,35 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         return asdict(report)
 
     @server.tool(
+        name="read_pg_buffercache_summary",
+        description=(
+            "Read a high-level summary of the PostgreSQL shared buffer cache usage. "
+            "Reports total buffers, free/used buffers, dirty buffers, and average usage count. "
+            "Requires the pg_buffercache extension. If not installed, returns available=false."
+        ),
+    )
+    async def read_pg_buffercache_summary(ctx: _Ctx) -> dict[str, Any]:
+        report = await io_stats.read_pg_buffercache_summary(_driver(ctx))
+        return asdict(report)
+
+    @server.tool(
+        name="read_pg_buffercache_relations",
+        description=(
+            "Read the list of database relations taking up the most space in the PostgreSQL shared buffer cache. "
+            "Reports buffered size, percentage of shared buffers, percent of relation buffered, "
+            "average usage count, and dirty pages. Allows filtering by schema. "
+            "Requires the pg_buffercache extension. If not installed, returns available=false."
+        ),
+    )
+    async def read_pg_buffercache_relations(
+        ctx: _Ctx,
+        schema: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        report = await io_stats.read_pg_buffercache_relations(_driver(ctx), schema=schema, limit=limit)
+        return asdict(report)
+
+    @server.tool(
         name="get_compact_schema",
         description=(
             "Return a highly condensed, token-efficient text summary of a schema's "
