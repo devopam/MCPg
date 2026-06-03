@@ -382,7 +382,10 @@ async def _indexes_on_column(driver: SqlDriver, schema: str, table: str, column:
         "JOIN pg_namespace n ON n.oid = t.relnamespace "
         "JOIN pg_class i ON i.oid = ix.indexrelid "
         "JOIN pg_am am ON am.oid = i.relam "
-        "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey) "
+        # `pg_index.indkey` is `int2vector`, not a standard `int2[]`,
+        # so `= ANY(...)` only resolves with an explicit cast — without
+        # it the planner errors with "op any(int2vector) is not unique".
+        "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey::int2[]) "
         "WHERE n.nspname = %s AND t.relname = %s AND a.attname = %s "
         "ORDER BY i.relname",
         params=[schema, table, column],
