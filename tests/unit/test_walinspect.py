@@ -176,6 +176,7 @@ async def test_walinspect_tools_execution() -> None:
     fake_driver = FakeRoutingDriver(
         {
             "pg_extension": [{"present": 1}],
+            "pg_is_in_recovery": [{"lsn": "0/E419E70"}],
             "pg_get_wal_records_info": [
                 {
                     "start_lsn": "0/E419E28",
@@ -226,3 +227,69 @@ async def test_walinspect_tools_execution() -> None:
         assert stats_data["available"] is True
         assert len(stats_data["stats"]) == 1
         assert stats_data["stats"][0]["resource_manager_or_record_type"] == "Heap"
+
+
+async def test_read_pg_wal_records_resolves_lsn_happy_path() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pg_is_in_recovery": [{"lsn": "0/E419E70"}],
+            "pg_get_wal_records_info": [],
+        }
+    )
+
+    await read_pg_wal_records(driver, "0/E419E28", end_lsn=None)  # type: ignore[arg-type]
+
+    assert len(driver.calls) == 3
+    assert "pg_extension" in driver.calls[0][0]
+    assert "pg_is_in_recovery" in driver.calls[1][0]
+    assert "pg_get_wal_records_info" in driver.calls[2][0]
+    assert driver.calls[2][1] == ["0/E419E28", "0/E419E70", 100]
+
+
+async def test_read_pg_wal_records_resolves_lsn_fallback() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pg_get_wal_records_info": [],
+        }
+    )
+
+    await read_pg_wal_records(driver, "0/E419E28", end_lsn=None)  # type: ignore[arg-type]
+
+    assert len(driver.calls) == 3
+    assert "pg_is_in_recovery" in driver.calls[1][0]
+    # fell back to start_lsn
+    assert driver.calls[2][1] == ["0/E419E28", "0/E419E28", 100]
+
+
+async def test_read_pg_wal_records_resolves_lsn_ffffffff() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pg_is_in_recovery": [{"lsn": "0/E419E70"}],
+            "pg_get_wal_records_info": [],
+        }
+    )
+
+    await read_pg_wal_records(driver, "0/E419E28", end_lsn="FFFFFFFF/FFFFFFFF")  # type: ignore[arg-type]
+
+    assert len(driver.calls) == 3
+    assert "pg_is_in_recovery" in driver.calls[1][0]
+    assert driver.calls[2][1] == ["0/E419E28", "0/E419E70", 100]
+
+
+async def test_read_pg_wal_stats_resolves_lsn_happy_path() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pg_is_in_recovery": [{"lsn": "0/E419E70"}],
+            "pg_get_wal_stats": [],
+        }
+    )
+
+    await read_pg_wal_stats(driver, "0/E419E28", end_lsn=None)  # type: ignore[arg-type]
+
+    assert len(driver.calls) == 3
+    assert "pg_is_in_recovery" in driver.calls[1][0]
+    assert driver.calls[2][1] == ["0/E419E28", "0/E419E70", False]

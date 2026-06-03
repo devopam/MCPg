@@ -67,10 +67,27 @@ def _maybe_float(value: object) -> float | None:
     return float(value)  # type: ignore[arg-type]
 
 
+async def _resolve_end_lsn(driver: SqlDriver, start_lsn: str, end_lsn: str | None) -> str:
+    if end_lsn is None or end_lsn == "FFFFFFFF/FFFFFFFF":
+        try:
+            resolved_rows = await driver.execute_query(
+                "SELECT (CASE WHEN pg_is_in_recovery() "
+                "THEN pg_last_wal_replay_lsn() "
+                "ELSE pg_current_wal_lsn() END)::text AS lsn",
+                force_readonly=True,
+            )
+            if resolved_rows and resolved_rows[0].cells.get("lsn"):
+                return str(resolved_rows[0].cells["lsn"])
+        except Exception:
+            pass
+        return start_lsn
+    return end_lsn
+
+
 async def read_pg_wal_records(
     driver: SqlDriver,
     start_lsn: str,
-    end_lsn: str = "FFFFFFFF/FFFFFFFF",
+    end_lsn: str | None = None,
     limit: int = 100,
 ) -> WalRecordsReport:
     """Read WAL records info using ``pg_walinspect``.
@@ -81,6 +98,8 @@ async def read_pg_wal_records(
 
     if not await extension_installed(driver, "pg_walinspect"):
         return WalRecordsReport(available=False, records=[])
+
+    resolved_end_lsn = await _resolve_end_lsn(driver, start_lsn, end_lsn)
 
     rows = await driver.execute_query(
         "SELECT start_lsn::text AS start_lsn, "
@@ -96,7 +115,7 @@ async def read_pg_wal_records(
         "       block_ref "
         "FROM pg_get_wal_records_info(%s::pg_lsn, %s::pg_lsn) "
         "LIMIT %s",
-        params=[start_lsn, end_lsn, limit],
+        params=[start_lsn, resolved_end_lsn, limit],
         force_readonly=True,
     )
 
@@ -123,7 +142,7 @@ async def read_pg_wal_records(
 async def read_pg_wal_stats(
     driver: SqlDriver,
     start_lsn: str,
-    end_lsn: str = "FFFFFFFF/FFFFFFFF",
+    end_lsn: str | None = None,
     per_record: bool = False,
 ) -> WalStatsReport:
     """Read WAL record statistics using ``pg_walinspect``.
@@ -134,6 +153,8 @@ async def read_pg_wal_stats(
 
     if not await extension_installed(driver, "pg_walinspect"):
         return WalStatsReport(available=False, stats=[])
+
+    resolved_end_lsn = await _resolve_end_lsn(driver, start_lsn, end_lsn)
 
     # By default, pg_get_wal_stats groups by resource_manager.
     # If per_record=True, it groups by record_type instead.
@@ -151,7 +172,7 @@ async def read_pg_wal_stats(
         "       combined_size, "
         "       combined_size_percentage "
         "FROM pg_get_wal_stats(%s::pg_lsn, %s::pg_lsn, %s)",
-        params=[start_lsn, end_lsn, per_record],
+        params=[start_lsn, resolved_end_lsn, per_record],
         force_readonly=True,
     )
 
