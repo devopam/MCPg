@@ -26,7 +26,7 @@ Effort scale (rough, single-session yardstick):
 |---|---|---|---|---|
 | 1.1 | OpenTelemetry spans per tool call | M | Medium-High | One span per `call_tool` + child spans for the actual query / subprocess. |
 | 1.2 | Structured JSON logging output toggle | S | Medium | Wraps the existing `mcpg.audit` logger. |
-| 1.3 | Slow-call logging from the MCP layer | S | Low | Per-tool latency log to flag slow MCPg-side calls (the existing `analyze_workload` covers PG-side timings). |
+| 1.3 | ✅ **Shipped.** Slow-call logging from the MCP layer | S | Low | Per-tool latency log to flag slow MCPg-side calls (the existing `analyze_workload` covers PG-side timings). |
 
 ## 2. PostgreSQL feature coverage
 

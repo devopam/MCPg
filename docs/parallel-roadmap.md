@@ -85,7 +85,7 @@ mini-sequence (shared centroid code).
 | PR | Item | New module? | Effort | Notes |
 |---|---|---|---|---|
 | B1 | Structured JSON logging toggle (1.2) | extends logging setup | S | `MCPG_LOG_FORMAT=text\|json`. Wraps the existing logger. |
-| B2 | Slow-call logging from the MCP layer (1.3) | middleware hook | S | Per-tool latency warn over a threshold. |
+| B2 (✅ PR) | Slow-call logging from the MCP layer (1.3) | middleware hook | S | Per-tool latency warn over a threshold. |
 | B3 | OpenTelemetry spans per tool call (1.1) | new, optional extra | M | One span per `call_tool` + child spans; behind `mcpg[otel]`. |
 
 B1/B2 are independent; B3 is larger and best alone.

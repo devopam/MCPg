@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Slow-call logging from the MCP layer (`MCPG_SLOW_CALL_THRESHOLD_MS`).** Logs a warning
+  to the `mcpg.server` logger when any tool execution duration exceeds the configured threshold.
+  Defaults to `1000` ms. A value of `0` or less disables this logging.
+
 - **Structured JSON logging toggle (`MCPG_LOG_FORMAT`).** Adds an opt-in structured
   JSON logging format. When `MCPG_LOG_FORMAT=json` is set, all logging output from the
   `mcpg` server is formatted as a structured JSON object. Standard log messages carry
