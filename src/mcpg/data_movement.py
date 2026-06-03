@@ -778,32 +778,38 @@ async def _vector_column_dimension(driver: SqlDriver, schema: str, table: str, c
 
 
 def _coerce_vector(value: Any, *, dimension: int, row_idx: int) -> str:
-    """Validate one row's embedding and return the pgvector text literal."""
+    """Validate one row's embedding and return the pgvector text literal.
+
+    ``row_idx`` is 0-based for code; error messages render it as 1-based
+    (`row N`) so the number lines up with how a human counts rows in a
+    CSV / JSON payload — gemini noted this caused real debugging pain.
+    """
+    row_num = row_idx + 1
     if value is None:
-        raise ImportDataError(f"row {row_idx} has a NULL embedding; import_vectors requires every row to carry a value")
+        raise ImportDataError(f"row {row_num} has a NULL embedding; import_vectors requires every row to carry a value")
     if isinstance(value, str):
         # CSV cells arrive as strings — accept either a bracketed pgvector
         # literal ("[0.1,0.2]") or a comma-separated list ("0.1,0.2").
         stripped = value.strip().lstrip("[").rstrip("]").strip()
         if not stripped:
-            raise ImportDataError(f"row {row_idx} has an empty embedding")
+            raise ImportDataError(f"row {row_num} has an empty embedding")
         try:
             floats = [float(piece.strip()) for piece in stripped.split(",")]
         except ValueError as exc:
-            raise ImportDataError(f"row {row_idx} has a non-numeric value in its embedding: {exc}") from exc
+            raise ImportDataError(f"row {row_num} has a non-numeric value in its embedding: {exc}") from exc
     elif isinstance(value, (list, tuple)):
         try:
             floats = [float(v) for v in value]
         except (TypeError, ValueError) as exc:
-            raise ImportDataError(f"row {row_idx} has a non-numeric value in its embedding: {exc}") from exc
+            raise ImportDataError(f"row {row_num} has a non-numeric value in its embedding: {exc}") from exc
     else:
         raise ImportDataError(
-            f"row {row_idx} has an embedding of unsupported type {type(value).__name__}; "
+            f"row {row_num} has an embedding of unsupported type {type(value).__name__}; "
             "expected a list/tuple of numbers or a pgvector text literal"
         )
     if len(floats) != dimension:
         raise ImportDataError(
-            f"row {row_idx} embedding has dimension {len(floats)}, but the column expects {dimension}"
+            f"row {row_num} embedding has dimension {len(floats)}, but the column expects {dimension}"
         )
     # pgvector accepts a bracketed text literal cast to ``vector``.
     return "[" + ",".join(str(v) for v in floats) + "]"
@@ -834,9 +840,9 @@ def _parse_vector_payload(
         if parsed and not all(isinstance(row, dict) for row in parsed):
             raise ImportDataError("every row in the JSON array must be an object")
         pairs: list[tuple[Any, Any]] = []
-        for row in parsed:
+        for idx, row in enumerate(parsed):
             if embedding_column not in row:
-                raise ImportDataError(f"row is missing the embedding column {embedding_column!r}")
+                raise ImportDataError(f"row {idx + 1} is missing the embedding column {embedding_column!r}")
             ident = row.get(id_column) if id_column else None
             pairs.append((ident, row[embedding_column]))
         return pairs

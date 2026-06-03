@@ -1065,7 +1065,8 @@ async def test_import_vectors_rejects_dimension_mismatch_before_any_insert() -> 
     db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=3)))
     payload = json.dumps([{"embedding": [0.1, 0.2, 0.3]}, {"embedding": [0.4, 0.5]}])
 
-    with pytest.raises(ImportDataError, match="dimension 2, but the column expects 3"):
+    # Bad row is the 2nd -> "row 2" (1-based; gemini PR #48 review fix).
+    with pytest.raises(ImportDataError, match=r"row 2 embedding has dimension 2, but the column expects 3"):
         await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
     # The whole call failed — nothing was sent to execute_many.
     assert db.execute_many_calls == []
@@ -1104,7 +1105,9 @@ async def test_import_vectors_rejects_null_embedding_row() -> None:
     db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
     payload = json.dumps([{"embedding": [0.1, 0.2]}, {"embedding": None}])
 
-    with pytest.raises(ImportDataError, match="row 1 has a NULL embedding"):
+    # The bad row is the 2nd in the payload — error message reports
+    # 1-based "row 2" (gemini PR #48 review fix).
+    with pytest.raises(ImportDataError, match="row 2 has a NULL embedding"):
         await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
 
 
@@ -1133,7 +1136,17 @@ async def test_import_vectors_csv_requires_embedding_column_in_header() -> None:
 async def test_import_vectors_json_row_must_include_embedding_field() -> None:
     db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
     payload = json.dumps([{"id": 1}])
-    with pytest.raises(ImportDataError, match="missing the embedding column"):
+    # 1-based row index (gemini PR #48 review fix).
+    with pytest.raises(ImportDataError, match=r"row 1 is missing the embedding column 'embedding'"):
+        await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
+
+
+async def test_import_vectors_json_missing_field_reports_the_right_row_number() -> None:
+    # Three rows; the 3rd is missing the embedding field. Error must
+    # call out "row 3" (1-based).
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    payload = json.dumps([{"embedding": [0.1, 0.2]}, {"embedding": [0.3, 0.4]}, {"id": 99}])
+    with pytest.raises(ImportDataError, match=r"row 3 is missing the embedding column 'embedding'"):
         await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
 
 
