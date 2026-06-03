@@ -7,8 +7,11 @@ from mcpg.config import load_settings
 from mcpg.liveops import (
     ActiveQuery,
     BackendActionResult,
+    IndexBuildProgress,
+    _safe_pct,
     cancel_query,
     list_active_queries,
+    monitor_index_build,
     terminate_backend,
     verify_connection_encryption,
 )
@@ -164,3 +167,129 @@ async def test_verify_connection_encryption_tool_is_registered_in_read_mode() ->
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["ssl"] is True
+
+
+# --- monitor_index_build --------------------------------------------------
+
+
+def test_safe_pct_handles_zero_and_overshoot() -> None:
+    assert _safe_pct(0, 0) is None
+    assert _safe_pct(5, 0) is None
+    assert _safe_pct(0, 10) == 0.0
+    assert _safe_pct(5, 10) == 50.0
+    # PG sometimes reports counters that briefly exceed the planner's
+    # estimate — cap them at 100 rather than handing back >100 to agents.
+    assert _safe_pct(20, 10) == 100.0
+    # Negative inputs are clamped to 0 (defensive — shouldn't happen).
+    assert _safe_pct(-1, 10) == 0.0
+
+
+def _progress_row(**overrides: object) -> dict[str, object]:
+    """A pg_stat_progress_create_index row with sensible defaults."""
+    row: dict[str, object] = {
+        "pid": 12345,
+        "schema": "app",
+        "relation": "widget",
+        "index_name": "widget_embedding_idx",
+        "command": "CREATE INDEX CONCURRENTLY",
+        "phase": "building index: scanning table",
+        "blocks_done": 5000,
+        "blocks_total": 10000,
+        "tuples_done": 0,
+        "tuples_total": 0,
+        "partitions_done": 0,
+        "partitions_total": 0,
+    }
+    row.update(overrides)
+    return row
+
+
+async def test_monitor_index_build_returns_empty_when_no_builds_are_running() -> None:
+    driver = FakeDriver([])
+    assert await monitor_index_build(driver) == []  # type: ignore[arg-type]
+
+
+async def test_monitor_index_build_computes_block_level_progress() -> None:
+    driver = FakeDriver([_progress_row(blocks_done=2500, blocks_total=10000)])
+
+    builds = await monitor_index_build(driver)  # type: ignore[arg-type]
+
+    assert builds == [
+        IndexBuildProgress(
+            pid=12345,
+            schema="app",
+            relation="widget",
+            index_name="widget_embedding_idx",
+            command="CREATE INDEX CONCURRENTLY",
+            phase="building index: scanning table",
+            progress_pct=25.0,
+            blocks_done=2500,
+            blocks_total=10000,
+            tuples_done=0,
+            tuples_total=0,
+            partitions_done=0,
+            partitions_total=0,
+        )
+    ]
+
+
+async def test_monitor_index_build_falls_back_to_tuple_progress_when_blocks_absent() -> None:
+    # Some phases (e.g. "loading tuples in tree") report only tuple
+    # counters — block_total is 0, so use tuples instead.
+    driver = FakeDriver([_progress_row(blocks_done=0, blocks_total=0, tuples_done=750, tuples_total=1000)])
+
+    [build] = await monitor_index_build(driver)  # type: ignore[arg-type]
+
+    assert build.progress_pct == 75.0
+    assert build.blocks_total == 0
+    assert build.tuples_total == 1000
+
+
+async def test_monitor_index_build_returns_null_progress_when_neither_denominator_is_known() -> None:
+    # Initial "initializing" phase — counters all zero, so progress is
+    # genuinely unknown. Don't fabricate a number.
+    driver = FakeDriver([_progress_row(blocks_done=0, blocks_total=0, tuples_done=0, tuples_total=0)])
+
+    [build] = await monitor_index_build(driver)  # type: ignore[arg-type]
+
+    assert build.progress_pct is None
+
+
+async def test_monitor_index_build_propagates_null_catalog_lookups() -> None:
+    # If the relation lives in a schema we can't see, the LEFT JOIN
+    # produces NULL — the dataclass models that as None and the tool
+    # still returns the row (so the agent at least sees the pid + phase).
+    driver = FakeDriver([_progress_row(schema=None, relation=None, index_name=None, phase="initializing")])
+
+    [build] = await monitor_index_build(driver)  # type: ignore[arg-type]
+
+    assert build.schema is None
+    assert build.relation is None
+    assert build.index_name is None
+    assert build.phase == "initializing"
+
+
+async def test_monitor_index_build_orders_builds_by_pid() -> None:
+    # The SQL ORDER BY p.pid; FakeDriver returns rows in insertion order
+    # so we verify the query actually includes ORDER BY rather than the
+    # result ordering (which would be a tautology against FakeDriver).
+    driver = FakeDriver([_progress_row(pid=p) for p in (10, 20, 30)])
+
+    await monitor_index_build(driver)  # type: ignore[arg-type]
+
+    sql = driver.calls[0][0]
+    assert "ORDER BY p.pid" in sql
+    assert driver.calls[0][2] is True  # force_readonly
+
+
+async def test_monitor_index_build_tool_is_listed_and_callable_in_read_mode() -> None:
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver([])))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "monitor_index_build" in listed
+        result = await client.call_tool("monitor_index_build", {})
+
+    assert result.isError is False
+    payload = result.structuredContent
+    assert payload is not None
+    assert payload["result"] == []

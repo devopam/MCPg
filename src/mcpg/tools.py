@@ -2243,6 +2243,23 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
         return asdict(await liveops.verify_connection_encryption(_driver(ctx)))
 
     @server.tool(
+        name="monitor_index_build",
+        description=(
+            "Surface every active CREATE INDEX and its progress from "
+            "pg_stat_progress_create_index (PG12+, no extension). One "
+            "row per build with pid, schema.relation.index_name, the "
+            "command, phase label, blocks_done/total, tuples_done/total, "
+            "and a computed progress_pct (blocks first, tuples as "
+            "fallback, null when neither phase reports a denominator). "
+            "Useful next to list_active_queries when an HNSW / IVFFlat "
+            "build on a big table is taking longer than expected."
+        ),
+    )
+    async def monitor_index_build(ctx: _Ctx) -> list[dict[str, Any]]:
+        builds = await liveops.monitor_index_build(_driver(ctx))
+        return [asdict(b) for b in builds]
+
+    @server.tool(
         name="list_replicas",
         description=(
             "Report the health of every configured read replica. Each "

@@ -112,6 +112,7 @@ read_pg_wal_records(start_lsn, end_lsn='FFFFFFFF/FFFFFFFF', limit=100) # WAL rec
 read_pg_wal_stats(start_lsn, end_lsn='FFFFFFFF/FFFFFFFF', per_record=false) # aggregated WAL stats over LSN range
 detect_n_plus_one(min_calls=100)                     # pg_stat_statements walker for ORM lazy-load loops
 list_replicas()                                      # health of every read-replica (when MCPG_REPLICA_URLS set)
+monitor_index_build()                                # active CREATE INDEX progress (phase + blocks/tuples %); PG12+
 ```
 
 ## "Tell me everything about this table / why is this query slow"
