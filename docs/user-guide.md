@@ -402,6 +402,12 @@ All staged-migration tools require `unrestricted` +
 
 ---
 
+## Migration history
+
+`read_migration_history(schema=None)` queries and summarizes applied migrations for popular frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). Since it is read-only, it does not require DDL privileges or unrestricted mode.
+
+---
+
 ## ORM bridges
 
 Eight read-only exporters generate a starting schema/model file
