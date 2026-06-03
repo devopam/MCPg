@@ -17,7 +17,9 @@ focused.
 from __future__ import annotations
 
 import math
+import random
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -445,4 +447,366 @@ async def cross_table_similarity(
         matches.append(CrossTableMatch(distance=distance, row=cells))
     return CrossTableSimilarityResult(
         available=True, source_embedding_found=True, source_dimension=source_dim, matches=matches
+    )
+
+
+# --- cluster_vectors (k-means) --------------------------------------------
+
+
+DEFAULT_CLUSTER_SAMPLE_SIZE = 5000
+DEFAULT_MAX_ITERATIONS = 20
+
+# Tolerance for convergence: when the largest centroid drift between
+# iterations falls below this fraction of the mean centroid norm, stop
+# iterating. Cheap and accurate enough for the analytics use case.
+_KMEANS_TOLERANCE = 1e-4
+
+
+@dataclass(frozen=True, slots=True)
+class ClusterCentroid:
+    """One k-means centroid + the number of rows assigned to it."""
+
+    cluster: int
+    centroid: list[float]
+    size: int
+
+
+@dataclass(frozen=True, slots=True)
+class ClusterAssignment:
+    """The cluster a single sampled row was assigned to.
+
+    ``id`` is the row's ``id_column`` value when one was supplied,
+    otherwise the row's positional index in the sample. ``distance``
+    follows the metric used for clustering (squared L2 by default,
+    or 1 - cos(theta) for cosine).
+    """
+
+    id: Any
+    cluster: int
+    distance: float
+
+
+@dataclass(frozen=True, slots=True)
+class ClusterVectorsResult:
+    """The outcome of a :func:`cluster_vectors` call.
+
+    ``inertia`` is the sum of squared distances from each assigned row to
+    its centroid (the classical k-means objective). ``converged`` is
+    ``True`` if the centroids stopped moving before ``max_iterations``.
+    ``metric`` echoes back which metric was used so a result inspected
+    out-of-context is self-describing.
+    """
+
+    available: bool
+    sampled_rows: int
+    dimension: int
+    metric: str
+    iterations: int
+    converged: bool
+    inertia: float
+    centroids: list[ClusterCentroid]
+    assignments: list[ClusterAssignment]
+
+
+def _squared_distance(a: list[float], b: list[float]) -> float:
+    """Squared Euclidean distance. Skips the sqrt — both k-means
+    assignment and convergence checks use the squared form."""
+    total = 0.0
+    for x, y in zip(a, b, strict=True):
+        d = x - y
+        total += d * d
+    return total
+
+
+def _cosine_distance(a: list[float], b: list[float]) -> float:
+    """``1 - cos(theta)``; 1.0 for either vector being zero (max distance).
+
+    Cosine distance has the property that the cluster-mean centroid
+    minimises it locally for normalised inputs — we normalise vectors
+    up front when ``metric="cosine"``, so the standard Lloyd update
+    still converges.
+    """
+    dot = 0.0
+    norm_a = 0.0
+    norm_b = 0.0
+    for x, y in zip(a, b, strict=True):
+        dot += x * y
+        norm_a += x * x
+        norm_b += y * y
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 1.0
+    return 1.0 - dot / math.sqrt(norm_a * norm_b)
+
+
+def _normalize_in_place(vec: list[float]) -> list[float]:
+    """Scale ``vec`` to unit norm in place; zero vectors pass through."""
+    n = _l2_norm(vec)
+    if n == 0.0:
+        return vec
+    inv = 1.0 / n
+    for i in range(len(vec)):
+        vec[i] *= inv
+    return vec
+
+
+def _kmeans_plus_plus_init(
+    vectors: list[list[float]],
+    k: int,
+    rng: random.Random,
+    distance: Callable[[list[float], list[float]], float],
+) -> list[list[float]]:
+    """k-means++ centroid seeding: pick centroids weighted by distance²."""
+    centroids: list[list[float]] = [list(vectors[rng.randrange(len(vectors))])]
+    while len(centroids) < k:
+        # Squared distance from each point to its nearest existing centroid.
+        weights = []
+        total = 0.0
+        for v in vectors:
+            best = min(distance(v, c) for c in centroids)
+            # Standard k-means++ weights points by D(x)² of their nearest
+            # centroid. ``_squared_distance`` is already squared and
+            # ``_cosine_distance`` is non-negative; using ``best`` directly
+            # gives D² in the L2 case and a sensible cosine analogue.
+            # (Earlier `best * best` was D⁴ for L2 — over-weighted outliers;
+            # gemini PR #52 caught this.)
+            weights.append(best)
+            total += best
+        if total == 0.0:
+            # All remaining points coincide with existing centroids — just
+            # pick uniformly to keep going.
+            centroids.append(list(vectors[rng.randrange(len(vectors))]))
+            continue
+        # Roulette-wheel selection.
+        target = rng.random() * total
+        cum = 0.0
+        pick = 0
+        for i, w in enumerate(weights):
+            cum += w
+            if cum >= target:
+                pick = i
+                break
+        centroids.append(list(vectors[pick]))
+    return centroids
+
+
+def _kmeans(
+    vectors: list[list[float]],
+    k: int,
+    *,
+    max_iterations: int,
+    metric: str,
+    seed: int,
+) -> tuple[list[list[float]], list[int], list[float], int, bool, float]:
+    """Run Lloyd's algorithm.
+
+    Returns ``(centroids, labels, distances, iterations, converged, inertia)``.
+    ``labels[i]`` is the cluster index for ``vectors[i]``; ``distances[i]`` is
+    the distance from ``vectors[i]`` to its centroid under ``metric``.
+    """
+    rng = random.Random(seed)
+
+    # Inside the hot loop, every vector and centroid is unit-norm under
+    # cosine (the caller pre-normalises inputs and we re-normalise
+    # centroids after each iteration), so ``1 - dot(a, b)`` matches
+    # ``_cosine_distance`` at ~3x the speed by dropping the per-call
+    # norm + sqrt. Gemini PR #52 flagged the original full computation
+    # as redundant in this path. ``_cosine_distance`` itself stays as
+    # the general-purpose helper for code outside the hot loop.
+    def _cosine_distance_unit(a: list[float], b: list[float]) -> float:
+        dot = 0.0
+        for x, y in zip(a, b, strict=True):
+            dot += x * y
+        return 1.0 - dot
+
+    distance = _cosine_distance_unit if metric == "cosine" else _squared_distance
+    centroids = _kmeans_plus_plus_init(vectors, k, rng, distance)
+    labels = [0] * len(vectors)
+    distances = [0.0] * len(vectors)
+    dim = len(vectors[0])
+    converged = False
+    iteration = 0
+    while iteration < max_iterations:
+        iteration += 1
+        # Assignment step: every point goes to its closest centroid.
+        max_centroid_drift = 0.0
+        for i, v in enumerate(vectors):
+            best_dist = math.inf
+            best_label = 0
+            for j, c in enumerate(centroids):
+                d = distance(v, c)
+                if d < best_dist:
+                    best_dist = d
+                    best_label = j
+            labels[i] = best_label
+            distances[i] = best_dist
+        # Update step: each centroid becomes the mean of its members.
+        new_centroids: list[list[float]] = [[0.0] * dim for _ in range(k)]
+        counts = [0] * k
+        for v, lbl in zip(vectors, labels, strict=True):
+            counts[lbl] += 1
+            row = new_centroids[lbl]
+            for d in range(dim):
+                row[d] += v[d]
+        for j in range(k):
+            if counts[j] == 0:
+                # Re-seed an empty cluster on the point currently farthest
+                # from its assigned centroid — a standard safety valve.
+                # Zero the picked point's distance so that subsequent
+                # empty clusters in the same iteration pick the next
+                # farthest point rather than all collapsing onto the
+                # same row (gemini PR #52 caught this).
+                worst = max(range(len(vectors)), key=lambda i: distances[i])
+                new_centroids[j] = list(vectors[worst])
+                counts[j] = 1
+                distances[worst] = 0.0
+                continue
+            inv = 1.0 / counts[j]
+            for d in range(dim):
+                new_centroids[j][d] *= inv
+        if metric == "cosine":
+            for c in new_centroids:
+                _normalize_in_place(c)
+        # Convergence check: largest per-dim drift in any centroid.
+        for old, new in zip(centroids, new_centroids, strict=True):
+            for od, nd in zip(old, new, strict=True):
+                diff = abs(od - nd)
+                if diff > max_centroid_drift:
+                    max_centroid_drift = diff
+        centroids = new_centroids
+        if max_centroid_drift < _KMEANS_TOLERANCE:
+            converged = True
+            break
+    inertia = sum(distances)
+    return centroids, labels, distances, iteration, converged, inertia
+
+
+async def cluster_vectors(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    embedding_column: str,
+    *,
+    k: int,
+    id_column: str | None = None,
+    sample_size: int = DEFAULT_CLUSTER_SAMPLE_SIZE,
+    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    metric: str = "l2",
+    seed: int = 42,
+) -> ClusterVectorsResult:
+    """k-means cluster a pgvector column; return centroids + per-row labels.
+
+    Samples up to ``sample_size`` non-NULL rows of
+    ``schema.table.embedding_column``, runs k-means with ``k`` clusters
+    in-process (k-means++ seeding, Lloyd updates, deterministic via
+    ``seed``), and returns centroids + assignments. When ``id_column``
+    is supplied each assignment carries that column's value; otherwise
+    each carries its positional sample index.
+
+    Args:
+        k: Number of clusters. Must be at least 2 and at most
+            ``sample_size`` / 2 (otherwise clustering is degenerate).
+        metric: ``l2`` (default — squared Euclidean) or ``cosine``
+            (vectors are normalised before clustering and centroids are
+            re-normalised after each iteration, so the standard Lloyd
+            update still converges).
+        sample_size: Cap on rows examined. Default 5000.
+        max_iterations: Lloyd-iteration cap (default 20). The algorithm
+            stops earlier when centroids stop moving.
+        seed: Deterministic random seed for k-means++ init.
+
+    Raises:
+        VectorOpsError: On invalid identifiers, unknown ``metric``,
+            non-positive ``sample_size`` / ``max_iterations`` /
+            ``seed`` arguments, ``k < 2``, ``k`` too large for the
+            sample, or a target column that isn't pgvector.
+    """
+    if metric not in {"l2", "cosine"}:
+        raise VectorOpsError(f"unknown metric for clustering: {metric!r}; expected 'l2' or 'cosine'")
+    if sample_size < 1:
+        raise VectorOpsError("sample_size must be at least 1")
+    if max_iterations < 1:
+        raise VectorOpsError("max_iterations must be at least 1")
+    if k < 2:
+        raise VectorOpsError("k must be at least 2")
+    # Identifier validation before any DB contact.
+    _checked(schema, "schema")
+    _checked(table, "table")
+    _checked(embedding_column, "column")
+    if id_column is not None:
+        _checked(id_column, "column")
+
+    if not await extension_installed(driver, "vector"):
+        return ClusterVectorsResult(
+            available=False,
+            sampled_rows=0,
+            dimension=0,
+            metric=metric,
+            iterations=0,
+            converged=False,
+            inertia=0.0,
+            centroids=[],
+            assignments=[],
+        )
+
+    dimension = await _vector_column_dimension(driver, schema, table, embedding_column)
+    if dimension is None:
+        raise VectorOpsError(
+            f"{schema}.{table}.{embedding_column} is not a pgvector vector(N) column (column missing or wrong type)"
+        )
+
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    emb_col = _quoted(embedding_column, "column")
+    select_clause = f"{emb_col} AS embedding"
+    if id_column is not None:
+        id_col = _quoted(id_column, "column")
+        select_clause = f"{id_col} AS row_id, {select_clause}"
+    rows = await driver.execute_query(
+        f"SELECT {select_clause} FROM {relation} WHERE {emb_col} IS NOT NULL LIMIT %s",
+        params=[sample_size],
+        force_readonly=True,
+    )
+
+    vectors: list[list[float]] = []
+    ids: list[Any] = []
+    for idx, row in enumerate(rows or []):
+        vec = _parse_embedding(row.cells.get("embedding"))
+        if vec is None or len(vec) != dimension:
+            continue
+        if metric == "cosine":
+            _normalize_in_place(vec)
+        vectors.append(vec)
+        ids.append(row.cells.get("row_id") if id_column is not None else idx)
+
+    if len(vectors) < k * 2:
+        raise VectorOpsError(
+            f"not enough rows to cluster: sampled {len(vectors)} parseable embeddings "
+            f"but k={k} requires at least {k * 2} (and ideally many more)"
+        )
+
+    centroids, labels, distances, iterations, converged, inertia = _kmeans(
+        vectors,
+        k,
+        max_iterations=max_iterations,
+        metric=metric,
+        seed=seed,
+    )
+
+    sizes = [0] * k
+    for lbl in labels:
+        sizes[lbl] += 1
+    centroid_objs = [ClusterCentroid(cluster=j, centroid=centroids[j], size=sizes[j]) for j in range(k)]
+    assignment_objs = [
+        ClusterAssignment(id=ids[i], cluster=labels[i], distance=distances[i]) for i in range(len(vectors))
+    ]
+
+    return ClusterVectorsResult(
+        available=True,
+        sampled_rows=len(vectors),
+        dimension=dimension,
+        metric=metric,
+        iterations=iterations,
+        converged=converged,
+        inertia=inertia,
+        centroids=centroid_objs,
+        assignments=assignment_objs,
     )

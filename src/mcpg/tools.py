@@ -842,6 +842,50 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         )
         return asdict(result)
 
+    @server.tool(
+        name="cluster_vectors",
+        description=(
+            "k-means cluster a pgvector column. Samples up to "
+            "`sample_size` (default 5000) non-NULL rows of "
+            "schema.table.embedding_column, runs Lloyd's algorithm "
+            "with k-means++ seeding (`seed` for determinism), and "
+            "returns `centroids` (one per cluster, with size) + "
+            "`assignments` (per-row cluster index + distance). When "
+            "`id_column` is set each assignment carries that column's "
+            "value; otherwise the row's positional sample index. "
+            "metric='l2' (default — squared Euclidean) or 'cosine' "
+            "(vectors normalised; centroids re-normalised every "
+            "iteration). `k` >= 2 and there must be at least 2k "
+            "parseable rows. Reports available=false if pgvector is "
+            "not installed."
+        ),
+    )
+    async def cluster_vectors(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        embedding_column: str,
+        k: int,
+        id_column: str | None = None,
+        sample_size: int = vector_ops.DEFAULT_CLUSTER_SAMPLE_SIZE,
+        max_iterations: int = vector_ops.DEFAULT_MAX_ITERATIONS,
+        metric: str = "l2",
+        seed: int = 42,
+    ) -> dict[str, Any]:
+        result = await vector_ops.cluster_vectors(
+            _driver(ctx),
+            schema,
+            table,
+            embedding_column,
+            k=k,
+            id_column=id_column,
+            sample_size=sample_size,
+            max_iterations=max_iterations,
+            metric=metric,
+            seed=seed,
+        )
+        return asdict(result)
+
 
 def _register_prisma(server: FastMCP[AppContext]) -> None:
     @server.tool(

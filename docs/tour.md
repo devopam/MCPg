@@ -151,6 +151,9 @@ cross_table_similarity(source_schema, source_table, source_embedding_column,
                        source_id_column, source_id_value,
                        target_schema, target_table, target_embedding_column, k=10)
                                                                           # given a row in A, k-NN against B
+cluster_vectors(schema, table, embedding_column, k, id_column=null,
+                sample_size=5000, max_iterations=20, metric="l2", seed=42)
+                                                                          # k-means clustering of an embedding column
 ```
 
 ## "Move data in / out"
