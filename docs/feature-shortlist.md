@@ -79,7 +79,7 @@ not covered there:
 |---|---|---|---|---|
 | 7.1 | Alembic / Flyway / Liquibase migration-script ingestion (parse + apply through `prepare_migration`) | M-L | Medium | Big agentic win for projects with existing migration history. |
 | 7.2 | Pre-deployment migration validation (target schema vs production snapshot) | M | High | Composes `compare_schemas` + shadow workflow. |
-| 7.3 | Migration history table integration (read Alembic / Flyway / Diesel native tables) | S | Medium | Reads existing tooling's bookkeeping. |
+| 7.3 | ✅ **Shipped.** Migration history table integration (read Alembic / Flyway / Diesel native tables) | S | Medium | Reads existing tooling's bookkeeping. |
 | 7.4 | Zero-downtime migration cookbook | S | Medium-High | Pure docs (patterns, not code). |
 
 ## 8. AI / agent-specific

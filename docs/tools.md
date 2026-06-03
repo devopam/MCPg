@@ -50,6 +50,7 @@ plumbing:
 | **Data movement — subprocess (gated)** | `dump_database`, `restore_database`, `copy_table_between_databases` |
 | **LISTEN/NOTIFY bridge (gated)** | `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions` |
 | **Staged migrations (gated)** | `prepare_migration`, `validate_migration`, `complete_migration`, `cancel_migration`, `list_pending_migrations` |
+| **Migration history** | `read_migration_history` |
 | **Test-data factory** | `generate_test_data` (generates SQL — does not execute) |
 | **TimescaleDB hypertables (gated for writes)** | `list_hypertables`, `list_chunks`, `create_hypertable`, `add_compression_policy`, `add_retention_policy` |
 | **ORM-DSL exporters** | `generate_prisma_schema`, `generate_drizzle_schema`, `generate_sqlalchemy_models`, `generate_sqlc_schema`, `generate_diesel_schema`, `generate_jooq_config`, `generate_ent_schemas`, `generate_ecto_schemas` |
@@ -441,6 +442,9 @@ Drops the shadow without applying. Idempotent — returns
 Lists migrations in `prepared` status, newest first. Sweeps expired
 entries (drops their shadows, flips status to `expired`) before
 listing.
+
+### `read_migration_history`
+Query and summarize historical migrations applied to the database by popular migration frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). Since it is read-only, it does not require DDL privileges or unrestricted mode. Optional `schema` filter.
 
 ## Audit trail
 

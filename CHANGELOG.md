@@ -8,6 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`read_migration_history` tool.** Adds a read-only tool to inspect and parse the native migration bookkeeping tables of popular migration frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). Reports migration history records with full framework-specific metadata fields.
+
 - **`pg_walinspect` integration.** Adds `read_pg_wal_records` and
   `read_pg_wal_stats` tools to analyze Write-Ahead Log (WAL) record details and
   aggregated stats over specified LSN ranges. Degrades gracefully if the extension

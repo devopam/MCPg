@@ -84,7 +84,7 @@ mini-sequence (shared centroid code).
 
 | PR | Item | New module? | Effort | Notes |
 |---|---|---|---|---|
-| B1 | Structured JSON logging toggle (1.2) | extends logging setup | S | `MCPG_LOG_FORMAT=text\|json`. Wraps the existing logger. |
+| B1 (✅ PR) | Structured JSON logging toggle (1.2) | extends logging setup | S | `MCPG_LOG_FORMAT=text\|json`. Wraps the existing logger. |
 | B2 (✅ PR) | Slow-call logging from the MCP layer (1.3) | middleware hook | S | Per-tool latency warn over a threshold. |
 | B3 | OpenTelemetry spans per tool call (1.1) | new, optional extra | M | One span per `call_tool` + child spans; behind `mcpg[otel]`. |
 
@@ -116,7 +116,7 @@ All four are independent.
 
 | PR | Item | New module? | Effort | Notes |
 |---|---|---|---|---|
-| E1 | Migration history table read (7.3) | new `migration_history.py` | S | Read Alembic / Flyway / Diesel bookkeeping tables. |
+| E1 (✅ PR) | Migration history table read (7.3) | new `migration_history.py` | S | Read Alembic / Flyway / Diesel bookkeeping tables. |
 | E2 | Zero-downtime migration cookbook (7.4) | docs only | S | Pure `docs/cookbook.md` patterns — zero code, zero conflict. |
 | E3 | Pre-deployment migration validation (7.2) | extends `migrations.py` | M | Composes `compare_schemas` + shadow workflow. |
 | E4 | Alembic/Flyway/Liquibase ingestion (7.1) | extends `migrations.py` | M-L | Large; do after E3. |

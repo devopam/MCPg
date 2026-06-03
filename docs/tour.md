@@ -190,6 +190,7 @@ validate_migration(target_schema, candidate_sql, sample_rows_per_table=100)
 complete_migration(migration_id)                     # applies to target
 cancel_migration(migration_id)                       # drops shadow
 list_pending_migrations()
+read_migration_history(schema=None)                      # read applied migrations (Alembic/Flyway/etc.); read-only
 generate_test_data(schema, table, rows=10, seed=42)  # synthetic INSERT statements; does NOT execute
 ```
 

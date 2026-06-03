@@ -41,6 +41,7 @@ from mcpg import (
     liveops,
     locks,
     maintenance,
+    migration_history,
     migrations,
     naming,
     nl2sql,
@@ -596,6 +597,18 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             return await introspection.get_compact_schema(_driver(ctx), schema)
 
         return await _cached_call(ctx, "get_compact_schema", _run, schema)
+
+    @server.tool(
+        name="read_migration_history",
+        description=(
+            "Query and summarize historical migrations applied to the database by popular migration "
+            "frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). "
+            "Allows filtering by schema."
+        ),
+    )
+    async def read_migration_history(ctx: _Ctx, schema: str | None = None) -> dict[str, Any]:
+        report = await migration_history.read_migration_history(_driver(ctx), schema=schema)
+        return asdict(report)
 
 
 def _register_diagrams(server: FastMCP[AppContext]) -> None:
