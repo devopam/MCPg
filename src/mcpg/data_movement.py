@@ -742,3 +742,190 @@ def _json_cell(value: Any) -> Any:
     if isinstance(value, (dict, list)):
         return json.dumps(value)
     return value
+
+
+# --- bulk vector import (in-process; gated behind WRITE) ------------------
+
+
+_VECTOR_FORMATS = frozenset({"json", "csv"})
+
+
+async def _vector_column_dimension(driver: SqlDriver, schema: str, table: str, column: str) -> int | None:
+    """Return the declared dimension of a ``vector(N)`` column, or ``None``.
+
+    A return of ``None`` means either the column doesn't exist or it
+    isn't a pgvector ``vector`` type (anything else is the caller's
+    problem to validate). pgvector encodes ``N`` in ``pg_attribute``'s
+    ``atttypmod`` directly when present.
+    """
+    rows = await driver.execute_query(
+        "SELECT t.typname AS type_name, a.atttypmod AS type_mod "
+        "FROM pg_attribute a "
+        "JOIN pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_type t ON t.oid = a.atttypid "
+        "WHERE n.nspname = %s AND c.relname = %s AND a.attname = %s AND a.attnum > 0",
+        params=[schema, table, column],
+        force_readonly=True,
+    )
+    if not rows:
+        return None
+    cell = rows[0].cells
+    if cell.get("type_name") != "vector":
+        return None
+    type_mod = cell.get("type_mod")
+    return int(type_mod) if isinstance(type_mod, int) and type_mod > 0 else None
+
+
+def _coerce_vector(value: Any, *, dimension: int, row_idx: int) -> str:
+    """Validate one row's embedding and return the pgvector text literal."""
+    if value is None:
+        raise ImportDataError(f"row {row_idx} has a NULL embedding; import_vectors requires every row to carry a value")
+    if isinstance(value, str):
+        # CSV cells arrive as strings — accept either a bracketed pgvector
+        # literal ("[0.1,0.2]") or a comma-separated list ("0.1,0.2").
+        stripped = value.strip().lstrip("[").rstrip("]").strip()
+        if not stripped:
+            raise ImportDataError(f"row {row_idx} has an empty embedding")
+        try:
+            floats = [float(piece.strip()) for piece in stripped.split(",")]
+        except ValueError as exc:
+            raise ImportDataError(f"row {row_idx} has a non-numeric value in its embedding: {exc}") from exc
+    elif isinstance(value, (list, tuple)):
+        try:
+            floats = [float(v) for v in value]
+        except (TypeError, ValueError) as exc:
+            raise ImportDataError(f"row {row_idx} has a non-numeric value in its embedding: {exc}") from exc
+    else:
+        raise ImportDataError(
+            f"row {row_idx} has an embedding of unsupported type {type(value).__name__}; "
+            "expected a list/tuple of numbers or a pgvector text literal"
+        )
+    if len(floats) != dimension:
+        raise ImportDataError(
+            f"row {row_idx} embedding has dimension {len(floats)}, but the column expects {dimension}"
+        )
+    # pgvector accepts a bracketed text literal cast to ``vector``.
+    return "[" + ",".join(str(v) for v in floats) + "]"
+
+
+def _parse_vector_payload(
+    content: str,
+    *,
+    format: str,
+    embedding_column: str,
+    id_column: str | None,
+) -> list[tuple[Any, Any]]:
+    """Decode a JSON-array or CSV payload into ``(id, embedding)`` pairs.
+
+    For CSV the first row must be a header; the embedding column is
+    required, the id column is optional. The embedding cell can be a
+    bracketed pgvector literal or a comma-separated list of numbers.
+    For JSON the input must be an array of objects whose embedding
+    field is a list of numbers (or a literal string).
+    """
+    if format == "json":
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ImportDataError(f"content is not valid JSON: {exc}") from exc
+        if not isinstance(parsed, list):
+            raise ImportDataError("content must be a JSON array of objects")
+        if parsed and not all(isinstance(row, dict) for row in parsed):
+            raise ImportDataError("every row in the JSON array must be an object")
+        pairs: list[tuple[Any, Any]] = []
+        for row in parsed:
+            if embedding_column not in row:
+                raise ImportDataError(f"row is missing the embedding column {embedding_column!r}")
+            ident = row.get(id_column) if id_column else None
+            pairs.append((ident, row[embedding_column]))
+        return pairs
+
+    # CSV — parse with the stdlib reader so quoted bracketed literals
+    # round-trip correctly (e.g. ``id,vec\n1,"[0.1,0.2]"``).
+    reader = csv.DictReader(io.StringIO(content))
+    if not reader.fieldnames or embedding_column not in reader.fieldnames:
+        raise ImportDataError(f"CSV header is missing the embedding column {embedding_column!r}")
+    if id_column and id_column not in reader.fieldnames:
+        raise ImportDataError(f"CSV header is missing the id column {id_column!r}")
+    return [(row.get(id_column) if id_column else None, row[embedding_column]) for row in reader]
+
+
+async def import_vectors(
+    database: Database,
+    schema: str,
+    table: str,
+    embedding_column: str,
+    content: str,
+    *,
+    format: str = "json",
+    id_column: str | None = None,
+) -> ImportResult:
+    """Bulk-load embeddings into ``schema.table.embedding_column``.
+
+    Specialised sibling of :func:`import_csv` / :func:`import_json` for
+    pgvector columns. The target column's declared ``vector(N)``
+    dimension is read from the catalog at call time and every row in
+    ``content`` is validated against it BEFORE any INSERT runs — a
+    dimension mismatch on row 1000 fails the whole call rather than
+    leaving 999 partial inserts behind.
+
+    Args:
+        embedding_column: The pgvector column receiving the values.
+        content: JSON array of objects (default) or CSV text. For JSON
+            the embedding field is a list of numbers (or a pgvector
+            text literal). For CSV the header must include
+            ``embedding_column`` (and ``id_column`` if supplied); cells
+            can be bracketed literals or comma-separated numbers.
+        format: ``"json"`` (default) or ``"csv"``.
+        id_column: When set, the parallel column receiving each row's
+            identifier from the payload. Both columns get a parametrised
+            ``INSERT (id, embedding) VALUES (%s, %s::vector)``.
+
+    Raises:
+        ImportDataError: When the format is unknown, an identifier is
+            invalid, the embedding column isn't a pgvector ``vector(N)``
+            (and so dimension validation can't happen), the payload is
+            malformed, or any row's dimension doesn't match the column.
+    """
+    _check_identifier_for_import(schema, "schema")
+    _check_identifier_for_import(table, "table")
+    _check_identifier_for_import(embedding_column, "column")
+    if id_column is not None:
+        _check_identifier_for_import(id_column, "column")
+    fmt = format.strip().lower()
+    if fmt not in _VECTOR_FORMATS:
+        raise ImportDataError(f"unsupported format {format!r}; expected one of {sorted(_VECTOR_FORMATS)}")
+
+    # Discover the column's declared dimension up-front so every row in
+    # the payload can be validated before we open a transaction.
+    driver = database.driver()
+    dimension = await _vector_column_dimension(driver, schema, table, embedding_column)
+    if dimension is None:
+        raise ImportDataError(
+            f"{schema}.{table}.{embedding_column} is not a pgvector vector(N) column "
+            "(either the column doesn't exist or it isn't typed vector); "
+            "import_vectors validates dimension against the column's declared N"
+        )
+
+    pairs = _parse_vector_payload(content, format=fmt, embedding_column=embedding_column, id_column=id_column)
+    if not pairs:
+        return ImportResult(schema=schema, table=table, format=fmt, rows_imported=0)
+
+    literals: list[tuple[Any, ...]] = []
+    for idx, (ident, raw) in enumerate(pairs):
+        literal = _coerce_vector(raw, dimension=dimension, row_idx=idx)
+        literals.append((ident, literal) if id_column else (literal,))
+
+    if id_column:
+        sql = f'INSERT INTO "{schema}"."{table}" ("{id_column}", "{embedding_column}") VALUES (%s, %s::vector)'
+    else:
+        sql = f'INSERT INTO "{schema}"."{table}" ("{embedding_column}") VALUES (%s::vector)'
+
+    try:
+        rowcount = await database.execute_many(sql, literals)
+    except Exception as exc:
+        raise ImportDataError(f"INSERT failed: {exc}") from exc
+    if rowcount < 0:
+        rowcount = len(literals)
+    return ImportResult(schema=schema, table=table, format=fmt, rows_imported=rowcount)

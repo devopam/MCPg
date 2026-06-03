@@ -1093,6 +1093,46 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
         await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
+    @server.tool(
+        name="import_vectors",
+        description=(
+            "Bulk-load embeddings into a pgvector vector(N) column. Reads "
+            "the column's declared N from the catalog and validates every "
+            "row in `content` against it BEFORE any INSERT — a dimension "
+            "mismatch on row 1000 fails the whole call rather than leaving "
+            "999 partial inserts behind. format='json' (default) expects a "
+            "JSON array of objects whose `embedding_column` field is a list "
+            "of numbers or a pgvector text literal; format='csv' expects a "
+            "header row with `embedding_column` (and `id_column` when set) "
+            "and cells that are bracketed literals or comma-separated "
+            "numbers. When `id_column` is given, the parallel column receives "
+            "each row's identifier. Errors when the column isn't pgvector "
+            "vector(N) (so dimension validation can't run). Performs writes "
+            "— requires unrestricted mode."
+        ),
+    )
+    async def import_vectors(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        embedding_column: str,
+        content: str,
+        format: str = "json",
+        id_column: str | None = None,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await data_movement.import_vectors(
+            database,
+            schema,
+            table,
+            embedding_column,
+            content,
+            format=format,
+            id_column=id_column,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
 
 def _register_migrations(server: FastMCP[AppContext]) -> None:
     @server.tool(
