@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`analyze_distance_metric` tool (pgvector).** Samples up to
+  `sample_size` (default 1000) non-NULL embeddings from
+  `schema.table.column`, computes each one's L2 norm, and recommends
+  a distance metric from the magnitude distribution: pre-normalised
+  vectors (CV < 5%, mean ≈ 1.0) → `inner_product`; nearly-constant
+  but off-unit magnitudes → `cosine` (same ranking as L2, safer
+  default); variable magnitudes → `cosine` (normalises out
+  heterogeneous sources). Returns the metric + a rationale + the
+  underlying distribution stats. New `mcpg.vector_ops` module — first
+  resident of a vector-analytics namespace separate from search
+  (`textsearch`) and storage tuning (`vector_tuning`,
+  `vector_tuner_advanced`). Read-only; `available=false` without the
+  pgvector extension.
+
 - **`import_vectors` tool (pgvector).** Bulk-load embeddings into a
   pgvector `vector(N)` column from JSON (array of objects) or CSV.
   Reads the column's declared `N` from the catalog up-front and

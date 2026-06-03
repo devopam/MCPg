@@ -56,6 +56,7 @@ from mcpg import (
     test_data,
     textsearch,
     timescaledb,
+    vector_ops,
     vector_tuner_advanced,
     vector_tuning,
     workload,
@@ -686,6 +687,38 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             k=k,
             metric=metric,
         )
+
+    @server.tool(
+        name="analyze_distance_metric",
+        description=(
+            "Recommend a pgvector distance metric (cosine | l2 | "
+            "inner_product) from the embedding-magnitude distribution. "
+            "Samples up to `sample_size` non-NULL rows of "
+            "schema.table.column, computes each embedding's L2 norm, "
+            "and applies a small heuristic: pre-normalised (CV < 5% "
+            "and mean ≈ 1.0) → inner_product; nearly-constant magnitude "
+            "but not unit-norm → cosine (same ranking as L2, safer "
+            "default); variable magnitude → cosine (normalises out "
+            "heterogeneous sources). Returns the metric + a rationale + "
+            "the underlying distribution stats. Reports available=false "
+            "if the pgvector extension is not installed."
+        ),
+    )
+    async def analyze_distance_metric(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        sample_size: int = vector_ops.DEFAULT_SAMPLE_SIZE,
+    ) -> dict[str, Any]:
+        result = await vector_ops.analyze_distance_metric(
+            _driver(ctx),
+            schema,
+            table,
+            column,
+            sample_size=sample_size,
+        )
+        return asdict(result)
 
 
 def _register_prisma(server: FastMCP[AppContext]) -> None:
