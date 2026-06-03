@@ -886,6 +886,59 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         )
         return asdict(result)
 
+    @server.tool(
+        name="detect_vector_outliers",
+        description=(
+            "Flag pgvector rows whose embedding sits far from any "
+            "cluster centroid. Samples up to `sample_size` (default "
+            "5000) non-NULL rows of schema.table.embedding_column, "
+            "clusters them with k-means (same engine as "
+            "`cluster_vectors`), then per cluster computes a z-score "
+            "on the distance from each row to its centroid and flags "
+            "rows whose z-score exceeds `zscore_threshold` (default "
+            "3.0). Per-cluster scoring catches rows that are "
+            "weird-for-their-group rather than weird-overall, which "
+            "is usually what 'find outliers' should mean. Returns "
+            "`outliers` sorted by z-score descending (capped at "
+            "`max_results`), `total_outliers` (the unclipped count), "
+            "and `cluster_stats` (per-cluster mean / std of within-"
+            "cluster distances). When `id_column` is set each "
+            "outlier carries that column's value; otherwise the "
+            "row's positional sample index. `k` >= 2 and there must "
+            "be at least 2k parseable rows. Reports available=false "
+            "if pgvector is not installed."
+        ),
+    )
+    async def detect_vector_outliers(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        embedding_column: str,
+        id_column: str | None = None,
+        k: int = vector_ops.DEFAULT_OUTLIER_K,
+        zscore_threshold: float = vector_ops.DEFAULT_OUTLIER_ZSCORE,
+        sample_size: int = vector_ops.DEFAULT_CLUSTER_SAMPLE_SIZE,
+        max_iterations: int = vector_ops.DEFAULT_MAX_ITERATIONS,
+        metric: str = "l2",
+        seed: int = 42,
+        max_results: int = vector_ops.DEFAULT_OUTLIER_MAX_RESULTS,
+    ) -> dict[str, Any]:
+        result = await vector_ops.detect_vector_outliers(
+            _driver(ctx),
+            schema,
+            table,
+            embedding_column,
+            id_column=id_column,
+            k=k,
+            zscore_threshold=zscore_threshold,
+            sample_size=sample_size,
+            max_iterations=max_iterations,
+            metric=metric,
+            seed=seed,
+            max_results=max_results,
+        )
+        return asdict(result)
+
 
 def _register_prisma(server: FastMCP[AppContext]) -> None:
     @server.tool(

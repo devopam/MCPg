@@ -7,8 +7,7 @@ already in a column:
 - :func:`analyze_distance_metric` — sample rows and recommend cosine,
   L2, or inner-product based on the magnitude distribution.
 
-Future siblings (cluster_vectors, detect_vector_outliers,
-monitor_embedding_drift, cross_table_similarity) land here so the
+Future siblings (monitor_embedding_drift) land here so the
 search surface (:mod:`mcpg.textsearch`) and the storage advisors
 (:mod:`mcpg.vector_tuning`, :mod:`mcpg.vector_tuner_advanced`) stay
 focused.
@@ -809,4 +808,250 @@ async def cluster_vectors(
         inertia=inertia,
         centroids=centroid_objs,
         assignments=assignment_objs,
+    )
+
+
+# --- detect_vector_outliers -----------------------------------------------
+
+
+DEFAULT_OUTLIER_K = 8
+DEFAULT_OUTLIER_ZSCORE = 3.0
+DEFAULT_OUTLIER_MAX_RESULTS = 100
+
+
+@dataclass(frozen=True, slots=True)
+class VectorOutlier:
+    """One row flagged as an outlier by :func:`detect_vector_outliers`.
+
+    ``id`` is the row's ``id_column`` value when one was supplied,
+    otherwise the row's positional sample index. ``distance`` is the
+    distance from the row to its assigned cluster's centroid under the
+    clustering ``metric``. ``zscore`` is how many cluster-local
+    standard deviations above the cluster mean that distance sits
+    (``inf`` when the cluster has zero variance and the row is its
+    only outlier).
+    """
+
+    id: Any
+    cluster: int
+    distance: float
+    zscore: float
+
+
+@dataclass(frozen=True, slots=True)
+class ClusterOutlierStats:
+    """Per-cluster mean / std of within-cluster distances.
+
+    Lets a caller cross-check the threshold against the data — a
+    cluster whose ``std`` is tiny will flag rows that are objectively
+    close, just not as close as the rest of its cluster.
+    """
+
+    cluster: int
+    size: int
+    mean_distance: float
+    std_distance: float
+
+
+@dataclass(frozen=True, slots=True)
+class VectorOutlierResult:
+    """The outcome of a :func:`detect_vector_outliers` call.
+
+    ``outliers`` is sorted by ``zscore`` descending and capped at
+    ``max_results`` — ``total_outliers`` is the unclipped count so a
+    caller knows when it hit the cap. ``cluster_stats`` carries the
+    per-cluster distribution the threshold was applied against.
+    """
+
+    available: bool
+    sampled_rows: int
+    dimension: int
+    metric: str
+    k: int
+    zscore_threshold: float
+    total_outliers: int
+    outliers: list[VectorOutlier]
+    cluster_stats: list[ClusterOutlierStats]
+
+
+async def detect_vector_outliers(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    embedding_column: str,
+    *,
+    id_column: str | None = None,
+    k: int = DEFAULT_OUTLIER_K,
+    zscore_threshold: float = DEFAULT_OUTLIER_ZSCORE,
+    sample_size: int = DEFAULT_CLUSTER_SAMPLE_SIZE,
+    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    metric: str = "l2",
+    seed: int = 42,
+    max_results: int = DEFAULT_OUTLIER_MAX_RESULTS,
+) -> VectorOutlierResult:
+    """Flag pgvector rows that sit far from any cluster centroid.
+
+    Clusters the sample with the same k-means used by
+    :func:`cluster_vectors`, then for each row computes a within-cluster
+    z-score on the distance to its centroid. A row is an outlier when
+    ``zscore > zscore_threshold`` — i.e. it's noticeably further from
+    its own cluster's centroid than its cluster-mates are. The result
+    is sorted by ``zscore`` descending and capped at ``max_results``.
+
+    Compared to a global threshold this surfaces "weird-for-its-group"
+    rows, which is usually what the user actually wants — embeddings
+    of broad topics naturally have a wider spread than tight ones, so
+    the same absolute distance can be normal in one cluster and an
+    outlier in another.
+
+    Args:
+        k: Number of clusters used to partition the sample. Default 8
+            — enough granularity to give per-cluster stats some signal
+            without over-fragmenting. Must be >= 2.
+        zscore_threshold: Per-cluster z-score above which a row is
+            flagged. Default 3.0 (the classic "3-sigma" rule). Must
+            be > 0.
+        max_results: Cap on how many outlier rows are returned in the
+            list. ``total_outliers`` reports the unclipped count.
+
+    Raises:
+        VectorOpsError: On invalid identifiers, unknown ``metric``,
+            non-positive numeric arguments, ``k < 2``, ``k`` too large
+            for the sample, or a target column that isn't pgvector.
+    """
+    if metric not in {"l2", "cosine"}:
+        raise VectorOpsError(f"unknown metric for clustering: {metric!r}; expected 'l2' or 'cosine'")
+    if sample_size < 1:
+        raise VectorOpsError("sample_size must be at least 1")
+    if max_iterations < 1:
+        raise VectorOpsError("max_iterations must be at least 1")
+    if k < 2:
+        raise VectorOpsError("k must be at least 2")
+    if zscore_threshold <= 0:
+        raise VectorOpsError("zscore_threshold must be > 0")
+    if max_results < 1:
+        raise VectorOpsError("max_results must be at least 1")
+    _checked(schema, "schema")
+    _checked(table, "table")
+    _checked(embedding_column, "column")
+    if id_column is not None:
+        _checked(id_column, "column")
+
+    if not await extension_installed(driver, "vector"):
+        return VectorOutlierResult(
+            available=False,
+            sampled_rows=0,
+            dimension=0,
+            metric=metric,
+            k=k,
+            zscore_threshold=zscore_threshold,
+            total_outliers=0,
+            outliers=[],
+            cluster_stats=[],
+        )
+
+    dimension = await _vector_column_dimension(driver, schema, table, embedding_column)
+    if dimension is None:
+        raise VectorOpsError(
+            f"{schema}.{table}.{embedding_column} is not a pgvector vector(N) column (column missing or wrong type)"
+        )
+
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    emb_col = _quoted(embedding_column, "column")
+    select_clause = f"{emb_col} AS embedding"
+    if id_column is not None:
+        id_col = _quoted(id_column, "column")
+        select_clause = f"{id_col} AS row_id, {select_clause}"
+    rows = await driver.execute_query(
+        f"SELECT {select_clause} FROM {relation} WHERE {emb_col} IS NOT NULL LIMIT %s",
+        params=[sample_size],
+        force_readonly=True,
+    )
+
+    vectors: list[list[float]] = []
+    ids: list[Any] = []
+    for idx, row in enumerate(rows or []):
+        vec = _parse_embedding(row.cells.get("embedding"))
+        if vec is None or len(vec) != dimension:
+            continue
+        if metric == "cosine":
+            _normalize_in_place(vec)
+        vectors.append(vec)
+        ids.append(row.cells.get("row_id") if id_column is not None else idx)
+
+    if len(vectors) < k * 2:
+        raise VectorOpsError(
+            f"not enough rows for outlier detection: sampled {len(vectors)} parseable embeddings "
+            f"but k={k} requires at least {k * 2} (and ideally many more)"
+        )
+
+    _centroids, labels, distances, _iterations, _converged, _inertia = _kmeans(
+        vectors,
+        k,
+        max_iterations=max_iterations,
+        metric=metric,
+        seed=seed,
+    )
+
+    # Per-cluster mean + std of within-cluster distances. Tracked
+    # online so we don't allocate k bucket lists.
+    sums = [0.0] * k
+    sums_sq = [0.0] * k
+    sizes = [0] * k
+    for lbl, dist in zip(labels, distances, strict=True):
+        sizes[lbl] += 1
+        sums[lbl] += dist
+        sums_sq[lbl] += dist * dist
+    means = [sums[j] / sizes[j] if sizes[j] > 0 else 0.0 for j in range(k)]
+    stds: list[float] = []
+    for j in range(k):
+        if sizes[j] < 2:
+            stds.append(0.0)
+            continue
+        # Population variance is fine here — the sample is already a
+        # cap on the table and we're not extrapolating to a parameter.
+        var = max(sums_sq[j] / sizes[j] - means[j] * means[j], 0.0)
+        stds.append(math.sqrt(var))
+
+    flagged: list[VectorOutlier] = []
+    for i, (lbl, dist) in enumerate(zip(labels, distances, strict=True)):
+        # Singleton clusters are k-means' way of saying "this point
+        # didn't fit anywhere" — the row sits exactly on its own
+        # centroid (distance 0), so any z-score check would miss it.
+        # Flag them with inf so they always surface.
+        if sizes[lbl] == 1:
+            flagged.append(VectorOutlier(id=ids[i], cluster=lbl, distance=dist, zscore=math.inf))
+            continue
+        std = stds[lbl]
+        mean = means[lbl]
+        if std == 0.0:
+            # Constant-distance cluster: anything further than the
+            # mean is "infinitely far" in z-score terms. Use math.inf
+            # so the sort still ranks it above a finite-z outlier.
+            if dist > mean:
+                flagged.append(VectorOutlier(id=ids[i], cluster=lbl, distance=dist, zscore=math.inf))
+            continue
+        z = (dist - mean) / std
+        if z > zscore_threshold:
+            flagged.append(VectorOutlier(id=ids[i], cluster=lbl, distance=dist, zscore=z))
+
+    # inf compares greater than every float so the sort below puts
+    # zero-std outliers above finite-z ones, which is what we want.
+    flagged.sort(key=lambda o: o.zscore, reverse=True)
+    capped = flagged[:max_results]
+
+    cluster_stats = [
+        ClusterOutlierStats(cluster=j, size=sizes[j], mean_distance=means[j], std_distance=stds[j]) for j in range(k)
+    ]
+
+    return VectorOutlierResult(
+        available=True,
+        sampled_rows=len(vectors),
+        dimension=dimension,
+        metric=metric,
+        k=k,
+        zscore_threshold=zscore_threshold,
+        total_outliers=len(flagged),
+        outliers=capped,
+        cluster_stats=cluster_stats,
     )
