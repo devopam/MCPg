@@ -38,7 +38,26 @@ class AuditedFastMCP(FastMCP[AppContext]):
     """A FastMCP server that records an audit event for every tool call."""
 
     rate_limiter: RateLimiter
+    mcpg_settings: Settings
     in_flight_calls: int = 0
+
+    def _log_if_slow(self, name: str, duration: float) -> None:
+        if not hasattr(self, "mcpg_settings"):
+            return
+        threshold_ms = self.mcpg_settings.slow_call_threshold_ms
+        if threshold_ms <= 0:
+            return
+        threshold_sec = threshold_ms / 1000.0
+        if duration > threshold_sec:
+            import logging
+
+            logger = logging.getLogger("mcpg.server")
+            logger.warning(
+                "Slow tool call: %s took %.3fs (threshold: %.3fs)",
+                name,
+                duration,
+                threshold_sec,
+            )
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[ContentBlock] | dict[str, Any]:
         self.in_flight_calls += 1
@@ -55,10 +74,12 @@ class AuditedFastMCP(FastMCP[AppContext]):
                 result = await super().call_tool(name, arguments)
             except Exception as exc:
                 duration = time.monotonic() - start
+                self._log_if_slow(name, duration)
                 audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(exc)))
                 metrics.record_call(name, "error", duration)
                 raise
             duration = time.monotonic() - start
+            self._log_if_slow(name, duration)
             audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="ok"))
             metrics.record_call(name, "ok", duration)
             return result
@@ -163,6 +184,7 @@ def create_server(
         host=settings.http_host,
         port=settings.http_port,
     )
+    server.mcpg_settings = settings
     # Instantiate and register the RateLimiter
     server.rate_limiter = RateLimiter(
         enabled=settings.rate_limit_enabled,

@@ -138,6 +138,7 @@ class Settings:
     allow_insecure_tls: bool = False
     statement_timeout_ms: int = 30000
     lock_timeout_ms: int = 5000
+    slow_call_threshold_ms: int = 1000
     cache_enabled: bool = True
     cache_ttl_seconds: int = 300
     cache_maxsize: int = 1024
@@ -202,6 +203,7 @@ class Settings:
             f"allow_insecure_tls={self.allow_insecure_tls}, "
             f"statement_timeout_ms={self.statement_timeout_ms}, "
             f"lock_timeout_ms={self.lock_timeout_ms}, "
+            f"slow_call_threshold_ms={self.slow_call_threshold_ms}, "
             f"cache_enabled={self.cache_enabled}, "
             f"cache_ttl_seconds={self.cache_ttl_seconds}, "
             f"cache_maxsize={self.cache_maxsize}, "
@@ -625,6 +627,13 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         except ValueError:
             raise ConfigError(f"MCPG_LOCK_TIMEOUT_MS must be a non-negative integer (got {raw!r})") from None
 
+    slow_call_threshold_ms = 1000
+    if (raw := env.get("MCPG_SLOW_CALL_THRESHOLD_MS")) is not None:
+        try:
+            slow_call_threshold_ms = int(raw)
+        except ValueError:
+            raise ConfigError(f"MCPG_SLOW_CALL_THRESHOLD_MS must be an integer (got {raw!r})") from None
+
     # Re-arm the audit-trail redaction pattern with the operator's
     # MCPG_AUDIT_REDACT_KEYS extension (if any) so the very first audit
     # event the server records honours the configured list.
@@ -741,6 +750,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         allow_insecure_tls=allow_insecure_tls,
         statement_timeout_ms=statement_timeout_ms,
         lock_timeout_ms=lock_timeout_ms,
+        slow_call_threshold_ms=slow_call_threshold_ms,
         cache_enabled=cache_enabled,
         cache_ttl_seconds=cache_ttl_seconds,
         cache_maxsize=cache_maxsize,

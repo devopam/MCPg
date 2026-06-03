@@ -488,6 +488,17 @@ For stdio deployments, the `get_metrics_exposition()` MCP tool
 returns the same Prometheus payload as a string the agent can hand
 to a scrape target.
 
+### Slow-call latency logging
+
+To flag slow MCP-side tool calls, MCPg supports a latency threshold warning log:
+
+```bash
+export MCPG_SLOW_CALL_THRESHOLD_MS=1000  # Threshold in milliseconds (default: 1000)
+```
+
+* When configured (defaults to `1000` ms), tool calls that exceed this threshold are logged as a warning to `mcpg.server`.
+* Set this to `0` or a negative value to disable slow-call logging.
+
 ---
 
 ## Rate limiting
