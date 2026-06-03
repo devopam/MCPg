@@ -143,6 +143,8 @@ geo_search(schema, table, column, lon, lat, k=10)                         # Post
 ```
 recommend_vector_index(schema, table, column)                             # HNSW vs IVFFlat heuristics
 recommend_vector_quantization(schema)                                     # vector → halfvec / bit storage advisor
+migrate_vector_to_halfvec(schema, table, column)                          # DDL plan: vector(N) → halfvec(N) (drop/alter/recreate
+                                                                          # indexes; emits rollback_sql too — does not execute)
 analyze_vector_search(schema, table, column, query_vector)
 analyze_vector_table(schema, table)
 analyze_distance_metric(schema, table, column, sample_size=1000)          # cosine / l2 / inner_product picker
