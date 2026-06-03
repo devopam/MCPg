@@ -796,6 +796,52 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         )
         return asdict(result)
 
+    @server.tool(
+        name="cross_table_similarity",
+        description=(
+            "Find the k rows in target_schema.target_table most "
+            "similar to a specific row in source_schema.source_table. "
+            "Locates the source row via source_id_column = "
+            "source_id_value, reads its embedding from "
+            "source_embedding_column, then issues a pgvector k-NN "
+            "query against target_embedding_column. Both columns must "
+            "be vector(N) of the same N — verified from the catalog "
+            "up front so a mismatch fails with a clear error rather "
+            "than a cast error. Useful for entity-resolution / linking "
+            "across tables whose embeddings come from different models "
+            "but share a dimension. Returns "
+            "source_embedding_found=false when no row matches the id "
+            "value. Reports available=false if pgvector is not installed."
+        ),
+    )
+    async def cross_table_similarity(
+        ctx: _Ctx,
+        source_schema: str,
+        source_table: str,
+        source_embedding_column: str,
+        source_id_column: str,
+        source_id_value: Any,
+        target_schema: str,
+        target_table: str,
+        target_embedding_column: str,
+        k: int = vector_ops.DEFAULT_K,
+        metric: str = "l2",
+    ) -> dict[str, Any]:
+        result = await vector_ops.cross_table_similarity(
+            _driver(ctx),
+            source_schema=source_schema,
+            source_table=source_table,
+            source_embedding_column=source_embedding_column,
+            source_id_column=source_id_column,
+            source_id_value=source_id_value,
+            target_schema=target_schema,
+            target_table=target_table,
+            target_embedding_column=target_embedding_column,
+            k=k,
+            metric=metric,
+        )
+        return asdict(result)
+
 
 def _register_prisma(server: FastMCP[AppContext]) -> None:
     @server.tool(
