@@ -154,6 +154,8 @@ export_table(schema, table, format="csv", limit=10000)
 ```
 import_csv(schema, table, content, header=true, delimiter=",", columns=null)
 import_json(schema, table, content, columns=null)
+import_vectors(schema, table, embedding_column, content, format="json", id_column=null)
+                                                     # pgvector vector(N) loader — validates every row's dim against the column
 ```
 
 **Subprocess** (`unrestricted` + `MCPG_ALLOW_SHELL=true`):

@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 import pytest
-from _fakes import FakeDatabase, FakeDriver
+from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
@@ -27,6 +27,7 @@ from mcpg.data_movement import (
     export_table,
     import_csv,
     import_json,
+    import_vectors,
     restore_database,
 )
 from mcpg.server import create_server
@@ -1001,3 +1002,200 @@ async def test_import_tools_registered_in_unrestricted_mode() -> None:
         assert result.isError is False
         assert result.structuredContent is not None
         assert result.structuredContent["format"] == "csv"
+
+
+# --- import_vectors --------------------------------------------------------
+
+
+def _vector_routes(*, dimension: int | None) -> dict[str, list[dict[str, Any]]]:
+    """FakeRoutingDriver routes for the dimension lookup."""
+    if dimension is None:
+        return {"FROM pg_attribute a": []}
+    return {"FROM pg_attribute a": [{"type_name": "vector", "type_mod": dimension}]}
+
+
+async def test_import_vectors_inserts_json_payload_as_pgvector_literals() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    payload = json.dumps([{"id": 1, "embedding": [0.1, 0.2]}, {"id": 2, "embedding": [0.3, 0.4]}])
+
+    result = await import_vectors(db, "app", "docs", "embedding", payload, id_column="id")  # type: ignore[arg-type]
+
+    assert isinstance(result, ImportResult)
+    assert result.format == "json" and result.rows_imported == 2
+    sql, rows = db.execute_many_calls[0]
+    assert sql == 'INSERT INTO "app"."docs" ("id", "embedding") VALUES (%s, %s::vector)'
+    assert rows == [(1, "[0.1,0.2]"), (2, "[0.3,0.4]")]
+
+
+async def test_import_vectors_without_id_column_inserts_only_the_embedding() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=3)))
+    payload = json.dumps([{"embedding": [1.0, 2.0, 3.0]}])
+
+    await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
+
+    sql, rows = db.execute_many_calls[0]
+    assert sql == 'INSERT INTO "app"."docs" ("embedding") VALUES (%s::vector)'
+    assert rows == [("[1.0,2.0,3.0]",)]
+
+
+async def test_import_vectors_accepts_csv_payload_with_bracketed_literals() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    content = 'id,embedding\n1,"[0.1, 0.2]"\n2,"[0.3,0.4]"\n'
+
+    result = await import_vectors(db, "app", "docs", "embedding", content, format="csv", id_column="id")  # type: ignore[arg-type]
+
+    assert result.format == "csv" and result.rows_imported == 2
+    _, rows = db.execute_many_calls[0]
+    assert rows == [("1", "[0.1,0.2]"), ("2", "[0.3,0.4]")]
+
+
+async def test_import_vectors_accepts_csv_with_comma_separated_cells() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    # No brackets, just bare comma-separated numbers — must be quoted in CSV
+    # so the inner comma isn't a column separator.
+    content = 'embedding\n"0.5, 0.6"\n"0.7, 0.8"\n'
+
+    await import_vectors(db, "app", "docs", "embedding", content, format="csv")  # type: ignore[arg-type]
+
+    _, rows = db.execute_many_calls[0]
+    assert rows == [("[0.5,0.6]",), ("[0.7,0.8]",)]
+
+
+async def test_import_vectors_rejects_dimension_mismatch_before_any_insert() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=3)))
+    payload = json.dumps([{"embedding": [0.1, 0.2, 0.3]}, {"embedding": [0.4, 0.5]}])
+
+    # Bad row is the 2nd -> "row 2" (1-based; gemini PR #48 review fix).
+    with pytest.raises(ImportDataError, match=r"row 2 embedding has dimension 2, but the column expects 3"):
+        await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
+    # The whole call failed — nothing was sent to execute_many.
+    assert db.execute_many_calls == []
+
+
+async def test_import_vectors_errors_when_column_is_not_pgvector() -> None:
+    # Column lookup returns no rows -> not a vector column.
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=None)))
+
+    with pytest.raises(ImportDataError, match="not a pgvector vector"):
+        await import_vectors(db, "app", "docs", "embedding", "[]")  # type: ignore[arg-type]
+
+
+async def test_import_vectors_empty_json_array_is_a_noop() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+
+    result = await import_vectors(db, "app", "docs", "embedding", "[]")  # type: ignore[arg-type]
+
+    assert result.rows_imported == 0
+    assert db.execute_many_calls == []
+
+
+async def test_import_vectors_rejects_unknown_format() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    with pytest.raises(ImportDataError, match="unsupported format"):
+        await import_vectors(db, "app", "docs", "embedding", "[]", format="parquet")  # type: ignore[arg-type]
+
+
+async def test_import_vectors_rejects_unsafe_identifiers() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    with pytest.raises(ImportDataError, match="invalid table"):
+        await import_vectors(db, "app", 'docs"; DROP TABLE x', "embedding", "[]")  # type: ignore[arg-type]
+
+
+async def test_import_vectors_rejects_null_embedding_row() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    payload = json.dumps([{"embedding": [0.1, 0.2]}, {"embedding": None}])
+
+    # The bad row is the 2nd in the payload — error message reports
+    # 1-based "row 2" (gemini PR #48 review fix).
+    with pytest.raises(ImportDataError, match="row 2 has a NULL embedding"):
+        await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
+
+
+async def test_import_vectors_rejects_non_numeric_value() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    payload = json.dumps([{"embedding": [0.1, "not-a-number"]}])
+
+    with pytest.raises(ImportDataError, match="non-numeric"):
+        await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
+
+
+async def test_import_vectors_rejects_unsupported_embedding_type() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    payload = json.dumps([{"embedding": {"x": 1}}])
+
+    with pytest.raises(ImportDataError, match="unsupported type"):
+        await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
+
+
+async def test_import_vectors_csv_requires_embedding_column_in_header() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    with pytest.raises(ImportDataError, match="missing the embedding column"):
+        await import_vectors(db, "app", "docs", "embedding", "id\n1\n", format="csv")  # type: ignore[arg-type]
+
+
+async def test_import_vectors_json_row_must_include_embedding_field() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    payload = json.dumps([{"id": 1}])
+    # 1-based row index (gemini PR #48 review fix).
+    with pytest.raises(ImportDataError, match=r"row 1 is missing the embedding column 'embedding'"):
+        await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
+
+
+async def test_import_vectors_json_missing_field_reports_the_right_row_number() -> None:
+    # Three rows; the 3rd is missing the embedding field. Error must
+    # call out "row 3" (1-based).
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    payload = json.dumps([{"embedding": [0.1, 0.2]}, {"embedding": [0.3, 0.4]}, {"id": 99}])
+    with pytest.raises(ImportDataError, match=r"row 3 is missing the embedding column 'embedding'"):
+        await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
+
+
+async def test_import_vectors_falls_back_to_input_length_when_rowcount_is_negative() -> None:
+    # FakeDatabase lets us pin a negative rowcount.
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)), execute_many_rowcount=-1)
+    payload = json.dumps([{"embedding": [0.1, 0.2]}, {"embedding": [0.3, 0.4]}])
+
+    result = await import_vectors(db, "app", "docs", "embedding", payload)  # type: ignore[arg-type]
+
+    assert result.rows_imported == 2
+
+
+async def test_import_vectors_wraps_underlying_insert_failures() -> None:
+    class _BoomDb:
+        def __init__(self, driver: FakeRoutingDriver) -> None:
+            self._driver = driver
+
+        def driver(self) -> FakeRoutingDriver:
+            return self._driver
+
+        async def execute_many(self, _sql: str, _params_seq: Any) -> int:
+            raise RuntimeError("kaboom")
+
+    db = _BoomDb(FakeRoutingDriver(_vector_routes(dimension=2)))
+
+    with pytest.raises(ImportDataError, match="INSERT failed: kaboom"):
+        await import_vectors(db, "app", "docs", "embedding", json.dumps([{"embedding": [0.1, 0.2]}]))  # type: ignore[arg-type]
+
+
+async def test_import_vectors_tool_is_listed_in_unrestricted_mode() -> None:
+    unrestricted = load_settings(
+        {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
+    )
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    server = create_server(unrestricted, database=db)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "import_vectors" in listed
+        result = await client.call_tool(
+            "import_vectors",
+            {
+                "schema": "app",
+                "table": "docs",
+                "embedding_column": "embedding",
+                "content": json.dumps([{"embedding": [0.1, 0.2]}]),
+            },
+        )
+        assert result.isError is False
+        assert result.structuredContent is not None
+        assert result.structuredContent["rows_imported"] == 1

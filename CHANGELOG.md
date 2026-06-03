@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`import_vectors` tool (pgvector).** Bulk-load embeddings into a
+  pgvector `vector(N)` column from JSON (array of objects) or CSV.
+  Reads the column's declared `N` from the catalog up-front and
+  validates every row in the payload BEFORE any INSERT runs — a
+  dimension mismatch on row 1000 fails the whole call rather than
+  leaving 999 partial inserts behind. CSV cells accept bracketed
+  pgvector literals or comma-separated numbers; JSON accepts lists or
+  literal strings. Optional parallel `id_column` for an
+  `INSERT (id, embedding) VALUES (%s, %s::vector)` shape. Errors when
+  the target column isn't pgvector. Write-gated (unrestricted mode).
+
 - **Slow-call logging from the MCP layer (`MCPG_SLOW_CALL_THRESHOLD_MS`).** Logs a warning
   to the `mcpg.server` logger when any tool execution duration exceeds the configured threshold.
   Defaults to `1000` ms. A value of `0` or less disables this logging.

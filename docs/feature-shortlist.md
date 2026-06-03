@@ -104,7 +104,7 @@ awareness, and HNSW/IVFFlat detection in `list_indexes`:
 | 9.3 | `cluster_vectors` — k-means cluster a vector column, return centroids + per-row labels | M | Medium-High | Exploration / segmentation tool. |
 | 9.4 | `detect_vector_outliers` — flag rows whose embedding is far from any cluster centroid | S-M | Medium-High | Data quality + content moderation. |
 | 9.5 | `monitor_embedding_drift` — compare distributional stats of vectors over time windows | M | Medium | Ops / model-quality monitoring. |
-| 9.6 | `import_vectors` — bulk-load embeddings from JSON/CSV with `vector(N)` column-type validation | S | Medium | Sibling of `import_csv` specialised for vector columns. |
+| 9.6 | ✅ **Shipped.** `import_vectors` — bulk-load embeddings from JSON/CSV into a pgvector `vector(N)` column; reads the declared `N` from the catalog and validates every row before any INSERT runs. Optional parallel `id_column`. | S | Medium | Sibling of `import_csv` specialised for vector columns. |
 | 9.7 | `cross_table_similarity` — given a row in table A, find the k most similar rows in table B (different embedding source, same dim) | S | Medium | Useful for entity resolution / linking across tables. |
 | 9.8 | `analyze_distance_metric` — recommend cosine vs L2 vs inner-product based on vector-magnitude distribution | S | Medium | Concrete advice when the user hasn't decided yet. |
 | 9.9 | `monitor_index_build` — surface HNSW / IVFFlat build progress for long-running index creations | S | Medium | Lives next to `list_active_queries`; useful for big-table index work. |
