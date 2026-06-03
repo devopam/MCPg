@@ -101,7 +101,7 @@ awareness, and HNSW/IVFFlat detection in `list_indexes`:
 |---|---|---|---|---|
 | 9.1 | HNSW recall/speed tuner (`analyze_hnsw_recall`) — sweep `ef_search` against a ground-truth set, return recall@k curves | M | High | Lets agents pick the right speed/quality knob without manual tuning. |
 | 9.2 | ✅ **Shipped.** `mmr_search` — Maximal Marginal Relevance re-ranking on top of vector_search for result diversity. `lambda_mult` trades relevance for diversity; cosine over candidate embeddings, metric-independent. | S-M | Medium-High | Quality of agentic RAG flows. |
-| 9.3 | `cluster_vectors` — k-means cluster a vector column, return centroids + per-row labels | M | Medium-High | Exploration / segmentation tool. |
+| 9.3 | ✅ **Shipped.** `cluster_vectors` — k-means (Lloyd + k-means++ seeding) over up to 5000 sampled rows of an embedding column. Returns centroids + per-row assignments; deterministic via `seed`; `metric` supports `l2` (default) or `cosine` (vectors normalised, centroids re-normalised each iteration). Lives in `mcpg.vector_ops`. | M | Medium-High | Exploration / segmentation tool. |
 | 9.4 | `detect_vector_outliers` — flag rows whose embedding is far from any cluster centroid | S-M | Medium-High | Data quality + content moderation. |
 | 9.5 | `monitor_embedding_drift` — compare distributional stats of vectors over time windows | M | Medium | Ops / model-quality monitoring. |
 | 9.6 | ✅ **Shipped.** `import_vectors` — bulk-load embeddings from JSON/CSV into a pgvector `vector(N)` column; reads the declared `N` from the catalog and validates every row before any INSERT runs. Optional parallel `id_column`. | S | Medium | Sibling of `import_csv` specialised for vector columns. |

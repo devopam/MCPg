@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`cluster_vectors` tool (pgvector).** k-means clusters an
+  embedding column in-process: samples up to `sample_size` (default
+  5000) non-NULL rows of `schema.table.embedding_column`, runs
+  Lloyd's algorithm with k-means++ seeding (deterministic via
+  `seed`), and returns `centroids` (one per cluster with size) +
+  `assignments` (per-row cluster index + distance). When
+  `id_column` is set each assignment carries that column's value;
+  otherwise the row's positional sample index. `metric` supports
+  `l2` (default — squared Euclidean) or `cosine` (vectors
+  normalised, centroids re-normalised every iteration so Lloyd
+  still converges). Includes empty-cluster re-seeding and a
+  centroid-drift convergence check. Read-only; `available=false`
+  without pgvector. Lives in `mcpg.vector_ops`.
+
 - **`monitor_index_build` tool.** Surfaces every active `CREATE
   INDEX` operation from `pg_stat_progress_create_index` (PG12+, no
   extension required). One row per build with PID, resolved

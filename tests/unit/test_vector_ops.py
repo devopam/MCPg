@@ -9,16 +9,23 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcpg.config import load_settings
 from mcpg.server import create_server
 from mcpg.vector_ops import (
+    DEFAULT_CLUSTER_SAMPLE_SIZE,
+    DEFAULT_MAX_ITERATIONS,
     DEFAULT_SAMPLE_SIZE,
+    ClusterVectorsResult,
     CrossTableMatch,
     CrossTableSimilarityResult,
     DistanceMetricRecommendation,
     VectorOpsError,
+    _cosine_distance,
     _l2_norm,
+    _normalize_in_place,
     _parse_embedding,
     _pick_metric,
+    _squared_distance,
     _vector_literal,
     analyze_distance_metric,
+    cluster_vectors,
     cross_table_similarity,
 )
 
@@ -572,3 +579,331 @@ async def test_cross_table_similarity_tool_is_listed_and_callable() -> None:
     assert result.structuredContent is not None
     assert result.structuredContent["available"] is True
     assert result.structuredContent["source_embedding_found"] is True
+
+
+# --- cluster_vectors helpers ----------------------------------------------
+
+
+def test_squared_distance_is_zero_for_identical_vectors() -> None:
+    assert _squared_distance([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == 0.0
+    # (3-0)^2 + (4-0)^2 = 9 + 16 = 25
+    assert _squared_distance([3.0, 4.0], [0.0, 0.0]) == 25.0
+
+
+def test_squared_distance_raises_on_dim_mismatch() -> None:
+    with pytest.raises(ValueError):
+        _squared_distance([1.0, 0.0], [1.0, 0.0, 0.0])
+
+
+def test_cosine_distance_is_zero_for_aligned_vectors() -> None:
+    assert _cosine_distance([1.0, 0.0], [1.0, 0.0]) == pytest.approx(0.0)
+    # Orthogonal -> distance 1.
+    assert _cosine_distance([1.0, 0.0], [0.0, 1.0]) == pytest.approx(1.0)
+
+
+def test_cosine_distance_is_one_for_zero_vector() -> None:
+    # By convention, zero magnitude → max distance.
+    assert _cosine_distance([0.0, 0.0], [1.0, 1.0]) == 1.0
+
+
+def test_normalize_in_place_yields_unit_norm_vectors() -> None:
+    vec = [3.0, 4.0]
+    _normalize_in_place(vec)
+    assert _l2_norm(vec) == pytest.approx(1.0)
+    # Zero vectors pass through unchanged.
+    zero = [0.0, 0.0, 0.0]
+    _normalize_in_place(zero)
+    assert zero == [0.0, 0.0, 0.0]
+
+
+# --- cluster_vectors end-to-end -------------------------------------------
+
+
+_VECTOR_DIM_LOOKUP = "FROM pg_attribute a"
+_SAMPLE_QUERY = "IS NOT NULL LIMIT"
+
+
+def _cluster_routes(
+    *,
+    dim: int | None = 2,
+    sample_rows: list[dict[str, object]] | None = None,
+) -> dict[tuple[str, tuple[object, ...] | None], list[dict[str, object]]]:
+    """Standard FakeParamRoutingDriver routes for cluster_vectors."""
+    dim_rows: list[dict[str, object]] = [{"type_name": "vector", "type_mod": dim}] if dim is not None else []
+    return {
+        ("pg_extension", None): [{"present": 1}],
+        (_VECTOR_DIM_LOOKUP, None): dim_rows,
+        (_SAMPLE_QUERY, None): sample_rows or [],
+    }
+
+
+async def test_cluster_vectors_reports_unavailable_without_pgvector() -> None:
+    driver = FakeParamRoutingDriver({("pg_extension", None): []})
+
+    result = await cluster_vectors(
+        driver,
+        "app",
+        "docs",
+        "embedding",
+        k=2,  # type: ignore[arg-type]
+    )
+
+    assert result == ClusterVectorsResult(
+        available=False,
+        sampled_rows=0,
+        dimension=0,
+        metric="l2",
+        iterations=0,
+        converged=False,
+        inertia=0.0,
+        centroids=[],
+        assignments=[],
+    )
+
+
+async def test_cluster_vectors_finds_two_well_separated_clusters() -> None:
+    # 6 points: 3 around (0,0), 3 around (10,10). k-means with k=2 must
+    # assign each cluster cohesively regardless of starting seed.
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.1, 0.0]},
+        {"embedding": [0.0, 0.1]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.1, 10.0]},
+        {"embedding": [10.0, 10.1]},
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await cluster_vectors(
+        driver,
+        "app",
+        "docs",
+        "embedding",
+        k=2,  # type: ignore[arg-type]
+    )
+
+    assert result.available is True
+    assert result.sampled_rows == 6
+    assert result.dimension == 2
+    assert result.metric == "l2"
+    # Two clusters of 3 each.
+    sizes = sorted(c.size for c in result.centroids)
+    assert sizes == [3, 3]
+    # First three rows share one cluster, last three share the other.
+    a_labels = {result.assignments[i].cluster for i in range(3)}
+    b_labels = {result.assignments[i].cluster for i in range(3, 6)}
+    assert len(a_labels) == 1 and len(b_labels) == 1
+    assert a_labels != b_labels
+    # Inertia is small for tight clusters.
+    assert result.inertia < 1.0
+    # Algorithm converges on this toy set.
+    assert result.converged is True
+
+
+async def test_cluster_vectors_uses_id_column_when_provided() -> None:
+    sample_rows: list[dict[str, object]] = [
+        {"row_id": "alpha", "embedding": [0.0, 0.0]},
+        {"row_id": "beta", "embedding": [0.1, 0.1]},
+        {"row_id": "gamma", "embedding": [10.0, 10.0]},
+        {"row_id": "delta", "embedding": [10.1, 10.1]},
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await cluster_vectors(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        k=2,
+        id_column="row_id",
+    )
+
+    ids = sorted(a.id for a in result.assignments)
+    assert ids == ["alpha", "beta", "delta", "gamma"]
+
+
+async def test_cluster_vectors_supports_cosine_metric() -> None:
+    # Two unit vectors per direction.
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [1.0, 0.0]},
+        {"embedding": [0.99, 0.14]},  # ~7° from [1, 0]
+        {"embedding": [-1.0, 0.0]},
+        {"embedding": [-0.99, -0.14]},
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await cluster_vectors(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        k=2,
+        metric="cosine",
+    )
+
+    assert result.metric == "cosine"
+    # Each cluster has 2 members. Centroids should be ~ unit norm.
+    sizes = sorted(c.size for c in result.centroids)
+    assert sizes == [2, 2]
+    for c in result.centroids:
+        assert _l2_norm(c.centroid) == pytest.approx(1.0, abs=1e-6)
+
+
+async def test_cluster_vectors_is_deterministic_given_a_seed() -> None:
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [v, v]} for v in (0.0, 0.1, 0.2, 5.0, 5.1, 5.2, 10.0, 10.1, 10.2)
+    ]
+    # Same seed -> same centroids on two runs.
+    driver1 = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+    driver2 = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    r1 = await cluster_vectors(driver1, "app", "docs", "embedding", k=3, seed=7)  # type: ignore[arg-type]
+    r2 = await cluster_vectors(driver2, "app", "docs", "embedding", k=3, seed=7)  # type: ignore[arg-type]
+
+    assert [c.centroid for c in r1.centroids] == [c.centroid for c in r2.centroids]
+    assert [a.cluster for a in r1.assignments] == [a.cluster for a in r2.assignments]
+
+
+async def test_cluster_vectors_binds_sample_size_as_limit() -> None:
+    sample_rows: list[dict[str, object]] = [{"embedding": [float(i), 0.0]} for i in range(10)]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    await cluster_vectors(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        k=2,
+        sample_size=500,
+    )
+
+    sample_call = next(call for call in driver.calls if "IS NOT NULL" in call[0])
+    assert sample_call[1] == [500]
+
+
+async def test_cluster_vectors_skips_rows_with_wrong_dimension() -> None:
+    # Declared dim is 2; one row is 3-D and must be silently skipped.
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.1, 0.0]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.1, 10.0]},
+        {"embedding": [1.0, 2.0, 3.0]},  # bad — wrong dim
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await cluster_vectors(driver, "app", "docs", "embedding", k=2)  # type: ignore[arg-type]
+
+    assert result.sampled_rows == 4
+
+
+async def test_cluster_vectors_rejects_not_enough_rows_for_k() -> None:
+    # 3 rows, k=2 -> needs at least 4 (2*k).
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [1.0, 0.0]},
+        {"embedding": [0.0, 1.0]},
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    with pytest.raises(VectorOpsError, match="not enough rows to cluster"):
+        await cluster_vectors(driver, "app", "docs", "embedding", k=2)  # type: ignore[arg-type]
+
+
+async def test_cluster_vectors_raises_when_column_is_not_pgvector() -> None:
+    driver = FakeParamRoutingDriver(_cluster_routes(dim=None))
+    with pytest.raises(VectorOpsError, match="is not a pgvector"):
+        await cluster_vectors(driver, "app", "docs", "embedding", k=2)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"metric": "manhattan", "k": 2}, "metric"),
+        ({"k": 0}, "k must be"),
+        ({"k": 1}, "k must be"),
+        ({"k": 2, "sample_size": 0}, "sample_size"),
+        ({"k": 2, "max_iterations": 0}, "max_iterations"),
+    ],
+)
+async def test_cluster_vectors_validates_arguments(kwargs: dict[str, object], match: str) -> None:
+    driver = FakeParamRoutingDriver(_cluster_routes())
+    with pytest.raises(VectorOpsError, match=match):
+        await cluster_vectors(driver, "app", "docs", "embedding", **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad", ['x"; DROP TABLE y', "1bad", "a-b"])
+async def test_cluster_vectors_rejects_unsafe_identifiers(bad: str) -> None:
+    driver = FakeParamRoutingDriver(_cluster_routes())
+    with pytest.raises(VectorOpsError, match="invalid"):
+        await cluster_vectors(driver, bad, "docs", "embedding", k=2)  # type: ignore[arg-type]
+
+
+async def test_cluster_vectors_reports_default_constants_via_module() -> None:
+    # Lightweight sanity that the surfaced defaults match the docstring.
+    assert DEFAULT_CLUSTER_SAMPLE_SIZE == 5000
+    assert DEFAULT_MAX_ITERATIONS == 20
+
+
+async def test_cluster_vectors_avoids_duplicate_centroids_when_many_clusters_collapse() -> None:
+    # Regression for the gemini PR #52 bug: when several clusters end
+    # up empty in the same iteration, each was re-seeded onto the
+    # *same* worst-fit point (distances[] wasn't updated inside the
+    # loop), yielding duplicate centroids. We force the situation by
+    # asking for k=4 over 8 well-separated points so it's still
+    # sensible, but seed with a value where the initial seeding could
+    # plausibly leave some clusters underfilled; either way the final
+    # centroids must all be distinct.
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [x, y]}
+        for x, y in [
+            (0.0, 0.0),
+            (0.1, 0.0),
+            (10.0, 0.0),
+            (10.1, 0.0),
+            (0.0, 10.0),
+            (0.1, 10.0),
+            (10.0, 10.0),
+            (10.1, 10.0),
+        ]
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await cluster_vectors(
+        driver,
+        "app",
+        "docs",
+        "embedding",
+        k=4,
+        seed=1,  # type: ignore[arg-type]
+    )
+
+    # Render each centroid as a tuple so we can use set membership.
+    distinct = {tuple(c.centroid) for c in result.centroids}
+    assert len(distinct) == len(result.centroids), (
+        f"duplicate centroids slipped through: {[c.centroid for c in result.centroids]}"
+    )
+
+
+async def test_cluster_vectors_tool_is_callable_from_a_client() -> None:
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.1, 0.1]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.1, 10.1]},
+    ]
+    database = FakeDatabase(FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows)))
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "cluster_vectors" in listed
+        result = await client.call_tool(
+            "cluster_vectors",
+            {"schema": "app", "table": "docs", "embedding_column": "embedding", "k": 2},
+        )
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["available"] is True
+    assert len(result.structuredContent["centroids"]) == 2
