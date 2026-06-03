@@ -86,6 +86,44 @@ def _quoted(name: str, kind: str) -> str:
     return f'"{_checked(name, kind)}"'
 
 
+# pgvector distance operators, shared across the analytics tools so the
+# choice stays consistent with :mod:`mcpg.textsearch`.
+_VECTOR_METRICS = {"l2": "<->", "cosine": "<=>", "inner_product": "<#>"}
+
+
+async def _vector_column_dimension(driver: SqlDriver, schema: str, table: str, column: str) -> int | None:
+    """Return the declared ``N`` of a ``vector(N)`` column, or ``None``.
+
+    ``None`` means either the column doesn't exist or it isn't a
+    pgvector ``vector`` type; the caller decides whether that's an error.
+    Same shape as the helper :mod:`mcpg.data_movement` uses for
+    ``import_vectors`` — duplicated here rather than imported to avoid
+    cross-module coupling for what is a single 8-line query.
+    """
+    rows = await driver.execute_query(
+        "SELECT t.typname AS type_name, a.atttypmod AS type_mod "
+        "FROM pg_attribute a "
+        "JOIN pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_type t ON t.oid = a.atttypid "
+        "WHERE n.nspname = %s AND c.relname = %s AND a.attname = %s AND a.attnum > 0",
+        params=[schema, table, column],
+        force_readonly=True,
+    )
+    if not rows:
+        return None
+    cell = rows[0].cells
+    if cell.get("type_name") != "vector":
+        return None
+    type_mod = cell.get("type_mod")
+    return int(type_mod) if isinstance(type_mod, int) and type_mod > 0 else None
+
+
+def _vector_literal(vec: list[float]) -> str:
+    """Format a Python embedding as a pgvector text literal (``"[v1,v2,...]"``)."""
+    return "[" + ",".join(str(float(v)) for v in vec) + "]"
+
+
 def _parse_embedding(value: Any) -> list[float] | None:
     """Coerce a pgvector cell into a list of floats, or ``None``.
 
@@ -249,4 +287,162 @@ async def analyze_distance_metric(
         pre_normalised=pre_normalised,
         recommended_metric=metric,
         rationale=rationale,
+    )
+
+
+# --- cross_table_similarity -----------------------------------------------
+
+
+DEFAULT_K = 10
+
+
+@dataclass(frozen=True, slots=True)
+class CrossTableMatch:
+    """One hit from :func:`cross_table_similarity`.
+
+    ``distance`` follows the pgvector metric semantics: smaller = closer
+    for ``l2`` / ``cosine`` (where ``cosine`` is ``1 - cos(theta)``) and
+    smaller (more negative) = closer for ``inner_product`` (it returns
+    the negated dot product). ``row`` is the target row minus its
+    embedding column.
+    """
+
+    distance: float
+    row: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class CrossTableSimilarityResult:
+    """The outcome of a :func:`cross_table_similarity` call.
+
+    ``available`` is ``False`` when the pgvector extension is not
+    installed. ``source_embedding_found`` is ``False`` when the
+    identifier value matched no row in the source table (callers can
+    distinguish "not found" from "table is empty of matches").
+    """
+
+    available: bool
+    source_embedding_found: bool
+    source_dimension: int
+    matches: list[CrossTableMatch]
+
+
+async def cross_table_similarity(
+    driver: SqlDriver,
+    *,
+    source_schema: str,
+    source_table: str,
+    source_embedding_column: str,
+    source_id_column: str,
+    source_id_value: Any,
+    target_schema: str,
+    target_table: str,
+    target_embedding_column: str,
+    k: int = DEFAULT_K,
+    metric: str = "l2",
+) -> CrossTableSimilarityResult:
+    """Find the ``k`` rows in B most similar to a given row in A.
+
+    Locates ``source_id_value`` in ``source_schema.source_table`` via
+    ``source_id_column``, reads its embedding from
+    ``source_embedding_column``, then issues a k-NN query against
+    ``target_schema.target_table.target_embedding_column``.
+
+    The source and target columns must be pgvector ``vector(N)`` of the
+    same ``N`` — checked from the catalog up front so a dimension
+    mismatch fails with a clear error rather than a pgvector cast error
+    on the inner query.
+
+    Useful for entity resolution / linking ("which posts most resemble
+    this comment?") across tables whose embeddings come from different
+    models so long as they share a dimension.
+
+    Raises:
+        VectorOpsError: For invalid identifiers, an unknown ``metric``,
+            non-positive ``k``, a missing column, dimension mismatch
+            between source and target, or an unreadable source row.
+    """
+    if metric not in _VECTOR_METRICS:
+        raise VectorOpsError(f"unknown vector metric: {metric!r}")
+    if k < 1:
+        raise VectorOpsError("k must be at least 1")
+    # Validate identifiers up front — a bad schema/table/column name
+    # would otherwise route through the catalog lookup as "column
+    # missing" first, hiding the real "invalid identifier" failure.
+    for name, kind in (
+        (source_schema, "schema"),
+        (source_table, "table"),
+        (source_embedding_column, "column"),
+        (source_id_column, "column"),
+        (target_schema, "schema"),
+        (target_table, "table"),
+        (target_embedding_column, "column"),
+    ):
+        _checked(name, kind)
+
+    if not await extension_installed(driver, "vector"):
+        return CrossTableSimilarityResult(available=False, source_embedding_found=False, source_dimension=0, matches=[])
+
+    source_dim = await _vector_column_dimension(driver, source_schema, source_table, source_embedding_column)
+    if source_dim is None:
+        raise VectorOpsError(
+            f"{source_schema}.{source_table}.{source_embedding_column} is not a pgvector "
+            "vector(N) column (column missing or wrong type)"
+        )
+    target_dim = await _vector_column_dimension(driver, target_schema, target_table, target_embedding_column)
+    if target_dim is None:
+        raise VectorOpsError(
+            f"{target_schema}.{target_table}.{target_embedding_column} is not a pgvector "
+            "vector(N) column (column missing or wrong type)"
+        )
+    if source_dim != target_dim:
+        raise VectorOpsError(
+            f"vector dimension mismatch: source {source_schema}.{source_table}."
+            f"{source_embedding_column} is vector({source_dim}) but target "
+            f"{target_schema}.{target_table}.{target_embedding_column} is "
+            f"vector({target_dim}); cross_table_similarity needs equal dimensions"
+        )
+
+    # Source-row fetch — bound id value; column names identifier-validated.
+    src_relation = f"{_quoted(source_schema, 'schema')}.{_quoted(source_table, 'table')}"
+    src_emb_col = _quoted(source_embedding_column, "column")
+    src_id_col = _quoted(source_id_column, "column")
+    src_rows = await driver.execute_query(
+        f"SELECT {src_emb_col} AS embedding FROM {src_relation} WHERE {src_id_col} = %s LIMIT 1",
+        params=[source_id_value],
+        force_readonly=True,
+    )
+    if not src_rows:
+        return CrossTableSimilarityResult(
+            available=True, source_embedding_found=False, source_dimension=source_dim, matches=[]
+        )
+    embedding = _parse_embedding(src_rows[0].cells.get("embedding"))
+    if embedding is None:
+        raise VectorOpsError(
+            f"source row {source_id_value!r} has a NULL or unparseable embedding in "
+            f"{source_schema}.{source_table}.{source_embedding_column}"
+        )
+
+    # Target k-NN — bind the literal as a vector parameter, ORDER BY the
+    # configured metric. SELECT * carries through whatever columns the
+    # target table has; we strip the embedding column from each result
+    # row so the caller doesn't get a wall of floats.
+    operator = _VECTOR_METRICS[metric]
+    tgt_relation = f"{_quoted(target_schema, 'schema')}.{_quoted(target_table, 'table')}"
+    tgt_col = _quoted(target_embedding_column, "column")
+    literal = _vector_literal(embedding)
+    tgt_rows = await driver.execute_query(
+        f"SELECT *, {tgt_col} {operator} %s::vector AS mcpg_distance "
+        f"FROM {tgt_relation} ORDER BY {tgt_col} {operator} %s::vector LIMIT %s",
+        params=[literal, literal, k],
+        force_readonly=True,
+    )
+    matches: list[CrossTableMatch] = []
+    for row in tgt_rows or []:
+        cells = dict(row.cells)
+        distance = cells.pop("mcpg_distance")
+        cells.pop(target_embedding_column, None)  # strip the embedding column
+        matches.append(CrossTableMatch(distance=distance, row=cells))
+    return CrossTableSimilarityResult(
+        available=True, source_embedding_found=True, source_dimension=source_dim, matches=matches
     )
