@@ -825,11 +825,13 @@ class VectorOutlier:
 
     ``id`` is the row's ``id_column`` value when one was supplied,
     otherwise the row's positional sample index. ``distance`` is the
-    distance from the row to its assigned cluster's centroid under the
-    clustering ``metric``. ``zscore`` is how many cluster-local
-    standard deviations above the cluster mean that distance sits
-    (``inf`` when the cluster has zero variance and the row is its
-    only outlier).
+    distance from the row to its assigned cluster's centroid (L2
+    Euclidean for ``metric="l2"``, ``1 - cos(theta)`` for cosine —
+    in both cases the natural unsquared scale, so a z-score on top
+    of these values is interpretable). ``zscore`` is how many
+    cluster-local standard deviations above the cluster mean that
+    distance sits (``inf`` when the cluster has zero variance and
+    the row is its only outlier, or for any singleton cluster).
     """
 
     id: Any
@@ -992,6 +994,15 @@ async def detect_vector_outliers(
         metric=metric,
         seed=seed,
     )
+
+    # _kmeans returns _squared_ Euclidean distances in the l2 branch
+    # (cheaper for k-means assignment + convergence checks). For
+    # outlier detection we want actual distances, since the z-score
+    # interpretation ("3 sigma above the mean") is meaningful on a
+    # roughly bell-shaped distance distribution but distorted by the
+    # squaring. Cosine distances are already in their natural scale.
+    if metric == "l2":
+        distances = [math.sqrt(d) for d in distances]
 
     # Per-cluster mean + std of within-cluster distances. Tracked
     # online so we don't allocate k bucket lists.
