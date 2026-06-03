@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`monitor_embedding_drift` tool (pgvector).** Compare two time
+  windows of an embedding column and flag distributional drift.
+  Samples up to `sample_size` (default 5000) non-NULL embeddings
+  from each window (filtered by `timestamp_column`), computes the
+  centroid (per-dimension mean vector) and L2-norm distribution of
+  each, and reports the cosine distance between the two centroids
+  (the main drift signal), the relative change in mean / std of the
+  L2-norm distribution, and a boolean `drift_detected` that flips
+  when cosine distance exceeds `drift_threshold` (default 0.05).
+  Each window is a half-open `[start, end)` interval — using the
+  same instant as one window's end and the next window's start
+  doesn't double-count rows. `insufficient_data=true` is returned
+  distinctly from `drift_detected=false` when either window is
+  empty. Read-only; `available=false` without pgvector. Lives in
+  `mcpg.vector_ops`.
+
 - **`migrate_vector_to_halfvec` tool (pgvector).** Read-only DDL
   planner that converts a `vector(N)` column to `halfvec(N)`
   (halving per-element storage: 4 → 2 bytes, with negligible recall

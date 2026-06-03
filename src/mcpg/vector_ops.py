@@ -7,8 +7,9 @@ already in a column:
 - :func:`analyze_distance_metric` — sample rows and recommend cosine,
   L2, or inner-product based on the magnitude distribution.
 
-Future siblings (monitor_embedding_drift) land here so the
-search surface (:mod:`mcpg.textsearch`) and the storage advisors
+Sibling tools (`cluster_vectors`, `cross_table_similarity`,
+`detect_vector_outliers`, `monitor_embedding_drift`) also live here so
+the search surface (:mod:`mcpg.textsearch`) and the storage advisors
 (:mod:`mcpg.vector_tuning`, :mod:`mcpg.vector_tuner_advanced`) stay
 focused.
 """
@@ -1065,4 +1066,328 @@ async def detect_vector_outliers(
         total_outliers=len(flagged),
         outliers=capped,
         cluster_stats=cluster_stats,
+    )
+
+
+# --- monitor_embedding_drift ----------------------------------------------
+
+
+DEFAULT_DRIFT_SAMPLE_SIZE = 5000
+# Cosine-distance threshold above which we flag the centroids as
+# drifted. 0.05 ≈ "centroids point in noticeably different directions
+# in embedding space" — empirically a good first cut for sentence-
+# embedding models. Callers tune for their model's noise floor.
+DEFAULT_DRIFT_THRESHOLD = 0.05
+
+
+@dataclass(frozen=True, slots=True)
+class EmbeddingWindowStats:
+    """Distributional summary of an embedding column over a time window.
+
+    ``centroid`` is the per-dimension mean of the sampled embeddings —
+    the centre of mass of the cloud, used to measure direction drift.
+    ``mean_norm`` / ``std_norm`` summarise the L2-norm distribution
+    over the sample, which catches magnitude drift independent of
+    direction.
+    """
+
+    window_start: str
+    window_end: str
+    sampled_rows: int
+    mean_norm: float
+    std_norm: float
+    centroid: list[float]
+
+
+@dataclass(frozen=True, slots=True)
+class EmbeddingDriftReport:
+    """The outcome of a :func:`monitor_embedding_drift` call.
+
+    ``centroid_cosine_distance`` is the angle between the two windows'
+    centroid vectors — the primary drift signal. ``norm_mean_relative_change``
+    and ``norm_std_relative_change`` are unitless fractional changes
+    in the magnitude distribution; either spiking can mean the model
+    behind the embeddings has been swapped or the input data has
+    shifted in volume.
+
+    ``drift_detected`` is ``True`` when the cosine distance exceeds
+    ``drift_threshold``. ``insufficient_data`` is ``True`` if either
+    window had no sampled rows — both fields are kept distinct so a
+    caller can tell "no drift" from "couldn't measure".
+    """
+
+    available: bool
+    dimension: int
+    drift_threshold: float
+    insufficient_data: bool
+    drift_detected: bool
+    centroid_cosine_distance: float
+    norm_mean_relative_change: float
+    norm_std_relative_change: float
+    baseline: EmbeddingWindowStats
+    current: EmbeddingWindowStats
+    notes: str
+
+
+def _window_stats_from_vectors(
+    window_start: str,
+    window_end: str,
+    vectors: list[list[float]],
+    dimension: int,
+) -> EmbeddingWindowStats:
+    """Reduce a list of equal-length vectors to centroid + norm stats.
+
+    Returns an empty (zero-centroid, zero-norms) ``EmbeddingWindowStats``
+    when ``vectors`` is empty so the caller can still emit a structured
+    report without branching.
+    """
+    if not vectors:
+        return EmbeddingWindowStats(
+            window_start=window_start,
+            window_end=window_end,
+            sampled_rows=0,
+            mean_norm=0.0,
+            std_norm=0.0,
+            centroid=[0.0] * dimension,
+        )
+
+    n = len(vectors)
+    sums = [0.0] * dimension
+    norms: list[float] = []
+    for v in vectors:
+        norms.append(_l2_norm(v))
+        for d, val in enumerate(v):
+            sums[d] += val
+    centroid = [s / n for s in sums]
+
+    mean_norm = sum(norms) / n
+    # Population variance — we treat the sample as the dataset for
+    # the window, not a draw from a parent distribution.
+    var = sum((norm - mean_norm) ** 2 for norm in norms) / n
+    std_norm = math.sqrt(var) if var > 0.0 else 0.0
+
+    return EmbeddingWindowStats(
+        window_start=window_start,
+        window_end=window_end,
+        sampled_rows=n,
+        mean_norm=mean_norm,
+        std_norm=std_norm,
+        centroid=centroid,
+    )
+
+
+async def _fetch_window_vectors(
+    driver: SqlDriver,
+    *,
+    relation: str,
+    emb_col: str,
+    ts_col: str,
+    window_start: str,
+    window_end: str,
+    sample_size: int,
+    dimension: int,
+) -> list[list[float]]:
+    """Pull up to ``sample_size`` parseable embeddings in a window.
+
+    Uses ``ORDER BY RANDOM()`` so the sample is unbiased. Drift
+    detection compares two distributions, so a systematic ordering
+    bias on both windows (e.g. always sampling the first rows in
+    each) can hide a real shift that happens later inside the
+    window — or fabricate one when the table grew between windows.
+    The cost is a full scan + sort of each window, which is
+    acceptable for the typical drift-monitoring cadence (daily /
+    hourly on a partition-pruned slice); callers with extreme-
+    cardinality windows should pre-aggregate before invoking.
+    """
+    rows = await driver.execute_query(
+        f"SELECT {emb_col} AS embedding FROM {relation} "
+        f"WHERE {ts_col} >= %s AND {ts_col} < %s AND {emb_col} IS NOT NULL "
+        f"ORDER BY RANDOM() "
+        f"LIMIT %s",
+        params=[window_start, window_end, sample_size],
+        force_readonly=True,
+    )
+    out: list[list[float]] = []
+    for row in rows or []:
+        vec = _parse_embedding(row.cells.get("embedding"))
+        if vec is None or len(vec) != dimension:
+            continue
+        out.append(vec)
+    return out
+
+
+def _relative_change(baseline: float, current: float) -> float:
+    """``(current - baseline) / baseline`` with a zero-baseline fallback.
+
+    Zero baseline + non-zero current → ``+inf`` (the change is infinite
+    in any sensible reading). Zero baseline + zero current → ``0.0``.
+    """
+    if baseline == 0.0:
+        return math.inf if current != 0.0 else 0.0
+    return (current - baseline) / baseline
+
+
+async def monitor_embedding_drift(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    embedding_column: str,
+    timestamp_column: str,
+    *,
+    baseline_start: str,
+    baseline_end: str,
+    current_start: str,
+    current_end: str,
+    sample_size: int = DEFAULT_DRIFT_SAMPLE_SIZE,
+    drift_threshold: float = DEFAULT_DRIFT_THRESHOLD,
+) -> EmbeddingDriftReport:
+    """Compare two time windows of an embedding column and flag drift.
+
+    Samples up to ``sample_size`` non-NULL embeddings from each window
+    via ``timestamp_column``, computes the centroid (per-dimension mean
+    vector) and L2-norm distribution of each, then reports:
+
+    - ``centroid_cosine_distance`` — the angle between the two centroids;
+      the main drift signal. Insensitive to magnitude, so it captures
+      shifts in direction in embedding space (typically the failure
+      mode when an upstream model is silently swapped or fine-tuned).
+    - ``norm_mean_relative_change`` / ``norm_std_relative_change`` —
+      fractional change in the magnitude distribution. Useful for
+      catching scale shifts that cosine misses (e.g. a normaliser
+      was added or removed upstream).
+
+    ``drift_detected`` flips to ``True`` when the cosine distance is
+    above ``drift_threshold``. A caller running this on a schedule can
+    pair the boolean with the underlying numbers to decide whether the
+    alert is real.
+
+    Each window is treated as a half-open ``[start, end)`` interval —
+    using the same instant as one window's ``end`` and the next
+    window's ``start`` doesn't double-count rows.
+
+    Raises:
+        VectorOpsError: On invalid identifiers, a column that isn't
+            pgvector, ``sample_size <= 0``, ``drift_threshold < 0``,
+            or a window whose ``end <= start``.
+    """
+    if sample_size < 1:
+        raise VectorOpsError("sample_size must be at least 1")
+    if drift_threshold < 0:
+        raise VectorOpsError("drift_threshold must be >= 0")
+    if baseline_end <= baseline_start:
+        raise VectorOpsError("baseline window end must be after start")
+    if current_end <= current_start:
+        raise VectorOpsError("current window end must be after start")
+
+    _checked(schema, "schema")
+    _checked(table, "table")
+    _checked(embedding_column, "column")
+    _checked(timestamp_column, "column")
+
+    if not await extension_installed(driver, "vector"):
+        empty = EmbeddingWindowStats(
+            window_start=baseline_start,
+            window_end=baseline_end,
+            sampled_rows=0,
+            mean_norm=0.0,
+            std_norm=0.0,
+            centroid=[],
+        )
+        return EmbeddingDriftReport(
+            available=False,
+            dimension=0,
+            drift_threshold=drift_threshold,
+            insufficient_data=True,
+            drift_detected=False,
+            centroid_cosine_distance=0.0,
+            norm_mean_relative_change=0.0,
+            norm_std_relative_change=0.0,
+            baseline=empty,
+            current=EmbeddingWindowStats(
+                window_start=current_start,
+                window_end=current_end,
+                sampled_rows=0,
+                mean_norm=0.0,
+                std_norm=0.0,
+                centroid=[],
+            ),
+            notes="pgvector extension is not installed",
+        )
+
+    dimension = await _vector_column_dimension(driver, schema, table, embedding_column)
+    if dimension is None:
+        raise VectorOpsError(
+            f"{schema}.{table}.{embedding_column} is not a pgvector vector(N) column (column missing or wrong type)"
+        )
+
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    emb_col = _quoted(embedding_column, "column")
+    ts_col = _quoted(timestamp_column, "column")
+
+    baseline_vectors = await _fetch_window_vectors(
+        driver,
+        relation=relation,
+        emb_col=emb_col,
+        ts_col=ts_col,
+        window_start=baseline_start,
+        window_end=baseline_end,
+        sample_size=sample_size,
+        dimension=dimension,
+    )
+    current_vectors = await _fetch_window_vectors(
+        driver,
+        relation=relation,
+        emb_col=emb_col,
+        ts_col=ts_col,
+        window_start=current_start,
+        window_end=current_end,
+        sample_size=sample_size,
+        dimension=dimension,
+    )
+
+    baseline_stats = _window_stats_from_vectors(baseline_start, baseline_end, baseline_vectors, dimension)
+    current_stats = _window_stats_from_vectors(current_start, current_end, current_vectors, dimension)
+
+    insufficient = baseline_stats.sampled_rows == 0 or current_stats.sampled_rows == 0
+    if insufficient:
+        return EmbeddingDriftReport(
+            available=True,
+            dimension=dimension,
+            drift_threshold=drift_threshold,
+            insufficient_data=True,
+            drift_detected=False,
+            centroid_cosine_distance=0.0,
+            norm_mean_relative_change=0.0,
+            norm_std_relative_change=0.0,
+            baseline=baseline_stats,
+            current=current_stats,
+            notes=(
+                f"insufficient data: baseline={baseline_stats.sampled_rows} rows, "
+                f"current={current_stats.sampled_rows} rows — at least one window has no parseable embeddings"
+            ),
+        )
+
+    cosine_distance = _cosine_distance(baseline_stats.centroid, current_stats.centroid)
+    norm_mean_change = _relative_change(baseline_stats.mean_norm, current_stats.mean_norm)
+    norm_std_change = _relative_change(baseline_stats.std_norm, current_stats.std_norm)
+    drift_detected = cosine_distance > drift_threshold
+
+    notes = (
+        f"baseline={baseline_stats.sampled_rows} rows over [{baseline_start}, {baseline_end}); "
+        f"current={current_stats.sampled_rows} rows over [{current_start}, {current_end}); "
+        f"centroid cosine distance={cosine_distance:.4f} (threshold={drift_threshold:.4f})"
+    )
+
+    return EmbeddingDriftReport(
+        available=True,
+        dimension=dimension,
+        drift_threshold=drift_threshold,
+        insufficient_data=False,
+        drift_detected=drift_detected,
+        centroid_cosine_distance=cosine_distance,
+        norm_mean_relative_change=norm_mean_change,
+        norm_std_relative_change=norm_std_change,
+        baseline=baseline_stats,
+        current=current_stats,
+        notes=notes,
     )
