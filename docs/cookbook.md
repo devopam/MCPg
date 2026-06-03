@@ -528,6 +528,97 @@ aliases for stable column names.
 
 ---
 
+## 21. Zero-downtime database migrations
+
+To alter a production schema without blocking user requests or locking tables, follow these safe patterns using MCPg.
+
+### A. Creating an Index Concurrently
+
+Plain `CREATE INDEX` acquires a `SHARE` lock on the table, blocking all writes. Use `CREATE INDEX CONCURRENTLY` instead.
+
+> [!WARNING]
+> Transactional migration runners (like MCPg's `prepare_migration` / `complete_migration`) cannot execute `CONCURRENTLY` because Postgres forbids running concurrent index operations inside a transaction block. You must execute it directly.
+
+```text
+run_ddl(sql="CREATE INDEX CONCURRENTLY idx_users_email ON users(email)")
+```
+
+### B. Adding a Column with a Default Value
+
+In modern Postgres (>= 11), adding a column with a default value is a metadata-only operation and is safe:
+```text
+run_ddl(sql="ALTER TABLE users ADD COLUMN active boolean NOT NULL DEFAULT true")
+```
+For older Postgres versions or complex default expressions that might evaluate dynamically (e.g. `volatile` functions), add the column as nullable first, populate in batches, then set `NOT NULL`.
+
+### C. Adding a NOT NULL Constraint
+
+Adding `NOT NULL` to an existing column requires a full-table scan under an `ACCESS EXCLUSIVE` lock to validate existing rows, blocking all writes.
+
+**Safe Multi-step Recipe:**
+1. Add a `CHECK` constraint as `NOT VALID` (only grabs a weak metadata lock):
+   ```text
+   run_ddl(sql="ALTER TABLE users ADD CONSTRAINT check_users_email_not_null CHECK (email IS NOT NULL) NOT VALID")
+   ```
+2. Validate the constraint concurrently (does not block writes):
+   ```text
+   run_ddl(sql="ALTER TABLE users VALIDATE CONSTRAINT check_users_email_not_null")
+   ```
+3. Set the column to `NOT NULL` (extremely fast, as Postgres knows the constraint is already validated):
+   ```text
+   run_ddl(sql="ALTER TABLE users ALTER COLUMN email SET NOT NULL")
+   ```
+4. (Optional) Clean up by dropping the helper CHECK constraint:
+   ```text
+   run_ddl(sql="ALTER TABLE users DROP CONSTRAINT check_users_email_not_null")
+   ```
+
+### D. Renaming a Column
+
+Renaming a column directly (`ALTER TABLE ... RENAME COLUMN ...`) breaks running instances of the application that are currently executing queries naming the old column.
+
+**Zero-downtime transition strategy:**
+1. Add the new column as nullable:
+   ```text
+   run_ddl(sql="ALTER TABLE users ADD COLUMN new_username text")
+   ```
+2. Set up a database trigger to double-write updates/inserts to both columns (keeps them in sync):
+   ```text
+   run_ddl(sql="""
+     CREATE OR REPLACE FUNCTION sync_username() RETURNS trigger AS $$
+     BEGIN
+       NEW.new_username := NEW.username;
+       RETURN NEW;
+     END;
+     $$ LANGUAGE plpgsql;
+   """)
+   run_ddl(sql="CREATE TRIGGER double_write_username BEFORE INSERT OR UPDATE ON users FOR EACH ROW EXECUTE FUNCTION sync_username()")
+   ```
+3. Backfill the existing rows in batches (e.g., using `run_write` on small primary key ranges) to copy old data to the new column.
+4. Update the application to read from the new column, but write to both.
+5. Update the application to only write and read from the new column.
+6. Drop the sync trigger and the old column:
+   ```text
+   run_ddl(sql="DROP TRIGGER double_write_username ON users")
+   run_ddl(sql="ALTER TABLE users DROP COLUMN username")
+   ```
+
+### E. Adding a Foreign Key Constraint
+
+Directly adding a foreign key constraint performs a full-table validation scan under a restrictive lock.
+
+**Safe Recipe:**
+1. Add the foreign key as `NOT VALID`:
+   ```text
+   run_ddl(sql="ALTER TABLE orders ADD CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id) NOT VALID")
+   ```
+2. Validate the constraint concurrently (does not block active transactions):
+   ```text
+   run_ddl(sql="ALTER TABLE orders VALIDATE CONSTRAINT fk_orders_user")
+   ```
+
+---
+
 ## Tool-call ordering tips
 
 * **Read before write.** Every write-class tool (`run_write`,

@@ -160,3 +160,36 @@ async def test_generate_test_data_skips_unsupported_column_types() -> None:
     # `shape` (geometry) was skipped; only `id` survives.
     assert "shape" in result.skipped_columns
     assert all('"id"' in stmt and '"shape"' not in stmt for stmt in result.statements)
+
+
+async def test_seed_table_with_sample_data_generates_and_executes_inserts() -> None:
+    from mcpg.test_data import seed_table_with_sample_data
+
+    driver = FakeRoutingDriver(
+        {
+            "pg_attribute": [
+                {
+                    "column_name": "id",
+                    "data_type": "integer",
+                    "nullable": False,
+                    "column_default": None,
+                    "type_name": "int4",
+                    "type_mod": -1,
+                }
+            ]
+        }
+    )
+
+    result = await seed_table_with_sample_data(
+        driver,  # type: ignore[arg-type]
+        schema="public",
+        table="widget",
+        rows=2,
+        seed=42,
+    )
+
+    assert result.rows_seeded == 2
+    assert len(result.statements_executed) == 2
+    assert len(driver.calls) == 3  # 1 for describe_table, 2 for inserts
+    assert driver.calls[1][0].startswith('INSERT INTO "public"."widget"')
+    assert driver.calls[2][0].startswith('INSERT INTO "public"."widget"')

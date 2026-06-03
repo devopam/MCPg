@@ -187,11 +187,15 @@ prepare_migration(name, target_schema, candidate_sql, ttl_minutes=60)
                                                      # returns id + shadow + diff
 validate_migration(target_schema, candidate_sql, sample_rows_per_table=100)
                                                      # applies to a transient shadow with sampled real data
+validate_migration_schema(target_schema, reference_schema, candidate_sql)
+                                                     # applies to transient shadow and diffs against reference
 complete_migration(migration_id)                     # applies to target
 cancel_migration(migration_id)                       # drops shadow
 list_pending_migrations()
-read_migration_history(schema=None)                      # read applied migrations (Alembic/Flyway/etc.); read-only
+read_migration_history(schema=None)                  # read applied migrations (Alembic/Flyway/etc.); read-only
 generate_test_data(schema, table, rows=10, seed=42)  # synthetic INSERT statements; does NOT execute
+seed_table_with_sample_data(schema, table, rows=10, seed=42)
+                                                     # generates and executes synthetic INSERTs; WRITE-gated
 ```
 
 ## "Generate code for my ORM"

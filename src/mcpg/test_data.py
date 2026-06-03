@@ -217,3 +217,41 @@ async def generate_test_data(
         statements=statements,
         skipped_columns=skipped,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SeedResult:
+    """The result of seeding a table with sample data."""
+
+    schema: str
+    table: str
+    rows_seeded: int
+    statements_executed: list[str]
+    skipped_columns: list[str]
+
+
+async def seed_table_with_sample_data(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    *,
+    rows: int = DEFAULT_ROW_COUNT,
+    seed: int | None = None,
+) -> SeedResult:
+    """Generate and execute synthetic INSERT statements to seed a table.
+
+    Generates the inserts via generate_test_data and executes them in order
+    against the target table using driver.execute_query.
+    """
+    dataset = await generate_test_data(driver, schema, table, rows=rows, seed=seed)
+
+    for stmt in dataset.statements:
+        await driver.execute_query(stmt)
+
+    return SeedResult(
+        schema=dataset.schema,
+        table=dataset.table,
+        rows_seeded=dataset.rows_generated,
+        statements_executed=dataset.statements,
+        skipped_columns=dataset.skipped_columns,
+    )

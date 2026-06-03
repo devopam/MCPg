@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`validate_migration_schema` tool.** Verify a candidate migration SQL against a reference schema definition. Clones the target schema (production snapshot) into a transient shadow schema, applies the candidate DDL, and runs `compare_schemas` against the reference schema. Gated under DDL (`unrestricted` access mode + `MCPG_ALLOW_DDL=true`).
+
+- **`seed_table_with_sample_data` tool.** Generate and execute synthetic `INSERT` statements to seed a table with sample data. Values respect column types, NOT NULL, and DEFAULT constraints. Gated under WRITE (`unrestricted` access mode).
+
+- **Zero-Downtime Migration Cookbook.** Added a comprehensive guide under `docs/cookbook.md` outlining recipes for safe, zero-downtime operations in PostgreSQL (such as concurrent indexes, validating constraints/FKs using `NOT VALID` + `VALIDATE CONSTRAINT`, column renames, and type changes).
+
 - **`read_migration_history` tool.** Adds a read-only tool to inspect and parse the native migration bookkeeping tables of popular migration frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). Reports migration history records with full framework-specific metadata fields.
 
 - **`pg_walinspect` integration.** Adds `read_pg_wal_records` and

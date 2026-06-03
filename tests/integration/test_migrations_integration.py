@@ -13,6 +13,7 @@ from mcpg.migrations import (
     complete_migration,
     list_pending_migrations,
     prepare_migration,
+    validate_migration_schema,
 )
 
 _SCHEMA = "mcpg_mig_it"
@@ -177,3 +178,48 @@ async def test_complete_migration_refuses_unknown_or_already_completed_ids(
     await complete_migration(driver, r.id)
     with pytest.raises(MigrationError, match="not in 'prepared'"):
         await complete_migration(driver, r.id)
+
+
+async def test_validate_migration_schema_compares_applied_candidate_to_reference(
+    connected_database: Database, target_schema: str
+) -> None:
+    driver = connected_database.driver()
+    ref_schema = f"{_SCHEMA}_ref"
+    await driver.execute_query(f"DROP SCHEMA IF EXISTS {ref_schema} CASCADE")
+    await driver.execute_query(f"CREATE SCHEMA {ref_schema}")
+    try:
+        # Create matching structure in reference schema but with the target new column already present
+        await driver.execute_query(
+            f"CREATE TABLE {ref_schema}.widget ("
+            "id integer PRIMARY KEY, name text NOT NULL, "
+            "created_at timestamptz, quantity integer NOT NULL DEFAULT 0)"
+        )
+        await driver.execute_query(f"CREATE INDEX widget_name_idx ON {ref_schema}.widget (name)")
+
+        # Validate target_schema + candidate_sql against ref_schema
+        result = await validate_migration_schema(
+            driver,
+            target_schema=target_schema,
+            reference_schema=ref_schema,
+            candidate_sql="ALTER TABLE widget ADD COLUMN quantity integer NOT NULL DEFAULT 0",
+        )
+
+        assert result.applied is True
+        assert result.error is None
+        # Since candidate SQL made it match reference schema, the diff should show no changes
+        assert len(result.diff.tables_added) == 0
+        assert len(result.diff.tables_removed) == 0
+        assert len(result.diff.tables_changed) == 0
+
+        # Now test a bad candidate SQL to verify it returns applied=False and error message
+        result_fail = await validate_migration_schema(
+            driver,
+            target_schema=target_schema,
+            reference_schema=ref_schema,
+            candidate_sql="ALTER TABLE widget THIS IS NOT VALID SQL syntax",
+        )
+        assert result_fail.applied is False
+        assert result_fail.error is not None
+        assert result_fail.diff is None
+    finally:
+        await driver.execute_query(f"DROP SCHEMA IF EXISTS {ref_schema} CASCADE")

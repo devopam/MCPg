@@ -150,6 +150,7 @@ async def test_write_tools_are_exposed_only_in_unrestricted_mode(access_mode: Ac
     assert ("run_maintenance" in names) is (access_mode is AccessMode.UNRESTRICTED)
     assert ("cancel_query" in names) is (access_mode is AccessMode.UNRESTRICTED)
     assert ("terminate_backend" in names) is (access_mode is AccessMode.UNRESTRICTED)
+    assert ("seed_table_with_sample_data" in names) is (access_mode is AccessMode.UNRESTRICTED)
 
 
 @pytest.mark.parametrize(

@@ -126,6 +126,17 @@ class ValidationResult:
     error: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class MigrationSchemaValidationResult:
+    """The outcome of :func:`validate_migration_schema`."""
+
+    target_schema: str
+    reference_schema: str
+    applied: bool
+    error: str | None
+    diff: SchemaDiff | None
+
+
 # --- table bootstrap -------------------------------------------------
 
 
@@ -692,3 +703,58 @@ async def _sweep_expired(driver: SqlDriver) -> None:
             "UPDATE mcpg_migrations.staged SET status='expired' WHERE id=%s",
             [row.cells["id"]],
         )
+
+
+async def validate_migration_schema(
+    driver: SqlDriver,
+    *,
+    target_schema: str,
+    reference_schema: str,
+    candidate_sql: str,
+) -> MigrationSchemaValidationResult:
+    """Clone target_schema structure, apply candidate_sql, and diff against reference_schema.
+
+    A transient shadow schema is created, target_schema structure is replayed,
+    candidate_sql is applied, and the resulting shadow is compared against
+    reference_schema using compare_schemas. The shadow is always dropped before
+    returning.
+
+    If SQL application fails, applied is False and error holds the database exception
+    message; the shadow is still dropped safely.
+    """
+    _check_identifier(target_schema, "target_schema")
+    _check_identifier(reference_schema, "reference_schema")
+    if not candidate_sql.strip():
+        raise MigrationError("candidate_sql must not be empty")
+
+    shadow_schema = _validation_shadow_name()
+    _check_identifier(shadow_schema, "shadow_schema")
+
+    applied = False
+    error: str | None = None
+    diff: SchemaDiff | None = None
+
+    try:
+        await driver.execute_query(f'CREATE SCHEMA "{shadow_schema}"')
+        await _replay_target_into_shadow(driver, target_schema, shadow_schema)
+        try:
+            await _execute_in_schema(driver, shadow_schema, candidate_sql)
+            applied = True
+        except Exception as exc:
+            error = str(exc)
+
+        if applied:
+            diff = await compare_schemas(driver, reference_schema, shadow_schema)
+    finally:
+        try:
+            await driver.execute_query(f'DROP SCHEMA IF EXISTS "{shadow_schema}" CASCADE')
+        except Exception:
+            pass
+
+    return MigrationSchemaValidationResult(
+        target_schema=target_schema,
+        reference_schema=reference_schema,
+        applied=applied,
+        error=error,
+        diff=diff,
+    )

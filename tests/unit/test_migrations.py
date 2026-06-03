@@ -131,6 +131,7 @@ async def test_migration_tools_registered_with_unrestricted_and_allow_ddl() -> N
     assert {
         "prepare_migration",
         "validate_migration",
+        "validate_migration_schema",
         "complete_migration",
         "cancel_migration",
         "list_pending_migrations",
@@ -243,3 +244,42 @@ def test_migration_record_completed_at_is_optional() -> None:
         ttl_expires_at=now + timedelta(minutes=5),
     )
     assert rec.completed_at is None
+
+
+# --- validate_migration_schema (E3) -------------------------------
+
+
+async def test_validate_migration_schema_rejects_blank_candidate_sql() -> None:
+    from mcpg.migrations import validate_migration_schema
+
+    with pytest.raises(MigrationError, match="candidate_sql"):
+        await validate_migration_schema(
+            FakeDriver(),  # type: ignore[arg-type]
+            target_schema="app",
+            reference_schema="ref",
+            candidate_sql="",
+        )
+
+
+async def test_validate_migration_schema_rejects_unsafe_target_schema() -> None:
+    from mcpg.migrations import validate_migration_schema
+
+    with pytest.raises(MigrationError, match="invalid target_schema"):
+        await validate_migration_schema(
+            FakeDriver(),  # type: ignore[arg-type]
+            target_schema='app"; DROP TABLE x; --',
+            reference_schema="ref",
+            candidate_sql="ALTER TABLE w ADD c int",
+        )
+
+
+async def test_validate_migration_schema_rejects_unsafe_reference_schema() -> None:
+    from mcpg.migrations import validate_migration_schema
+
+    with pytest.raises(MigrationError, match="invalid reference_schema"):
+        await validate_migration_schema(
+            FakeDriver(),  # type: ignore[arg-type]
+            target_schema="app",
+            reference_schema='ref"; DROP TABLE x; --',
+            candidate_sql="ALTER TABLE w ADD c int",
+        )
