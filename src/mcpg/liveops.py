@@ -166,3 +166,110 @@ async def verify_connection_encryption(driver: SqlDriver) -> ConnectionEncryptio
         encrypted_connections=encrypted,
         unencrypted_connections=total - encrypted,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class IndexBuildProgress:
+    """Progress snapshot for one in-flight ``CREATE INDEX`` operation.
+
+    Populated from ``pg_stat_progress_create_index`` (PG12+, no
+    extension required). ``phase`` is one of the labels PostgreSQL
+    surfaces ("building index: scanning table", "loading tuples in
+    tree", "merging partitions", etc.) — useful for human-readable
+    status. ``progress_pct`` is computed from ``blocks_done /
+    blocks_total`` when the planner provided a block count, otherwise
+    from ``tuples_done / tuples_total``, otherwise ``None``: not every
+    phase reports a meaningful denominator.
+
+    ``schema``, ``relation``, and ``index_name`` are resolved by joining
+    the progress view's relids with ``pg_class`` / ``pg_namespace``.
+    They may be ``None`` for an index being built on a relation in a
+    schema the caller can't see (rare, but possible with restricted
+    privileges).
+    """
+
+    pid: int
+    schema: str | None
+    relation: str | None
+    index_name: str | None
+    command: str
+    phase: str | None
+    progress_pct: float | None
+    blocks_done: int
+    blocks_total: int
+    tuples_done: int
+    tuples_total: int
+    partitions_done: int
+    partitions_total: int
+
+
+def _safe_pct(done: int, total: int) -> float | None:
+    """Return ``done/total * 100`` capped to [0, 100], or ``None``."""
+    if total <= 0:
+        return None
+    pct = (done / total) * 100.0
+    if pct < 0.0:
+        return 0.0
+    if pct > 100.0:
+        return 100.0
+    return pct
+
+
+async def monitor_index_build(driver: SqlDriver) -> list[IndexBuildProgress]:
+    """Surface every active ``CREATE INDEX`` and its progress.
+
+    Reads :pgview:`pg_stat_progress_create_index` and joins the relids
+    with the catalog to render human-readable names. Useful next to
+    :func:`list_active_queries` when an HNSW / IVFFlat build on a big
+    table is taking longer than expected — agents can see which phase
+    the build is in and how far it's come without dropping into
+    ``psql``. Read-only.
+    """
+    rows = await driver.execute_query(
+        "SELECT p.pid, "
+        "       n.nspname AS schema, "
+        "       c.relname AS relation, "
+        "       ic.relname AS index_name, "
+        "       p.command, "
+        "       p.phase, "
+        "       p.blocks_done, p.blocks_total, "
+        "       p.tuples_done, p.tuples_total, "
+        "       p.partitions_done, p.partitions_total "
+        "FROM pg_stat_progress_create_index p "
+        "LEFT JOIN pg_class c ON c.oid = p.relid "
+        "LEFT JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "LEFT JOIN pg_class ic ON ic.oid = p.index_relid "
+        "ORDER BY p.pid",
+        force_readonly=True,
+    )
+    out: list[IndexBuildProgress] = []
+    for row in rows or []:
+        cells = row.cells
+        blocks_done = int(cells.get("blocks_done") or 0)
+        blocks_total = int(cells.get("blocks_total") or 0)
+        tuples_done = int(cells.get("tuples_done") or 0)
+        tuples_total = int(cells.get("tuples_total") or 0)
+        # Prefer block-level progress when PG populated it; fall through
+        # to tuple-level otherwise. Returns None if neither is meaningful
+        # (some early phases don't carry a denominator).
+        progress_pct = _safe_pct(blocks_done, blocks_total)
+        if progress_pct is None:
+            progress_pct = _safe_pct(tuples_done, tuples_total)
+        out.append(
+            IndexBuildProgress(
+                pid=int(cells["pid"]),
+                schema=cells.get("schema"),
+                relation=cells.get("relation"),
+                index_name=cells.get("index_name"),
+                command=str(cells.get("command") or ""),
+                phase=cells.get("phase"),
+                progress_pct=progress_pct,
+                blocks_done=blocks_done,
+                blocks_total=blocks_total,
+                tuples_done=tuples_done,
+                tuples_total=tuples_total,
+                partitions_done=int(cells.get("partitions_done") or 0),
+                partitions_total=int(cells.get("partitions_total") or 0),
+            )
+        )
+    return out

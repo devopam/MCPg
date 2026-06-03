@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`monitor_index_build` tool.** Surfaces every active `CREATE
+  INDEX` operation from `pg_stat_progress_create_index` (PG12+, no
+  extension required). One row per build with PID, resolved
+  `schema.relation.index_name`, the command, the phase label, raw
+  `blocks_done`/`blocks_total` + `tuples_done`/`tuples_total`
+  counters, and a computed `progress_pct` (blocks first, tuples as
+  fallback, `null` when neither phase reports a denominator).
+  Useful next to `list_active_queries` when an HNSW / IVFFlat build
+  on a big table is taking longer than expected. Lives in
+  `mcpg.liveops`; read-only.
+
 - **`validate_migration_schema` tool.** Verify a candidate migration SQL against a reference schema definition. Clones the target schema (production snapshot) into a transient shadow schema, applies the candidate DDL, and runs `compare_schemas` against the reference schema. Gated under DDL (`unrestricted` access mode + `MCPG_ALLOW_DDL=true`).
 
 - **`seed_table_with_sample_data` tool.** Generate and execute synthetic `INSERT` statements to seed a table with sample data. Values respect column types, NOT NULL, and DEFAULT constraints. Gated under WRITE (`unrestricted` access mode).
