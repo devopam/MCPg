@@ -140,7 +140,16 @@ def _table_diff_is_empty(diff: TableDiff) -> bool:
 def _normalize_index_def(definition: str, schema: str) -> str:
     import re
 
-    return re.sub(rf'(?<![A-Za-z0-9_])"?{re.escape(schema)}"?\.', "", definition)
+    # Match single-quoted string literals (supporting '' and \') OR the schema qualifier
+    pattern = rf"'(?:[^'\\]|\\.|'')*'|(?<![A-Za-z0-9_])\"?{re.escape(schema)}\"?\."
+
+    def repl(match: re.Match[str]) -> str:
+        val = match.group(0)
+        if val.startswith("'"):
+            return val
+        return ""
+
+    return re.sub(pattern, repl, definition)
 
 
 def _normalize_fk_schema(to_schema: str, current_schema: str) -> str:

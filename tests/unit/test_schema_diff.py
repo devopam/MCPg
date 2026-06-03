@@ -14,6 +14,7 @@ from mcpg.schema_diff import (
     IndexChange,
     _column_fields_changed,
     _diff_by_name,
+    _normalize_index_def,
     _table_diff_is_empty,
     compare_schemas,
 )
@@ -291,3 +292,25 @@ def test_column_change_dataclass_shape() -> None:
         fields_changed=["data_type"],
     )
     assert change.fields_changed == ["data_type"]
+
+
+def test_normalize_index_def_strips_qualifiers_except_in_literals() -> None:
+    # Standard index definitions
+    assert _normalize_index_def("CREATE INDEX idx ON public.tbl (col)", "public") == "CREATE INDEX idx ON tbl (col)"
+    assert _normalize_index_def('CREATE INDEX idx ON "public".tbl (col)', "public") == "CREATE INDEX idx ON tbl (col)"
+
+    # Ignored schema name in other identifiers
+    assert (
+        _normalize_index_def("CREATE INDEX idx ON mypublic.tbl (col)", "public")
+        == "CREATE INDEX idx ON mypublic.tbl (col)"
+    )
+
+    # Crucially, schema names inside string literals must NOT be modified
+    assert (
+        _normalize_index_def("CREATE INDEX idx ON public.tbl (col) WHERE col = 'public.val'", "public")
+        == "CREATE INDEX idx ON tbl (col) WHERE col = 'public.val'"
+    )
+    assert (
+        _normalize_index_def("CREATE INDEX idx ON public.tbl (col) WHERE col = 'don\\'t touch public.val'", "public")
+        == "CREATE INDEX idx ON tbl (col) WHERE col = 'don\\'t touch public.val'"
+    )

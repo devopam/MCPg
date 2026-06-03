@@ -240,13 +240,14 @@ async def seed_table_with_sample_data(
 ) -> SeedResult:
     """Generate and execute synthetic INSERT statements to seed a table.
 
-    Generates the inserts via generate_test_data and executes them in order
-    against the target table using driver.execute_query.
+    Generates the inserts via generate_test_data and executes them in a single
+    batched round-trip against the target table.
     """
     dataset = await generate_test_data(driver, schema, table, rows=rows, seed=seed)
 
-    for stmt in dataset.statements:
-        await driver.execute_query(stmt)
+    if dataset.statements:
+        batched_sql = ";\n".join(dataset.statements)
+        await driver.execute_query(batched_sql)
 
     return SeedResult(
         schema=dataset.schema,

@@ -190,6 +190,5 @@ async def test_seed_table_with_sample_data_generates_and_executes_inserts() -> N
 
     assert result.rows_seeded == 2
     assert len(result.statements_executed) == 2
-    assert len(driver.calls) == 3  # 1 for describe_table, 2 for inserts
-    assert driver.calls[1][0].startswith('INSERT INTO "public"."widget"')
-    assert driver.calls[2][0].startswith('INSERT INTO "public"."widget"')
+    assert len(driver.calls) == 2  # 1 for describe_table, 1 for batched insert
+    assert driver.calls[1][0].count('INSERT INTO "public"."widget"') == 2
