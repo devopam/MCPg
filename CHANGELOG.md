@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`detect_vector_outliers` tool (pgvector).** Flags rows whose
+  embedding sits far from any cluster centroid. Samples up to
+  `sample_size` (default 5000) non-NULL rows, clusters them with the
+  same k-means engine as `cluster_vectors`, then per cluster
+  computes a z-score on the distance from each row to its centroid
+  and flags rows whose z-score exceeds `zscore_threshold` (default
+  3.0). Per-cluster scoring catches rows that are
+  weird-for-their-group rather than weird-overall, which is usually
+  what users mean by "outlier". Singleton clusters (k-means' way of
+  saying "this row didn't fit anywhere") have their lone member
+  flagged automatically with infinite z-score. Returns `outliers`
+  sorted by z-score descending (capped at `max_results`),
+  `total_outliers` (the unclipped count), and `cluster_stats` (per-
+  cluster mean / std of within-cluster distances). Read-only;
+  `available=false` without pgvector. Lives in `mcpg.vector_ops`.
+
 - **`cluster_vectors` tool (pgvector).** k-means clusters an
   embedding column in-process: samples up to `sample_size` (default
   5000) non-NULL rows of `schema.table.embedding_column`, runs

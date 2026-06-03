@@ -69,7 +69,7 @@ matches `feature-shortlist.md` (S / M / L).
 | A3 | `cross_table_similarity` (9.7) | `vector_ops.py` | S | — | k-NN from one row in A against table B (same dim). |
 | A4 | `monitor_index_build` (9.9) | `liveops.py` | S | — | Reads `pg_stat_progress_create_index`; lives by `list_active_queries`. |
 | A5 | `cluster_vectors` (9.3) | `vector_ops.py` | M | — | k-means; centroids + per-row labels. Reuse `mmr_search`'s cosine helpers. |
-| A6 | `detect_vector_outliers` (9.4) | `vector_ops.py` | S-M | A5 (shares centroid logic) | Flag rows far from any centroid. |
+| A6 (✅ PR) | `detect_vector_outliers` (9.4) | `vector_ops.py` | S-M | A5 (shares centroid logic) | Flag rows far from any centroid. |
 | A7 | `monitor_embedding_drift` (9.5) | `vector_ops.py` | M | — | Distributional stats over time windows. |
 | A8 | `migrate_vector_to_halfvec` (9.10) | extends `vector_tuning.py` | S-M | — | DDL generator; uses the shadow-migration workflow; DDL-gated. |
 

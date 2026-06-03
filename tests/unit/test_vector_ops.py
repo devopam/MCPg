@@ -11,12 +11,16 @@ from mcpg.server import create_server
 from mcpg.vector_ops import (
     DEFAULT_CLUSTER_SAMPLE_SIZE,
     DEFAULT_MAX_ITERATIONS,
+    DEFAULT_OUTLIER_K,
+    DEFAULT_OUTLIER_MAX_RESULTS,
+    DEFAULT_OUTLIER_ZSCORE,
     DEFAULT_SAMPLE_SIZE,
     ClusterVectorsResult,
     CrossTableMatch,
     CrossTableSimilarityResult,
     DistanceMetricRecommendation,
     VectorOpsError,
+    VectorOutlierResult,
     _cosine_distance,
     _l2_norm,
     _normalize_in_place,
@@ -27,6 +31,7 @@ from mcpg.vector_ops import (
     analyze_distance_metric,
     cluster_vectors,
     cross_table_similarity,
+    detect_vector_outliers,
 )
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
@@ -907,3 +912,329 @@ async def test_cluster_vectors_tool_is_callable_from_a_client() -> None:
     assert result.structuredContent is not None
     assert result.structuredContent["available"] is True
     assert len(result.structuredContent["centroids"]) == 2
+
+
+# --- detect_vector_outliers -----------------------------------------------
+
+
+async def test_detect_vector_outliers_reports_unavailable_without_pgvector() -> None:
+    driver = FakeParamRoutingDriver({("pg_extension", None): []})
+
+    result = await detect_vector_outliers(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        k=2,
+    )
+
+    assert result == VectorOutlierResult(
+        available=False,
+        sampled_rows=0,
+        dimension=0,
+        metric="l2",
+        k=2,
+        zscore_threshold=DEFAULT_OUTLIER_ZSCORE,
+        total_outliers=0,
+        outliers=[],
+        cluster_stats=[],
+    )
+
+
+async def test_detect_vector_outliers_flags_a_row_far_from_its_cluster() -> None:
+    # Two tight clusters of 5 + 5 points, plus one obvious outlier far
+    # from either centroid.
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.1, 0.0]},
+        {"embedding": [0.0, 0.1]},
+        {"embedding": [0.05, 0.05]},
+        {"embedding": [0.1, 0.1]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.1, 10.0]},
+        {"embedding": [10.0, 10.1]},
+        {"embedding": [10.05, 10.05]},
+        {"embedding": [10.1, 10.1]},
+        {"embedding": [100.0, 100.0]},  # outlier — distant from either centroid
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await detect_vector_outliers(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        k=2,
+        zscore_threshold=2.0,
+    )
+
+    assert result.available is True
+    assert result.sampled_rows == 11
+    assert result.dimension == 2
+    assert result.total_outliers >= 1
+    # The row at index 10 is the only one ~127 units from the nearest cluster.
+    flagged_ids = {o.id for o in result.outliers}
+    assert 10 in flagged_ids
+    # And its z-score should be the highest by far.
+    top = max(result.outliers, key=lambda o: o.zscore)
+    assert top.id == 10
+
+
+async def test_detect_vector_outliers_respects_id_column() -> None:
+    sample_rows: list[dict[str, object]] = [
+        {"row_id": "a1", "embedding": [0.0, 0.0]},
+        {"row_id": "a2", "embedding": [0.1, 0.0]},
+        {"row_id": "a3", "embedding": [0.0, 0.1]},
+        {"row_id": "a4", "embedding": [0.05, 0.05]},
+        {"row_id": "b1", "embedding": [10.0, 10.0]},
+        {"row_id": "b2", "embedding": [10.1, 10.0]},
+        {"row_id": "b3", "embedding": [10.0, 10.1]},
+        {"row_id": "b4", "embedding": [10.05, 10.05]},
+        {"row_id": "weird", "embedding": [100.0, 100.0]},
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await detect_vector_outliers(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        id_column="row_id",
+        k=2,
+        zscore_threshold=2.0,
+    )
+
+    flagged_ids = {o.id for o in result.outliers}
+    assert "weird" in flagged_ids
+
+
+async def test_detect_vector_outliers_caps_results_at_max_results() -> None:
+    # Many points scattered widely so several get flagged.
+    sample_rows: list[dict[str, object]] = [{"embedding": [float(i % 3), float(i // 3)]} for i in range(40)]
+    # Add a few extreme outliers
+    sample_rows.extend([{"embedding": [1000.0, 1000.0 + i]} for i in range(5)])
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await detect_vector_outliers(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        k=3,
+        zscore_threshold=1.0,
+        max_results=2,
+    )
+
+    assert len(result.outliers) == 2
+    assert result.total_outliers >= 2
+    # Sorted by z-score descending.
+    assert result.outliers[0].zscore >= result.outliers[1].zscore
+
+
+async def test_detect_vector_outliers_returns_empty_when_no_outliers() -> None:
+    # Tight, well-balanced clusters with no extreme points.
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.1, 0.0]},
+        {"embedding": [0.0, 0.1]},
+        {"embedding": [0.05, 0.05]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.1, 10.0]},
+        {"embedding": [10.0, 10.1]},
+        {"embedding": [10.05, 10.05]},
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await detect_vector_outliers(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        k=2,
+        zscore_threshold=10.0,  # very strict
+    )
+
+    assert result.outliers == []
+    assert result.total_outliers == 0
+
+
+async def test_detect_vector_outliers_reports_per_cluster_stats() -> None:
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.1, 0.0]},
+        {"embedding": [0.0, 0.1]},
+        {"embedding": [0.05, 0.05]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.1, 10.0]},
+        {"embedding": [10.0, 10.1]},
+        {"embedding": [10.05, 10.05]},
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await detect_vector_outliers(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        k=2,
+    )
+
+    assert len(result.cluster_stats) == 2
+    # Both clusters should be ~4 in size.
+    sizes = sorted(s.size for s in result.cluster_stats)
+    assert sizes == [4, 4]
+    # Tight clusters → small means + small stds.
+    for stats in result.cluster_stats:
+        assert stats.mean_distance < 1.0
+        assert stats.std_distance < 1.0
+
+
+async def test_detect_vector_outliers_records_zero_std_for_uniform_clusters() -> None:
+    # Two perfectly tight clusters: 4 identical points each. Every
+    # cluster's mean + std of within-cluster distances should be 0.0
+    # and no row should be flagged.
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.0, 10.0]},
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    result = await detect_vector_outliers(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        k=2,
+        zscore_threshold=2.0,
+    )
+
+    assert result.outliers == []
+    for stats in result.cluster_stats:
+        assert stats.mean_distance == 0.0
+        assert stats.std_distance == 0.0
+
+
+async def test_detect_vector_outliers_binds_sample_size_as_limit() -> None:
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.1, 0.1]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.1, 10.1]},
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    await detect_vector_outliers(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        k=2,
+        sample_size=42,
+    )
+
+    bound = [params for sql, params, _ in driver.calls if "IS NOT NULL LIMIT" in sql]  # type: ignore[attr-defined]
+    assert bound and bound[-1] == [42]
+
+
+async def test_detect_vector_outliers_raises_when_column_is_not_pgvector() -> None:
+    driver = FakeParamRoutingDriver(_cluster_routes(dim=None))
+
+    with pytest.raises(VectorOpsError, match="not a pgvector"):
+        await detect_vector_outliers(
+            driver,  # type: ignore[arg-type]
+            "app",
+            "docs",
+            "embedding",
+            k=2,
+        )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"k": 1}, "k must be at least 2"),
+        ({"sample_size": 0}, "sample_size must be at least 1"),
+        ({"max_iterations": 0}, "max_iterations must be at least 1"),
+        ({"metric": "manhattan"}, "unknown metric"),
+        ({"zscore_threshold": 0.0}, "zscore_threshold must be > 0"),
+        ({"zscore_threshold": -1.0}, "zscore_threshold must be > 0"),
+        ({"max_results": 0}, "max_results must be at least 1"),
+    ],
+)
+async def test_detect_vector_outliers_validates_arguments(kwargs: dict[str, object], match: str) -> None:
+    driver = FakeParamRoutingDriver(_cluster_routes())
+    with pytest.raises(VectorOpsError, match=match):
+        await detect_vector_outliers(driver, "app", "docs", "embedding", **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad", ["bad name", "ta;ble", "1abc", '"x"'])
+async def test_detect_vector_outliers_rejects_unsafe_identifiers(bad: str) -> None:
+    driver = FakeParamRoutingDriver(_cluster_routes())
+    with pytest.raises(VectorOpsError, match="invalid"):
+        await detect_vector_outliers(driver, bad, "docs", "embedding", k=2)  # type: ignore[arg-type]
+
+
+async def test_detect_vector_outliers_rejects_not_enough_rows_for_k() -> None:
+    # k=2 needs at least 4 parseable rows.
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [1.0, 1.0]},
+        {"embedding": [2.0, 2.0]},
+    ]
+    driver = FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows))
+
+    with pytest.raises(VectorOpsError, match="not enough rows for outlier detection"):
+        await detect_vector_outliers(
+            driver,  # type: ignore[arg-type]
+            "app",
+            "docs",
+            "embedding",
+            k=2,
+        )
+
+
+def test_detect_vector_outliers_reports_default_constants_via_module() -> None:
+    assert DEFAULT_OUTLIER_K == 8
+    assert DEFAULT_OUTLIER_ZSCORE == 3.0
+    assert DEFAULT_OUTLIER_MAX_RESULTS == 100
+
+
+async def test_detect_vector_outliers_tool_is_callable_from_a_client() -> None:
+    sample_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 0.0]},
+        {"embedding": [0.1, 0.0]},
+        {"embedding": [0.0, 0.1]},
+        {"embedding": [0.05, 0.05]},
+        {"embedding": [10.0, 10.0]},
+        {"embedding": [10.1, 10.0]},
+        {"embedding": [10.0, 10.1]},
+        {"embedding": [10.05, 10.05]},
+        {"embedding": [100.0, 100.0]},
+    ]
+    database = FakeDatabase(FakeParamRoutingDriver(_cluster_routes(sample_rows=sample_rows)))
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "detect_vector_outliers" in listed
+        result = await client.call_tool(
+            "detect_vector_outliers",
+            {
+                "schema": "app",
+                "table": "docs",
+                "embedding_column": "embedding",
+                "k": 2,
+                "zscore_threshold": 2.0,
+            },
+        )
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["available"] is True
+    assert result.structuredContent["total_outliers"] >= 1
