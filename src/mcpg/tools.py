@@ -59,6 +59,7 @@ from mcpg import (
     vector_ops,
     vector_tuner_advanced,
     vector_tuning,
+    walinspect,
     workload,
     write,
 )
@@ -548,6 +549,39 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         limit: int = 100,
     ) -> dict[str, Any]:
         report = await io_stats.read_pg_buffercache_relations(_driver(ctx), schema=schema, limit=limit)
+        return asdict(report)
+
+    @server.tool(
+        name="read_pg_wal_records",
+        description=(
+            "Read Write-Ahead Log (WAL) records information over a specified LSN range. "
+            "Requires the pg_walinspect extension. If not installed, returns available=false."
+        ),
+    )
+    async def read_pg_wal_records(
+        ctx: _Ctx,
+        start_lsn: str,
+        end_lsn: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        report = await walinspect.read_pg_wal_records(_driver(ctx), start_lsn, end_lsn, limit)
+        return asdict(report)
+
+    @server.tool(
+        name="read_pg_wal_stats",
+        description=(
+            "Read Write-Ahead Log (WAL) record statistics over a specified LSN range, grouped by "
+            "resource manager or record type. "
+            "Requires the pg_walinspect extension. If not installed, returns available=false."
+        ),
+    )
+    async def read_pg_wal_stats(
+        ctx: _Ctx,
+        start_lsn: str,
+        end_lsn: str | None = None,
+        per_record: bool = False,
+    ) -> dict[str, Any]:
+        report = await walinspect.read_pg_wal_stats(_driver(ctx), start_lsn, end_lsn, per_record)
         return asdict(report)
 
     @server.tool(

@@ -38,7 +38,7 @@ plumbing:
 | **Visualisation & structural diff** | `generate_schema_diagram`, `generate_schema_docs`, `generate_fk_cascade_graph`, `generate_graph_diagram`, `compare_schemas` |
 | **Query intelligence** | `run_select`, `run_select_parallel`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql` |
 | **Server-side cursors** | `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors` |
-| **Composite + diagnostic** | `summarize_table`, `why_is_this_slow`, `find_unused_objects`, `find_sensitive_columns`, `detect_n_plus_one`, `lint_naming_conventions`, `test_rls_for_role`, `list_locks`, `find_blocking_chains`, `walk_blocking_chains`, `read_pg_stat_io`, `read_pg_buffercache_summary`, `read_pg_buffercache_relations` |
+| **Composite + diagnostic** | `summarize_table`, `why_is_this_slow`, `find_unused_objects`, `find_sensitive_columns`, `detect_n_plus_one`, `lint_naming_conventions`, `test_rls_for_role`, `list_locks`, `find_blocking_chains`, `walk_blocking_chains`, `read_pg_stat_io`, `read_pg_buffercache_summary`, `read_pg_buffercache_relations`, `read_pg_wal_records`, `read_pg_wal_stats` |
 | **Health & tuning** | `check_database_health`, `audit_database`, `analyze_workload`, `recommend_indexes`, `run_advisors` |
 | **Search** | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `hybrid_search`, `geo_search` |
 | **Vector tuning advisors** | `recommend_vector_index`, `analyze_vector_search`, `analyze_vector_table`, `recommend_vector_quantization` |

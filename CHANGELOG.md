@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`pg_walinspect` integration.** Adds `read_pg_wal_records` and
+  `read_pg_wal_stats` tools to analyze Write-Ahead Log (WAL) record details and
+  aggregated stats over specified LSN ranges. Degrades gracefully if the extension
+  is not installed (`available=false`). Adds `pg_walinspect` to the list of
+  programmatically enableable extensions.
+
 - **`pg_buffercache` integration.** Adds `read_pg_buffercache_summary` and
   `read_pg_buffercache_relations` tools to analyze shared buffer cache usage
   at the cluster and relation levels. Degrades gracefully if the extension

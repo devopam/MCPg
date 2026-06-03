@@ -108,6 +108,8 @@ walk_blocking_chains(limit=50)                       # walks the lock graph, det
 read_pg_stat_io()                                    # PG16+ I/O stats; available=false on PG 14/15
 read_pg_buffercache_summary()                        # high-level shared buffer cache usage summary
 read_pg_buffercache_relations(schema=null, limit=100) # relations taking up the most space in shared buffer cache
+read_pg_wal_records(start_lsn, end_lsn='FFFFFFFF/FFFFFFFF', limit=100) # WAL record details over LSN range
+read_pg_wal_stats(start_lsn, end_lsn='FFFFFFFF/FFFFFFFF', per_record=false) # aggregated WAL stats over LSN range
 detect_n_plus_one(min_calls=100)                     # pg_stat_statements walker for ORM lazy-load loops
 list_replicas()                                      # health of every read-replica (when MCPG_REPLICA_URLS set)
 ```

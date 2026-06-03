@@ -39,6 +39,7 @@ ENABLEABLE_EXTENSIONS = frozenset(
         "pg_cron",
         "pg_partman",
         "pg_buffercache",
+        "pg_walinspect",
     }
 )
 
