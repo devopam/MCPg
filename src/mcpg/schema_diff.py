@@ -137,6 +137,25 @@ def _table_diff_is_empty(diff: TableDiff) -> bool:
     return all(not getattr(diff, field.name) for field in fields(diff) if isinstance(getattr(diff, field.name), list))
 
 
+def _normalize_index_def(definition: str, schema: str) -> str:
+    import re
+
+    # Match single-quoted string literals (supporting '' and \') OR the schema qualifier
+    pattern = rf"'(?:[^'\\]|\\.|'')*'|(?<![A-Za-z0-9_])\"?{re.escape(schema)}\"?\."
+
+    def repl(match: re.Match[str]) -> str:
+        val = match.group(0)
+        if val.startswith("'"):
+            return val
+        return ""
+
+    return re.sub(pattern, repl, definition)
+
+
+def _normalize_fk_schema(to_schema: str, current_schema: str) -> str:
+    return "" if to_schema == current_schema else to_schema
+
+
 async def _compare_table(
     driver: SqlDriver,
     left_schema: str,
@@ -168,7 +187,8 @@ async def _compare_table(
         name_of=lambda index: index.name,
         is_changed=lambda before, after: (
             before.method != after.method
-            or before.definition != after.definition
+            or _normalize_index_def(before.definition, left_schema)
+            != _normalize_index_def(after.definition, right_schema)
             or before.partitioned != after.partitioned
         ),
         make_change=lambda before, after: IndexChange(name=before.name, before=before, after=after),
@@ -190,7 +210,8 @@ async def _compare_table(
         name_of=lambda fk: fk.name,
         is_changed=lambda before, after: (
             before.from_columns != after.from_columns
-            or before.to_schema != after.to_schema
+            or _normalize_fk_schema(before.to_schema, left_schema)
+            != _normalize_fk_schema(after.to_schema, right_schema)
             or before.to_table != after.to_table
             or before.to_columns != after.to_columns
         ),

@@ -49,9 +49,9 @@ plumbing:
 | **Data movement — write (gated)** | `import_csv`, `import_json` |
 | **Data movement — subprocess (gated)** | `dump_database`, `restore_database`, `copy_table_between_databases` |
 | **LISTEN/NOTIFY bridge (gated)** | `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions` |
-| **Staged migrations (gated)** | `prepare_migration`, `validate_migration`, `complete_migration`, `cancel_migration`, `list_pending_migrations` |
+| **Staged migrations (gated)** | `prepare_migration`, `validate_migration`, `validate_migration_schema`, `complete_migration`, `cancel_migration`, `list_pending_migrations` |
 | **Migration history** | `read_migration_history` |
-| **Test-data factory** | `generate_test_data` (generates SQL — does not execute) |
+| **Test-data factory** | `generate_test_data` (generates SQL — does not execute), `seed_table_with_sample_data` (generates and executes; WRITE-gated) |
 | **TimescaleDB hypertables (gated for writes)** | `list_hypertables`, `list_chunks`, `create_hypertable`, `add_compression_policy`, `add_retention_policy` |
 | **ORM-DSL exporters** | `generate_prisma_schema`, `generate_drizzle_schema`, `generate_sqlalchemy_models`, `generate_sqlc_schema`, `generate_diesel_schema`, `generate_jooq_config`, `generate_ent_schemas`, `generate_ecto_schemas` |
 | **pg_cron write (gated)** | `pg_cron.schedule`, `pg_cron.unschedule`, `pg_cron.update` |

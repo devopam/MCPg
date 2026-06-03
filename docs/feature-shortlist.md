@@ -42,7 +42,7 @@ Effort scale (rough, single-session yardstick):
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
 | 3.1 | Auto-generated tool examples in MCP tool descriptions | S | Low-Medium | Helps agents pick the right tool. |
-| 3.2 | Sample-data generator that writes (`seed_table_with_sample_data`) | M | Medium | Sibling of the current `generate_test_data` (synthetic INSERT statements; does not execute). Gated under WRITE. |
+| 3.2 | ✅ **Shipped.** Sample-data generator that writes (`seed_table_with_sample_data`) | M | Medium | Sibling of the current `generate_test_data` (synthetic INSERT statements; does not execute). Gated under WRITE. |
 
 ## 4. Security & compliance
 
@@ -78,9 +78,9 @@ not covered there:
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
 | 7.1 | Alembic / Flyway / Liquibase migration-script ingestion (parse + apply through `prepare_migration`) | M-L | Medium | Big agentic win for projects with existing migration history. |
-| 7.2 | Pre-deployment migration validation (target schema vs production snapshot) | M | High | Composes `compare_schemas` + shadow workflow. |
+| 7.2 | ✅ **Shipped.** Pre-deployment migration validation (target schema vs production snapshot) | M | High | Composes `compare_schemas` + shadow workflow. |
 | 7.3 | ✅ **Shipped.** Migration history table integration (read Alembic / Flyway / Diesel native tables) | S | Medium | Reads existing tooling's bookkeeping. |
-| 7.4 | Zero-downtime migration cookbook | S | Medium-High | Pure docs (patterns, not code). |
+| 7.4 | ✅ **Shipped.** Zero-downtime migration cookbook | S | Medium-High | Pure docs (patterns, not code). |
 
 ## 8. AI / agent-specific
 

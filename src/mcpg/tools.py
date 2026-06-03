@@ -1351,6 +1351,36 @@ def _register_migrations(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
     @server.tool(
+        name="validate_migration_schema",
+        description=(
+            "Verify a candidate migration against a reference schema. Clones target_schema's "
+            "structure into a transient shadow schema, applies candidate_sql, and compares the "
+            "shadow schema with reference_schema using compare_schemas. The shadow is dropped "
+            "before returning. Returns whether the candidate applied, any error, and the "
+            "structural diff if applied. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def validate_migration_schema(
+        ctx: _Ctx,
+        target_schema: str,
+        reference_schema: str,
+        candidate_sql: str,
+    ) -> dict[str, Any]:
+        result = await migrations.validate_migration_schema(
+            _driver(ctx),
+            target_schema=target_schema,
+            reference_schema=reference_schema,
+            candidate_sql=candidate_sql,
+        )
+        return {
+            "target_schema": result.target_schema,
+            "reference_schema": result.reference_schema,
+            "applied": result.applied,
+            "error": result.error,
+            "diff": asdict(result.diff) if result.diff is not None else None,
+        }
+
+    @server.tool(
         name="complete_migration",
         description=(
             "Apply a prepared migration's candidate SQL to its target schema. "
@@ -2348,6 +2378,33 @@ def _register_write(server: FastMCP[AppContext]) -> None:
     async def run_write(ctx: _Ctx, sql: str) -> dict[str, Any]:
         app = ctx.request_context.lifespan_context
         result = await write.run_write(_driver(ctx), sql, audit_persist=app.settings.audit_persist)
+        await app.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="seed_table_with_sample_data",
+        description=(
+            "Generate and execute synthetic INSERT statements to seed a table with sample data. "
+            "Values respect column types, NOT NULL, and DEFAULT constraints. Foreign keys are NOT "
+            "resolved — you must pre-seed referenced rows or drop the FK before seeding. "
+            "Hard cap of 10000 rows. Available only in unrestricted access mode."
+        ),
+    )
+    async def seed_table_with_sample_data(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        rows: int = test_data.DEFAULT_ROW_COUNT,
+        seed: int | None = None,
+    ) -> dict[str, Any]:
+        app = ctx.request_context.lifespan_context
+        result = await test_data.seed_table_with_sample_data(
+            _driver(ctx),
+            schema=schema,
+            table=table,
+            rows=rows,
+            seed=seed,
+        )
         await app.cache.clear()
         return asdict(result)
 

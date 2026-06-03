@@ -60,7 +60,7 @@ families come along:
 
 | Gate | Unlocks |
 |---|---|
-| `MCPG_ALLOW_DDL=true` | `run_ddl`, `enable_extension`, hypertable tools (`create_hypertable`, `add_compression_policy`, `add_retention_policy`), AGE graph DDL (`create_graph`, `drop_graph`), staged migrations (`prepare_migration` / `complete_migration` / `cancel_migration` / `validate_migration` / `list_pending_migrations`). |
+| `MCPG_ALLOW_DDL=true` | `run_ddl`, `enable_extension`, hypertable tools (`create_hypertable`, `add_compression_policy`, `add_retention_policy`), AGE graph DDL (`create_graph`, `drop_graph`), staged migrations (`prepare_migration` / `complete_migration` / `cancel_migration` / `validate_migration` / `validate_migration_schema` / `list_pending_migrations`). |
 | `MCPG_ALLOW_SHELL=true` | Subprocess tools — `dump_database`, `restore_database`, `copy_table_between_databases`. Requires the PostgreSQL client binaries (`pg_dump` / `pg_restore` / `psql`) on `PATH`. |
 | `MCPG_ALLOW_LISTEN=true` | `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions`. |
 
@@ -392,6 +392,11 @@ can review the structural diff. `validate_migration` separately
 applies the candidate to a transient shadow seeded with sampled
 real data so failures the diff misses (NOT NULL on existing NULLs,
 CHECK violations, type narrowings) surface before apply.
+
+`validate_migration_schema(target_schema, reference_schema, candidate_sql)`
+clones the target structure, applies the candidate SQL, and diffs the
+resulting shadow schema against a reference schema using `compare_schemas`
+to ensure the proposed migration exactly achieves the reference state.
 
 `complete_migration(id)` applies to the target;
 `cancel_migration(id)` drops the shadow without applying.

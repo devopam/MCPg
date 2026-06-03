@@ -117,8 +117,8 @@ All four are independent.
 | PR | Item | New module? | Effort | Notes |
 |---|---|---|---|---|
 | E1 (✅ PR) | Migration history table read (7.3) | new `migration_history.py` | S | Read Alembic / Flyway / Diesel bookkeeping tables. |
-| E2 | Zero-downtime migration cookbook (7.4) | docs only | S | Pure `docs/cookbook.md` patterns — zero code, zero conflict. |
-| E3 | Pre-deployment migration validation (7.2) | extends `migrations.py` | M | Composes `compare_schemas` + shadow workflow. |
+| E2 (✅ PR) | Zero-downtime migration cookbook (7.4) | docs only | S | Pure `docs/cookbook.md` patterns — zero code, zero conflict. |
+| E3 (✅ PR) | Pre-deployment migration validation (7.2) | extends `migrations.py` | M | Composes `compare_schemas` + shadow workflow. |
 | E4 | Alembic/Flyway/Liquibase ingestion (7.1) | extends `migrations.py` | M-L | Large; do after E3. |
 
 ### F. Developer experience / agent UX
@@ -127,7 +127,7 @@ All four are independent.
 |---|---|---|---|---|
 | F1 (✅ PR #44) | Schema-doc generator (8.2) | new `schema_docs.py` | S | Markdown table reference from the catalog; sibling of `generate_schema_diagram`. |
 | F2 | Auto tool examples in descriptions (3.1) | touches `tools.py` broadly | S | Higher conflict (edits many descriptions) — best done solo, late. |
-| F3 | `seed_table_with_sample_data` (3.2) | extends `test_data.py` | M | Executes inserts (WRITE-gated); sibling of `generate_test_data`. |
+| F3 (✅ PR) | `seed_table_with_sample_data` (3.2) | extends `test_data.py` | M | Executes inserts (WRITE-gated); sibling of `generate_test_data`. |
 | F4 | Test-data factory `generate_test_row_for` (8.1) | extends `test_data.py` | M | Catalog + heuristics. F3/F4 share `test_data.py` — sequence them. |
 
 ### G. Backups & DR (narrow audience — lower priority)
