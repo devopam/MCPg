@@ -1244,8 +1244,6 @@ async def test_detect_vector_outliers_tool_is_callable_from_a_client() -> None:
     assert result.structuredContent["total_outliers"] >= 1
 
 
-
-
 # --- monitor_embedding_drift ----------------------------------------------
 
 

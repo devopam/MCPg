@@ -1069,7 +1069,6 @@ async def detect_vector_outliers(
     )
 
 
-
 # --- monitor_embedding_drift ----------------------------------------------
 
 
@@ -1188,10 +1187,22 @@ async def _fetch_window_vectors(
     sample_size: int,
     dimension: int,
 ) -> list[list[float]]:
-    """Pull up to ``sample_size`` parseable embeddings in a window."""
+    """Pull up to ``sample_size`` parseable embeddings in a window.
+
+    Uses ``ORDER BY RANDOM()`` so the sample is unbiased. Drift
+    detection compares two distributions, so a systematic ordering
+    bias on both windows (e.g. always sampling the first rows in
+    each) can hide a real shift that happens later inside the
+    window — or fabricate one when the table grew between windows.
+    The cost is a full scan + sort of each window, which is
+    acceptable for the typical drift-monitoring cadence (daily /
+    hourly on a partition-pruned slice); callers with extreme-
+    cardinality windows should pre-aggregate before invoking.
+    """
     rows = await driver.execute_query(
         f"SELECT {emb_col} AS embedding FROM {relation} "
         f"WHERE {ts_col} >= %s AND {ts_col} < %s AND {emb_col} IS NOT NULL "
+        f"ORDER BY RANDOM() "
         f"LIMIT %s",
         params=[window_start, window_end, sample_size],
         force_readonly=True,
