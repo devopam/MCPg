@@ -38,6 +38,7 @@ ENABLEABLE_EXTENSIONS = frozenset(
         "postgres_fdw",
         "pg_cron",
         "pg_partman",
+        "pg_buffercache",
     }
 )
 

@@ -106,6 +106,8 @@ list_locks(limit=100)                                # pg_locks joined with pg_s
 find_blocking_chains(limit=50)                       # (blocked, blocking) pairs via pg_blocking_pids
 walk_blocking_chains(limit=50)                       # walks the lock graph, detects cycles, and renders a Mermaid flowchart
 read_pg_stat_io()                                    # PG16+ I/O stats; available=false on PG 14/15
+read_pg_buffercache_summary()                        # high-level shared buffer cache usage summary
+read_pg_buffercache_relations(schema=null, limit=100) # relations taking up the most space in shared buffer cache
 detect_n_plus_one(min_calls=100)                     # pg_stat_statements walker for ORM lazy-load loops
 list_replicas()                                      # health of every read-replica (when MCPG_REPLICA_URLS set)
 ```

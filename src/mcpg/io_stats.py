@@ -127,3 +127,156 @@ def _maybe_float(value: object) -> float | None:
     if value is None:
         return None
     return float(value)  # type: ignore[arg-type]
+
+
+@dataclass(frozen=True, slots=True)
+class BufferCacheSummaryReport:
+    """High-level shared buffer cache usage summary."""
+
+    available: bool
+    total_buffers: int | None = None
+    free_buffers: int | None = None
+    used_buffers: int | None = None
+    dirty_buffers: int | None = None
+    average_usage_count: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BufferCacheRelationRow:
+    """Buffer cache usage for one database relation (table or index)."""
+
+    schema_name: str
+    relation_name: str
+    relation_kind: str
+    buffered_blocks: int
+    buffered_bytes: int
+    buffer_percent: float | None
+    percent_of_relation_buffered: float | None
+    average_usage_count: float | None
+    dirty_pages: int
+
+
+@dataclass(frozen=True, slots=True)
+class BufferCacheRelationsReport:
+    """Relations taking up space in the shared buffer cache."""
+
+    available: bool
+    relations: list[BufferCacheRelationRow]
+
+
+_RELKIND_MAP = {
+    "r": "table",
+    "i": "index",
+    "S": "sequence",
+    "t": "toast table",
+    "v": "view",
+    "m": "materialized view",
+    "c": "composite type",
+    "f": "foreign table",
+    "p": "partitioned table",
+    "I": "partitioned index",
+}
+
+
+def _map_relkind(kind: str | None) -> str:
+    if not kind:
+        return "unknown"
+    return _RELKIND_MAP.get(kind, f"unknown ({kind})")
+
+
+async def read_pg_buffercache_summary(driver: SqlDriver) -> BufferCacheSummaryReport:
+    """Get a high-level summary of the shared buffer cache state.
+
+    Requires the ``pg_buffercache`` extension. Returns ``available=False`` if not installed.
+    """
+    from mcpg.extensions import extension_installed
+
+    if not await extension_installed(driver, "pg_buffercache"):
+        return BufferCacheSummaryReport(available=False)
+
+    rows = await driver.execute_query(
+        "SELECT count(*) AS total_buffers, "
+        "       sum(case when relfilenode IS NULL then 1 else 0 end) AS free_buffers, "
+        "       sum(case when relfilenode IS NOT NULL then 1 else 0 end) AS used_buffers, "
+        "       sum(case when isdirty then 1 else 0 end) AS dirty_buffers, "
+        "       avg(usagecount) AS average_usage_count "
+        "FROM pg_buffercache",
+        force_readonly=True,
+    )
+    if not rows:
+        return BufferCacheSummaryReport(available=True)
+
+    row = rows[0]
+    return BufferCacheSummaryReport(
+        available=True,
+        total_buffers=_maybe_int(row.cells.get("total_buffers")),
+        free_buffers=_maybe_int(row.cells.get("free_buffers")),
+        used_buffers=_maybe_int(row.cells.get("used_buffers")),
+        dirty_buffers=_maybe_int(row.cells.get("dirty_buffers")),
+        average_usage_count=_maybe_float(row.cells.get("average_usage_count")),
+    )
+
+
+async def read_pg_buffercache_relations(
+    driver: SqlDriver,
+    *,
+    schema: str | None = None,
+    limit: int = 100,
+) -> BufferCacheRelationsReport:
+    """Get the list of relations taking up the most space in the shared buffer cache.
+
+    Requires the ``pg_buffercache`` extension. Returns ``available=False`` if not installed.
+    """
+    from mcpg.extensions import extension_installed
+
+    if not await extension_installed(driver, "pg_buffercache"):
+        return BufferCacheRelationsReport(available=False, relations=[])
+
+    query = (
+        "SELECT n.nspname AS schema_name, "
+        "       c.relname AS relation_name, "
+        "       c.relkind AS relation_kind, "
+        "       count(*) AS buffered_blocks, "
+        "       count(*) * 8192 AS buffered_bytes, "
+        "       round(100.0 * count(*) / (SELECT nullif(setting::integer, 0) "
+        "                                 FROM pg_settings WHERE name='shared_buffers'), 2) AS buffer_percent, "
+        "       round(100.0 * count(*) * 8192 / nullif(pg_relation_size(c.oid), 0), 2) "
+        "         AS percent_of_relation_buffered, "
+        "       avg(usagecount) AS average_usage_count, "
+        "       sum(case when isdirty then 1 else 0 end) AS dirty_pages "
+        "FROM pg_buffercache b "
+        "JOIN pg_class c ON b.relfilenode = pg_relation_filenode(c.oid) "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_database d ON (b.reldatabase = d.oid AND d.datname = current_database()) "
+    )
+
+    params: list[object] = []
+    if schema is not None:
+        query += "WHERE n.nspname = %s "
+        params.append(schema)
+
+    query += "GROUP BY n.nspname, c.oid, c.relname, c.relkind ORDER BY count(*) DESC LIMIT %s"
+    params.append(limit)
+
+    rows = await driver.execute_query(
+        query,
+        params=params,
+        force_readonly=True,
+    )
+
+    relations = [
+        BufferCacheRelationRow(
+            schema_name=str(row.cells["schema_name"]),
+            relation_name=str(row.cells["relation_name"]),
+            relation_kind=_map_relkind(str(row.cells.get("relation_kind"))),
+            buffered_blocks=_maybe_int(row.cells.get("buffered_blocks")) or 0,
+            buffered_bytes=_maybe_int(row.cells.get("buffered_bytes")) or 0,
+            buffer_percent=_maybe_float(row.cells.get("buffer_percent")),
+            percent_of_relation_buffered=_maybe_float(row.cells.get("percent_of_relation_buffered")),
+            average_usage_count=_maybe_float(row.cells.get("average_usage_count")),
+            dirty_pages=_maybe_int(row.cells.get("dirty_pages")) or 0,
+        )
+        for row in rows or []
+    ]
+
+    return BufferCacheRelationsReport(available=True, relations=relations)

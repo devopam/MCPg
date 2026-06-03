@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`pg_buffercache` integration.** Adds `read_pg_buffercache_summary` and
+  `read_pg_buffercache_relations` tools to analyze shared buffer cache usage
+  at the cluster and relation levels. Degrades gracefully if the extension
+  is not installed (`available=false`). Adds `pg_buffercache` to the list of
+  programmatically enableable extensions.
+
 - **Slow-call logging from the MCP layer (`MCPG_SLOW_CALL_THRESHOLD_MS`).** Logs a warning
   to the `mcpg.server` logger when any tool execution duration exceeds the configured threshold.
   Defaults to `1000` ms. A value of `0` or less disables this logging.

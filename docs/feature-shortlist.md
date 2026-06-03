@@ -33,7 +33,7 @@ Effort scale (rough, single-session yardstick):
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
 | 2.1 | Logical replication management writes (`create_publication`, `drop_publication`, `create_subscription`, `drop_subscription`) | M | Medium-High | Read tools already exist. Closes the loop on logical-replication ops; gated under `MCPG_ALLOW_DDL`. |
-| 2.2 | `pg_buffercache` integration (cache hit analysis at the buffer level) | S | Low-Medium | Niche. |
+| 2.2 | ✅ **Shipped.** `pg_buffercache` integration (cache hit analysis at the buffer level) | S | Low-Medium | Niche. |
 | 2.3 | WAL inspection (`pg_walinspect`) | S | Low | Niche but useful for replication debugging. |
 | 2.4 | ✅ **Shipped.** Deeper `pg_locks` walker — deadlock-cycle reconstruction beyond the current `find_blocking_chains` pair list | S-M | Medium | Live-ops complement. |
 
