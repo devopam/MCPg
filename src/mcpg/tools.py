@@ -738,6 +738,37 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         return asdict(report)
 
     @server.tool(
+        name="migrate_vector_to_halfvec",
+        description=(
+            "Generate a DDL plan that converts a pgvector vector(N) "
+            "column to halfvec(N) — halving per-element storage "
+            "(4 → 2 bytes) with typically negligible recall impact at "
+            "d ≥ 768. Reads the column's current type + dimension from "
+            "the catalog, finds every index on the column, and emits an "
+            "ordered `migration_sql` plan: DROP each affected index, "
+            "ALTER COLUMN to halfvec(N) via a `USING` cast, then "
+            "recreate each index with its halfvec opclass. Also returns "
+            "a mirror `rollback_sql` that restores the original "
+            "vector(N) type plus the original index definitions. "
+            "Nothing is executed — feed the plan through the shadow-"
+            "migration workflow (`prepare_migration` / "
+            "`validate_migration_schema`) before applying. Returns "
+            "`already_halfvec=true` (and an empty plan) when the column "
+            "is already halfvec, and refuses any index whose opclass "
+            "has no halfvec sibling rather than rewriting it "
+            "incorrectly. Requires the vector extension."
+        ),
+    )
+    async def migrate_vector_to_halfvec(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+    ) -> dict[str, Any]:
+        plan = await vector_tuning.migrate_vector_to_halfvec(_driver(ctx), schema, table, column)
+        return asdict(plan)
+
+    @server.tool(
         name="analyze_hnsw_recall",
         description=(
             "Sweeps ef_search values to measure the latency and recall trade-off curve "

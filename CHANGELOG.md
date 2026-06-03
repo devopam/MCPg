@@ -8,6 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`migrate_vector_to_halfvec` tool (pgvector).** Read-only DDL
+  planner that converts a `vector(N)` column to `halfvec(N)`
+  (halving per-element storage: 4 → 2 bytes, with negligible recall
+  impact at d ≥ 768). Reads the column's type, dimension, row count,
+  and every index touching the column from the catalog, and emits an
+  ordered `migration_sql` plan: DROP each affected index, ALTER
+  COLUMN to halfvec(N) via a `USING col::halfvec(N)` cast, then
+  recreate each index with its `halfvec_*_ops` sibling
+  (`vector_l2_ops` → `halfvec_l2_ops`, same for cosine / ip / l1).
+  Also emits a mirror `rollback_sql` that restores the original
+  vector(N) type plus each index's original definition. Returns
+  `already_halfvec=true` (empty plan) when the column is already at
+  the target type, and refuses any ANN index whose opclass has no
+  halfvec sibling rather than rewriting it incorrectly. Nothing is
+  executed — the caller is expected to validate via the shadow-
+  migration workflow before applying. Lives in `mcpg.vector_tuning`.
+
 - **`detect_vector_outliers` tool (pgvector).** Flags rows whose
   embedding sits far from any cluster centroid. Samples up to
   `sample_size` (default 5000) non-NULL rows, clusters them with the

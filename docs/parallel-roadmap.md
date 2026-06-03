@@ -71,7 +71,7 @@ matches `feature-shortlist.md` (S / M / L).
 | A5 | `cluster_vectors` (9.3) | `vector_ops.py` | M | — | k-means; centroids + per-row labels. Reuse `mmr_search`'s cosine helpers. |
 | A6 (✅ PR) | `detect_vector_outliers` (9.4) | `vector_ops.py` | S-M | A5 (shares centroid logic) | Flag rows far from any centroid. |
 | A7 | `monitor_embedding_drift` (9.5) | `vector_ops.py` | M | — | Distributional stats over time windows. |
-| A8 | `migrate_vector_to_halfvec` (9.10) | extends `vector_tuning.py` | S-M | — | DDL generator; uses the shadow-migration workflow; DDL-gated. |
+| A8 (✅ PR) | `migrate_vector_to_halfvec` (9.10) | extends `vector_tuning.py` | S-M | — | DDL generator; uses the shadow-migration workflow; DDL-gated. |
 
 A1–A4 are mutually independent and can all go at once. A5 then A6 are a
 mini-sequence (shared centroid code).
