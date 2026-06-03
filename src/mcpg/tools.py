@@ -56,6 +56,7 @@ from mcpg import (
     test_data,
     textsearch,
     timescaledb,
+    vector_ops,
     vector_tuner_advanced,
     vector_tuning,
     workload,
@@ -716,6 +717,38 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             metric=metric,
         )
 
+    @server.tool(
+        name="analyze_distance_metric",
+        description=(
+            "Recommend a pgvector distance metric (cosine | l2 | "
+            "inner_product) from the embedding-magnitude distribution. "
+            "Samples up to `sample_size` non-NULL rows of "
+            "schema.table.column, computes each embedding's L2 norm, "
+            "and applies a small heuristic: pre-normalised (CV < 5% "
+            "and mean ≈ 1.0) → inner_product; nearly-constant magnitude "
+            "but not unit-norm → cosine (same ranking as L2, safer "
+            "default); variable magnitude → cosine (normalises out "
+            "heterogeneous sources). Returns the metric + a rationale + "
+            "the underlying distribution stats. Reports available=false "
+            "if the pgvector extension is not installed."
+        ),
+    )
+    async def analyze_distance_metric(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        sample_size: int = vector_ops.DEFAULT_SAMPLE_SIZE,
+    ) -> dict[str, Any]:
+        result = await vector_ops.analyze_distance_metric(
+            _driver(ctx),
+            schema,
+            table,
+            column,
+            sample_size=sample_size,
+        )
+        return asdict(result)
+
 
 def _register_prisma(server: FastMCP[AppContext]) -> None:
     @server.tool(
@@ -1118,6 +1151,46 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
             table,
             content,
             columns=columns,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="import_vectors",
+        description=(
+            "Bulk-load embeddings into a pgvector vector(N) column. Reads "
+            "the column's declared N from the catalog and validates every "
+            "row in `content` against it BEFORE any INSERT — a dimension "
+            "mismatch on row 1000 fails the whole call rather than leaving "
+            "999 partial inserts behind. format='json' (default) expects a "
+            "JSON array of objects whose `embedding_column` field is a list "
+            "of numbers or a pgvector text literal; format='csv' expects a "
+            "header row with `embedding_column` (and `id_column` when set) "
+            "and cells that are bracketed literals or comma-separated "
+            "numbers. When `id_column` is given, the parallel column receives "
+            "each row's identifier. Errors when the column isn't pgvector "
+            "vector(N) (so dimension validation can't run). Performs writes "
+            "— requires unrestricted mode."
+        ),
+    )
+    async def import_vectors(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        embedding_column: str,
+        content: str,
+        format: str = "json",
+        id_column: str | None = None,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await data_movement.import_vectors(
+            database,
+            schema,
+            table,
+            embedding_column,
+            content,
+            format=format,
+            id_column=id_column,
         )
         await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)

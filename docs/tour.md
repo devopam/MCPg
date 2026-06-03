@@ -142,6 +142,8 @@ recommend_vector_index(schema, table, column)                             # HNSW
 recommend_vector_quantization(schema)                                     # vector → halfvec / bit storage advisor
 analyze_vector_search(schema, table, column, query_vector)
 analyze_vector_table(schema, table)
+analyze_distance_metric(schema, table, column, sample_size=1000)          # cosine / l2 / inner_product picker
+                                                                          # from the magnitude distribution
 ```
 
 ## "Move data in / out"
@@ -156,6 +158,8 @@ export_table(schema, table, format="csv", limit=10000)
 ```
 import_csv(schema, table, content, header=true, delimiter=",", columns=null)
 import_json(schema, table, content, columns=null)
+import_vectors(schema, table, embedding_column, content, format="json", id_column=null)
+                                                     # pgvector vector(N) loader — validates every row's dim against the column
 ```
 
 **Subprocess** (`unrestricted` + `MCPG_ALLOW_SHELL=true`):
