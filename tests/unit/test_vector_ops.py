@@ -10,6 +10,8 @@ from mcpg.config import load_settings
 from mcpg.server import create_server
 from mcpg.vector_ops import (
     DEFAULT_CLUSTER_SAMPLE_SIZE,
+    DEFAULT_DRIFT_SAMPLE_SIZE,
+    DEFAULT_DRIFT_THRESHOLD,
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_OUTLIER_K,
     DEFAULT_OUTLIER_MAX_RESULTS,
@@ -26,12 +28,14 @@ from mcpg.vector_ops import (
     _normalize_in_place,
     _parse_embedding,
     _pick_metric,
+    _relative_change,
     _squared_distance,
     _vector_literal,
     analyze_distance_metric,
     cluster_vectors,
     cross_table_similarity,
     detect_vector_outliers,
+    monitor_embedding_drift,
 )
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
@@ -1238,3 +1242,313 @@ async def test_detect_vector_outliers_tool_is_callable_from_a_client() -> None:
     assert result.structuredContent is not None
     assert result.structuredContent["available"] is True
     assert result.structuredContent["total_outliers"] >= 1
+
+
+
+
+# --- monitor_embedding_drift ----------------------------------------------
+
+
+_DRIFT_WINDOW_QUERY = "AND embedding IS NOT NULL"
+
+
+def _drift_routes(
+    *,
+    dim: int | None = 2,
+    baseline_rows: list[dict[str, object]] | None = None,
+    current_rows: list[dict[str, object]] | None = None,
+) -> dict[
+    tuple[str, tuple[object, ...] | None],
+    list[dict[str, object]],
+]:
+    """FakeParamRoutingDriver routes for monitor_embedding_drift.
+
+    Routes by (query-substring, params-tuple) so the baseline and
+    current window calls can return different sample sets even
+    though their SQL is identical.
+    """
+    dim_rows: list[dict[str, object]] = [{"type_name": "vector", "type_mod": dim}] if dim is not None else []
+    baseline_key = ('AND "embedding" IS NOT NULL', ("2026-01-01", "2026-02-01", 5000))
+    current_key = ('AND "embedding" IS NOT NULL', ("2026-02-01", "2026-03-01", 5000))
+    return {
+        ("pg_extension", None): [{"present": 1}],
+        ("FROM pg_attribute a", None): dim_rows,
+        baseline_key: baseline_rows or [],
+        current_key: current_rows or [],
+    }
+
+
+def test_relative_change_handles_zero_baseline() -> None:
+    assert _relative_change(0.0, 0.0) == 0.0
+    assert _relative_change(0.0, 1.0) == math.inf
+    assert _relative_change(10.0, 12.0) == pytest.approx(0.2)
+    assert _relative_change(10.0, 8.0) == pytest.approx(-0.2)
+
+
+async def test_monitor_embedding_drift_reports_unavailable_without_pgvector() -> None:
+    driver = FakeParamRoutingDriver({("pg_extension", None): []})
+
+    result = await monitor_embedding_drift(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        "created_at",
+        baseline_start="2026-01-01",
+        baseline_end="2026-02-01",
+        current_start="2026-02-01",
+        current_end="2026-03-01",
+    )
+
+    assert result.available is False
+    assert result.insufficient_data is True
+    assert result.drift_detected is False
+    assert result.dimension == 0
+    assert "not installed" in result.notes
+
+
+async def test_monitor_embedding_drift_flags_centroid_drift_above_threshold() -> None:
+    # Baseline cluster around (1, 0); current cluster around (0, 1).
+    # Their centroids point in orthogonal directions → cosine distance 1.0.
+    baseline_rows: list[dict[str, object]] = [
+        {"embedding": [1.0, 0.0]},
+        {"embedding": [1.0, 0.0]},
+        {"embedding": [1.0, 0.0]},
+    ]
+    current_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 1.0]},
+        {"embedding": [0.0, 1.0]},
+        {"embedding": [0.0, 1.0]},
+    ]
+    driver = FakeParamRoutingDriver(_drift_routes(baseline_rows=baseline_rows, current_rows=current_rows))
+
+    result = await monitor_embedding_drift(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        "created_at",
+        baseline_start="2026-01-01",
+        baseline_end="2026-02-01",
+        current_start="2026-02-01",
+        current_end="2026-03-01",
+    )
+
+    assert result.available is True
+    assert result.insufficient_data is False
+    assert result.drift_detected is True
+    assert result.dimension == 2
+    assert result.centroid_cosine_distance == pytest.approx(1.0)
+    assert result.baseline.sampled_rows == 3
+    assert result.current.sampled_rows == 3
+    assert result.baseline.centroid == [pytest.approx(1.0), pytest.approx(0.0)]
+    assert result.current.centroid == [pytest.approx(0.0), pytest.approx(1.0)]
+
+
+async def test_monitor_embedding_drift_returns_no_drift_for_identical_distributions() -> None:
+    same_rows: list[dict[str, object]] = [
+        {"embedding": [1.0, 1.0]},
+        {"embedding": [1.0, 1.0]},
+        {"embedding": [1.0, 1.0]},
+    ]
+    driver = FakeParamRoutingDriver(_drift_routes(baseline_rows=same_rows, current_rows=list(same_rows)))
+
+    result = await monitor_embedding_drift(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        "created_at",
+        baseline_start="2026-01-01",
+        baseline_end="2026-02-01",
+        current_start="2026-02-01",
+        current_end="2026-03-01",
+    )
+
+    assert result.drift_detected is False
+    assert result.centroid_cosine_distance == pytest.approx(0.0)
+    assert result.norm_mean_relative_change == pytest.approx(0.0)
+    assert result.norm_std_relative_change == pytest.approx(0.0)
+
+
+async def test_monitor_embedding_drift_detects_norm_mean_change_independently() -> None:
+    # Both windows have the same direction but different magnitudes —
+    # cosine distance ≈ 0, but norm_mean_relative_change should be
+    # large.
+    baseline_rows: list[dict[str, object]] = [
+        {"embedding": [1.0, 1.0]},
+        {"embedding": [1.0, 1.0]},
+    ]
+    current_rows: list[dict[str, object]] = [
+        {"embedding": [3.0, 3.0]},
+        {"embedding": [3.0, 3.0]},
+    ]
+    driver = FakeParamRoutingDriver(_drift_routes(baseline_rows=baseline_rows, current_rows=current_rows))
+
+    result = await monitor_embedding_drift(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        "created_at",
+        baseline_start="2026-01-01",
+        baseline_end="2026-02-01",
+        current_start="2026-02-01",
+        current_end="2026-03-01",
+    )
+
+    assert result.centroid_cosine_distance == pytest.approx(0.0, abs=1e-9)
+    # Mean norm grew 3x — relative change is +2.0.
+    assert result.norm_mean_relative_change == pytest.approx(2.0)
+
+
+async def test_monitor_embedding_drift_reports_insufficient_data_for_empty_window() -> None:
+    # Current window empty.
+    baseline_rows: list[dict[str, object]] = [
+        {"embedding": [1.0, 0.0]},
+        {"embedding": [1.0, 0.0]},
+    ]
+    driver = FakeParamRoutingDriver(_drift_routes(baseline_rows=baseline_rows, current_rows=[]))
+
+    result = await monitor_embedding_drift(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        "created_at",
+        baseline_start="2026-01-01",
+        baseline_end="2026-02-01",
+        current_start="2026-02-01",
+        current_end="2026-03-01",
+    )
+
+    assert result.insufficient_data is True
+    assert result.drift_detected is False
+    assert result.baseline.sampled_rows == 2
+    assert result.current.sampled_rows == 0
+    assert "insufficient data" in result.notes
+
+
+async def test_monitor_embedding_drift_skips_dimension_mismatched_rows() -> None:
+    # Mix in a wrong-dimension embedding — it should be silently
+    # dropped by `_parse_embedding`/dimension check.
+    baseline_rows: list[dict[str, object]] = [
+        {"embedding": [1.0, 0.0]},
+        {"embedding": [1.0, 0.0, 0.0]},  # wrong dim — dropped
+        {"embedding": [1.0, 0.0]},
+    ]
+    current_rows: list[dict[str, object]] = [{"embedding": [1.0, 0.0]}]
+    driver = FakeParamRoutingDriver(_drift_routes(baseline_rows=baseline_rows, current_rows=current_rows))
+
+    result = await monitor_embedding_drift(
+        driver,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        "created_at",
+        baseline_start="2026-01-01",
+        baseline_end="2026-02-01",
+        current_start="2026-02-01",
+        current_end="2026-03-01",
+    )
+
+    assert result.baseline.sampled_rows == 2
+    assert result.current.sampled_rows == 1
+
+
+async def test_monitor_embedding_drift_raises_when_column_is_not_pgvector() -> None:
+    driver = FakeParamRoutingDriver(_drift_routes(dim=None))
+
+    with pytest.raises(VectorOpsError, match="not a pgvector"):
+        await monitor_embedding_drift(
+            driver,  # type: ignore[arg-type]
+            "app",
+            "docs",
+            "embedding",
+            "created_at",
+            baseline_start="2026-01-01",
+            baseline_end="2026-02-01",
+            current_start="2026-02-01",
+            current_end="2026-03-01",
+        )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"sample_size": 0}, "sample_size must be at least 1"),
+        ({"drift_threshold": -0.1}, "drift_threshold must be >= 0"),
+        ({"baseline_end": "2026-01-01"}, "baseline window end must be after start"),
+        ({"current_end": "2026-02-01"}, "current window end must be after start"),
+    ],
+)
+async def test_monitor_embedding_drift_validates_arguments(kwargs: dict[str, object], match: str) -> None:
+    driver = FakeParamRoutingDriver(_drift_routes())
+    base_kwargs: dict[str, object] = {
+        "baseline_start": "2026-01-01",
+        "baseline_end": "2026-02-01",
+        "current_start": "2026-02-01",
+        "current_end": "2026-03-01",
+    }
+    base_kwargs.update(kwargs)
+    with pytest.raises(VectorOpsError, match=match):
+        await monitor_embedding_drift(driver, "app", "docs", "embedding", "created_at", **base_kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad", ["bad name", "ta;ble", "1abc", '"x"'])
+async def test_monitor_embedding_drift_rejects_unsafe_identifiers(bad: str) -> None:
+    driver = FakeParamRoutingDriver(_drift_routes())
+    with pytest.raises(VectorOpsError, match="invalid"):
+        await monitor_embedding_drift(
+            driver,  # type: ignore[arg-type]
+            bad,
+            "docs",
+            "embedding",
+            "created_at",
+            baseline_start="2026-01-01",
+            baseline_end="2026-02-01",
+            current_start="2026-02-01",
+            current_end="2026-03-01",
+        )
+
+
+def test_monitor_embedding_drift_reports_default_constants_via_module() -> None:
+    assert DEFAULT_DRIFT_SAMPLE_SIZE == 5000
+    assert DEFAULT_DRIFT_THRESHOLD == 0.05
+
+
+async def test_monitor_embedding_drift_tool_is_callable_from_a_client() -> None:
+    baseline_rows: list[dict[str, object]] = [
+        {"embedding": [1.0, 0.0]},
+        {"embedding": [1.0, 0.0]},
+    ]
+    current_rows: list[dict[str, object]] = [
+        {"embedding": [0.0, 1.0]},
+        {"embedding": [0.0, 1.0]},
+    ]
+    database = FakeDatabase(
+        FakeParamRoutingDriver(_drift_routes(baseline_rows=baseline_rows, current_rows=current_rows))
+    )
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "monitor_embedding_drift" in listed
+        result = await client.call_tool(
+            "monitor_embedding_drift",
+            {
+                "schema": "app",
+                "table": "docs",
+                "embedding_column": "embedding",
+                "timestamp_column": "created_at",
+                "baseline_start": "2026-01-01",
+                "baseline_end": "2026-02-01",
+                "current_start": "2026-02-01",
+                "current_end": "2026-03-01",
+            },
+        )
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["available"] is True
+    assert result.structuredContent["drift_detected"] is True

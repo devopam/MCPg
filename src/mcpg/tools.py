@@ -970,6 +970,56 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         )
         return asdict(result)
 
+    @server.tool(
+        name="monitor_embedding_drift",
+        description=(
+            "Compare two time windows of a pgvector column and flag "
+            "distributional drift. Samples up to `sample_size` (default "
+            "5000) non-NULL embeddings from each window (filtered by "
+            "`timestamp_column`), computes the centroid (per-dimension "
+            "mean vector) and L2-norm distribution of each, then "
+            "reports the cosine distance between the two centroids "
+            "(the main drift signal), the relative change in mean / "
+            "std of the L2-norm distribution, and a boolean "
+            "`drift_detected` that flips when cosine distance exceeds "
+            "`drift_threshold` (default 0.05). Each window is treated "
+            "as a half-open `[start, end)` interval. Useful for "
+            "ops monitoring of embedding pipelines — an upstream "
+            "model swap typically shows up as a large centroid "
+            "cosine distance even if the norm distribution looks "
+            "stable. `insufficient_data` is returned distinctly from "
+            "`drift_detected=false` when either window is empty. "
+            "Reports `available=false` if pgvector is not installed."
+        ),
+    )
+    async def monitor_embedding_drift(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        embedding_column: str,
+        timestamp_column: str,
+        baseline_start: str,
+        baseline_end: str,
+        current_start: str,
+        current_end: str,
+        sample_size: int = vector_ops.DEFAULT_DRIFT_SAMPLE_SIZE,
+        drift_threshold: float = vector_ops.DEFAULT_DRIFT_THRESHOLD,
+    ) -> dict[str, Any]:
+        report = await vector_ops.monitor_embedding_drift(
+            _driver(ctx),
+            schema,
+            table,
+            embedding_column,
+            timestamp_column,
+            baseline_start=baseline_start,
+            baseline_end=baseline_end,
+            current_start=current_start,
+            current_end=current_end,
+            sample_size=sample_size,
+            drift_threshold=drift_threshold,
+        )
+        return asdict(report)
+
 
 def _register_prisma(server: FastMCP[AppContext]) -> None:
     @server.tool(

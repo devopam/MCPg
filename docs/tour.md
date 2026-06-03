@@ -160,6 +160,11 @@ detect_vector_outliers(schema, table, embedding_column, id_column=null,
                        k=8, zscore_threshold=3.0, sample_size=5000, metric="l2",
                        seed=42, max_results=100)
                                                                           # flag rows weird-for-their-cluster (per-cluster z-score)
+monitor_embedding_drift(schema, table, embedding_column, timestamp_column,
+                        baseline_start, baseline_end, current_start, current_end,
+                        sample_size=5000, drift_threshold=0.05)
+                                                                          # centroid cosine drift + norm-distribution change
+                                                                          # between two time windows
 ```
 
 ## "Move data in / out"
