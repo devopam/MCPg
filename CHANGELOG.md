@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **OpenTelemetry tracing — one span per `call_tool`
+  (`MCPG_OTEL_ENABLED`).** Optional via the `mcpg[otel]` extra.
+  Wraps every MCP tool invocation in a span on the `mcpg.tools`
+  tracer with `mcp.tool.name`, `mcp.tool.argument_count`,
+  `mcp.tool.status`, and `error.type` / `error.message` on
+  failure (message truncated at 200 chars). Span status is set
+  to OK / ERROR so backends that surface that field light up
+  failure cases without parsing attribute text. Raw argument
+  *values* are deliberately not attached because tool arguments
+  can carry secrets / PII. Standard `OTEL_*` env vars (collector
+  endpoint, headers, resource attributes, sampler) take
+  precedence; `MCPG_OTEL_SERVICE_NAME` is the only project-
+  specific knob and only applies when
+  `OTEL_RESOURCE_ATTRIBUTES` doesn't already set `service.name`.
+  Lives in `mcpg.otel_tracing`. Disabled by default.
+
 - **`monitor_embedding_drift` tool (pgvector).** Compare two time
   windows of an embedding column and flag distributional drift.
   Samples up to `sample_size` (default 5000) non-NULL embeddings

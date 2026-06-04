@@ -58,6 +58,18 @@ dependencies = [
     "pyjwt[crypto]>=2.8",
 ]
 
+# Optional extras the runtime picks up only on demand. ``otel`` adds
+# OpenTelemetry tracing — one span per ``call_tool`` invocation —
+# behind the ``MCPG_OTEL_ENABLED`` flag. The api/sdk pair are the
+# trace machinery; the exporter ships traces to any OTLP-compatible
+# collector over HTTP/protobuf.
+[project.optional-dependencies]
+otel = [
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
+]
+
 # Powers the "Project links" sidebar on https://pypi.org/project/mcpg/.
 # Order is preserved on the page; first entry doubles as the page header
 # "Homepage" link.
@@ -109,6 +121,13 @@ dev = [
     # rendered metadata, push to PyPI in the publish workflow.
     "build>=1.2",
     "twine>=5.1",
+    # OpenTelemetry SDK + OTLP HTTP exporter — pinned in dev so the
+    # otel-tracing unit tests can use the InMemorySpanExporter and so
+    # `mcpg[otel]` round-trips through CI. Production deployments
+    # opt in via the ``mcpg[otel]`` extra rather than dev install.
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
 ]
 
 [tool.pytest.ini_options]

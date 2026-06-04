@@ -24,6 +24,7 @@ from mcpg.database import Database
 from mcpg.listen import ListenManager
 from mcpg.middleware.rate_limit import RateLimiter
 from mcpg.observability import get_metrics
+from mcpg.otel_tracing import TracerHandle, setup_tracing, tool_span
 from mcpg.tools import register_tools
 
 SERVER_NAME = "mcpg"
@@ -40,6 +41,10 @@ class AuditedFastMCP(FastMCP[AppContext]):
     rate_limiter: RateLimiter
     mcpg_settings: Settings
     in_flight_calls: int = 0
+    # OpenTelemetry tracer. ``None`` when MCPG_OTEL_ENABLED=false or
+    # the ``mcpg[otel]`` extra isn't installed — :func:`tool_span`
+    # treats both cases as no-ops so ``call_tool`` doesn't branch.
+    otel_tracer: TracerHandle | None = None
 
     def _log_if_slow(self, name: str, duration: float) -> None:
         if not hasattr(self, "mcpg_settings"):
@@ -71,7 +76,8 @@ class AuditedFastMCP(FastMCP[AppContext]):
             metrics = get_metrics()
             start = time.monotonic()
             try:
-                result = await super().call_tool(name, arguments)
+                with tool_span(self.otel_tracer, name, arguments):
+                    result = await super().call_tool(name, arguments)
             except Exception as exc:
                 duration = time.monotonic() - start
                 self._log_if_slow(name, duration)
@@ -146,6 +152,13 @@ def make_lifespan(
 
             await cache_manager.close()
 
+            # Flush pending OTel spans so a clean shutdown doesn't
+            # drop the last batch of traces. Tracer is process-wide
+            # global but the provider hung off the server lets us
+            # invoke shutdown only when we actually own it.
+            if hasattr(_server, "otel_tracer") and _server.otel_tracer is not None:
+                _server.otel_tracer.shutdown()
+
     return lifespan
 
 
@@ -185,6 +198,7 @@ def create_server(
         port=settings.http_port,
     )
     server.mcpg_settings = settings
+    server.otel_tracer = setup_tracing(settings)
     # Instantiate and register the RateLimiter
     server.rate_limiter = RateLimiter(
         enabled=settings.rate_limit_enabled,

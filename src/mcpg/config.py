@@ -139,6 +139,14 @@ class Settings:
     statement_timeout_ms: int = 30000
     lock_timeout_ms: int = 5000
     slow_call_threshold_ms: int = 1000
+    # OpenTelemetry tracing — one span per `call_tool` invocation,
+    # behind the ``mcpg[otel]`` extra. Disabled by default so the
+    # baseline runtime has no OTel cost. ``otel_service_name`` only
+    # takes effect when ``OTEL_RESOURCE_ATTRIBUTES`` doesn't already
+    # supply a ``service.name``; every other setting (endpoint,
+    # headers, sampler) comes from the standard ``OTEL_*`` env vars.
+    otel_enabled: bool = False
+    otel_service_name: str = "mcpg"
     cache_enabled: bool = True
     cache_ttl_seconds: int = 300
     cache_maxsize: int = 1024
@@ -204,6 +212,7 @@ class Settings:
             f"statement_timeout_ms={self.statement_timeout_ms}, "
             f"lock_timeout_ms={self.lock_timeout_ms}, "
             f"slow_call_threshold_ms={self.slow_call_threshold_ms}, "
+            f"otel_enabled={self.otel_enabled}, otel_service_name={self.otel_service_name!r}, "
             f"cache_enabled={self.cache_enabled}, "
             f"cache_ttl_seconds={self.cache_ttl_seconds}, "
             f"cache_maxsize={self.cache_maxsize}, "
@@ -634,6 +643,15 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         except ValueError:
             raise ConfigError(f"MCPG_SLOW_CALL_THRESHOLD_MS must be an integer (got {raw!r})") from None
 
+    otel_enabled = False
+    if (raw := env.get("MCPG_OTEL_ENABLED")) is not None:
+        candidate = raw.strip().lower()
+        if candidate not in {"true", "false", "1", "0", "yes", "no"}:
+            raise ConfigError(f"MCPG_OTEL_ENABLED must be a boolean (got {raw!r})")
+        otel_enabled = candidate in {"true", "1", "yes"}
+
+    otel_service_name = env.get("MCPG_OTEL_SERVICE_NAME", "mcpg").strip() or "mcpg"
+
     # Re-arm the audit-trail redaction pattern with the operator's
     # MCPG_AUDIT_REDACT_KEYS extension (if any) so the very first audit
     # event the server records honours the configured list.
@@ -751,6 +769,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         statement_timeout_ms=statement_timeout_ms,
         lock_timeout_ms=lock_timeout_ms,
         slow_call_threshold_ms=slow_call_threshold_ms,
+        otel_enabled=otel_enabled,
+        otel_service_name=otel_service_name,
         cache_enabled=cache_enabled,
         cache_ttl_seconds=cache_ttl_seconds,
         cache_maxsize=cache_maxsize,
