@@ -428,6 +428,67 @@ async def test_list_pending_migrations_records_size_bytes(tmp_path: Path) -> Non
     assert report.pending[0].size_bytes == len(contents)
 
 
+async def test_list_pending_migrations_skips_symlink_escape(tmp_path: Path) -> None:
+    # Sandbox escape guard: a planted symlink inside the allowed
+    # scripts dir pointing at a sensitive file (e.g. /etc/passwd)
+    # must not be followed for the first-comment preview. The
+    # entry should be dropped so its contents never reach the
+    # structured result.
+    d = _migrations_dir(tmp_path)
+    secret_dir = tmp_path.parent / "outside-secrets"
+    secret_dir.mkdir(exist_ok=True)
+    secret_file = secret_dir / "shadow.sql"
+    secret_file.write_text("-- SECRET DO NOT LEAK\n")
+    # A real script alongside, to confirm the safe entry still surfaces.
+    (d / "V1__init.sql").write_text("-- legitimate\nCREATE TABLE t (id int);\n")
+    # The symlink looks like a Flyway-named script — without the
+    # guard the secret would slip into the report.
+    (d / "V2__looks_legit.sql").symlink_to(secret_file)
+
+    driver = FakeRoutingDriver({"information_schema.tables": []})
+
+    report = await list_pending_migrations(
+        driver,  # type: ignore[arg-type]
+        "flyway",
+        str(d),
+        allowed_roots=(str(tmp_path),),
+    )
+
+    # Only the real script is reported.
+    pending_by_id = {m.identifier: m for m in report.pending}
+    assert pending_by_id.keys() == {"1"}
+    assert pending_by_id["1"].first_comment == "-- legitimate"
+    # And the secret never appears in any field of the report.
+    serialised = repr(report)
+    assert "SECRET" not in serialised
+    assert "shadow.sql" not in serialised
+
+
+async def test_list_pending_migrations_handles_utf8_bom_in_first_comment(
+    tmp_path: Path,
+) -> None:
+    # Some editors save SQL with a leading UTF-8 BOM; ``utf-8-sig``
+    # decoding strips it so the first-comment heuristic still spots
+    # the ``-- ...`` line without being confused by an invisible
+    # ``﻿`` prefix.
+    d = _migrations_dir(tmp_path)
+    # ``encode("utf-8-sig")`` adds a leading BOM; the source string
+    # itself doesn't carry one so the round-trip lands a single BOM
+    # at the start of the file (which is what real editors produce).
+    contents = "-- bom-prefixed comment\nCREATE TABLE t (id int);\n"
+    (d / "V1__init.sql").write_bytes(contents.encode("utf-8-sig"))
+    driver = FakeRoutingDriver({"information_schema.tables": []})
+
+    report = await list_pending_migrations(
+        driver,  # type: ignore[arg-type]
+        "flyway",
+        str(d),
+        allowed_roots=(str(tmp_path),),
+    )
+
+    assert report.pending[0].first_comment == "-- bom-prefixed comment"
+
+
 # --- dataclass smoke -------------------------------------------------------
 
 

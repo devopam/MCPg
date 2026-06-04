@@ -198,7 +198,11 @@ def _read_preview(path: Path) -> str:
             blob = handle.read(_PREVIEW_BYTES)
     except OSError:
         return ""
-    return blob.decode("utf-8", errors="replace")
+    # ``utf-8-sig`` strips a leading BOM if present (some
+    # editors save SQL/Python files with one) so the
+    # first-comment sniff isn't fooled by an invisible ``﻿``
+    # in front of ``--`` / ``#`` / ``/*``.
+    return blob.decode("utf-8-sig", errors="replace")
 
 
 def _extract_identifier(framework: str, filename: str) -> str | None:
@@ -287,13 +291,19 @@ def _scan_scripts_dir(target: Path, framework: str) -> list[tuple[str, str, int,
     for entry in entries:
         if entry.name.startswith("."):
             continue
-        # Use is_file with follow_symlinks=True so symlinks inside the
-        # allowed root resolve normally. The earlier strict-resolve on
-        # scripts_dir already guards the directory boundary.
         try:
             if not entry.is_file(follow_symlinks=True):
                 continue
-        except OSError:
+            # Symlink escape guard: even though the earlier
+            # strict-resolve on ``scripts_dir`` guards the directory
+            # itself, a symlink *inside* it could point at any path
+            # on disk (e.g. ``/etc/passwd``). Resolve each entry and
+            # require its real location to live under ``target``, so
+            # the first-comment preview can't be coerced into leaking
+            # sensitive files via a planted symlink.
+            real = Path(entry.path).resolve(strict=True)
+            real.relative_to(target)
+        except (OSError, ValueError):
             continue
         identifier = _extract_identifier(framework, entry.name)
         if identifier is None:
@@ -303,7 +313,7 @@ def _scan_scripts_dir(target: Path, framework: str) -> list[tuple[str, str, int,
             size = int(stat.st_size)
         except OSError:
             continue
-        first_comment = _first_comment_line(_read_preview(Path(entry.path)))
+        first_comment = _first_comment_line(_read_preview(real))
         out.append((identifier, entry.name, size, first_comment))
     return out
 

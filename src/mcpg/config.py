@@ -150,9 +150,10 @@ class Settings:
     # On-disk migration-script roots the `list_pending_migrations`
     # tool is allowed to read. Empty (default) = the tool refuses
     # every path; operators opt in by setting
-    # ``MCPG_MIGRATION_SCRIPTS_ROOTS`` to a colon-separated list of
-    # absolute directories. A requested ``scripts_dir`` is resolved
-    # (symlinks dereferenced) and must live under one of these.
+    # ``MCPG_MIGRATION_SCRIPTS_ROOTS`` to an os-pathsep-separated list
+    # of absolute directories (``:`` on POSIX, ``;`` on Windows). A
+    # requested ``scripts_dir`` is resolved (symlinks dereferenced)
+    # and must live under one of these.
     migration_scripts_roots: tuple[str, ...] = ()
     cache_enabled: bool = True
     cache_ttl_seconds: int = 300
@@ -662,11 +663,16 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     migration_scripts_roots: tuple[str, ...] = ()
     if (raw := env.get("MCPG_MIGRATION_SCRIPTS_ROOTS")) is not None:
-        # Colon-separated absolute directories. Validation deeper down
-        # (path resolution + existence check) happens at tool call
-        # time; here we only verify the syntactic shape so a malformed
-        # entry is surfaced at boot rather than the first tool call.
-        parts = [piece.strip() for piece in raw.split(":") if piece.strip()]
+        # OS-pathsep separated absolute directories — ``:`` on POSIX,
+        # ``;`` on Windows so Windows drive-letter paths like
+        # ``C:\migrations`` don't get split mid-prefix. Validation
+        # deeper down (path resolution + existence check) happens at
+        # tool call time; here we only verify the syntactic shape so
+        # a malformed entry is surfaced at boot rather than the first
+        # tool call.
+        from os import pathsep
+
+        parts = [piece.strip() for piece in raw.split(pathsep) if piece.strip()]
         for part in parts:
             if not isabs(part):
                 raise ConfigError(f"MCPG_MIGRATION_SCRIPTS_ROOTS entries must be absolute paths (got {part!r})")
