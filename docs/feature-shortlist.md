@@ -57,7 +57,7 @@ not covered there:
 | 4.1 | ✅ **Shipped.** Connection-encryption verification tool (`verify_connection_encryption`) — reports `ssl` + protocol/cipher/bits for MCPg's own link plus a cluster-wide encrypted/unencrypted backend tally, from `pg_stat_ssl`. | S | Medium | Composes with the existing TLS-enforcement startup check. |
 | 4.2 | ✅ **Shipped.** Audit-log retention via `prune_audit_events(older_than_days)` — deletes old `mcpg_audit.events` rows (cron-friendly). Refuses when `MCPG_AUDIT_INTEGRITY` is on, since pruning would break the HMAC chain. | S | Medium | — |
 | 4.3 | ✅ **Shipped.** IP allowlist for HTTP transport (`MCPG_HTTP_IP_ALLOWLIST`) — comma-separated IP / CIDR list, validated at boot. Tiny ASGI middleware sits at the outermost layer so denied clients never reach the auth / size-limit stack. `X-Forwarded-For` is intentionally not honoured (spoofing); reverse-proxy deployments should enforce there. Lives in `mcpg.http_runtime`. | S | Low | Tiny middleware. Often handled at the reverse-proxy layer instead. |
-| 4.4 | mTLS for the HTTP transport | S | Medium | Cert wiring; commonly done at the proxy layer. |
+| 4.4 | ✅ **Shipped.** TLS / mTLS for the HTTP transport (`MCPG_HTTP_TLS_CERTFILE` / `MCPG_HTTP_TLS_KEYFILE` / `MCPG_HTTP_TLS_CA_CERTS` / `MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED`) — uvicorn terminates TLS itself; with `client_cert_required=true` + a CA bundle it's full mutual TLS. Cross-validated at boot (cert+key both set, mTLS needs CA, paths must exist). Lives in `mcpg.http_runtime`. | S | Medium | Cert wiring; commonly done at the proxy layer. |
 
 ## 5. Backups & DR
 
