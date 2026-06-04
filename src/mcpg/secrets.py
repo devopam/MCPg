@@ -8,25 +8,40 @@ to load a flat ``name -> value`` map of JSON (always) or YAML (when
 PyYAML is importable).
 
 A provider only supplies *secret values*; non-secret configuration
-still comes from the environment. The ``file`` provider overlays the
-file on top of the environment — a name present in the file wins, and
-anything absent falls back to the env var — so partial files and the
+still comes from the environment. Every provider overlays its store
+on top of the environment — a name present in the backend wins, and
+anything absent falls back to the env var — so partial backends and
 vendor-conventional API-key env vars keep working.
 
-Cloud backends (Vault / AWS Secrets Manager / GCP Secret Manager) are
-designed for but not yet implemented; they will register here behind
-optional extras and be selected by the same ``MCPG_SECRETS_BACKEND``
-switch.
+Cloud backends:
+
+- ``vault`` — HashiCorp Vault KV v2 via the ``hvac`` SDK, behind the
+  ``mcpg[vault]`` extra. Configured with ``MCPG_VAULT_ADDR`` /
+  ``MCPG_VAULT_TOKEN`` (+ optional ``MCPG_VAULT_NAMESPACE`` /
+  ``MCPG_VAULT_PATH_PREFIX``).
+- ``aws`` — AWS Secrets Manager via the ``boto3`` SDK, behind the
+  ``mcpg[aws]`` extra. Authentication uses the standard AWS env /
+  IAM-role chain; the optional ``MCPG_AWS_SECRETS_PREFIX`` is
+  prepended to every name on lookup.
+- ``gcp`` — Google Cloud Secret Manager via
+  ``google-cloud-secret-manager``, behind the ``mcpg[gcp]`` extra.
+  ``MCPG_GCP_PROJECT_ID`` is required; ``MCPG_GCP_SECRETS_PREFIX`` is
+  the optional name prefix.
+
+Each cloud provider caches lookups in-process for the lifetime of the
+server — the latency + per-call cost of a real secrets manager makes
+re-fetching on every config touch impractical. Restart the server to
+pick up rotated values (or wire the rotation system to do so).
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import Any, Protocol, runtime_checkable
 
-_SUPPORTED_BACKENDS = frozenset({"env", "file"})
+_SUPPORTED_BACKENDS = frozenset({"env", "file", "vault", "aws", "gcp"})
 
 
 class SecretsError(Exception):
@@ -132,6 +147,211 @@ def _load_overlay(path: str) -> dict[str, str]:
     return overlay
 
 
+@dataclass
+class VaultSecretsProvider:
+    """Reads secrets from HashiCorp Vault's KV v2 backend.
+
+    Each looked-up ``name`` is split on the last ``/`` so callers can
+    address sub-paths (``MCPG_DATABASE_URL`` → ``<prefix>/MCPG_DATABASE_URL``
+    and read the ``value`` field; ``foo/bar`` → ``<prefix>/foo`` and
+    read the ``bar`` field). Anything not stored in Vault falls back
+    to the process environment.
+
+    The ``hvac`` client is cached on first use rather than created at
+    construction time so the provider can be instantiated cheaply (and
+    the SDK import only fires once a real read happens). Per-name
+    results are memoised because each Vault round-trip is a network
+    call, and config touches happen many times per startup.
+    """
+
+    addr: str
+    token: str
+    env: Mapping[str, str]
+    namespace: str | None = None
+    path_prefix: str = "secret/mcpg"
+    _client: Any = field(default=None, init=False, repr=False, compare=False)
+    _cache: dict[str, str | None] = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    def get(self, name: str) -> str | None:
+        if name in self._cache:
+            cached = self._cache[name]
+            if cached is not None:
+                return cached
+            # ``None`` cache = "not in Vault" — fall through to env.
+            return self.env.get(name)
+
+        value = self._fetch(name)
+        self._cache[name] = value
+        if value is not None:
+            return value
+        return self.env.get(name)
+
+    def _ensure_client(self) -> Any:
+        if self._client is not None:
+            return self._client
+        try:
+            import hvac
+        except ImportError as exc:
+            raise SecretsError("MCPG_SECRETS_BACKEND=vault requires the `mcpg[vault]` extra (install `hvac`)") from exc
+        client = hvac.Client(url=self.addr, token=self.token, namespace=self.namespace)
+        if not client.is_authenticated():
+            raise SecretsError("Vault rejected the configured MCPG_VAULT_TOKEN")
+        self._client = client
+        return client
+
+    def _fetch(self, name: str) -> str | None:
+        # Split on the last ``/`` so callers can store grouped secrets
+        # at a single Vault path (the common pattern). When no ``/``
+        # appears, the ``name`` IS the path and we read the ``value``
+        # field by convention.
+        if "/" in name:
+            path, field_name = name.rsplit("/", 1)
+        else:
+            path, field_name = name, "value"
+        client = self._ensure_client()
+        full_path = f"{self.path_prefix.rstrip('/')}/{path}"
+        try:
+            response = client.secrets.kv.v2.read_secret_version(path=full_path)
+        except Exception:  # broad: hvac surfaces a wide error tree
+            return None
+        if not response:
+            return None
+        data = response.get("data", {}).get("data", {}) if isinstance(response, dict) else {}
+        value = data.get(field_name)
+        return str(value) if value is not None else None
+
+
+@dataclass
+class AWSSecretsProvider:
+    """Reads secrets from AWS Secrets Manager via boto3.
+
+    The optional ``prefix`` is prepended to the requested name on each
+    lookup so a deployment can scope its MCPg secrets under a single
+    path. Values can be either ``SecretString`` (returned verbatim)
+    or a JSON object — when the latter, the field whose key matches
+    the looked-up name (without prefix) is returned.
+
+    Authentication uses boto3's standard chain (env / IAM role /
+    config file); we never inject credentials into the SDK client. As
+    with the Vault provider, results are memoised in-process and the
+    SDK is lazily imported so the provider can be instantiated when
+    boto3 isn't installed yet (the failure surfaces on first lookup).
+    """
+
+    region: str | None
+    env: Mapping[str, str]
+    prefix: str = ""
+    _client: Any = field(default=None, init=False, repr=False, compare=False)
+    _cache: dict[str, str | None] = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    def get(self, name: str) -> str | None:
+        if name in self._cache:
+            cached = self._cache[name]
+            return cached if cached is not None else self.env.get(name)
+        value = self._fetch(name)
+        self._cache[name] = value
+        if value is not None:
+            return value
+        return self.env.get(name)
+
+    def _ensure_client(self) -> Any:
+        if self._client is not None:
+            return self._client
+        try:
+            import boto3
+        except ImportError as exc:
+            raise SecretsError("MCPG_SECRETS_BACKEND=aws requires the `mcpg[aws]` extra (install `boto3`)") from exc
+        kwargs: dict[str, object] = {}
+        if self.region:
+            kwargs["region_name"] = self.region
+        self._client = boto3.client("secretsmanager", **kwargs)
+        return self._client
+
+    def _fetch(self, name: str) -> str | None:
+        client = self._ensure_client()
+        full_name = f"{self.prefix}{name}" if self.prefix else name
+        try:
+            response = client.get_secret_value(SecretId=full_name)
+        except Exception:  # broad: botocore raises ClientError subclasses we don't import
+            return None
+        if not isinstance(response, dict):
+            return None
+        raw = response.get("SecretString")
+        if raw is None:
+            return None
+        # SecretString is usually JSON for multi-value secrets and a
+        # bare string for single-value secrets — try to parse and
+        # pluck the matching field, fall back to the raw string.
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return str(raw)
+        if isinstance(parsed, dict):
+            value = parsed.get(name)
+            if value is None:
+                return None
+            return str(value)
+        return str(raw)
+
+
+@dataclass
+class GCPSecretsProvider:
+    """Reads secrets from Google Cloud Secret Manager.
+
+    Each looked-up name resolves to ``projects/{project_id}/secrets/{prefix+name}/versions/latest``;
+    the payload's UTF-8 string body is returned. As with Vault and
+    AWS, results are memoised and the SDK is lazily imported.
+    """
+
+    project_id: str
+    env: Mapping[str, str]
+    prefix: str = ""
+    _client: Any = field(default=None, init=False, repr=False, compare=False)
+    _cache: dict[str, str | None] = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    def get(self, name: str) -> str | None:
+        if name in self._cache:
+            cached = self._cache[name]
+            return cached if cached is not None else self.env.get(name)
+        value = self._fetch(name)
+        self._cache[name] = value
+        if value is not None:
+            return value
+        return self.env.get(name)
+
+    def _ensure_client(self) -> Any:
+        if self._client is not None:
+            return self._client
+        try:
+            from google.cloud import secretmanager
+        except ImportError as exc:
+            raise SecretsError(
+                "MCPG_SECRETS_BACKEND=gcp requires the `mcpg[gcp]` extra (install `google-cloud-secret-manager`)"
+            ) from exc
+        self._client = secretmanager.SecretManagerServiceClient()
+        return self._client
+
+    def _fetch(self, name: str) -> str | None:
+        client = self._ensure_client()
+        full_name = f"{self.prefix}{name}" if self.prefix else name
+        resource = f"projects/{self.project_id}/secrets/{full_name}/versions/latest"
+        try:
+            response = client.access_secret_version(name=resource)
+        except Exception:  # broad: google.api_core surfaces a wide error tree
+            return None
+        payload = getattr(response, "payload", None)
+        if payload is None:
+            return None
+        data = getattr(payload, "data", None)
+        if data is None:
+            return None
+        try:
+            decoded = data.decode("utf-8")
+        except (UnicodeDecodeError, AttributeError):
+            return None
+        return str(decoded)
+
+
 def build_secrets_provider(env: Mapping[str, str]) -> tuple[SecretsProvider, str]:
     """Construct the secrets provider selected by ``MCPG_SECRETS_BACKEND``.
 
@@ -156,5 +376,37 @@ def build_secrets_provider(env: Mapping[str, str]) -> tuple[SecretsProvider, str
         if not path:
             raise SecretsError("MCPG_SECRETS_BACKEND=file requires MCPG_SECRETS_FILE_PATH")
         return FileSecretsProvider(overlay=_load_overlay(path), env=env), backend
+
+    if backend == "vault":
+        addr = (env.get("MCPG_VAULT_ADDR") or "").strip()
+        token = (env.get("MCPG_VAULT_TOKEN") or "").strip()
+        if not addr:
+            raise SecretsError("MCPG_SECRETS_BACKEND=vault requires MCPG_VAULT_ADDR")
+        if not token:
+            raise SecretsError("MCPG_SECRETS_BACKEND=vault requires MCPG_VAULT_TOKEN")
+        namespace = (env.get("MCPG_VAULT_NAMESPACE") or "").strip() or None
+        path_prefix = (env.get("MCPG_VAULT_PATH_PREFIX") or "secret/mcpg").strip() or "secret/mcpg"
+        return (
+            VaultSecretsProvider(
+                addr=addr,
+                token=token,
+                env=env,
+                namespace=namespace,
+                path_prefix=path_prefix,
+            ),
+            backend,
+        )
+
+    if backend == "aws":
+        region = (env.get("AWS_REGION") or env.get("AWS_DEFAULT_REGION") or "").strip() or None
+        prefix = (env.get("MCPG_AWS_SECRETS_PREFIX") or "").strip()
+        return AWSSecretsProvider(region=region, env=env, prefix=prefix), backend
+
+    if backend == "gcp":
+        project_id = (env.get("MCPG_GCP_PROJECT_ID") or "").strip()
+        if not project_id:
+            raise SecretsError("MCPG_SECRETS_BACKEND=gcp requires MCPG_GCP_PROJECT_ID")
+        prefix = (env.get("MCPG_GCP_SECRETS_PREFIX") or "").strip()
+        return GCPSecretsProvider(project_id=project_id, env=env, prefix=prefix), backend
 
     return EnvSecretsProvider(env=env), backend
