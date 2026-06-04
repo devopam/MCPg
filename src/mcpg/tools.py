@@ -2284,7 +2284,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "search term. mode='word' (default) matches fragments within "
             "longer text; mode='full' compares whole strings. Reports "
             "available=false if pg_trgm is not installed.",
-            "fuzzy_search(schema='public', table='users', column='name', query='janne', mode='word')",
+            "fuzzy_search(schema='public', table='users', column='name', term='janne', mode='word')",
         ),
     )
     async def fuzzy_search(
@@ -2308,7 +2308,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "Rank a text column's documents against a full-text query using "
             "PostgreSQL's built-in tsvector/tsquery. The query accepts "
             "web-search syntax (quoted phrases, or, - exclusion).",
-            "full_text_search(schema='public', table='articles', column='body', query='\"new york\" OR -draft')",
+            "full_text_search(schema='public', table='articles', column='body', search_query='\"new york\" OR -draft')",
         ),
     )
     async def full_text_search(
@@ -2332,7 +2332,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "(metric: l2, cosine, or inner_product). Reports available=false "
             "if the pgvector extension is not installed.",
             "vector_search(schema='public', table='docs', column='embedding', "
-            "query_vector=[0.1, 0.2, ...], k=10, operator='<->')",
+            "query_vector=[0.1, 0.2, ...], metric='cosine', limit=10)",
         ),
     )
     async def vector_search(
