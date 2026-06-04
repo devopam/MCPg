@@ -8,6 +8,28 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`list_unapplied_migration_scripts` tool
+  (`MCPG_MIGRATION_SCRIPTS_ROOTS`).** Pairs the on-disk migration
+  scripts (the source of truth for what *should* run) with the
+  database's history table (what *has* run) and reports the delta.
+  Walks `scripts_dir` (one level deep) for framework-specific
+  files: Flyway `V<version>__<desc>.sql`, Alembic
+  `<revision>_<slug>.py`, Liquibase `<changeset>.sql`. Extracts
+  each script's identifier and cross-references against
+  `flyway_schema_history` / `alembic_version` /
+  `databasechangelog`. Returns the pending list (with a one-line
+  first-comment preview per script), the applied identifiers, and
+  `available=false` distinctly from `pending_count=0` for the
+  greenfield case (no history table yet → every on-disk script
+  surfaces as pending so a from-scratch plan is still possible).
+  Filesystem access is gated — operators opt in by setting
+  `MCPG_MIGRATION_SCRIPTS_ROOTS` to a colon-separated list of
+  absolute directory prefixes; by default the tool refuses every
+  path. `scripts_dir` is canonicalised (symlinks dereferenced,
+  `..` resolved) before the prefix check, so traversal escapes are
+  caught at the allowlist gate. DDL-gated alongside the rest of
+  the migration family. Lives in `mcpg.migration_ingestion`.
+
 - **OpenTelemetry tracing — one span per `call_tool`
   (`MCPG_OTEL_ENABLED`).** Optional via the `mcpg[otel]` extra.
   Wraps every MCP tool invocation in a span on the `mcpg.tools`

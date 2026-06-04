@@ -119,7 +119,7 @@ All four are independent.
 | E1 (✅ PR) | Migration history table read (7.3) | new `migration_history.py` | S | Read Alembic / Flyway / Diesel bookkeeping tables. |
 | E2 (✅ PR) | Zero-downtime migration cookbook (7.4) | docs only | S | Pure `docs/cookbook.md` patterns — zero code, zero conflict. |
 | E3 (✅ PR) | Pre-deployment migration validation (7.2) | extends `migrations.py` | M | Composes `compare_schemas` + shadow workflow. |
-| E4 | Alembic/Flyway/Liquibase ingestion (7.1) | extends `migrations.py` | M-L | Large; do after E3. |
+| E4 (✅ PR) | Alembic/Flyway/Liquibase ingestion (7.1) | new `migration_ingestion.py` | M-L | First cut: `list_unapplied_migration_scripts` — cross-references on-disk scripts against the history table. Execution via `prepare_migration` is a follow-up. |
 
 ### F. Developer experience / agent UX
 

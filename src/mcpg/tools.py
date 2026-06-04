@@ -42,6 +42,7 @@ from mcpg import (
     locks,
     maintenance,
     migration_history,
+    migration_ingestion,
     migrations,
     naming,
     nl2sql,
@@ -1588,6 +1589,43 @@ def _register_migrations(server: FastMCP[AppContext]) -> None:
     async def cancel_migration(ctx: _Ctx, migration_id: str) -> dict[str, Any]:
         result = await migrations.cancel_migration(_driver(ctx), migration_id)
         return {"id": result.id, "shadow_dropped": result.shadow_dropped}
+
+    @server.tool(
+        name="list_unapplied_migration_scripts",
+        description=(
+            "List on-disk migration scripts that haven't been applied "
+            "yet. Walks `scripts_dir` (one level deep) for "
+            "framework-specific files — Flyway `V<version>__<desc>.sql`, "
+            "Alembic `<revision>_<slug>.py`, Liquibase `<changeset>.sql` "
+            "— extracts each script's identifier from its filename, "
+            "then cross-references against the framework's history "
+            "table (`flyway_schema_history`, `alembic_version`, "
+            "`databasechangelog`). Returns the pending list, the "
+            "applied identifiers, and a one-line first-comment "
+            "preview per pending script. `available=false` when no "
+            "history table exists yet (greenfield database); the "
+            "pending list still surfaces every on-disk script so a "
+            "from-scratch plan is possible. Read-only DB-side; "
+            "filesystem access is gated by "
+            "`MCPG_MIGRATION_SCRIPTS_ROOTS` — by default the tool "
+            "refuses every path."
+        ),
+    )
+    async def list_unapplied_migration_scripts(
+        ctx: _Ctx,
+        framework: str,
+        scripts_dir: str,
+        history_schema: str | None = None,
+    ) -> dict[str, Any]:
+        settings = ctx.request_context.lifespan_context.settings
+        report = await migration_ingestion.list_pending_migrations(
+            _driver(ctx),
+            framework,
+            scripts_dir,
+            history_schema=history_schema,
+            allowed_roots=settings.migration_scripts_roots,
+        )
+        return asdict(report)
 
     @server.tool(
         name="list_pending_migrations",
