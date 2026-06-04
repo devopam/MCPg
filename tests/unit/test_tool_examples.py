@@ -74,3 +74,61 @@ async def test_high_traffic_tools_ship_example_in_description(tool_name: str) ->
         f"{tool_name!r} description is missing the example block — "
         "wrap its description in `_with_example(...)` to keep the agent UX consistent."
     )
+
+
+async def test_every_examples_kwargs_exist_on_the_real_tool_signature() -> None:
+    """Every `kwarg=value` in an example must be a real parameter on the tool.
+
+    The first wave of F2 shipped three examples (`vector_search`,
+    `fuzzy_search`, `full_text_search`) whose keyword arguments
+    didn't exist on the actual MCP-side function — agents would
+    have hit ``TypeError`` immediately at call time, and the
+    "example is present" test missed it. Walk every tool registered
+    on a fresh server, look at the example string, and confirm
+    each ``kwarg=`` token matches a parameter declared in the
+    JSON Schema the MCP server emits. Acts as a contract check so a
+    future refactor renaming a tool parameter without updating its
+    example fails CI rather than ship a footgun.
+    """
+    import re
+
+    # Match ``ident=`` tokens. The trailing ``=`` excludes the
+    # ``Example: `...``` marker itself and any ``...`` placeholder
+    # values we use inside list literals.
+    kwarg_pattern = re.compile(r"(?P<name>[a-zA-Z_][a-zA-Z0-9_]*)\s*=")
+
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        tools = (await client.list_tools()).tools
+
+    failures: list[str] = []
+    for tool in tools:
+        description = tool.description or ""
+        if "Example: `" not in description:
+            continue
+        # Pull the example invocation out — it's the last line of the
+        # description, between the backticks our helper rendered.
+        match = re.search(r"Example: `(?P<call>.+)`\s*$", description, flags=re.DOTALL)
+        if match is None:
+            failures.append(f"{tool.name}: example block has no parseable backtick body")
+            continue
+        call = match["call"]
+        # The tool's input schema lists every accepted parameter
+        # (required + optional). ``ctx`` is hidden by the MCP machinery.
+        schema = tool.inputSchema or {}
+        properties = set((schema.get("properties") or {}).keys())
+        # Tokens that look like ``foo=`` *inside* a quoted SQL
+        # literal aren't kwargs — strip every ``'...'`` block before
+        # scanning so e.g. ``sql='SELECT * FROM t WHERE id = 1'``
+        # doesn't surface ``id`` as a phantom kwarg.
+        stripped = re.sub(r"'[^']*'", "''", call)
+        seen_kwargs = set(kwarg_pattern.findall(stripped))
+        # The leading bare ``tool_name(`` matches the kwarg regex; strip it.
+        seen_kwargs.discard(tool.name)
+        unknown = sorted(seen_kwargs - properties)
+        if unknown:
+            failures.append(
+                f"{tool.name}: example uses {unknown!r} but the tool's inputSchema declares {sorted(properties)!r}"
+            )
+
+    assert not failures, "Example-vs-signature drift:\n  " + "\n  ".join(failures)
