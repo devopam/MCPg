@@ -349,7 +349,7 @@ class _IPAllowlistMiddleware:
         # single addresses like ``1.2.3.4`` valid networks (their
         # /32 or /128 sibling), so membership testing is uniform
         # across single-IP and CIDR entries.
-        self._networks: tuple[ipaddress._BaseNetwork[Any], ...] = tuple(
+        self._networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = tuple(
             ipaddress.ip_network(entry, strict=False) for entry in allowlist
         )
 
@@ -368,11 +368,12 @@ class _IPAllowlistMiddleware:
         import ipaddress
 
         client = scope.get("client")
-        # ASGI doesn't guarantee ``client`` is populated (e.g. some
-        # test runners use stdin-style transports), and a missing IP
-        # can't be matched against any allowlist — deny so a bug in a
-        # transport layer can't accidentally turn the gate off.
-        if not isinstance(client, tuple) or not client:
+        # ASGI spec says ``client`` is a two-item iterable ``[host, port]``
+        # — most servers hand it back as a tuple, some hand back a list,
+        # so accept both. A missing entry can't be matched against any
+        # allowlist; deny so a bug in a transport layer can't accidentally
+        # turn the gate off.
+        if not isinstance(client, (list, tuple)) or not client:
             return False
         try:
             peer = ipaddress.ip_address(str(client[0]))

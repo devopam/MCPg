@@ -1030,6 +1030,24 @@ async def test_ip_allowlist_middleware_matches_ipv6() -> None:
     assert status == 403
 
 
+async def test_ip_allowlist_middleware_accepts_list_shaped_client() -> None:
+    # ASGI spec says ``client`` is a two-item iterable; most servers
+    # use tuples, some use lists. The check must accept both — a
+    # ``tuple``-only check would 403 valid requests under those
+    # transports.
+    from mcpg.http_runtime import _IPAllowlistMiddleware
+
+    async def _inner_app(_scope: dict[str, object], _receive: object, send: object) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    middleware = _IPAllowlistMiddleware(_inner_app, allowlist=("10.0.0.5",))
+    scope = _scope("10.0.0.5")
+    scope["client"] = ["10.0.0.5", 50001]  # type: ignore[assignment]
+    status, _ = await _call_middleware(middleware, scope)
+    assert status == 200
+
+
 async def test_ip_allowlist_middleware_denies_when_client_missing() -> None:
     # An ASGI transport that doesn't populate ``client`` (some test
     # runners, some custom transports) can't be checked against any
