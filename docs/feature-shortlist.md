@@ -77,7 +77,7 @@ not covered there:
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 7.1 | Alembic / Flyway / Liquibase migration-script ingestion (parse + apply through `prepare_migration`) | M-L | Medium | Big agentic win for projects with existing migration history. |
+| 7.1 | ✅ **Shipped (first cut).** `list_unapplied_migration_scripts` — walks a Flyway / Alembic / Liquibase scripts directory and cross-references each script's identifier against the framework's history table (`flyway_schema_history` / `alembic_version` / `databasechangelog`). Reports pending + applied with a one-line first-comment preview per script. `available=false` distinct from `pending_count=0` for greenfield databases. Filesystem access is gated by `MCPG_MIGRATION_SCRIPTS_ROOTS` (refuses every path by default). DDL-gated. Lives in `mcpg.migration_ingestion`. Execution via `prepare_migration` is the natural follow-up. | M-L | Medium | Big agentic win for projects with existing migration history. |
 | 7.2 | ✅ **Shipped.** Pre-deployment migration validation (target schema vs production snapshot) | M | High | Composes `compare_schemas` + shadow workflow. |
 | 7.3 | ✅ **Shipped.** Migration history table integration (read Alembic / Flyway / Diesel native tables) | S | Medium | Reads existing tooling's bookkeeping. |
 | 7.4 | ✅ **Shipped.** Zero-downtime migration cookbook | S | Medium-High | Pure docs (patterns, not code). |

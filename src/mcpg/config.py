@@ -147,6 +147,14 @@ class Settings:
     # headers, sampler) comes from the standard ``OTEL_*`` env vars.
     otel_enabled: bool = False
     otel_service_name: str = "mcpg"
+    # On-disk migration-script roots the `list_pending_migrations`
+    # tool is allowed to read. Empty (default) = the tool refuses
+    # every path; operators opt in by setting
+    # ``MCPG_MIGRATION_SCRIPTS_ROOTS`` to an os-pathsep-separated list
+    # of absolute directories (``:`` on POSIX, ``;`` on Windows). A
+    # requested ``scripts_dir`` is resolved (symlinks dereferenced)
+    # and must live under one of these.
+    migration_scripts_roots: tuple[str, ...] = ()
     cache_enabled: bool = True
     cache_ttl_seconds: int = 300
     cache_maxsize: int = 1024
@@ -213,6 +221,7 @@ class Settings:
             f"lock_timeout_ms={self.lock_timeout_ms}, "
             f"slow_call_threshold_ms={self.slow_call_threshold_ms}, "
             f"otel_enabled={self.otel_enabled}, otel_service_name={self.otel_service_name!r}, "
+            f"migration_scripts_roots={self.migration_scripts_roots!r}, "
             f"cache_enabled={self.cache_enabled}, "
             f"cache_ttl_seconds={self.cache_ttl_seconds}, "
             f"cache_maxsize={self.cache_maxsize}, "
@@ -652,6 +661,23 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     otel_service_name = env.get("MCPG_OTEL_SERVICE_NAME", "mcpg").strip() or "mcpg"
 
+    migration_scripts_roots: tuple[str, ...] = ()
+    if (raw := env.get("MCPG_MIGRATION_SCRIPTS_ROOTS")) is not None:
+        # OS-pathsep separated absolute directories — ``:`` on POSIX,
+        # ``;`` on Windows so Windows drive-letter paths like
+        # ``C:\migrations`` don't get split mid-prefix. Validation
+        # deeper down (path resolution + existence check) happens at
+        # tool call time; here we only verify the syntactic shape so
+        # a malformed entry is surfaced at boot rather than the first
+        # tool call.
+        from os import pathsep
+
+        parts = [piece.strip() for piece in raw.split(pathsep) if piece.strip()]
+        for part in parts:
+            if not isabs(part):
+                raise ConfigError(f"MCPG_MIGRATION_SCRIPTS_ROOTS entries must be absolute paths (got {part!r})")
+        migration_scripts_roots = tuple(parts)
+
     # Re-arm the audit-trail redaction pattern with the operator's
     # MCPG_AUDIT_REDACT_KEYS extension (if any) so the very first audit
     # event the server records honours the configured list.
@@ -771,6 +797,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         slow_call_threshold_ms=slow_call_threshold_ms,
         otel_enabled=otel_enabled,
         otel_service_name=otel_service_name,
+        migration_scripts_roots=migration_scripts_roots,
         cache_enabled=cache_enabled,
         cache_ttl_seconds=cache_ttl_seconds,
         cache_maxsize=cache_maxsize,
