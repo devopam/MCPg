@@ -42,6 +42,41 @@ adheres to [Semantic Versioning](https://semver.org/).
   middleware is only added to the stack when an allowlist is
   configured. Lives in `mcpg.http_runtime`.
 
+- **Cloud secrets backends — Vault / AWS / GCP
+  (`MCPG_SECRETS_BACKEND=vault|aws|gcp`).** Three new optional
+  providers join the existing `env` + `file` ones, each behind its
+  own extra so a deployment doesn't pay for every cloud SDK when
+  it only uses one:
+  - `vault` (`mcpg[vault]`, via the `hvac` SDK) — HashiCorp Vault
+    KV v2. Configured with `MCPG_VAULT_ADDR` + `MCPG_VAULT_TOKEN`,
+    plus optional `MCPG_VAULT_NAMESPACE` and
+    `MCPG_VAULT_PATH_PREFIX` (default `secret/mcpg`). Looked-up
+    names split on the last `/` so callers can address sub-paths
+    (`foo/bar` → read the `bar` field at `<prefix>/foo`); a bare
+    name reads the `value` field by convention.
+  - `aws` (`mcpg[aws]`, via `boto3`) — AWS Secrets Manager.
+    Authentication uses the standard AWS env / IAM-role chain;
+    the optional `MCPG_AWS_SECRETS_PREFIX` is prepended to every
+    name on lookup. `SecretString` payloads are auto-detected as
+    JSON (per-field) or single-value strings.
+  - `gcp` (`mcpg[gcp]`, via `google-cloud-secret-manager`) — GCP
+    Secret Manager. `MCPG_GCP_PROJECT_ID` is required; the
+    optional `MCPG_GCP_SECRETS_PREFIX` joins it to form the full
+    resource path `projects/{project}/secrets/{prefix+name}/versions/latest`.
+
+  Every provider preserves the `file`-backend semantics: a name
+  present in the backend wins, anything absent falls back to the
+  process environment, so partial backends and vendor-conventional
+  API-key env vars keep working. Each cloud provider caches
+  lookups in-process for the lifetime of the server (the latency +
+  per-call cost of a real secrets manager makes re-fetching on
+  every config touch impractical — restart to pick up rotated
+  values), lazily imports its SDK so the install error only fires
+  on first lookup (with a clear `install mcpg[xxx]` hint), and
+  distinguishes auth / permission failures (raised as
+  `SecretsError` so operators see the real problem) from
+  resource-not-found (silent env fallback).
+
 - **Inline usage examples in MCP tool descriptions.** Wrapped the
   descriptions of ~25 high-traffic tools (introspection — `list_schemas`,
   `list_tables`, `describe_table`, `list_indexes`, `list_constraints`,

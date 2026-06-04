@@ -69,6 +69,15 @@ otel = [
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
 ]
+# Cloud secrets backends — selected by ``MCPG_SECRETS_BACKEND=vault|aws|gcp``.
+# Each is its own extra so a deployment doesn't pay for every cloud SDK
+# when it only uses one. The SDKs are imported lazily inside the
+# provider class, so the import / install error is surfaced with a
+# clear "install mcpg[xxx]" message on first lookup if the operator
+# selected a backend but forgot the extra.
+vault = ["hvac>=1.0"]
+aws = ["boto3>=1.28"]
+gcp = ["google-cloud-secret-manager>=2.16"]
 
 # Powers the "Project links" sidebar on https://pypi.org/project/mcpg/.
 # Order is preserved on the page; first entry doubles as the page header
@@ -175,6 +184,24 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 # pglast ships no type stubs.
 module = ["pglast", "pglast.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Optional cloud-secrets SDKs ship without typed stubs we want to lean
+# on — the providers in mcpg.secrets import them lazily and convert
+# everything to plain ``str | None`` before re-exposing the API.
+module = [
+    "hvac",
+    "hvac.*",
+    "boto3",
+    "boto3.*",
+    "botocore",
+    "botocore.*",
+    "google.cloud",
+    "google.cloud.*",
+    "google.api_core",
+    "google.api_core.*",
+]
 ignore_missing_imports = true
 
 [tool.bandit]
