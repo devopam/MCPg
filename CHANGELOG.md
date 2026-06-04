@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **IP allowlist for the HTTP transports (`MCPG_HTTP_IP_ALLOWLIST`).**
+  When set, every request to the HTTP transports (streamable-http /
+  sse) is matched against a comma-separated list of IP addresses
+  and / or CIDR ranges before any other middleware runs; non-matching
+  clients receive a minimal 403 with no body specifics so a scanner
+  can't fingerprint the allowlist. Entries are validated at boot
+  (a malformed entry fails `load_settings` instead of the first
+  request). The matching IP is the immediate connecting peer
+  (`scope["client"][0]`); `X-Forwarded-For` is deliberately not
+  honoured because trusting a forwarded header without a verified
+  upstream is a well-known spoofing vector — operators behind a
+  reverse proxy should enforce the allowlist at the proxy layer
+  where TLS terminates. Disabled (empty) by default; the
+  middleware is only added to the stack when an allowlist is
+  configured. Lives in `mcpg.http_runtime`.
+
 - **Inline usage examples in MCP tool descriptions.** Wrapped the
   descriptions of ~25 high-traffic tools (introspection — `list_schemas`,
   `list_tables`, `describe_table`, `list_indexes`, `list_constraints`,

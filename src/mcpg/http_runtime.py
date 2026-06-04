@@ -321,6 +321,66 @@ async def _send_504(send: object, reason: str) -> None:
     await send({"type": "http.response.body", "body": body})  # type: ignore[operator]
 
 
+class _IPAllowlistMiddleware:
+    """ASGI middleware that rejects clients whose IP isn't on the allowlist.
+
+    The allowlist is a tuple of IP-address or CIDR-range strings. Each
+    entry is pre-parsed into an ``ipaddress`` network at construction
+    time so the request-time check is just a membership test.
+
+    The matching IP is the **immediate** connecting peer
+    (``scope["client"][0]``). ``X-Forwarded-For`` is deliberately
+    *not* honoured: trusting a forwarded header without a verified
+    upstream is a well-known spoofing vector, and operators behind a
+    reverse proxy already terminate TLS there and can enforce the
+    allowlist at that layer (where it composes with the proxy's own
+    auditing).
+
+    Failure mode is a minimal 403 — no header echo, no body specifics
+    — so a scanning attacker can't fingerprint the allowlist from the
+    response.
+    """
+
+    def __init__(self, app: object, *, allowlist: tuple[str, ...]) -> None:
+        import ipaddress
+
+        self._app = app
+        # Pre-parse once at construction. ``strict=False`` makes
+        # single addresses like ``1.2.3.4`` valid networks (their
+        # /32 or /128 sibling), so membership testing is uniform
+        # across single-IP and CIDR entries.
+        self._networks: tuple[ipaddress._BaseNetwork[Any], ...] = tuple(
+            ipaddress.ip_network(entry, strict=False) for entry in allowlist
+        )
+
+    async def __call__(self, scope: dict[str, object], receive: object, send: object) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)  # type: ignore[operator]
+            return
+
+        if not self._client_is_allowed(scope):
+            await _send_403(send, "ip not on allowlist")
+            return
+
+        await self._app(scope, receive, send)  # type: ignore[operator]
+
+    def _client_is_allowed(self, scope: dict[str, object]) -> bool:
+        import ipaddress
+
+        client = scope.get("client")
+        # ASGI doesn't guarantee ``client`` is populated (e.g. some
+        # test runners use stdin-style transports), and a missing IP
+        # can't be matched against any allowlist — deny so a bug in a
+        # transport layer can't accidentally turn the gate off.
+        if not isinstance(client, tuple) or not client:
+            return False
+        try:
+            peer = ipaddress.ip_address(str(client[0]))
+        except ValueError:
+            return False
+        return any(peer in network for network in self._networks)
+
+
 class _SecurityHeadersMiddleware:
     """ASGI middleware that enforces standard security headers."""
 
@@ -536,6 +596,13 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    # IP allowlist sits at the OUTERMOST layer (added last → processed
+    # first per Starlette's middleware stacking) so denied clients
+    # never reach the auth / size-limit / body-read middlewares — the
+    # cheapest possible reject for an unauthorized peer.
+    if settings.http_ip_allowlist:
+        app.add_middleware(_IPAllowlistMiddleware, allowlist=settings.http_ip_allowlist)
 
     # FastMCP types streamable_http_app() / sse_app() as Starlette already,
     # but mypy under strict mode loses the type through the .add_middleware
