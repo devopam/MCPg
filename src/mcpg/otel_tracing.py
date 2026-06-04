@@ -72,16 +72,23 @@ class TracerHandle:
         self._provider = provider
 
     @contextlib.contextmanager
-    def tool_span(self, tool_name: str, arguments: dict[str, Any]) -> Iterator[Any]:
-        """Start a span for one tool invocation."""
+    def tool_span(self, tool_name: str, arguments: dict[str, Any] | None = None) -> Iterator[Any]:
+        """Start a span for one tool invocation.
+
+        ``arguments`` is optional because MCP allows a tool to be
+        invoked without any (the dispatcher passes ``None``). The
+        ``mcp.tool.argument_count`` attribute reports 0 in that case
+        rather than crashing with ``len(None)``.
+        """
         # Importing inside the method keeps the module importable when
         # the SDK isn't installed; the `is_otel_installed` guard on the
         # setup path means we only reach here when it is.
         from opentelemetry.trace import Status, StatusCode
 
+        argument_count = len(arguments) if arguments else 0
         with self._tracer.start_as_current_span(_SPAN_NAME) as span:
             span.set_attribute("mcp.tool.name", tool_name)
-            span.set_attribute("mcp.tool.argument_count", len(arguments))
+            span.set_attribute("mcp.tool.argument_count", argument_count)
             try:
                 yield span
             except Exception as exc:
@@ -127,11 +134,15 @@ def setup_tracing(settings: Settings) -> TracerHandle | None:
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    # Build the resource. OTEL_RESOURCE_ATTRIBUTES wins per spec; we
-    # only set service.name when the env doesn't already carry one.
-    env_attrs = os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "")
+    # Build the resource. Per the OTel spec ``OTEL_SERVICE_NAME``
+    # auto-wins, but attributes passed to ``Resource.create`` actually
+    # *override* anything supplied via ``OTEL_RESOURCE_ATTRIBUTES``,
+    # so we only contribute ``service.name`` when neither env var
+    # already does. Substring checks would misfire on neighbour keys
+    # like ``other_service.name=foo``, so we parse key=value pairs
+    # properly instead.
     attrs: dict[str, Any] = {}
-    if "service.name" not in env_attrs:
+    if not _env_supplies_service_name():
         attrs[SERVICE_NAME] = settings.otel_service_name
     resource = Resource.create(attrs)
 
@@ -168,6 +179,25 @@ def setup_tracing(settings: Settings) -> TracerHandle | None:
     return TracerHandle(tracer, provider)
 
 
+def _env_supplies_service_name() -> bool:
+    """``True`` when the env already carries a ``service.name`` for the SDK.
+
+    Honours both ``OTEL_SERVICE_NAME`` (always overrides) and an
+    exact ``service.name`` key inside ``OTEL_RESOURCE_ATTRIBUTES``.
+    The latter is parsed properly (``key=value``, comma-separated)
+    so a neighbour attribute like ``other_service.name=foo`` doesn't
+    register as a match.
+    """
+    if os.environ.get("OTEL_SERVICE_NAME"):
+        return True
+    raw = os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "")
+    for piece in raw.split(","):
+        key, sep, _value = piece.partition("=")
+        if sep and key.strip() == "service.name":
+            return True
+    return False
+
+
 def _otlp_endpoint_configured() -> bool:
     """Has the user set an OTLP endpoint via env (otherwise: don't export)?"""
     return any(
@@ -195,12 +225,14 @@ def attach_span_exporter(handle: TracerHandle, exporter: Any) -> None:
 def tool_span(
     handle: TracerHandle | None,
     tool_name: str,
-    arguments: dict[str, Any],
+    arguments: dict[str, Any] | None = None,
 ) -> Iterator[Any]:
     """Yield a span (or ``None``) for one MCP tool call.
 
     A unified entry point so the server can wrap every ``call_tool``
     in ``with tool_span(...)`` regardless of whether OTel is enabled.
+    ``arguments`` is optional — MCP allows a tool to be invoked
+    without any (the dispatcher passes ``None``).
     """
     if handle is None:
         yield None

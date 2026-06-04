@@ -107,13 +107,12 @@ def test_setup_tracing_picks_up_service_name_when_env_does_not_override() -> Non
 
 def test_setup_tracing_defers_to_env_resource_attributes() -> None:
     # When OTEL_RESOURCE_ATTRIBUTES carries service.name the project
-    # setting is ignored, so deployment-level config wins.
+    # setting is ignored, so deployment-level config wins. The SDK
+    # gives the env precedence even though we always pass our setting.
     with patch.dict(os.environ, {"OTEL_RESOURCE_ATTRIBUTES": "service.name=my-app,deployment.env=prod"}, clear=False):
         handle = setup_tracing(_settings(MCPG_OTEL_ENABLED="true", MCPG_OTEL_SERVICE_NAME="ignored"))
     try:
         assert handle is not None
-        # The SDK auto-merges OTEL_RESOURCE_ATTRIBUTES into the resource.
-        # Our code didn't set service.name, so the env value should survive.
         resource = handle._provider.resource  # type: ignore[attr-defined]
         assert resource.attributes.get("service.name") == "my-app"
     finally:
@@ -138,6 +137,65 @@ def test_tool_span_no_op_when_handle_is_none() -> None:
     # unconditionally regardless of whether OTel is configured.
     with tool_span(None, "list_tables", {}) as span:
         assert span is None
+
+
+def test_tool_span_accepts_none_arguments() -> None:
+    # MCP allows ``call_tool(name)`` without arguments — the dispatcher
+    # forwards ``None`` to our hook. Both the no-op and active paths
+    # must tolerate that without raising ``TypeError``.
+    handle = setup_tracing(_settings(MCPG_OTEL_ENABLED="true"))
+    assert handle is not None
+    try:
+        exporter = _capture_spans(handle)
+        # No-op path (handle=None) — must not raise.
+        with tool_span(None, "no_args_tool", None):
+            pass
+        # Active path — also accepts None and reports zero arguments.
+        with tool_span(handle, "no_args_tool", None):
+            pass
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert spans[0].attributes is not None
+        assert spans[0].attributes["mcp.tool.argument_count"] == 0
+    finally:
+        handle.shutdown()
+
+
+def test_setup_tracing_defers_to_otel_service_name_env_var() -> None:
+    # ``OTEL_SERVICE_NAME`` always wins per the OTel spec — when it's
+    # set the project's setting should yield, regardless of what
+    # ``OTEL_RESOURCE_ATTRIBUTES`` says.
+    with patch.dict(os.environ, {"OTEL_SERVICE_NAME": "from-env"}, clear=False):
+        os.environ.pop("OTEL_RESOURCE_ATTRIBUTES", None)
+        handle = setup_tracing(_settings(MCPG_OTEL_ENABLED="true", MCPG_OTEL_SERVICE_NAME="ignored"))
+    try:
+        assert handle is not None
+        resource = handle._provider.resource  # type: ignore[attr-defined]
+        assert resource.attributes.get("service.name") == "from-env"
+    finally:
+        if handle is not None:
+            handle.shutdown()
+
+
+def test_setup_tracing_does_not_misread_other_service_name_attribute() -> None:
+    # The previous substring check on OTEL_RESOURCE_ATTRIBUTES could
+    # mistake unrelated keys like ``other_service.name=foo`` for the
+    # real ``service.name`` and skip our setting. The SDK handles env
+    # precedence natively, so the project's name should land
+    # whenever the env doesn't actually carry ``service.name``.
+    with patch.dict(os.environ, {"OTEL_RESOURCE_ATTRIBUTES": "other_service.name=foo"}, clear=False):
+        os.environ.pop("OTEL_SERVICE_NAME", None)
+        handle = setup_tracing(_settings(MCPG_OTEL_ENABLED="true", MCPG_OTEL_SERVICE_NAME="mcpg-real"))
+    try:
+        assert handle is not None
+        resource = handle._provider.resource  # type: ignore[attr-defined]
+        assert resource.attributes.get("service.name") == "mcpg-real"
+        # And the unrelated attribute survives — the SDK merges it.
+        assert resource.attributes.get("other_service.name") == "foo"
+    finally:
+        if handle is not None:
+            handle.shutdown()
 
 
 def test_tool_span_records_attributes_on_success() -> None:
