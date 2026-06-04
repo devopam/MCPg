@@ -41,7 +41,7 @@ Effort scale (rough, single-session yardstick):
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 3.1 | Auto-generated tool examples in MCP tool descriptions | S | Low-Medium | Helps agents pick the right tool. |
+| 3.1 | ✅ **Shipped (first wave).** Auto-generated tool examples in MCP tool descriptions — the `_with_example(description, example)` helper in `mcpg.tools` wraps every wrapped description with a canonical pseudo-Python invocation hint (``Example: `tool(arg=value)```). ~25 high-traffic tools across introspection / query / composite / health / search / diagrams / schema-diff / vector analytics / migrations / data movement now ship examples. The helper is the contract for new tools. | S | Low-Medium | Helps agents pick the right tool. |
 | 3.2 | ✅ **Shipped.** Sample-data generator that writes (`seed_table_with_sample_data`) | M | Medium | Sibling of the current `generate_test_data` (synthetic INSERT statements; does not execute). Gated under WRITE. |
 
 ## 4. Security & compliance
