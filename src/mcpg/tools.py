@@ -74,6 +74,25 @@ from mcpg.policy import Capability, is_permitted
 _Ctx = Context[ServerSession, AppContext, Any]
 
 
+def _with_example(description: str, example: str) -> str:
+    """Append a one-line invocation example to an MCP tool description.
+
+    Agents picking a tool from a long list of candidates have to
+    reason about call shape from the description alone. Tacking a
+    canonical example onto the end gives them a concrete starting
+    point — a fast win for tools whose argument shape isn't obvious
+    from the name (anything with multiple optional params or
+    schema/table/column tuples).
+
+    The example is rendered as pseudo-Python (``tool_name(arg=value)``)
+    rather than raw MCP JSON because that's how every other tool's
+    docstring already speaks and because every MCP client we've seen
+    happily translates from the readable form. New tools should
+    follow this style: short, one-line, illustrative, no edge cases.
+    """
+    return f"{description}\n\nExample: `{example}`"
+
+
 @dataclass(frozen=True, slots=True)
 class ServerInfo:
     """High-level facts about a running MCPg server."""
@@ -187,7 +206,10 @@ def _register_server_info(server: FastMCP[AppContext]) -> None:
 def _register_introspection(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="list_schemas",
-        description="List database schemas, excluding PostgreSQL's own schemas unless include_system is true.",
+        description=_with_example(
+            "List database schemas, excluding PostgreSQL's own schemas unless include_system is true.",
+            "list_schemas(include_system=false)",
+        ),
     )
     async def list_schemas(ctx: _Ctx, include_system: bool = False) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -198,7 +220,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_tables",
-        description="List the tables and views in a schema, flagging partitioned tables and partitions.",
+        description=_with_example(
+            "List the tables and views in a schema, flagging partitioned tables and partitions.",
+            "list_tables(schema='public')",
+        ),
     )
     async def list_tables(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -207,7 +232,13 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
         return await _cached_call(ctx, "list_tables", _run, schema)
 
-    @server.tool(name="describe_table", description="Describe the columns of a table, in ordinal order.")
+    @server.tool(
+        name="describe_table",
+        description=_with_example(
+            "Describe the columns of a table, in ordinal order.",
+            "describe_table(schema='public', table='users')",
+        ),
+    )
     async def describe_table(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
             columns = await introspection.describe_table(_driver(ctx), schema, table)
@@ -215,7 +246,13 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
         return await _cached_call(ctx, "describe_table", _run, schema, table)
 
-    @server.tool(name="list_indexes", description="List the indexes defined on a table.")
+    @server.tool(
+        name="list_indexes",
+        description=_with_example(
+            "List the indexes defined on a table.",
+            "list_indexes(schema='public', table='users')",
+        ),
+    )
     async def list_indexes(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
             indexes = await introspection.list_indexes(_driver(ctx), schema, table)
@@ -225,7 +262,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_constraints",
-        description="List a table's constraints — primary/foreign keys, unique, check, exclusion.",
+        description=_with_example(
+            "List a table's constraints — primary/foreign keys, unique, check, exclusion.",
+            "list_constraints(schema='public', table='orders')",
+        ),
     )
     async def list_constraints(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -236,7 +276,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_foreign_keys",
-        description="List foreign keys in a schema, resolved to columns and referenced table.",
+        description=_with_example(
+            "List foreign keys in a schema, resolved to columns and referenced table.",
+            "list_foreign_keys(schema='public')",
+        ),
     )
     async def list_foreign_keys(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -615,10 +658,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 def _register_diagrams(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="generate_schema_diagram",
-        description=(
+        description=_with_example(
             "Render a Mermaid ER diagram for a schema. Views and foreign tables are "
             "excluded; partitions are excluded by default — pass include_partitions=true "
-            "to draw each partition as its own entity."
+            "to draw each partition as its own entity.",
+            "generate_schema_diagram(schema='public', include_partitions=false)",
         ),
     )
     async def generate_schema_diagram(ctx: _Ctx, schema: str, include_partitions: bool = False) -> str:
@@ -653,11 +697,12 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="generate_schema_docs",
-        description=(
+        description=_with_example(
             "Generate a detailed Markdown reference of a schema's "
             "tables, columns, constraints, indexes, views, foreign tables, "
             "and custom enums along with comments / descriptions. Optional "
-            "include_samples fetches a few distinct, non-null values for each column."
+            "include_samples fetches a few distinct, non-null values for each column.",
+            "generate_schema_docs(schema='public', include_samples=true)",
         ),
     )
     async def generate_schema_docs(ctx: _Ctx, schema: str, include_samples: bool = False) -> str:
@@ -672,11 +717,12 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
 def _register_schema_diff(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="compare_schemas",
-        description=(
+        description=_with_example(
             "Return the structural diff between two schemas — tables/columns/"
             "indexes/constraints/foreign-keys added, removed, or changed. "
             "Base tables only; views and custom types are not compared. "
-            "Renames surface as a paired add + remove."
+            "Renames surface as a paired add + remove.",
+            "compare_schemas(left_schema='public', right_schema='staging')",
         ),
     )
     async def compare_schemas(ctx: _Ctx, left_schema: str, right_schema: str) -> dict[str, Any]:
@@ -876,7 +922,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="cluster_vectors",
-        description=(
+        description=_with_example(
             "k-means cluster a pgvector column. Samples up to "
             "`sample_size` (default 5000) non-NULL rows of "
             "schema.table.embedding_column, runs Lloyd's algorithm "
@@ -889,7 +935,8 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             "(vectors normalised; centroids re-normalised every "
             "iteration). `k` >= 2 and there must be at least 2k "
             "parseable rows. Reports available=false if pgvector is "
-            "not installed."
+            "not installed.",
+            "cluster_vectors(schema='public', table='docs', embedding_column='embedding', k=8, metric='cosine')",
         ),
     )
     async def cluster_vectors(
@@ -973,7 +1020,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="monitor_embedding_drift",
-        description=(
+        description=_with_example(
             "Compare two time windows of a pgvector column and flag "
             "distributional drift. Samples up to `sample_size` (default "
             "5000) non-NULL embeddings from each window (filtered by "
@@ -990,7 +1037,11 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             "cosine distance even if the norm distribution looks "
             "stable. `insufficient_data` is returned distinctly from "
             "`drift_detected=false` when either window is empty. "
-            "Reports `available=false` if pgvector is not installed."
+            "Reports `available=false` if pgvector is not installed.",
+            "monitor_embedding_drift(schema='public', table='docs', "
+            "embedding_column='embedding', timestamp_column='created_at', "
+            "baseline_start='2026-01-01', baseline_end='2026-02-01', "
+            "current_start='2026-02-01', current_end='2026-03-01')",
         ),
     )
     async def monitor_embedding_drift(
@@ -1300,13 +1351,14 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
 def _register_composite(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="summarize_table",
-        description=(
+        description=_with_example(
             "Return a one-stop snapshot of a table: columns, primary key, "
             "foreign keys, every other constraint, indexes, storage + "
             "row-count + last-vacuum/analyze stats, and (optionally) a "
             "short sample of rows. Replaces what would otherwise be 4-5 "
             "individual tool calls. Set sample_rows=0 on wide / jsonb-"
-            "heavy tables where the sample isn't useful."
+            "heavy tables where the sample isn't useful.",
+            "summarize_table(schema='public', table='users', sample_rows=5)",
         ),
     )
     async def summarize_table(ctx: _Ctx, schema: str, table: str, sample_rows: int = 5) -> dict[str, Any]:
@@ -1315,14 +1367,15 @@ def _register_composite(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="why_is_this_slow",
-        description=(
+        description=_with_example(
             "Diagnose why a SQL query might be slow, in one call. Runs "
             "EXPLAIN (FORMAT JSON) — does NOT execute the query — walks the "
             "plan tree, snapshots concurrent active queries + blocking "
             "lock pairs, reads the cluster-wide cache hit ratio, and "
             "produces categorised suggestions (plan / contention / cache / "
             "maintenance). Read-only; safe to run on a statement the agent "
-            "doesn't want to materialise yet."
+            "doesn't want to materialise yet.",
+            "why_is_this_slow(sql='SELECT * FROM orders WHERE customer_id = 42')",
         ),
     )
     async def why_is_this_slow(ctx: _Ctx, sql: str) -> dict[str, Any]:
@@ -1338,10 +1391,11 @@ def _register_composite(server: FastMCP[AppContext]) -> None:
 def _register_data_movement(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="export_query",
-        description=(
+        description=_with_example(
             "Run a read-only SQL query and serialise its rows to CSV or JSON. "
             "Reuses the SQL-safety checks of run_select. Truncates at `limit` "
-            "rows and flags it in the result so callers can paginate."
+            "rows and flags it in the result so callers can paginate.",
+            "export_query(sql='SELECT id, email FROM users', format='csv', limit=10000)",
         ),
     )
     async def export_query(
@@ -1471,13 +1525,15 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
 def _register_migrations(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="prepare_migration",
-        description=(
+        description=_with_example(
             "Stage a candidate migration against a shadow clone of `target_schema`. "
             "Replicates the target schema's structure into mcpg_shadow_<id>, applies "
             "`candidate_sql` there, then runs compare_schemas(target, shadow) so the "
             "agent can review the structural diff before completing. Returns the "
             "migration id, shadow schema name, TTL, and the diff. Performs DDL — "
-            "requires unrestricted mode + MCPG_ALLOW_DDL."
+            "requires unrestricted mode + MCPG_ALLOW_DDL.",
+            "prepare_migration(name='add_user_avatar', target_schema='public', "
+            "candidate_sql='ALTER TABLE users ADD COLUMN avatar_url text')",
         ),
     )
     async def prepare_migration(
@@ -1911,9 +1967,10 @@ def _register_audit_trail(server: FastMCP[AppContext]) -> None:
 def _register_query(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="run_select",
-        description=(
+        description=_with_example(
             "Validate and run a read-only SQL query. Writes, DDL, and other "
-            "unsafe statements are rejected before execution."
+            "unsafe statements are rejected before execution.",
+            "run_select(sql='SELECT id, email FROM users LIMIT 10', max_rows=1000)",
         ),
     )
     async def run_select(ctx: _Ctx, sql: str, max_rows: int = query.DEFAULT_MAX_ROWS) -> dict[str, Any]:
@@ -2011,9 +2068,10 @@ def _register_query(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="explain_query",
-        description=(
+        description=_with_example(
             "Return the PostgreSQL execution plan for a query without running "
-            "it. The query is validated by the same safety allowlist as run_select."
+            "it. The query is validated by the same safety allowlist as run_select.",
+            "explain_query(sql='SELECT * FROM orders WHERE created_at > now() - interval \\'7 days\\'')",
         ),
     )
     async def explain_query(ctx: _Ctx, sql: str) -> dict[str, Any]:
@@ -2022,9 +2080,10 @@ def _register_query(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="analyze_query_plan",
-        description=(
+        description=_with_example(
             "Summarise a query's execution plan: total estimated cost, "
-            "estimated rows, node types used, and any sequentially-scanned tables."
+            "estimated rows, node types used, and any sequentially-scanned tables.",
+            "analyze_query_plan(sql='SELECT * FROM orders WHERE customer_id = 42')",
         ),
     )
     async def analyze_query_plan(ctx: _Ctx, sql: str) -> dict[str, Any]:
@@ -2033,7 +2092,7 @@ def _register_query(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="translate_nl_to_sql",
-        description=(
+        description=_with_example(
             "Translate a natural-language question into a read-only "
             "PostgreSQL query against `schema`. The LLM provider "
             "(anthropic / openai / gemini) sees a compact brief of "
@@ -2052,7 +2111,8 @@ def _register_query(server: FastMCP[AppContext]) -> None:
             "configured); when omitted, MCPg uses the default "
             "(MCPG_NL2SQL_PROVIDER, otherwise the first available "
             "in preference order anthropic → openai → gemini). Call "
-            "get_server_info to see which providers are configured."
+            "get_server_info to see which providers are configured.",
+            "translate_nl_to_sql(question='top 10 customers by revenue last month', schema='public', execute=true)",
         ),
     )
     async def translate_nl_to_sql(
@@ -2117,9 +2177,10 @@ def _register_query(server: FastMCP[AppContext]) -> None:
 def _register_health(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="check_database_health",
-        description=(
+        description=_with_example(
             "Run database health checks: connection utilisation, buffer cache "
-            "hit ratio, tables needing vacuum, and invalid indexes."
+            "hit ratio, tables needing vacuum, and invalid indexes.",
+            "check_database_health()",
         ),
     )
     async def check_database_health(ctx: _Ctx) -> dict[str, Any]:
@@ -2146,10 +2207,11 @@ def _register_health(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="analyze_workload",
-        description=(
+        description=_with_example(
             "Return the slowest queries by mean execution time, via the "
             "pg_stat_statements extension. Reports availability=false if the "
-            "extension is not installed."
+            "extension is not installed.",
+            "analyze_workload(limit=10)",
         ),
     )
     async def analyze_workload(ctx: _Ctx, limit: int = workload.DEFAULT_LIMIT) -> dict[str, Any]:
@@ -2199,7 +2261,10 @@ def _register_health(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="recommend_indexes",
-        description=("Recommend tables that may benefit from indexing — large tables read mostly by sequential scan."),
+        description=_with_example(
+            "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan.",
+            "recommend_indexes(min_live_tuples=10000)",
+        ),
     )
     async def recommend_indexes(
         ctx: _Ctx, min_live_tuples: int = indexing.DEFAULT_MIN_LIVE_TUPLES
@@ -2214,11 +2279,12 @@ def _register_health(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="fuzzy_search",
-        description=(
+        description=_with_example(
             "Rank a text column's values by pg_trgm trigram similarity to a "
             "search term. mode='word' (default) matches fragments within "
             "longer text; mode='full' compares whole strings. Reports "
-            "available=false if pg_trgm is not installed."
+            "available=false if pg_trgm is not installed.",
+            "fuzzy_search(schema='public', table='users', column='name', term='janne', mode='word')",
         ),
     )
     async def fuzzy_search(
@@ -2238,10 +2304,11 @@ def _register_health(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="full_text_search",
-        description=(
+        description=_with_example(
             "Rank a text column's documents against a full-text query using "
             "PostgreSQL's built-in tsvector/tsquery. The query accepts "
-            "web-search syntax (quoted phrases, or, - exclusion)."
+            "web-search syntax (quoted phrases, or, - exclusion).",
+            "full_text_search(schema='public', table='articles', column='body', search_query='\"new york\" OR -draft')",
         ),
     )
     async def full_text_search(
@@ -2260,10 +2327,12 @@ def _register_health(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="vector_search",
-        description=(
+        description=_with_example(
             "Find the rows nearest to a query vector by pgvector distance "
             "(metric: l2, cosine, or inner_product). Reports available=false "
-            "if the pgvector extension is not installed."
+            "if the pgvector extension is not installed.",
+            "vector_search(schema='public', table='docs', column='embedding', "
+            "query_vector=[0.1, 0.2, ...], metric='cosine', limit=10)",
         ),
     )
     async def vector_search(
@@ -2315,7 +2384,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="mmr_search",
-        description=(
+        description=_with_example(
             "Diversity-aware vector search: fetch `fetch_k` nearest "
             "candidates by pgvector distance, then re-rank with Maximal "
             "Marginal Relevance to return `k` rows that are relevant but "
@@ -2326,7 +2395,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "result is independent of the recall-pass `metric`. Each hit "
             "carries its relevance, mmr_score, and selection rank. "
             "Reports available=false if the pgvector extension is not "
-            "installed."
+            "installed.",
+            "mmr_search(schema='public', table='docs', column='embedding', "
+            "query_vector=[0.1, ...], k=10, lambda_mult=0.5)",
         ),
     )
     async def mmr_search(
@@ -2355,7 +2426,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="hybrid_search",
-        description=(
+        description=_with_example(
             "Combine vector and full-text ranking via reciprocal-rank fusion "
             "(RRF) — pulls candidates from each source, then fuses them so "
             "rows ranked highly in EITHER source surface. Closes the gap "
@@ -2364,7 +2435,10 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "vector_column, text_column, query_vector, text_query, plus "
             "metric / text_config / limit / candidate_pool / rrf_k tunables. "
             "Each match carries vector_rank, fts_rank, the fused rrf_score, "
-            "and (when present) the original distance + ts_rank values."
+            "and (when present) the original distance + ts_rank values.",
+            "hybrid_search(schema='public', table='docs', "
+            "vector_column='embedding', text_column='body', "
+            "query_vector=[0.1, ...], text_query='postgresql tuning')",
         ),
     )
     async def hybrid_search(

@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Inline usage examples in MCP tool descriptions.** Wrapped the
+  descriptions of ~25 high-traffic tools (introspection — `list_schemas`,
+  `list_tables`, `describe_table`, `list_indexes`, `list_constraints`,
+  `list_foreign_keys`; query — `run_select`, `explain_query`,
+  `analyze_query_plan`, `translate_nl_to_sql`; composite —
+  `summarize_table`, `why_is_this_slow`; health —
+  `check_database_health`, `analyze_workload`, `recommend_indexes`;
+  search — `vector_search`, `mmr_search`, `hybrid_search`,
+  `full_text_search`, `fuzzy_search`; diagrams —
+  `generate_schema_diagram`, `generate_schema_docs`; schema-diff —
+  `compare_schemas`; vector analytics — `cluster_vectors`,
+  `monitor_embedding_drift`; migrations — `prepare_migration`; data
+  movement — `export_query`) with a canonical pseudo-Python
+  invocation example so agents have a concrete starting point for
+  tools whose argument shape isn't obvious from the name. The
+  `_with_example(description, example)` helper in `mcpg.tools` is
+  the contract for new tools; the rendered format ends every
+  wrapped description with ``Example: `tool(...)```.
+
 - **`list_unapplied_migration_scripts` tool
   (`MCPG_MIGRATION_SCRIPTS_ROOTS`).** Pairs the on-disk migration
   scripts (the source of truth for what *should* run) with the
