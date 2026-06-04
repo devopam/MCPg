@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **TLS / mTLS for the HTTP transports
+  (`MCPG_HTTP_TLS_CERTFILE` / `MCPG_HTTP_TLS_KEYFILE` /
+  `MCPG_HTTP_TLS_CA_CERTS` / `MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED`).**
+  When `certfile` + `keyfile` are set, `run_http` instructs uvicorn
+  to terminate TLS itself. Adding `ca_certs` plus flipping
+  `client_cert_required=true` upgrades the listener to full mutual
+  TLS — connections without a client cert signed by a CA in the
+  bundle are refused at the handshake layer, before any ASGI
+  middleware sees the request. Settings are cross-validated at
+  boot: `certfile` and `keyfile` must both be set (or both be
+  unset), `client_cert_required` requires `ca_certs` (otherwise
+  the listener would either reject everyone or accept any self-
+  signed cert depending on the SSL backend), and every path must
+  exist on disk so a typo fails `load_settings` instead of the
+  first uvicorn startup. Lives in `mcpg.http_runtime`; disabled by
+  default — operators behind a reverse proxy continue to terminate
+  TLS at the proxy as before.
+
 - **IP allowlist for the HTTP transports (`MCPG_HTTP_IP_ALLOWLIST`).**
   When set, every request to the HTTP transports (streamable-http /
   sse) is matched against a comma-separated list of IP addresses

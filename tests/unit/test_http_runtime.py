@@ -924,6 +924,136 @@ async def test_request_timeout_middleware_does_not_double_send_after_stream_star
     assert statuses == [200]
 
 
+# --- TLS / mTLS settings -> uvicorn kwargs ---------------------------------
+
+
+def test_uvicorn_tls_kwargs_empty_when_tls_disabled() -> None:
+    from mcpg.http_runtime import _uvicorn_tls_kwargs
+
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    assert _uvicorn_tls_kwargs(settings, ssl_module=None) == {}
+
+
+def test_uvicorn_tls_kwargs_emits_cert_and_key_when_set(tmp_path: object) -> None:
+    from mcpg.http_runtime import _uvicorn_tls_kwargs
+
+    cert = tmp_path / "server.crt"  # type: ignore[operator]
+    key = tmp_path / "server.key"  # type: ignore[operator]
+    cert.write_text("-- placeholder; load_settings only checks existence\n")
+    key.write_text("-- placeholder\n")
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_TLS_CERTFILE": str(cert),
+            "MCPG_HTTP_TLS_KEYFILE": str(key),
+        }
+    )
+
+    kwargs = _uvicorn_tls_kwargs(settings, ssl_module=None)
+    assert kwargs == {"ssl_certfile": str(cert), "ssl_keyfile": str(key)}
+
+
+def test_uvicorn_tls_kwargs_includes_ca_certs_when_set(tmp_path: object) -> None:
+    from mcpg.http_runtime import _uvicorn_tls_kwargs
+
+    cert = tmp_path / "server.crt"  # type: ignore[operator]
+    key = tmp_path / "server.key"  # type: ignore[operator]
+    ca = tmp_path / "ca.crt"  # type: ignore[operator]
+    for f in (cert, key, ca):
+        f.write_text("-- placeholder\n")
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_TLS_CERTFILE": str(cert),
+            "MCPG_HTTP_TLS_KEYFILE": str(key),
+            "MCPG_HTTP_TLS_CA_CERTS": str(ca),
+        }
+    )
+
+    kwargs = _uvicorn_tls_kwargs(settings, ssl_module=None)
+    assert kwargs == {
+        "ssl_certfile": str(cert),
+        "ssl_keyfile": str(key),
+        "ssl_ca_certs": str(ca),
+    }
+
+
+def test_uvicorn_tls_kwargs_sets_cert_required_for_mtls(tmp_path: object) -> None:
+    from mcpg.http_runtime import _uvicorn_tls_kwargs
+
+    cert = tmp_path / "server.crt"  # type: ignore[operator]
+    key = tmp_path / "server.key"  # type: ignore[operator]
+    ca = tmp_path / "ca.crt"  # type: ignore[operator]
+    for f in (cert, key, ca):
+        f.write_text("-- placeholder\n")
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_TLS_CERTFILE": str(cert),
+            "MCPG_HTTP_TLS_KEYFILE": str(key),
+            "MCPG_HTTP_TLS_CA_CERTS": str(ca),
+            "MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED": "true",
+        }
+    )
+
+    # Stand-in for the ssl module — the kwarg routing should pull
+    # CERT_REQUIRED off whatever ssl-shaped object we pass through.
+    class _StubSSL:
+        CERT_REQUIRED = "CERT_REQUIRED_SENTINEL"
+
+    kwargs = _uvicorn_tls_kwargs(settings, ssl_module=_StubSSL())
+    assert kwargs["ssl_cert_reqs"] == "CERT_REQUIRED_SENTINEL"
+    assert kwargs["ssl_ca_certs"] == str(ca)
+
+
+def test_settings_rejects_certfile_without_keyfile(tmp_path: object) -> None:
+    from mcpg.config import ConfigError
+
+    cert = tmp_path / "server.crt"  # type: ignore[operator]
+    cert.write_text("-- placeholder\n")
+    with pytest.raises(ConfigError, match="must both be set or both be unset"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+                "MCPG_HTTP_TLS_CERTFILE": str(cert),
+            }
+        )
+
+
+def test_settings_rejects_client_cert_required_without_ca_certs(tmp_path: object) -> None:
+    from mcpg.config import ConfigError
+
+    cert = tmp_path / "server.crt"  # type: ignore[operator]
+    key = tmp_path / "server.key"  # type: ignore[operator]
+    for f in (cert, key):
+        f.write_text("-- placeholder\n")
+    with pytest.raises(ConfigError, match="needs MCPG_HTTP_TLS_CA_CERTS"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+                "MCPG_HTTP_TLS_CERTFILE": str(cert),
+                "MCPG_HTTP_TLS_KEYFILE": str(key),
+                "MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED": "true",
+            }
+        )
+
+
+def test_settings_rejects_nonexistent_cert_path() -> None:
+    from mcpg.config import ConfigError
+
+    with pytest.raises(ConfigError, match="non-existent file"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+                "MCPG_HTTP_TLS_CERTFILE": "/nonexistent/server.crt",
+                "MCPG_HTTP_TLS_KEYFILE": "/nonexistent/server.key",
+            }
+        )
+
+
 def test_build_http_app_installs_request_timeout_only_when_positive() -> None:
     base = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"}
 

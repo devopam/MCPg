@@ -95,7 +95,7 @@ B1/B2 are independent; B3 is larger and best alone.
 | PR | Item | New module? | Effort | Depends on | Notes |
 |---|---|---|---|---|---|
 | C1 (✅ PR) | IP allowlist for HTTP transport (4.3) | `http_runtime.py` middleware | S | — | Tiny ASGI middleware + `MCPG_HTTP_IP_ALLOWLIST`. |
-| C2 | mTLS for the HTTP transport (4.4) | `http_runtime.py` / `run_http` | S | — | Client-cert verification (uvicorn ssl params). |
+| C2 (✅ PR) | mTLS for the HTTP transport (4.4) | `http_runtime.py` / `run_http` | S | — | Client-cert verification (uvicorn ssl params). |
 | C3 | Secrets cloud backends — Vault / AWS / GCP | extends `secrets.py` | L | — | Each behind an extra (`mcpg[vault]` …); same `MCPG_SECRETS_BACKEND` switch. Can split per provider. |
 
 C1 and C2 both edit `http_runtime.py`'s middleware stack — **sequence

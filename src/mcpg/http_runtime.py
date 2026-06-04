@@ -615,8 +615,51 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
 
 
 def run_http(server: object, settings: Settings, *, kind: str) -> None:
-    """Build the wrapped HTTP app and serve it via uvicorn."""
+    """Build the wrapped HTTP app and serve it via uvicorn.
+
+    Honours the project's TLS / mTLS settings: when
+    ``http_tls_certfile`` + ``http_tls_keyfile`` are set, uvicorn
+    terminates TLS itself. Adding ``http_tls_ca_certs`` and
+    flipping ``http_tls_client_cert_required=true`` upgrades the
+    listener to full mutual TLS — connections without a client cert
+    signed by a CA in the bundle are refused at the handshake
+    layer, before any ASGI middleware sees the request.
+    """
+    import ssl
+
     import uvicorn
 
     app = build_http_app(server, settings, kind=kind)
-    uvicorn.run(app, host=settings.http_host, port=settings.http_port)
+    tls_kwargs = _uvicorn_tls_kwargs(settings, ssl_module=ssl)
+    # mypy can't reason about ``**dict[str, object]`` against the
+    # large, overloaded ``uvicorn.run`` signature; the dict's contents
+    # are already constrained by ``_uvicorn_tls_kwargs``.
+    uvicorn.run(app, host=settings.http_host, port=settings.http_port, **tls_kwargs)  # type: ignore[arg-type]
+
+
+def _uvicorn_tls_kwargs(settings: Settings, *, ssl_module: object) -> dict[str, object]:
+    """Translate the project's TLS settings into the uvicorn keyword arg shape.
+
+    ``ssl_module`` is parameterised so tests can pass a stub without
+    importing the real :mod:`ssl` (avoids creating a real SSL context
+    just to assert the argument routing). At runtime callers pass
+    ``ssl`` directly.
+
+    Returns an empty dict when TLS isn't configured, so the call site
+    can ``uvicorn.run(..., **tls_kwargs)`` unconditionally.
+    """
+    if settings.http_tls_certfile is None or settings.http_tls_keyfile is None:
+        return {}
+    kwargs: dict[str, object] = {
+        "ssl_certfile": settings.http_tls_certfile,
+        "ssl_keyfile": settings.http_tls_keyfile,
+    }
+    if settings.http_tls_ca_certs is not None:
+        kwargs["ssl_ca_certs"] = settings.http_tls_ca_certs
+    if settings.http_tls_client_cert_required:
+        # ``ssl.CERT_REQUIRED`` tells the TLS handshake to refuse a
+        # connection whose client cert isn't signed by a CA in the
+        # configured bundle. config.load_settings already enforces the
+        # ``ca_certs`` invariant so this combination is always valid.
+        kwargs["ssl_cert_reqs"] = ssl_module.CERT_REQUIRED  # type: ignore[attr-defined]
+    return kwargs

@@ -172,6 +172,19 @@ class Settings:
     # enforce the allowlist at the proxy layer (where the TLS
     # termination already sits).
     http_ip_allowlist: tuple[str, ...] = ()
+    # HTTP transport TLS / mTLS. ``http_tls_certfile`` +
+    # ``http_tls_keyfile`` enable TLS termination at the uvicorn
+    # layer. Add ``http_tls_ca_certs`` + ``http_tls_client_cert_required=true``
+    # for full mutual TLS — the server then refuses connections from
+    # any client whose certificate isn't signed by a CA in the bundle.
+    # When unset (default), the HTTP transports run plain HTTP and
+    # rely on a reverse proxy to terminate TLS. Paths are validated
+    # at boot so a typo fails ``load_settings`` rather than the first
+    # uvicorn startup.
+    http_tls_certfile: str | None = None
+    http_tls_keyfile: str | None = None
+    http_tls_ca_certs: str | None = None
+    http_tls_client_cert_required: bool = False
     # Per-request wall-clock cap for the HTTP transports. 0 = disabled
     # (default), because a hard cap also severs long-lived SSE /
     # streamable-http streams. Set a positive value for plain
@@ -240,6 +253,10 @@ class Settings:
             f"http_allowed_origins={self.http_allowed_origins!r}, "
             f"http_ip_allowlist={self.http_ip_allowlist!r}, "
             f"http_hsts_max_age={self.http_hsts_max_age}, "
+            f"http_tls_certfile={self.http_tls_certfile!r}, "
+            f"http_tls_keyfile={self.http_tls_keyfile!r}, "
+            f"http_tls_ca_certs={self.http_tls_ca_certs!r}, "
+            f"http_tls_client_cert_required={self.http_tls_client_cert_required}, "
             f"http_request_timeout_seconds={self.http_request_timeout_seconds}, "
             f"shutdown_drain_seconds={self.shutdown_drain_seconds}, "
             f"audit_hmac_key={audit_hmac_key_repr!r}, "
@@ -748,6 +765,37 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         except ValueError:
             raise ConfigError(f"MCPG_HTTP_HSTS_MAX_AGE must be a non-negative integer (got {raw!r})") from None
 
+    # HTTP TLS / mTLS. Parsed together so we can enforce the
+    # invariant "if either cert or key is set, the other must be too"
+    # at boot — uvicorn doesn't validate this until startup, by which
+    # point the operator has already restarted the service.
+    http_tls_certfile = env.get("MCPG_HTTP_TLS_CERTFILE", "").strip() or None
+    http_tls_keyfile = env.get("MCPG_HTTP_TLS_KEYFILE", "").strip() or None
+    http_tls_ca_certs = env.get("MCPG_HTTP_TLS_CA_CERTS", "").strip() or None
+    http_tls_client_cert_required = False
+    if (raw := env.get("MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED")) is not None:
+        http_tls_client_cert_required = _parse_bool("MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED", raw)
+
+    if (http_tls_certfile is None) != (http_tls_keyfile is None):
+        raise ConfigError("MCPG_HTTP_TLS_CERTFILE and MCPG_HTTP_TLS_KEYFILE must both be set or both be unset")
+    if http_tls_client_cert_required and not http_tls_ca_certs:
+        # CERT_REQUIRED without a CA bundle would either reject every
+        # client or accept anyone with a self-signed cert (depending
+        # on the SSL backend). Both are footguns — fail at boot.
+        raise ConfigError("MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED=true needs MCPG_HTTP_TLS_CA_CERTS to verify against")
+    # Verify paths exist on disk so a typo fails at config time
+    # instead of at the first incoming connection.
+    for env_var, path in (
+        ("MCPG_HTTP_TLS_CERTFILE", http_tls_certfile),
+        ("MCPG_HTTP_TLS_KEYFILE", http_tls_keyfile),
+        ("MCPG_HTTP_TLS_CA_CERTS", http_tls_ca_certs),
+    ):
+        if path is not None:
+            from os.path import isfile
+
+            if not isfile(path):
+                raise ConfigError(f"{env_var} points to a non-existent file: {path!r}")
+
     http_request_timeout_seconds = 0
     if (raw := env.get("MCPG_HTTP_REQUEST_TIMEOUT_SECONDS")) is not None:
         try:
@@ -833,6 +881,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_allowed_origins=http_allowed_origins,
         http_ip_allowlist=http_ip_allowlist,
         http_hsts_max_age=http_hsts_max_age,
+        http_tls_certfile=http_tls_certfile,
+        http_tls_keyfile=http_tls_keyfile,
+        http_tls_ca_certs=http_tls_ca_certs,
+        http_tls_client_cert_required=http_tls_client_cert_required,
         http_request_timeout_seconds=http_request_timeout_seconds,
         shutdown_drain_seconds=shutdown_drain_seconds,
         audit_hmac_key=audit_hmac_key,
