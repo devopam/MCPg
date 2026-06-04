@@ -190,7 +190,18 @@ ignore_missing_imports = true
 # Optional cloud-secrets SDKs ship without typed stubs we want to lean
 # on — the providers in mcpg.secrets import them lazily and convert
 # everything to plain ``str | None`` before re-exposing the API.
-module = ["hvac", "hvac.*", "boto3", "boto3.*", "google.cloud", "google.cloud.*"]
+module = [
+    "hvac",
+    "hvac.*",
+    "boto3",
+    "boto3.*",
+    "botocore",
+    "botocore.*",
+    "google.cloud",
+    "google.cloud.*",
+    "google.api_core",
+    "google.api_core.*",
+]
 ignore_missing_imports = true
 
 [tool.bandit]

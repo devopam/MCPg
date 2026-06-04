@@ -193,11 +193,16 @@ class VaultSecretsProvider:
             import hvac
         except ImportError as exc:
             raise SecretsError("MCPG_SECRETS_BACKEND=vault requires the `mcpg[vault]` extra (install `hvac`)") from exc
-        client = hvac.Client(url=self.addr, token=self.token, namespace=self.namespace)
-        if not client.is_authenticated():
-            raise SecretsError("Vault rejected the configured MCPG_VAULT_TOKEN")
-        self._client = client
-        return client
+        # Do NOT call ``client.is_authenticated()`` here. The real
+        # token-validation signal — Forbidden / Unauthorized on a
+        # read — is surfaced explicitly in ``_fetch`` below as a
+        # SecretsError, which gives the operator a clear "rotate the
+        # token" message. ``is_authenticated`` adds a round-trip at
+        # construction time AND was reviewed (PR #65) as misleading
+        # because some hvac versions implement it as a local bool
+        # check.
+        self._client = hvac.Client(url=self.addr, token=self.token, namespace=self.namespace)
+        return self._client
 
     def _fetch(self, name: str) -> str | None:
         # Split on the last ``/`` so callers can store grouped secrets
@@ -212,7 +217,22 @@ class VaultSecretsProvider:
         full_path = f"{self.path_prefix.rstrip('/')}/{path}"
         try:
             response = client.secrets.kv.v2.read_secret_version(path=full_path)
-        except Exception:  # broad: hvac surfaces a wide error tree
+        except Exception as exc:
+            # Distinguish "secret not present at this path" (fall
+            # through to env) from "Vault refused the token" (raise so
+            # the operator sees the real problem instead of silently
+            # falling back to env and getting a different config-error
+            # ten seconds later). The hvac exception tree is
+            # deliberately imported inside the except so the lazy-SDK
+            # contract still holds at module import time.
+            try:
+                from hvac import exceptions as hvac_exc
+            except ImportError:
+                return None
+            if isinstance(exc, (hvac_exc.Forbidden, hvac_exc.Unauthorized)):
+                raise SecretsError(
+                    f"Vault denied access to {full_path!r} — check MCPG_VAULT_TOKEN and policy: {exc}"
+                ) from exc
             return None
         if not response:
             return None
@@ -272,7 +292,28 @@ class AWSSecretsProvider:
         full_name = f"{self.prefix}{name}" if self.prefix else name
         try:
             response = client.get_secret_value(SecretId=full_name)
-        except Exception:  # broad: botocore raises ClientError subclasses we don't import
+        except Exception as exc:
+            # Distinguish "secret not present" (fall through to env)
+            # from "AWS refused the request" (raise so the operator
+            # sees the auth problem instead of silently falling back).
+            # ResourceNotFound stays None; access / signature errors
+            # become SecretsError. ClientError is the botocore base
+            # class; ``error_code`` lives under ``response.Error.Code``.
+            try:
+                from botocore import exceptions as boto_exc
+            except ImportError:
+                return None
+            if isinstance(exc, boto_exc.ClientError):
+                code = getattr(exc, "response", {}).get("Error", {}).get("Code", "")
+                if code in {
+                    "AccessDeniedException",
+                    "UnrecognizedClientException",
+                    "InvalidSignatureException",
+                    "ExpiredTokenException",
+                }:
+                    raise SecretsError(
+                        f"AWS Secrets Manager denied access to {full_name!r} (error code {code!r}): {exc}"
+                    ) from exc
             return None
         if not isinstance(response, dict):
             return None
@@ -280,17 +321,20 @@ class AWSSecretsProvider:
         if raw is None:
             return None
         # SecretString is usually JSON for multi-value secrets and a
-        # bare string for single-value secrets — try to parse and
-        # pluck the matching field, fall back to the raw string.
+        # bare string for single-value secrets. Try to parse: if
+        # parsing succeeds and the dict has a field matching the
+        # looked-up name, return that; otherwise fall back to the raw
+        # string so service-account JSON / OAuth-blob payloads
+        # (no key matching the secret name) still surface as values.
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
             return str(raw)
         if isinstance(parsed, dict):
-            value = parsed.get(name)
-            if value is None:
-                return None
-            return str(value)
+            if name in parsed:
+                value = parsed[name]
+                return str(value) if value is not None else None
+            return str(raw)
         return str(raw)
 
 
@@ -337,7 +381,19 @@ class GCPSecretsProvider:
         resource = f"projects/{self.project_id}/secrets/{full_name}/versions/latest"
         try:
             response = client.access_secret_version(name=resource)
-        except Exception:  # broad: google.api_core surfaces a wide error tree
+        except Exception as exc:
+            # Distinguish NotFound (fall through to env) from
+            # auth / permission failures (raise so the operator sees
+            # the real problem). google.api_core's exception classes
+            # are imported lazily to keep the lazy-SDK contract.
+            try:
+                from google.api_core import exceptions as google_exc
+            except ImportError:
+                return None
+            if isinstance(exc, (google_exc.PermissionDenied, google_exc.Unauthenticated)):
+                raise SecretsError(
+                    f"GCP Secret Manager denied access to {resource!r} — check the service account's roles: {exc}"
+                ) from exc
             return None
         payload = getattr(response, "payload", None)
         if payload is None:

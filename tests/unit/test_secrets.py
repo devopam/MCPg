@@ -418,3 +418,141 @@ def test_gcp_provider_surfaces_install_hint_when_sdk_missing(monkeypatch: pytest
     provider = GCPSecretsProvider(project_id="p", env={})
     with pytest.raises(SecretsError, match="mcpg\\[gcp\\]"):
         provider.get("ANY")
+
+
+# --- cloud-backend error semantics -----------------------------------------
+
+
+def test_vault_provider_raises_secrets_error_on_forbidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Auth / permission failures must not silently fall through to
+    # env — they're operator-visible problems, not "secret missing".
+    import sys
+    import types
+
+    from mcpg.secrets import VaultSecretsProvider
+
+    class _Forbidden(Exception):  # noqa: N818  (mirrors hvac.exceptions.Forbidden naming)
+        pass
+
+    fake_hvac_exceptions = types.ModuleType("hvac.exceptions")
+    fake_hvac_exceptions.Forbidden = _Forbidden  # type: ignore[attr-defined]
+    fake_hvac_exceptions.Unauthorized = type("_Unauthorized", (Exception,), {})  # type: ignore[attr-defined]
+
+    fake_hvac = types.ModuleType("hvac")
+    fake_hvac.exceptions = fake_hvac_exceptions  # type: ignore[attr-defined]
+
+    class _RaisingClient:
+        def __init__(self, *_a: object, **_kw: object) -> None:
+            class _Sec:
+                class _Kv:
+                    class _V2:
+                        @staticmethod
+                        def read_secret_version(path: str) -> None:
+                            raise _Forbidden("permission denied")
+
+                    v2 = _V2()
+
+                kv = _Kv()
+
+            self.secrets = _Sec()
+
+    fake_hvac.Client = _RaisingClient  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "hvac", fake_hvac)
+    monkeypatch.setitem(sys.modules, "hvac.exceptions", fake_hvac_exceptions)
+
+    provider = VaultSecretsProvider(addr="http://vault:8200", token="bad", env={"FALLBACK": "from-env"})
+    with pytest.raises(SecretsError, match="Vault denied access"):
+        provider.get("SOMETHING")
+
+
+def test_aws_provider_raises_secrets_error_on_access_denied(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import types
+
+    from mcpg.secrets import AWSSecretsProvider
+
+    class _ClientError(Exception):
+        def __init__(self, response: dict[str, object]) -> None:
+            self.response = response
+            super().__init__(str(response))
+
+    fake_botocore_exceptions = types.ModuleType("botocore.exceptions")
+    fake_botocore_exceptions.ClientError = _ClientError  # type: ignore[attr-defined]
+    fake_botocore = types.ModuleType("botocore")
+    fake_botocore.exceptions = fake_botocore_exceptions  # type: ignore[attr-defined]
+
+    class _DenyingClient:
+        def get_secret_value(self, *, SecretId: str) -> dict[str, str]:  # noqa: N803  (boto3 API name)
+            raise _ClientError({"Error": {"Code": "AccessDeniedException", "Message": "denied"}})
+
+    fake_boto3 = types.ModuleType("boto3")
+    fake_boto3.client = lambda *_a, **_kw: _DenyingClient()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+    monkeypatch.setitem(sys.modules, "botocore", fake_botocore)
+    monkeypatch.setitem(sys.modules, "botocore.exceptions", fake_botocore_exceptions)
+
+    provider = AWSSecretsProvider(region="us-east-1", env={"FALLBACK": "from-env"})
+    with pytest.raises(SecretsError, match="AccessDeniedException"):
+        provider.get("ANY")
+
+
+def test_aws_provider_falls_back_to_raw_json_when_key_not_in_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Service-account JSON blobs / OAuth payloads don't have a top-
+    # level key matching the secret name; the provider must surface
+    # the raw JSON string rather than returning None.
+    import sys
+    import types
+
+    from mcpg.secrets import AWSSecretsProvider
+
+    class _FakeClient:
+        def get_secret_value(self, *, SecretId: str) -> dict[str, str]:  # noqa: N803
+            return {"SecretString": json.dumps({"client_id": "x", "private_key": "y"})}
+
+    fake_boto3 = types.ModuleType("boto3")
+    fake_boto3.client = lambda *_a, **_kw: _FakeClient()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+
+    provider = AWSSecretsProvider(region="us-east-1", env={})
+    result = provider.get("GCP_SERVICE_ACCOUNT_JSON")
+    assert result is not None
+    assert '"client_id": "x"' in result
+    assert '"private_key": "y"' in result
+
+
+def test_gcp_provider_raises_secrets_error_on_permission_denied(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import types
+
+    from mcpg.secrets import GCPSecretsProvider
+
+    class _PermissionDenied(Exception):  # noqa: N818  (mirrors google.api_core.exceptions naming)
+        pass
+
+    fake_api_core_exceptions = types.ModuleType("google.api_core.exceptions")
+    fake_api_core_exceptions.PermissionDenied = _PermissionDenied  # type: ignore[attr-defined]
+    fake_api_core_exceptions.Unauthenticated = type("_Unauthenticated", (Exception,), {})  # type: ignore[attr-defined]
+    fake_api_core = types.ModuleType("google.api_core")
+    fake_api_core.exceptions = fake_api_core_exceptions  # type: ignore[attr-defined]
+
+    class _DenyingClient:
+        def access_secret_version(self, *, name: str) -> object:
+            raise _PermissionDenied("perm denied")
+
+    class _FakeSecretManager:
+        SecretManagerServiceClient = _DenyingClient
+
+    fake_google = types.ModuleType("google")
+    fake_google_cloud = types.ModuleType("google.cloud")
+    fake_google_cloud.secretmanager = _FakeSecretManager()  # type: ignore[attr-defined]
+    fake_google.cloud = fake_google_cloud  # type: ignore[attr-defined]
+    fake_google.api_core = fake_api_core  # type: ignore[attr-defined]
+
+    monkeypatch.setitem(sys.modules, "google", fake_google)
+    monkeypatch.setitem(sys.modules, "google.cloud", fake_google_cloud)
+    monkeypatch.setitem(sys.modules, "google.api_core", fake_api_core)
+    monkeypatch.setitem(sys.modules, "google.api_core.exceptions", fake_api_core_exceptions)
+
+    provider = GCPSecretsProvider(project_id="p", env={"FALLBACK": "from-env"})
+    with pytest.raises(SecretsError, match="GCP Secret Manager denied"):
+        provider.get("ANY")
