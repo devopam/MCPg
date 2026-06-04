@@ -942,3 +942,174 @@ def test_build_http_app_installs_request_timeout_only_when_positive() -> None:
         kind="streamable-http",
     )
     assert any(m.cls.__name__ == "_RequestTimeoutMiddleware" for m in on.user_middleware)
+
+
+# --- IP allowlist middleware ----------------------------------------------
+
+
+async def _call_middleware(middleware: object, scope: dict[str, object]) -> tuple[int, list[bytes]]:
+    """Invoke an ASGI middleware against a constructed scope; return (status, body bytes)."""
+    received_messages: list[dict[str, object]] = []
+
+    async def _receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def _send(message: dict[str, object]) -> None:
+        received_messages.append(message)
+
+    await middleware(scope, _receive, _send)  # type: ignore[operator]
+    status_codes = [int(m.get("status", 0)) for m in received_messages if m.get("type") == "http.response.start"]
+    bodies = [m.get("body", b"") for m in received_messages if m.get("type") == "http.response.body"]
+    status = status_codes[0] if status_codes else 200
+    body_bytes = [b for b in bodies if isinstance(b, bytes)]
+    return status, body_bytes
+
+
+def _scope(client_host: str | None) -> dict[str, object]:
+    return {
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": [],
+        "client": (client_host, 50001) if client_host is not None else None,
+    }
+
+
+async def test_ip_allowlist_middleware_allows_listed_ip() -> None:
+    from mcpg.http_runtime import _IPAllowlistMiddleware
+
+    async def _inner_app(_scope: dict[str, object], _receive: object, send: object) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    middleware = _IPAllowlistMiddleware(_inner_app, allowlist=("10.0.0.5",))
+    status, _ = await _call_middleware(middleware, _scope("10.0.0.5"))
+    assert status == 200
+
+
+async def test_ip_allowlist_middleware_rejects_unlisted_ip() -> None:
+    from mcpg.http_runtime import _IPAllowlistMiddleware
+
+    async def _inner_app(_scope: dict[str, object], _receive: object, send: object) -> None:
+        # Should never be reached.
+        raise AssertionError("inner app must not run when the IP is denied")
+
+    middleware = _IPAllowlistMiddleware(_inner_app, allowlist=("10.0.0.5",))
+    status, _ = await _call_middleware(middleware, _scope("192.168.1.1"))
+    assert status == 403
+
+
+async def test_ip_allowlist_middleware_matches_cidr_range() -> None:
+    from mcpg.http_runtime import _IPAllowlistMiddleware
+
+    async def _inner_app(_scope: dict[str, object], _receive: object, send: object) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    middleware = _IPAllowlistMiddleware(_inner_app, allowlist=("10.0.0.0/8",))
+    # Any address in the /8 should pass.
+    for addr in ("10.0.0.1", "10.255.255.255", "10.1.2.3"):
+        status, _ = await _call_middleware(middleware, _scope(addr))
+        assert status == 200, f"expected {addr} to be allowed"
+    # Just outside the range — denied.
+    status, _ = await _call_middleware(middleware, _scope("11.0.0.1"))
+    assert status == 403
+
+
+async def test_ip_allowlist_middleware_matches_ipv6() -> None:
+    from mcpg.http_runtime import _IPAllowlistMiddleware
+
+    async def _inner_app(_scope: dict[str, object], _receive: object, send: object) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    middleware = _IPAllowlistMiddleware(_inner_app, allowlist=("2001:db8::/32",))
+    status, _ = await _call_middleware(middleware, _scope("2001:db8::1"))
+    assert status == 200
+    status, _ = await _call_middleware(middleware, _scope("2001:db9::1"))
+    assert status == 403
+
+
+async def test_ip_allowlist_middleware_accepts_list_shaped_client() -> None:
+    # ASGI spec says ``client`` is a two-item iterable; most servers
+    # use tuples, some use lists. The check must accept both — a
+    # ``tuple``-only check would 403 valid requests under those
+    # transports.
+    from mcpg.http_runtime import _IPAllowlistMiddleware
+
+    async def _inner_app(_scope: dict[str, object], _receive: object, send: object) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})  # type: ignore[operator]
+        await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+    middleware = _IPAllowlistMiddleware(_inner_app, allowlist=("10.0.0.5",))
+    scope = _scope("10.0.0.5")
+    scope["client"] = ["10.0.0.5", 50001]  # type: ignore[assignment]
+    status, _ = await _call_middleware(middleware, scope)
+    assert status == 200
+
+
+async def test_ip_allowlist_middleware_denies_when_client_missing() -> None:
+    # An ASGI transport that doesn't populate ``client`` (some test
+    # runners, some custom transports) can't be checked against any
+    # allowlist — fail closed rather than wave the request through.
+    from mcpg.http_runtime import _IPAllowlistMiddleware
+
+    async def _inner_app(_scope: dict[str, object], _receive: object, send: object) -> None:
+        raise AssertionError("inner app must not run when client info is missing")
+
+    middleware = _IPAllowlistMiddleware(_inner_app, allowlist=("10.0.0.0/8",))
+    scope = _scope(None)
+    scope["client"] = None  # type: ignore[assignment]
+    status, _ = await _call_middleware(middleware, scope)
+    assert status == 403
+
+
+async def test_ip_allowlist_middleware_passes_non_http_scopes_through() -> None:
+    # Lifespan / websocket / similar non-HTTP scopes must not be
+    # rejected by the IP gate; the inner app handles them.
+    from mcpg.http_runtime import _IPAllowlistMiddleware
+
+    called = []
+
+    async def _inner_app(scope: dict[str, object], _receive: object, _send: object) -> None:
+        called.append(scope["type"])
+
+    middleware = _IPAllowlistMiddleware(_inner_app, allowlist=("10.0.0.5",))
+    await middleware(  # type: ignore[operator]
+        {"type": "lifespan"},
+        None,
+        None,
+    )
+    assert called == ["lifespan"]
+
+
+def test_build_http_app_installs_ip_allowlist_only_when_configured() -> None:
+    base = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"}
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    # No allowlist → no middleware.
+    off = build_http_app(_Stub(), load_settings(base), kind="streamable-http")
+    assert not any(m.cls.__name__ == "_IPAllowlistMiddleware" for m in off.user_middleware)
+
+    # Allowlist set → middleware installed.
+    on = build_http_app(
+        _Stub(),
+        load_settings({**base, "MCPG_HTTP_IP_ALLOWLIST": "10.0.0.0/8, 127.0.0.1"}),
+        kind="streamable-http",
+    )
+    assert any(m.cls.__name__ == "_IPAllowlistMiddleware" for m in on.user_middleware)
+
+
+def test_settings_rejects_invalid_ip_allowlist_entry() -> None:
+    from mcpg.config import ConfigError
+
+    with pytest.raises(ConfigError, match="MCPG_HTTP_IP_ALLOWLIST"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+                "MCPG_HTTP_IP_ALLOWLIST": "not-an-ip",
+            }
+        )

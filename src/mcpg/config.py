@@ -163,6 +163,15 @@ class Settings:
     http_max_body_bytes: int = 1048576
     http_allowed_origins: tuple[str, ...] = ()
     http_hsts_max_age: int = 31536000
+    # IP allowlist for the HTTP transports. Empty (default) = no
+    # network-level gate (current behaviour). When set, each entry is
+    # an IP address or CIDR range that the client's connecting IP
+    # must match; everything else gets 403. Entries are
+    # ``MCPG_HTTP_IP_ALLOWLIST=`` comma-separated. ``X-Forwarded-For``
+    # is NOT honoured — operators behind a reverse proxy should
+    # enforce the allowlist at the proxy layer (where the TLS
+    # termination already sits).
+    http_ip_allowlist: tuple[str, ...] = ()
     # Per-request wall-clock cap for the HTTP transports. 0 = disabled
     # (default), because a hard cap also severs long-lived SSE /
     # streamable-http streams. Set a positive value for plain
@@ -229,6 +238,7 @@ class Settings:
             f"enable_heavy_diagnostics={self.enable_heavy_diagnostics}, "
             f"http_max_body_bytes={self.http_max_body_bytes}, "
             f"http_allowed_origins={self.http_allowed_origins!r}, "
+            f"http_ip_allowlist={self.http_ip_allowlist!r}, "
             f"http_hsts_max_age={self.http_hsts_max_age}, "
             f"http_request_timeout_seconds={self.http_request_timeout_seconds}, "
             f"shutdown_drain_seconds={self.shutdown_drain_seconds}, "
@@ -712,6 +722,22 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if (raw := env.get("MCPG_HTTP_ALLOWED_ORIGINS")) is not None:
         http_allowed_origins = tuple(o.strip() for o in raw.split(",") if o.strip())
 
+    http_ip_allowlist: tuple[str, ...] = ()
+    if (raw := env.get("MCPG_HTTP_IP_ALLOWLIST")) is not None:
+        import ipaddress
+
+        parts = [piece.strip() for piece in raw.split(",") if piece.strip()]
+        for part in parts:
+            # ``strict=False`` accepts both single addresses (``1.2.3.4``)
+            # and CIDR ranges (``10.0.0.0/8``); ``ip_network`` raises on
+            # anything else so the operator finds out at boot, not the
+            # first denied request.
+            try:
+                ipaddress.ip_network(part, strict=False)
+            except ValueError as exc:
+                raise ConfigError(f"MCPG_HTTP_IP_ALLOWLIST entry is not a valid IP / CIDR (got {part!r})") from exc
+        http_ip_allowlist = tuple(parts)
+
     http_hsts_max_age = 31536000
     if (raw := env.get("MCPG_HTTP_HSTS_MAX_AGE")) is not None:
         try:
@@ -805,6 +831,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         enable_heavy_diagnostics=enable_heavy_diagnostics,
         http_max_body_bytes=http_max_body_bytes,
         http_allowed_origins=http_allowed_origins,
+        http_ip_allowlist=http_ip_allowlist,
         http_hsts_max_age=http_hsts_max_age,
         http_request_timeout_seconds=http_request_timeout_seconds,
         shutdown_drain_seconds=shutdown_drain_seconds,
