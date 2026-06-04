@@ -24,7 +24,7 @@ Effort scale (rough, single-session yardstick):
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 1.1 | OpenTelemetry spans per tool call | M | Medium-High | One span per `call_tool` + child spans for the actual query / subprocess. |
+| 1.1 | ✅ **Shipped.** OpenTelemetry tracing — one span per `call_tool` invocation behind the `mcpg[otel]` extra. Spans live on the `mcpg.tools` tracer and carry `mcp.tool.name`, `mcp.tool.argument_count`, `mcp.tool.status`, plus `error.type` / `error.message` on failure. Raw argument values are deliberately not attached (PII / secrets). Standard `OTEL_*` env vars (endpoint, headers, sampler) take precedence; `MCPG_OTEL_SERVICE_NAME` is the only project-specific knob. Lives in `mcpg.otel_tracing`. | M | Medium-High | One span per `call_tool` + child spans for the actual query / subprocess. |
 | 1.2 | Structured JSON logging output toggle | S | Medium | Wraps the existing `mcpg.audit` logger. |
 | 1.3 | ✅ **Shipped.** Slow-call logging from the MCP layer | S | Low | Per-tool latency log to flag slow MCPg-side calls (the existing `analyze_workload` covers PG-side timings). |
 
