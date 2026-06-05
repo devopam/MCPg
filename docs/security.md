@@ -156,9 +156,13 @@ and every call is validated and audited.
 - **IP allowlist.** `MCPG_HTTP_IP_ALLOWLIST` (comma-separated
   IPv4 / IPv6 / CIDR) gates the HTTP transport **before** auth.
   Requests from outside the allowlist are dropped with 403 without
-  ever touching token comparison or JWT validation. `X-Forwarded-For`
-  is only trusted when the immediate peer is a same-host proxy
-  (loopback) — defends against client-supplied header spoofing.
+  ever touching token comparison or JWT validation. The match is
+  against the immediate connecting peer; `X-Forwarded-For` is
+  deliberately **not** honoured (trusting a forwarded header
+  without a verified upstream is a well-known spoofing vector).
+  Deployments behind a reverse proxy must enforce the allowlist at
+  the proxy layer, which composes naturally with the proxy's own
+  auditing.
 - **TLS at the transport.** `MCPG_HTTP_TLS_CERTFILE` /
   `MCPG_HTTP_TLS_KEYFILE` terminate TLS in MCPg directly (no
   external proxy needed). Both required or both unset — partial
@@ -220,7 +224,8 @@ and every call is validated and audited.
 - **Cloud secrets backends.** `MCPG_SECRETS_BACKEND` swaps the
   default env-var lookup for a remote secrets provider:
   - `vault` — HashiCorp Vault KV v2 (`MCPG_VAULT_ADDR`,
-    `MCPG_VAULT_TOKEN`, `MCPG_VAULT_PATH`).
+    `MCPG_VAULT_TOKEN`, optional `MCPG_VAULT_NAMESPACE` /
+    `MCPG_VAULT_PATH_PREFIX` — default `secret/mcpg`).
   - `aws` — AWS Secrets Manager (`MCPG_AWS_SECRET_ID`, region picked
     up from the standard AWS SDK chain).
   - `gcp` — GCP Secret Manager

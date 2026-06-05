@@ -27,7 +27,7 @@ plumbing:
 | `MCPG_OIDC_ROLE_CLAIM` | Optional. Maps a named JWT claim to the per-request PG role (composes with multi-tenancy). |
 | `MCPG_DEFAULT_ROLE` / `MCPG_ALLOWED_ROLES` | Static default + allowlist for `SET LOCAL ROLE`-driven multi-tenancy. In static-auth mode, per-request override via `X-MCPG-Role` header. |
 | `MCPG_REPLICA_URLS` | Comma-separated read-replica DSNs. When set, `force_readonly` queries round-robin across healthy replicas; writes always go to the primary. |
-| `MCPG_HTTP_IP_ALLOWLIST` | Comma-separated IPv4/IPv6/CIDR allowlist applied to the HTTP transport before auth. Trusts `X-Forwarded-For` from same-host proxies only. |
+| `MCPG_HTTP_IP_ALLOWLIST` | Comma-separated IPv4/IPv6/CIDR allowlist applied to the HTTP transport before auth. Matched against the immediate connecting peer; `X-Forwarded-For` is deliberately not honoured (spoofing-vector), so deployments behind a reverse proxy must enforce the allowlist at the proxy layer. |
 | `MCPG_HTTP_TLS_CERTFILE` / `MCPG_HTTP_TLS_KEYFILE` | PEM cert + key for terminating TLS at the HTTP transport (both required or both unset). |
 | `MCPG_HTTP_TLS_CA_CERTS` / `MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED` | Optional CA bundle + flag to require client certificates (mutual TLS). Setting the flag without `CA_CERTS` is rejected at startup. |
 | `MCPG_HTTP_HSTS_MAX_AGE` / `MCPG_HTTP_MAX_BODY_BYTES` / `MCPG_HTTP_ALLOWED_ORIGINS` | HSTS header lifetime, request body cap, CORS allowlist for the HTTP transport. |
