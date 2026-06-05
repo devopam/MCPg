@@ -5,7 +5,7 @@ This automated review checks proposed modifications against strict PostgreSQL, p
 ## Summary Metrics
 
 * **Review Status:** [🟢] **CLEAN & COMPLIANT**
-* **Files Analyzed:** 9
+* **Files Analyzed:** 7
 * **Total Findings:** 0
   * **Critical:** 0
   * **Errors:** 0
@@ -15,14 +15,12 @@ This automated review checks proposed modifications against strict PostgreSQL, p
 ### Files Checked:
 
 - `CHANGELOG.md`
-- `CONTRIBUTING.md`
-- `docs/feature-shortlist.md`
+- `docs/PROGRESS.md`
+- `docs/architecture.md`
+- `docs/installation.md`
+- `docs/security.md`
 - `docs/tools.md`
-- `docs/tour.md`
 - `docs/user-guide.md`
-- `src/mcpg/indexing.py`
-- `src/mcpg/tools.py`
-- `tests/unit/test_indexing.py`
 
 ---
 
