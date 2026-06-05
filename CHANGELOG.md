@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-05
+
 ### Added
 
 - **`recommend_index_drops` tool.** Sibling of `recommend_indexes`
