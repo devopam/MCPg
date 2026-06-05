@@ -29,6 +29,43 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Docs
 
+- **Living-doc refresh.** Reconciled `docs/tools.md`,
+  `docs/user-guide.md`, `docs/security.md`, `docs/installation.md`,
+  `docs/architecture.md`, and `docs/PROGRESS.md` with the post-v0.5.0
+  work that had landed in code but not in docs:
+  - HTTP transport gates table in `docs/tools.md` now covers the
+    IP allowlist, TLS / mTLS, cloud secrets backends,
+    OpenTelemetry, slow-call logging, and HSTS / body-cap / CORS
+    settings.
+  - `docs/tools.md` tool index gains the missing rows for
+    `recommend_index_drops`, `monitor_index_build`,
+    `list_unapplied_migration_scripts`, and the pgvector-analytics
+    family (`cross_table_similarity`, `cluster_vectors`,
+    `detect_vector_outliers`, `monitor_embedding_drift`,
+    `migrate_vector_to_halfvec`, `analyze_distance_metric`,
+    `import_vectors`); reference section added for
+    `recommend_index_drops`.
+  - `docs/security.md` T6 covers IP allowlist + in-process TLS /
+    mTLS; new T9a / T9b threats document the cloud secrets
+    backends and the deliberately-narrow OpenTelemetry span
+    payload (argument values never attached so exporters can't
+    become side channels for credentials / PII).
+  - `docs/installation.md` adds rows to **Common scenarios** for
+    IP allowlist, in-process TLS, mTLS, the three secrets
+    backends, OpenTelemetry tracing, and slow-call logging, plus
+    an **HTTP transport TLS / mTLS** section. Stale "all 38
+    `MCPG_*` variables" claim corrected.
+  - `docs/architecture.md` module map gains `mcpg.secrets` and
+    `mcpg.otel_tracing` rows; `mcpg.http_runtime` row expanded to
+    cover IP allowlist and TLS termination.
+  - `docs/user-guide.md` adds a `recommend_index_drops` bullet
+    next to `recommend_indexes`, plus an OpenTelemetry tracing
+    section explaining the `mcpg[otel]` extra and the deliberate
+    no-argument-values policy.
+  - `docs/PROGRESS.md` top-of-file metadata refreshed (date
+    2026-05-27 → 2026-06-05, tool count 114 → 141) and the
+    post-v0.5.0 wave summary added; **Next action** block
+    refreshed.
 - **Tool count sync.** `docs/tour.md`, `docs/user-guide.md`, and
   `docs/tools.md` now report **141 tools** (was 124) — reconciled
   from `grep -c '@server.tool' src/mcpg/tools.py` per the

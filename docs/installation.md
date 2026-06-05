@@ -156,7 +156,7 @@ MCPg is configured **entirely through environment variables**. The
 only required one is `MCPG_DATABASE_URL`; all others have safe
 defaults.
 
-The full reference (all 38 `MCPG_*` variables, grouped by area, with
+The full reference (every `MCPG_*` variable, grouped by area, with
 defaults and descriptions) is in the
 [README](../README.md#configuration). The summaries below give you
 the minimum set per common scenario.
@@ -172,6 +172,14 @@ the minimum set per common scenario.
 | **`LISTEN/NOTIFY`** event streams | `MCPG_ACCESS_MODE=unrestricted` + `MCPG_ALLOW_LISTEN=true` |
 | **HTTP transport** with static bearer | `MCPG_TRANSPORT=streamable-http` + `MCPG_HTTP_AUTH_TOKEN=…` |
 | **HTTP transport** with OIDC | `MCPG_TRANSPORT=streamable-http` + `MCPG_AUTH_MODE=oidc` + `MCPG_OIDC_ISSUER=…` + `MCPG_OIDC_AUDIENCE=…` |
+| **HTTP transport** with IP allowlist | `MCPG_HTTP_IP_ALLOWLIST=10.0.0.0/8,192.168.1.0/24` (applied before auth; matched against the immediate peer — `X-Forwarded-For` is **not** honoured, so deployments behind a reverse proxy must enforce the allowlist at the proxy layer) |
+| **HTTP transport** with TLS | `MCPG_HTTP_TLS_CERTFILE=/etc/mcpg/cert.pem` + `MCPG_HTTP_TLS_KEYFILE=/etc/mcpg/key.pem` |
+| **HTTP transport** with mTLS | the TLS pair above + `MCPG_HTTP_TLS_CA_CERTS=/etc/mcpg/ca.pem` + `MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED=true` |
+| **Cloud secrets** (Vault) | `MCPG_SECRETS_BACKEND=vault` + `MCPG_VAULT_ADDR=…` + `MCPG_VAULT_TOKEN=…` (optional `MCPG_VAULT_NAMESPACE=…`, `MCPG_VAULT_PATH_PREFIX=secret/mcpg`) |
+| **Cloud secrets** (AWS) | `MCPG_SECRETS_BACKEND=aws` + `MCPG_AWS_SECRET_ID=arn:aws:secretsmanager:…` |
+| **Cloud secrets** (GCP) | `MCPG_SECRETS_BACKEND=gcp` + `MCPG_GCP_SECRET_NAME=projects/<id>/secrets/<name>/versions/latest` |
+| **OpenTelemetry tracing** | `pip install 'mcpg[otel]'` + `MCPG_OTEL_ENABLED=true` (+ optional `MCPG_OTEL_SERVICE_NAME=mcpg-prod`) — emits one span per `call_tool`; argument values are deliberately not attached |
+| **Slow-call logging** | `MCPG_SLOW_CALL_THRESHOLD_MS=500` (any tool slower than this logs a structured record); `MCPG_LOG_FORMAT=json` for structured logging |
 | **Multi-tenant SaaS** | `MCPG_DEFAULT_ROLE=tenant_a` + `MCPG_ALLOWED_ROLES=tenant_a,tenant_b,…` |
 | **Read-replica fan-out** | `MCPG_REPLICA_URLS=postgresql://…?sslmode=require,postgresql://…?sslmode=require` |
 | **NL→SQL** — single provider | Set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` / `GEMINI_API_KEY`). MCPg auto-picks the default. |
@@ -208,6 +216,33 @@ export MCPG_ALLOW_INSECURE_TLS=true
 The startup error message names exactly which DSN failed the check
 (including the replica index if it was one of your
 `MCPG_REPLICA_URLS` entries).
+
+### HTTP transport TLS / mTLS
+
+The TLS settings above protect the **database** connection. The
+**HTTP transport** can be terminated by an external proxy
+(nginx / Envoy) or by MCPg directly — the in-process option drops
+the proxy dependency for small deployments.
+
+```bash
+export MCPG_HTTP_TLS_CERTFILE=/etc/mcpg/cert.pem
+export MCPG_HTTP_TLS_KEYFILE=/etc/mcpg/key.pem
+```
+
+Both must be set together; configuring only one is rejected at
+startup so a deployment can't silently fall back to plaintext.
+
+For mutual TLS (clients must present a cert chaining to a known
+CA — useful for service-to-service deployments where bearer tokens
+aren't enough):
+
+```bash
+export MCPG_HTTP_TLS_CA_CERTS=/etc/mcpg/ca.pem
+export MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED=true
+```
+
+Setting `CLIENT_CERT_REQUIRED=true` without `CA_CERTS` is rejected
+at startup — there'd be nothing to verify against.
 
 ### Database privileges
 
