@@ -5,7 +5,7 @@ This automated review checks proposed modifications against strict PostgreSQL, p
 ## Summary Metrics
 
 * **Review Status:** [🟢] **CLEAN & COMPLIANT**
-* **Files Analyzed:** 19
+* **Files Analyzed:** 9
 * **Total Findings:** 0
   * **Critical:** 0
   * **Errors:** 0
@@ -14,25 +14,15 @@ This automated review checks proposed modifications against strict PostgreSQL, p
 
 ### Files Checked:
 
-- `scratch/pr_review.py`
-- `scratch/pr_review_report.md`
-- `scratch/seed_db.py`
-- `scratch/test_cypher.py`
-- `src/mcpg/__main__.py`
-- `src/mcpg/advisors.py`
-- `src/mcpg/cypher.py`
-- `src/mcpg/graph.py`
-- `src/mcpg/graph_diagram.py`
-- `src/mcpg/graph_mgmt.py`
-- `src/mcpg/policy.py`
+- `CHANGELOG.md`
+- `CONTRIBUTING.md`
+- `docs/feature-shortlist.md`
+- `docs/tools.md`
+- `docs/tour.md`
+- `docs/user-guide.md`
+- `src/mcpg/indexing.py`
 - `src/mcpg/tools.py`
-- `tests/integration/conftest.py`
-- `tests/integration/test_graph_integration.py`
-- `tests/unit/test_advisors.py`
-- `tests/unit/test_cypher.py`
-- `tests/unit/test_graph.py`
-- `tests/unit/test_graph_diagram.py`
-- `tests/unit/test_graph_mgmt.py`
+- `tests/unit/test_indexing.py`
 
 ---
 

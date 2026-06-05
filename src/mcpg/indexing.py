@@ -255,18 +255,33 @@ async def recommend_index_drops(
             otherwise-used index counts as ``rarely_used``. Default
             ``0.01`` (1%).
     """
+    # pg_relation_size is the dominant cost on big catalogs; compute
+    # it once in a CTE and reuse rather than calling it twice (filter
+    # + projection).
     query = (
+        "WITH sized AS ("
+        "  SELECT "
+        "    si.schemaname, "
+        "    si.relname AS table_name, "
+        "    si.indexrelname AS index_name, "
+        "    si.indexrelid, "
+        "    si.relid, "
+        "    COALESCE(si.idx_scan, 0) AS idx_scan, "
+        "    COALESCE(si.idx_tup_fetch, 0) AS idx_tup_fetch, "
+        "    COALESCE(pg_relation_size(si.indexrelid), 0) AS size_bytes "
+        "  FROM pg_stat_user_indexes si "
+        ") "
         "SELECT "
         "  si.schemaname, "
-        "  si.relname AS table_name, "
-        "  si.indexrelname AS index_name, "
-        "  COALESCE(si.idx_scan, 0) AS idx_scan, "
-        "  COALESCE(si.idx_tup_fetch, 0) AS idx_tup_fetch, "
-        "  COALESCE(pg_relation_size(si.indexrelid), 0) AS size_bytes, "
+        "  si.table_name, "
+        "  si.index_name, "
+        "  si.idx_scan, "
+        "  si.idx_tup_fetch, "
+        "  si.size_bytes, "
         "  pg_get_indexdef(si.indexrelid) AS definition, "
         "  COALESCE(st.seq_scan, 0) AS table_seq_scan, "
         "  COALESCE(st.idx_scan, 0) AS table_idx_scan "
-        "FROM pg_stat_user_indexes si "
+        "FROM sized si "
         "JOIN pg_index ix ON ix.indexrelid = si.indexrelid "
         "JOIN pg_stat_user_tables st ON st.relid = si.relid "
         # Exclude indexes that back integrity constraints — dropping
@@ -274,7 +289,7 @@ async def recommend_index_drops(
         "WHERE NOT ix.indisprimary "
         "  AND NOT ix.indisunique "
         "  AND NOT ix.indisexclusion "
-        "  AND COALESCE(pg_relation_size(si.indexrelid), 0) >= %s "
+        "  AND si.size_bytes >= %s "
     )
     params: list[object] = [min_index_size_bytes]
     if schema is not None:
@@ -308,8 +323,14 @@ async def recommend_index_drops(
 
         # CONCURRENTLY is the right default — drop without blocking
         # reads. Cannot run inside a transaction, which the operator's
-        # tooling has to handle.
-        drop_sql = f'DROP INDEX CONCURRENTLY "{schema_name}"."{index_name}";'
+        # tooling has to handle. Identifiers come from
+        # ``pg_stat_user_indexes`` so they're real names, but a
+        # ``CREATE INDEX "weird""name"`` is legal Postgres syntax — a
+        # literal ``"`` in the identifier would break the emitted SQL
+        # without the standard double-double-quote escape.
+        schema_quoted = '"' + schema_name.replace('"', '""') + '"'
+        index_quoted = '"' + index_name.replace('"', '""') + '"'
+        drop_sql = f"DROP INDEX CONCURRENTLY {schema_quoted}.{index_quoted};"
         candidates.append(
             IndexDropCandidate(
                 schema=schema_name,

@@ -313,6 +313,36 @@ async def test_recommend_index_drops_threads_schema_filter() -> None:
     assert "si.schemaname = %s" in driver.calls[0][0]
 
 
+async def test_recommend_index_drops_escapes_double_quotes_in_identifiers() -> None:
+    # Postgres permits literal ``"`` in quoted identifiers (e.g.
+    # ``CREATE INDEX "weird""name" ON ...``). Emitted DROP SQL must
+    # double-up the embedded quotes per the standard delimited-
+    # identifier escape, or the statement is malformed (and at worst
+    # could be coerced into something unintended).
+    driver = FakeDriver(
+        [
+            _drop_row(
+                schema='ten"ant',
+                table="orders",
+                index='idx"weird',
+                idx_scan=0,
+                size_bytes=5_000_000,
+            )
+        ]
+    )
+
+    candidates = await recommend_index_drops(driver)
+
+    assert len(candidates) == 1
+    drop_sql = candidates[0].drop_sql
+    # The embedded ``"`` characters are doubled on emit.
+    assert drop_sql == 'DROP INDEX CONCURRENTLY "ten""ant"."idx""weird";'
+    # And the stored identifiers themselves are NOT pre-escaped — they
+    # match what came back from the catalog.
+    assert candidates[0].schema == 'ten"ant'
+    assert candidates[0].index == 'idx"weird'
+
+
 async def test_recommend_index_drops_tool_is_callable_from_a_client() -> None:
     database = FakeDatabase(FakeDriver([]))
     server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
