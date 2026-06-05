@@ -6,38 +6,33 @@
 
 ## Current state
 
-- **Phase:** post-v0.5.0 — full Tier-A/B/C shortlist closed +
-  Apache AGE property-graph support + read-replica routing +
-  OIDC / JWT bearer-token validation. Feature backlog from
-  `docs/feature-shortlist.md` is fully shipped.
-- **Last updated:** 2026-05-27
+- **Phase:** post-v0.5.0 — every Batch (A–G) from the original
+  shortlist closed, plus the following post-release waves:
+  - **Security (C1–C3):** IP allowlist, TLS / mTLS for the HTTP
+    transport, cloud secrets backends (Vault / AWS / GCP).
+  - **Observability (B2–B3):** slow-call logging + OpenTelemetry
+    tracing (one span per `call_tool`, argument-values omitted).
+  - **Migrations (E1–E4):** migration-history table integration,
+    pre-deployment validation, `list_unapplied_migration_scripts`.
+  - **pgvector analytics (A3–A8):** `cross_table_similarity`,
+    `cluster_vectors`, `detect_vector_outliers`,
+    `monitor_embedding_drift`, `migrate_vector_to_halfvec`,
+    `analyze_distance_metric`, `import_vectors`.
+  - **Advisors (6.1):** `recommend_index_drops`.
+  - **UX (F2 first wave):** inline usage examples in tool
+    descriptions.
+- **Last updated:** 2026-06-05
 - **Branch:** `main`
-- **Tool count:** 114
+- **Tool count:** 141
 - **Released:** v0.5.0 (2026-05-27)
-- **Trunk additions since v0.5.0:** Apache AGE (PR #24, +6 tools),
-  read-replica routing (PR #23, +1 tool: `list_replicas`), OIDC /
-  JWT bearer-token validation (PR #23, runtime feature — no new
-  tools).
 
 ## Next action
 
-> Batch G follow-ons shipped — three new exporters sit alongside the
-> existing `generate_prisma_schema` under the schema→DSL umbrella.
-> `generate_drizzle_schema` emits a `drizzle-orm/pg-core` TS file
-> (tables + columns + single-column FK `.references()` + enums via
-> `pgEnum` + serial detection from `nextval` defaults). The
-> helper-import line is computed from what was actually emitted so
-> unused imports don't clutter the output.
-> `generate_sqlalchemy_models` emits a 2.0-style declarative file
-> (`DeclarativeBase` + `Mapped[T]` + `mapped_column`, jsonb via the
-> PG dialect, enum types as Python `enum.Enum` classes, composite
-> uniques in `__table_args__`). `generate_sqlc_schema` emits a clean
-> replayable `schema.sql` (CREATE SCHEMA → CREATE TYPE → CREATE
-> TABLE → ALTER TABLE ADD CONSTRAINT in PK→FK order → CREATE
-> INDEX), no subprocess needed. All three are read-only.
-> **Roadmap status: A–G all closed.** Next direction is open —
-> release prep (v0.2.0 cut from this branch with all post-1.0
-> features), additional Batch-G exporters, or new feature work.
+> All Tier-A/B/C shortlist + the post-v0.5.0 waves above are
+> shipped on trunk. Next direction is open — un-ticked rows in
+> `docs/feature-shortlist.md` are the queue, or a v0.6.0 cut
+> bundling the security / observability / analytics work since
+> v0.5.0.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 

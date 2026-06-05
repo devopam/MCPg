@@ -73,7 +73,9 @@ read-only / picks a pool / sets the tenant role.
 | `mcpg.replicas` | Read-replica pool registry; degraded-replica tracking; routing logic. |
 | `mcpg.context` | `AppContext` — the per-server state shared with every tool wrapper. |
 | `mcpg.server` | `FastMCP` bootstrap, `AuditedFastMCP` subclass, transport selection, `run` entry point. |
-| `mcpg.http_runtime` | Streamable-HTTP / SSE transport bring-up: bearer auth, OIDC validation, security middleware, `/metrics` / `/healthz` / `/readyz` endpoints. |
+| `mcpg.http_runtime` | Streamable-HTTP / SSE transport bring-up: bearer auth, OIDC validation, IP allowlist (applied before auth; `X-Forwarded-For` only honoured from loopback proxies), in-process TLS / mTLS termination, security middleware, `/metrics` / `/healthz` / `/readyz` endpoints. |
+| `mcpg.secrets` | Pluggable credentials resolver — env (default), HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager. Each provider raises typed auth errors (`Forbidden` / `Unauthorized`, `AccessDenied` / `InvalidSignature` / `ExpiredToken`, `PermissionDenied`) so operators can tell missing-grant from missing-secret. |
+| `mcpg.otel_tracing` | OpenTelemetry integration — one span per `call_tool` carrying `mcp.tool.name`, `mcp.tool.argument_count`, and outcome status. Argument values are deliberately omitted so span exporters don't become side channels. |
 | `mcpg.oidc` | OIDC discovery + JWKS-backed JWT verification (asymmetric algorithms only). |
 | `mcpg.tenancy` | The `current_role` ContextVar that powers per-request `SET LOCAL ROLE`. |
 | `mcpg.middleware.rate_limit` | Token-bucket per-tool rate limiter. |

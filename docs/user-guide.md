@@ -182,6 +182,12 @@ storage advisor).
   read WAL record information and aggregated statistics over LSN ranges
   (requires the `pg_walinspect` extension).
 - `recommend_indexes` — missing-index heuristics.
+- `recommend_index_drops(schema=None, min_index_size_bytes=1_000_000,
+  low_scan_ratio=0.01)` — sibling for what to **drop**: walks
+  `pg_stat_user_indexes` for indexes that look like pure cost
+  (`never_used`, `scan_no_fetch`, `rarely_used`), emits a ready-to-run
+  `DROP INDEX CONCURRENTLY` per candidate. Execution stays with the
+  operator.
 - `find_unused_objects(schema)` — zero-scan tables and user
   indexes; great for "what can I drop?".
 - `detect_n_plus_one(min_calls=100)` — walks
@@ -515,6 +521,29 @@ export MCPG_SLOW_CALL_THRESHOLD_MS=1000  # Threshold in milliseconds (default: 1
 
 * When configured (defaults to `1000` ms), tool calls that exceed this threshold are logged as a warning to `mcpg.server`.
 * Set this to `0` or a negative value to disable slow-call logging.
+
+### OpenTelemetry tracing
+
+MCPg can emit one OpenTelemetry span per `call_tool` so traces from
+the agent → MCPg → PostgreSQL hop can be stitched together in
+Jaeger / Tempo / Honeycomb / your APM of choice.
+
+```bash
+pip install 'mcpg[otel]'                   # adds the OTel SDK + exporters
+export MCPG_OTEL_ENABLED=true
+export MCPG_OTEL_SERVICE_NAME=mcpg-prod    # optional, default "mcpg"
+```
+
+Standard OTel env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`,
+`OTEL_RESOURCE_ATTRIBUTES`, …) are honoured by the SDK as usual.
+
+Each span carries `mcp.tool.name`, `mcp.tool.argument_count`, and
+the outcome status. **Argument values are deliberately not
+attached** — span exporters often ship to third-party SaaS, and
+attaching agent-supplied SQL or other args would turn the trace
+backend into a side channel for credentials or PII. Audit logging
+(local-only by default) is the place to look for full per-call
+payloads.
 
 ---
 

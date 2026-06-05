@@ -153,6 +153,22 @@ and every call is validated and audited.
 
 **Mitigation.**
 
+- **IP allowlist.** `MCPG_HTTP_IP_ALLOWLIST` (comma-separated
+  IPv4 / IPv6 / CIDR) gates the HTTP transport **before** auth.
+  Requests from outside the allowlist are dropped with 403 without
+  ever touching token comparison or JWT validation. `X-Forwarded-For`
+  is only trusted when the immediate peer is a same-host proxy
+  (loopback) — defends against client-supplied header spoofing.
+- **TLS at the transport.** `MCPG_HTTP_TLS_CERTFILE` /
+  `MCPG_HTTP_TLS_KEYFILE` terminate TLS in MCPg directly (no
+  external proxy needed). Both required or both unset — partial
+  config is rejected at startup so a deployment can't silently
+  serve plaintext.
+- **Mutual TLS (mTLS).** `MCPG_HTTP_TLS_CA_CERTS` +
+  `MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED=true` require clients to
+  present a valid cert chaining to the configured CA. Setting the
+  flag without `CA_CERTS` is rejected — there'd be nothing to
+  verify against.
 - **Static bearer.** `MCPG_HTTP_AUTH_TOKEN` enforces
   `Authorization: Bearer <token>` with `hmac.compare_digest`
   constant-time comparison. `/metrics`, `/healthz`, `/readyz` are
@@ -196,6 +212,39 @@ and every call is validated and audited.
 - For per-tenant attribution, combine `MCPG_DEFAULT_ROLE` /
   `X-MCPG-Role` with `MCPG_AUDIT_PERSIST=true` so each row in
   `mcpg_audit.events` carries the responsible role.
+
+### T9a — Credentials in plaintext env / config files
+
+**Mitigation.**
+
+- **Cloud secrets backends.** `MCPG_SECRETS_BACKEND` swaps the
+  default env-var lookup for a remote secrets provider:
+  - `vault` — HashiCorp Vault KV v2 (`MCPG_VAULT_ADDR`,
+    `MCPG_VAULT_TOKEN`, `MCPG_VAULT_PATH`).
+  - `aws` — AWS Secrets Manager (`MCPG_AWS_SECRET_ID`, region picked
+    up from the standard AWS SDK chain).
+  - `gcp` — GCP Secret Manager
+    (`MCPG_GCP_SECRET_NAME=projects/<id>/secrets/<name>/versions/latest`).
+- Credentials are fetched lazily and live only in process memory —
+  never written back to disk or environment.
+- Auth-error surfaces are specific (`Forbidden` / `Unauthorized` for
+  Vault, `AccessDenied` / `UnrecognizedClient` / `InvalidSignature` /
+  `ExpiredToken` for AWS, `PermissionDenied` / `Unauthenticated` for
+  GCP) so operators can tell a missing-grant problem from a missing-
+  secret problem.
+
+### T9b — Observability leakage
+
+**Mitigation.**
+
+- **OpenTelemetry.** With `MCPG_OTEL_ENABLED=true` (and the
+  `mcpg[otel]` extra), MCPg emits one span per `call_tool`. The
+  span carries `mcp.tool.name`, `mcp.tool.argument_count`, and
+  outcome status — **argument values are deliberately not
+  attached** so a span exporter (Jaeger / Tempo / Honeycomb / SaaS
+  vendor) can't become a side-channel for credentials or PII.
+- Audit redaction (T4) runs on the local logger path; the OTel
+  path stays narrow for the same reason.
 
 ### T9 — Supply-chain compromise
 

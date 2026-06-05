@@ -27,6 +27,13 @@ plumbing:
 | `MCPG_OIDC_ROLE_CLAIM` | Optional. Maps a named JWT claim to the per-request PG role (composes with multi-tenancy). |
 | `MCPG_DEFAULT_ROLE` / `MCPG_ALLOWED_ROLES` | Static default + allowlist for `SET LOCAL ROLE`-driven multi-tenancy. In static-auth mode, per-request override via `X-MCPG-Role` header. |
 | `MCPG_REPLICA_URLS` | Comma-separated read-replica DSNs. When set, `force_readonly` queries round-robin across healthy replicas; writes always go to the primary. |
+| `MCPG_HTTP_IP_ALLOWLIST` | Comma-separated IPv4/IPv6/CIDR allowlist applied to the HTTP transport before auth. Trusts `X-Forwarded-For` from same-host proxies only. |
+| `MCPG_HTTP_TLS_CERTFILE` / `MCPG_HTTP_TLS_KEYFILE` | PEM cert + key for terminating TLS at the HTTP transport (both required or both unset). |
+| `MCPG_HTTP_TLS_CA_CERTS` / `MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED` | Optional CA bundle + flag to require client certificates (mutual TLS). Setting the flag without `CA_CERTS` is rejected at startup. |
+| `MCPG_HTTP_HSTS_MAX_AGE` / `MCPG_HTTP_MAX_BODY_BYTES` / `MCPG_HTTP_ALLOWED_ORIGINS` | HSTS header lifetime, request body cap, CORS allowlist for the HTTP transport. |
+| `MCPG_SECRETS_BACKEND` | `env` (default), `vault`, `aws`, or `gcp`. Resolves credential settings through HashiCorp Vault, AWS Secrets Manager, or GCP Secret Manager instead of plain env vars. Per-provider config: `MCPG_VAULT_*`, `MCPG_AWS_*`, `MCPG_GCP_*`. |
+| `MCPG_OTEL_ENABLED` / `MCPG_OTEL_SERVICE_NAME` | Emit one OpenTelemetry span per `call_tool` (tool name, argument count, status — never argument values). Requires the `mcpg[otel]` extra. |
+| `MCPG_SLOW_CALL_THRESHOLD_MS` / `MCPG_LOG_FORMAT` | Log a structured "slow call" record when a tool exceeds the threshold; switch the logger between `text` and `json` formats. |
 | `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config (Anthropic / OpenAI / Gemini). |
 
 ## Tool index (141 tools)
@@ -39,18 +46,19 @@ plumbing:
 | **Query intelligence** | `run_select`, `run_select_parallel`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql` |
 | **Server-side cursors** | `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors` |
 | **Composite + diagnostic** | `summarize_table`, `why_is_this_slow`, `find_unused_objects`, `find_sensitive_columns`, `detect_n_plus_one`, `lint_naming_conventions`, `test_rls_for_role`, `list_locks`, `find_blocking_chains`, `walk_blocking_chains`, `read_pg_stat_io`, `read_pg_buffercache_summary`, `read_pg_buffercache_relations`, `read_pg_wal_records`, `read_pg_wal_stats` |
-| **Health & tuning** | `check_database_health`, `audit_database`, `analyze_workload`, `recommend_indexes`, `run_advisors` |
+| **Health & tuning** | `check_database_health`, `audit_database`, `analyze_workload`, `recommend_indexes`, `recommend_index_drops`, `run_advisors` |
 | **Search** | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `hybrid_search`, `geo_search` |
 | **Vector tuning advisors** | `recommend_vector_index`, `analyze_vector_search`, `analyze_vector_table`, `recommend_vector_quantization` |
+| **Vector analytics (pgvector)** | `cross_table_similarity`, `cluster_vectors`, `detect_vector_outliers`, `monitor_embedding_drift`, `migrate_vector_to_halfvec`, `analyze_distance_metric`, `import_vectors` |
 | **Apache AGE graph + Cypher** | `list_graphs`, `describe_graph`, `run_cypher`, `create_graph` (gated), `drop_graph` (gated) |
-| **Live ops** | `list_active_queries`, `list_replicas` |
+| **Live ops** | `list_active_queries`, `list_replicas`, `monitor_index_build` |
 | **Audit trail** | `list_audit_events` |
 | **Data movement — read** | `export_query`, `export_table` |
 | **Data movement — write (gated)** | `import_csv`, `import_json` |
 | **Data movement — subprocess (gated)** | `dump_database`, `restore_database`, `copy_table_between_databases` |
 | **LISTEN/NOTIFY bridge (gated)** | `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions` |
 | **Staged migrations (gated)** | `prepare_migration`, `validate_migration`, `validate_migration_schema`, `complete_migration`, `cancel_migration`, `list_pending_migrations` |
-| **Migration history** | `read_migration_history` |
+| **Migration history** | `read_migration_history`, `list_unapplied_migration_scripts` |
 | **Test-data factory** | `generate_test_data` (generates SQL — does not execute), `seed_table_with_sample_data` (generates and executes; WRITE-gated) |
 | **TimescaleDB hypertables (gated for writes)** | `list_hypertables`, `list_chunks`, `create_hypertable`, `add_compression_policy`, `add_retention_policy` |
 | **ORM-DSL exporters** | `generate_prisma_schema`, `generate_drizzle_schema`, `generate_sqlalchemy_models`, `generate_sqlc_schema`, `generate_diesel_schema`, `generate_jooq_config`, `generate_ent_schemas`, `generate_ecto_schemas` |
@@ -255,6 +263,25 @@ array columns, trigram GIN for text columns. A flagged partition is rolled
 up to its partitioned parent (where the index belongs), with scan and row
 counts summed across partitions and a `partitioned` flag set. Parameter:
 `min_live_tuples` (int, default 10000).
+
+### `recommend_index_drops`
+Sibling of `recommend_indexes` for indexes to **remove**. Walks
+`pg_stat_user_indexes` + `pg_stat_user_tables` and flags existing
+indexes that look like pure cost — large on disk but never (or
+barely) scanned. Three reason codes, descending strength:
+`never_used` (no recorded `idx_scan`s since the last stats reset —
+candidate for drop, but verify before removal), `scan_no_fetch`
+(planner picks it but it returns no rows — usually an existence-
+check pattern), `rarely_used` (scan rate below `low_scan_ratio` of
+the table's total scan activity). Primary-key / unique / exclusion-
+constraint indexes are excluded (dropping those would be a schema
+change, not a performance win); indexes below `min_index_size_bytes`
+are skipped too. Returns a ready-to-run `DROP INDEX CONCURRENTLY`
+statement per candidate (with embedded `"` in identifiers escaped per
+the standard delimited-identifier convention). Read-only advisor —
+execution is on the operator. Parameters: `schema` (optional),
+`min_index_size_bytes` (int, default 1_000_000), `low_scan_ratio`
+(float, default 0.01).
 
 ### `fuzzy_search`
 Ranks a text column's values by `pg_trgm` trigram similarity to a search
