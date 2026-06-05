@@ -4,6 +4,11 @@ A table-level heuristic flags large tables read mostly by sequential scan;
 for each, column types drive per-column index-type suggestions (GIN for
 ``jsonb``/arrays, trigram GIN for text). Choosing exactly which columns a
 workload filters on still needs query analysis (see ``analyze_workload``).
+
+The companion :func:`recommend_index_drops` looks at the same scan
+statistics from the opposite angle — flagging *existing* indexes that
+are large but rarely (or never) scanned, so disk + write amplification
+can be reclaimed.
 """
 
 from __future__ import annotations
@@ -14,6 +19,18 @@ from mcpg._vendor.sql import SqlDriver
 
 # Tables smaller than this are ignored — sequential scans of them are cheap.
 DEFAULT_MIN_LIVE_TUPLES = 10_000
+
+# Skip indexes below this size when looking for drop candidates — even a
+# never-scanned 8 KB index isn't worth recommending the operator drop.
+# Dropping reclaims disk and write amplification only when there's real
+# size involved.
+DEFAULT_MIN_INDEX_SIZE_BYTES = 1_000_000
+
+# "Rarely scanned" threshold: an index is flagged if its scan count is
+# below this fraction of the table's sequential-scan count. 0.01 = 1%;
+# below that we consider it a marginal asset whose drop is worth
+# evaluating against the disk-space win.
+DEFAULT_LOW_SCAN_RATIO = 0.01
 
 # information_schema.columns data types treated as text for trigram indexing.
 _TEXT_TYPES = frozenset({"text", "character varying", "character"})
@@ -153,3 +170,204 @@ async def recommend_indexes(
         )
         for schema, table in order
     ]
+
+
+# --- recommend_index_drops ------------------------------------------------
+
+
+# Drop-reason taxonomy. ``never_used`` is the strongest signal (pure
+# disk + write-amp tax for no read benefit). ``scan_no_fetch`` flags
+# indexes the planner picks but which never actually return matching
+# rows — typically existence-only access patterns that a partial
+# index would serve more cheaply. ``rarely_used`` is the marginal case
+# where the index is hit but its scan rate is dwarfed by the table's
+# sequential-scan rate; operators evaluate against disk savings.
+DROP_REASON_NEVER_USED = "never_used"
+DROP_REASON_SCAN_NO_FETCH = "scan_no_fetch"
+DROP_REASON_RARELY_USED = "rarely_used"
+
+
+@dataclass(frozen=True, slots=True)
+class IndexDropCandidate:
+    """One index whose scan stats suggest dropping it.
+
+    ``drop_sql`` is a ready-to-run ``DROP INDEX CONCURRENTLY`` statement
+    so the operator can paste it into a maintenance window. Not
+    executed automatically — this is a read-only advisor.
+
+    ``reason_code`` matches one of the ``DROP_REASON_*`` constants so
+    a caller can route on it; ``rationale`` is the human-readable
+    explanation embedding the numbers we keyed on.
+    """
+
+    schema: str
+    table: str
+    index: str
+    size_bytes: int
+    idx_scan: int
+    idx_tup_fetch: int
+    table_seq_scan: int
+    table_idx_scan: int
+    reason_code: str
+    rationale: str
+    drop_sql: str
+    definition: str
+
+
+async def recommend_index_drops(
+    driver: SqlDriver,
+    *,
+    schema: str | None = None,
+    min_index_size_bytes: int = DEFAULT_MIN_INDEX_SIZE_BYTES,
+    low_scan_ratio: float = DEFAULT_LOW_SCAN_RATIO,
+) -> list[IndexDropCandidate]:
+    """Recommend existing indexes that look like drop candidates.
+
+    Sibling of :func:`recommend_indexes`: walks ``pg_stat_user_indexes``
+    + ``pg_stat_user_tables`` and flags indexes that look like pure
+    cost — large on disk but never (or barely) scanned. Three signals,
+    in descending strength:
+
+    - ``never_used`` — ``idx_scan == 0``. Dropping the index is risk-
+      free for read performance; the only tax is the write
+      amplification and disk space the index has been carrying.
+    - ``scan_no_fetch`` — ``idx_scan > 0`` but ``idx_tup_fetch == 0``.
+      The planner picks the index but it never returns matching rows;
+      usually an existence-check pattern that a partial index (or
+      no index at all) would serve more cheaply.
+    - ``rarely_used`` — ``idx_scan > 0`` and ``idx_scan <
+      low_scan_ratio * (table seq_scan + table idx_scan)``. The
+      index is being hit but at a rate that's dwarfed by the table's
+      overall activity; the operator should weigh the disk + write-
+      amplification cost against the marginal read benefit.
+
+    Primary-key, unique, and exclusion-constraint indexes are
+    skipped — dropping those breaks integrity. Indexes below
+    ``min_index_size_bytes`` are also skipped: even a never-scanned
+    8 KB index isn't worth the operator's attention.
+
+    Args:
+        schema: Optional schema filter. ``None`` scans every non-system
+            schema visible to ``pg_stat_user_indexes``.
+        min_index_size_bytes: Indexes smaller than this are ignored.
+            Default 1 MB.
+        low_scan_ratio: ``idx_scan`` fraction below which an
+            otherwise-used index counts as ``rarely_used``. Default
+            ``0.01`` (1%).
+    """
+    query = (
+        "SELECT "
+        "  si.schemaname, "
+        "  si.relname AS table_name, "
+        "  si.indexrelname AS index_name, "
+        "  COALESCE(si.idx_scan, 0) AS idx_scan, "
+        "  COALESCE(si.idx_tup_fetch, 0) AS idx_tup_fetch, "
+        "  COALESCE(pg_relation_size(si.indexrelid), 0) AS size_bytes, "
+        "  pg_get_indexdef(si.indexrelid) AS definition, "
+        "  COALESCE(st.seq_scan, 0) AS table_seq_scan, "
+        "  COALESCE(st.idx_scan, 0) AS table_idx_scan "
+        "FROM pg_stat_user_indexes si "
+        "JOIN pg_index ix ON ix.indexrelid = si.indexrelid "
+        "JOIN pg_stat_user_tables st ON st.relid = si.relid "
+        # Exclude indexes that back integrity constraints — dropping
+        # those would be a schema change, not a performance win.
+        "WHERE NOT ix.indisprimary "
+        "  AND NOT ix.indisunique "
+        "  AND NOT ix.indisexclusion "
+        "  AND COALESCE(pg_relation_size(si.indexrelid), 0) >= %s "
+    )
+    params: list[object] = [min_index_size_bytes]
+    if schema is not None:
+        query += " AND si.schemaname = %s "
+        params.append(schema)
+    query += " ORDER BY si.schemaname, si.relname, si.indexrelname"
+
+    rows = await driver.execute_query(query, params=params, force_readonly=True)
+
+    candidates: list[IndexDropCandidate] = []
+    for row in rows or []:
+        idx_scan = int(row.cells["idx_scan"])
+        idx_tup_fetch = int(row.cells["idx_tup_fetch"])
+        size_bytes = int(row.cells["size_bytes"])
+        table_seq_scan = int(row.cells["table_seq_scan"])
+        table_idx_scan = int(row.cells["table_idx_scan"])
+        schema_name = str(row.cells["schemaname"])
+        table_name = str(row.cells["table_name"])
+        index_name = str(row.cells["index_name"])
+        definition = str(row.cells["definition"])
+
+        reason_code, rationale = _classify_drop_candidate(
+            idx_scan=idx_scan,
+            idx_tup_fetch=idx_tup_fetch,
+            size_bytes=size_bytes,
+            table_total_scans=table_seq_scan + table_idx_scan,
+            low_scan_ratio=low_scan_ratio,
+        )
+        if reason_code is None:
+            continue
+
+        # CONCURRENTLY is the right default — drop without blocking
+        # reads. Cannot run inside a transaction, which the operator's
+        # tooling has to handle.
+        drop_sql = f'DROP INDEX CONCURRENTLY "{schema_name}"."{index_name}";'
+        candidates.append(
+            IndexDropCandidate(
+                schema=schema_name,
+                table=table_name,
+                index=index_name,
+                size_bytes=size_bytes,
+                idx_scan=idx_scan,
+                idx_tup_fetch=idx_tup_fetch,
+                table_seq_scan=table_seq_scan,
+                table_idx_scan=table_idx_scan,
+                reason_code=reason_code,
+                rationale=rationale,
+                drop_sql=drop_sql,
+                definition=definition,
+            )
+        )
+
+    # Sort by reason strength (never_used first) then size descending
+    # so the report leads with the highest-confidence + highest-
+    # impact drops.
+    _strength = {
+        DROP_REASON_NEVER_USED: 0,
+        DROP_REASON_SCAN_NO_FETCH: 1,
+        DROP_REASON_RARELY_USED: 2,
+    }
+    candidates.sort(key=lambda c: (_strength[c.reason_code], -c.size_bytes))
+    return candidates
+
+
+def _classify_drop_candidate(
+    *,
+    idx_scan: int,
+    idx_tup_fetch: int,
+    size_bytes: int,
+    table_total_scans: int,
+    low_scan_ratio: float,
+) -> tuple[str, str] | tuple[None, str]:
+    """Return ``(reason_code, rationale)`` or ``(None, "")`` to skip."""
+    if idx_scan == 0:
+        return (
+            DROP_REASON_NEVER_USED,
+            f"index has never been scanned since the stats counter last reset; "
+            f"reclaim {size_bytes / 1024 / 1024:.1f} MiB and the write-amplification "
+            "tax with no read-side cost.",
+        )
+    if idx_tup_fetch == 0:
+        return (
+            DROP_REASON_SCAN_NO_FETCH,
+            f"index has been scanned {idx_scan:,} times but returned zero rows — "
+            "likely an existence-check pattern. A partial index or removing the "
+            "index entirely is usually cheaper.",
+        )
+    if table_total_scans > 0 and idx_scan < low_scan_ratio * table_total_scans:
+        return (
+            DROP_REASON_RARELY_USED,
+            f"index has been scanned only {idx_scan:,} times against a table with "
+            f"{table_total_scans:,} total scans (below the {low_scan_ratio:.1%} "
+            "threshold); weigh the disk + write-amplification cost against the "
+            "marginal read benefit.",
+        )
+    return (None, "")

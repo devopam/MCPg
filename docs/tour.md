@@ -5,7 +5,7 @@ A compact one-page tour of every tool MCPg exposes, organised by
 surface; the full reference is in [`tools.md`](tools.md), and
 task-oriented recipes live in [`cookbook.md`](cookbook.md).
 
-**124 tools** as of trunk. Each line shows the tool name + how its
+**141 tools** as of trunk. Each line shows the tool name + how its
 parameters land (required first, common defaults after). Capability
 gates are noted in section titles where they apply.
 
@@ -100,6 +100,9 @@ check_database_health()                              # connections + cache + dea
 audit_database(schema, log_table=null)               # comprehensive 5-category DBA report with scores + top issues + recommendations
 analyze_workload(top_n=10)                           # slow queries from pg_stat_statements
 recommend_indexes()                                  # missing-index heuristics
+recommend_index_drops(schema=null, min_index_size_bytes=1000000, low_scan_ratio=0.01)
+                                                     # which existing indexes to consider dropping
+                                                     # (never_used / scan_no_fetch / rarely_used)
 list_active_queries()                                # who's running what right now
 verify_connection_encryption()                       # is MCPg's own link TLS-encrypted? protocol + cipher + cluster tally
 list_locks(limit=100)                                # pg_locks joined with pg_stat_activity (waiters first)

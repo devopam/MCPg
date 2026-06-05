@@ -71,7 +71,7 @@ not covered there:
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 6.1 | Over-indexed detector (sibling to `recommend_indexes` but for what to drop) | S | Medium | Currently `recommend_indexes` only adds, never removes. |
+| 6.1 | ✅ **Shipped.** `recommend_index_drops` — sibling of `recommend_indexes` for what to drop. Walks `pg_stat_user_indexes` + `pg_stat_user_tables` for indexes that look like pure cost. Three reason codes (descending strength): `never_used` (idx_scan = 0), `scan_no_fetch` (planner picks it but it returns no rows — existence-check pattern), `rarely_used` (scan rate below `low_scan_ratio` of the table's total scan activity). Excludes primary/unique/exclusion-constraint indexes. Returns a ready-to-run `DROP INDEX CONCURRENTLY` per candidate. Lives in `mcpg.indexing`. | S | Medium | Sibling of `recommend_indexes`. |
 
 ## 7. Migration ecosystem integration
 

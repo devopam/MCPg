@@ -142,3 +142,184 @@ async def test_recommend_indexes_tool_is_callable_from_a_client() -> None:
         result = await client.call_tool("recommend_indexes", {})
 
     assert result.isError is False
+
+
+# --- recommend_index_drops -------------------------------------------------
+
+
+from mcpg.indexing import (  # noqa: E402
+    DROP_REASON_NEVER_USED,
+    DROP_REASON_RARELY_USED,
+    DROP_REASON_SCAN_NO_FETCH,
+    IndexDropCandidate,
+    recommend_index_drops,
+)
+
+
+def _drop_row(
+    *,
+    schema: str = "app",
+    table: str = "orders",
+    index: str = "idx_orders_customer",
+    idx_scan: int = 0,
+    idx_tup_fetch: int = 0,
+    size_bytes: int = 5_000_000,
+    table_seq_scan: int = 0,
+    table_idx_scan: int = 0,
+    definition: str = "CREATE INDEX idx_orders_customer ON app.orders (customer_id)",
+) -> dict[str, object]:
+    return {
+        "schemaname": schema,
+        "table_name": table,
+        "index_name": index,
+        "idx_scan": idx_scan,
+        "idx_tup_fetch": idx_tup_fetch,
+        "size_bytes": size_bytes,
+        "definition": definition,
+        "table_seq_scan": table_seq_scan,
+        "table_idx_scan": table_idx_scan,
+    }
+
+
+async def test_recommend_index_drops_flags_never_used_indexes() -> None:
+    driver = FakeDriver([_drop_row(idx_scan=0, idx_tup_fetch=0, size_bytes=10_000_000)])
+
+    candidates = await recommend_index_drops(driver)
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert isinstance(candidate, IndexDropCandidate)
+    assert candidate.reason_code == DROP_REASON_NEVER_USED
+    assert candidate.index == "idx_orders_customer"
+    assert candidate.size_bytes == 10_000_000
+    assert candidate.drop_sql == 'DROP INDEX CONCURRENTLY "app"."idx_orders_customer";'
+    assert "never been scanned" in candidate.rationale
+
+
+async def test_recommend_index_drops_flags_scan_no_fetch_indexes() -> None:
+    # Index is hit by the planner but never returns rows — existence-
+    # check pattern. The reason code escalates the operator's review.
+    driver = FakeDriver([_drop_row(idx_scan=500, idx_tup_fetch=0, size_bytes=4_000_000)])
+
+    candidates = await recommend_index_drops(driver)
+
+    assert len(candidates) == 1
+    assert candidates[0].reason_code == DROP_REASON_SCAN_NO_FETCH
+    assert "returned zero rows" in candidates[0].rationale
+
+
+async def test_recommend_index_drops_flags_rarely_used_indexes() -> None:
+    # Index is hit but represents <1% of the table's total scan
+    # activity — the marginal-read-value case.
+    driver = FakeDriver(
+        [
+            _drop_row(
+                idx_scan=5,
+                idx_tup_fetch=5,
+                size_bytes=8_000_000,
+                table_seq_scan=10_000,
+                table_idx_scan=0,
+            )
+        ]
+    )
+
+    candidates = await recommend_index_drops(driver)
+
+    assert len(candidates) == 1
+    assert candidates[0].reason_code == DROP_REASON_RARELY_USED
+    assert "5" in candidates[0].rationale  # the scan count
+
+
+async def test_recommend_index_drops_skips_well_used_indexes() -> None:
+    # The index is hit at >low_scan_ratio of total table activity —
+    # no flag.
+    driver = FakeDriver(
+        [
+            _drop_row(
+                idx_scan=500,
+                idx_tup_fetch=500,
+                size_bytes=8_000_000,
+                table_seq_scan=100,
+                table_idx_scan=500,
+            )
+        ]
+    )
+
+    candidates = await recommend_index_drops(driver)
+
+    assert candidates == []
+
+
+async def test_recommend_index_drops_sorts_by_reason_strength_then_size() -> None:
+    # never_used > scan_no_fetch > rarely_used; within a reason
+    # bucket, larger indexes come first.
+    driver = FakeDriver(
+        [
+            _drop_row(
+                index="small_never_used",
+                idx_scan=0,
+                size_bytes=2_000_000,
+            ),
+            _drop_row(
+                index="big_never_used",
+                idx_scan=0,
+                size_bytes=20_000_000,
+            ),
+            _drop_row(
+                index="rarely",
+                idx_scan=1,
+                idx_tup_fetch=1,
+                size_bytes=10_000_000,
+                table_seq_scan=10_000,
+                table_idx_scan=0,
+            ),
+            _drop_row(
+                index="scan_no_fetch",
+                idx_scan=200,
+                idx_tup_fetch=0,
+                size_bytes=5_000_000,
+            ),
+        ]
+    )
+
+    candidates = await recommend_index_drops(driver)
+
+    assert [c.index for c in candidates] == [
+        "big_never_used",
+        "small_never_used",
+        "scan_no_fetch",
+        "rarely",
+    ]
+
+
+async def test_recommend_index_drops_respects_min_size_filter() -> None:
+    # The SQL applies the >= min_size filter, so a small index never
+    # reaches the classifier. Smoke the bound parameter.
+    driver = FakeDriver([])
+
+    await recommend_index_drops(driver, min_index_size_bytes=2_000_000)
+
+    # The first arg in params is the min-size bound.
+    assert driver.calls[0][1][0] == 2_000_000
+
+
+async def test_recommend_index_drops_threads_schema_filter() -> None:
+    driver = FakeDriver([])
+
+    await recommend_index_drops(driver, schema="reporting", min_index_size_bytes=1_000_000)
+
+    # The two-bound shape: [min_size, schema].
+    assert driver.calls[0][1] == [1_000_000, "reporting"]
+    assert "si.schemaname = %s" in driver.calls[0][0]
+
+
+async def test_recommend_index_drops_tool_is_callable_from_a_client() -> None:
+    database = FakeDatabase(FakeDriver([]))
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+        assert "recommend_index_drops" in listed
+        result = await client.call_tool("recommend_index_drops", {"schema": "public"})
+
+    assert result.isError is False
