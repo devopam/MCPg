@@ -8,6 +8,33 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`recommend_index_drops` tool.** Sibling of `recommend_indexes`
+  for what to drop — walks `pg_stat_user_indexes` +
+  `pg_stat_user_tables` and flags existing indexes that look like
+  pure cost (large on disk, never or barely scanned). Three reason
+  codes, descending strength: `never_used` (idx_scan = 0; safe
+  drop), `scan_no_fetch` (planner picks it but it returns no rows
+  — usually an existence-check pattern that a partial index would
+  serve more cheaply), `rarely_used` (scan rate below
+  `low_scan_ratio` — default 1% — of the table's total scan
+  activity). Primary-key, unique, and exclusion-constraint indexes
+  are excluded (dropping those would be a schema change, not a
+  performance win); indexes below `min_index_size_bytes`
+  (default 1 MB) are skipped so the report focuses on candidates
+  worth an operator's attention. Each result carries a
+  ready-to-run `DROP INDEX CONCURRENTLY` statement; results are
+  sorted by reason strength then size descending so the highest-
+  confidence, highest-impact drops come first. Read-only advisor
+  — execution is on the operator. Lives in `mcpg.indexing`.
+
+### Docs
+
+- **Tool count sync.** `docs/tour.md`, `docs/user-guide.md`, and
+  `docs/tools.md` now report **141 tools** (was 124) — reconciled
+  from `grep -c '@server.tool' src/mcpg/tools.py` per the
+  parallel-roadmap §6 process. Added the `recommend_index_drops`
+  line to `docs/tour.md`'s health section.
+
 - **TLS / mTLS for the HTTP transports
   (`MCPG_HTTP_TLS_CERTFILE` / `MCPG_HTTP_TLS_KEYFILE` /
   `MCPG_HTTP_TLS_CA_CERTS` / `MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED`).**

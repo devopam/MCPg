@@ -2278,6 +2278,47 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "recommend_indexes", _run, min_live_tuples)
 
     @server.tool(
+        name="recommend_index_drops",
+        description=_with_example(
+            "Sibling of `recommend_indexes` for indexes to remove. Walks "
+            "`pg_stat_user_indexes` + `pg_stat_user_tables` for existing "
+            "indexes that look like pure cost — large on disk but never "
+            "(or barely) scanned. Three reason codes, descending strength: "
+            "`never_used` (no recorded idx_scans since the last stats "
+            "reset — candidate for drop, but verify before removal), "
+            "`scan_no_fetch` "
+            "(planner picks it but it returns no rows — usually existence-"
+            "check pattern), `rarely_used` (scan rate below "
+            "`low_scan_ratio` of the table's total scan activity). "
+            "Primary-key / unique / exclusion-constraint indexes are "
+            "excluded (dropping those would be a schema change, not a "
+            "performance win); indexes below `min_index_size_bytes` are "
+            "skipped too. Returns a ready-to-run `DROP INDEX CONCURRENTLY` "
+            "statement per candidate. Read-only advisor — execution is on "
+            "the operator.",
+            "recommend_index_drops(schema='public', min_index_size_bytes=1000000, low_scan_ratio=0.01)",
+        ),
+    )
+    async def recommend_index_drops(
+        ctx: _Ctx,
+        schema: str | None = None,
+        min_index_size_bytes: int = indexing.DEFAULT_MIN_INDEX_SIZE_BYTES,
+        low_scan_ratio: float = indexing.DEFAULT_LOW_SCAN_RATIO,
+    ) -> list[dict[str, Any]]:
+        _check_heavy_diagnostics(ctx, "recommend_index_drops")
+
+        async def _run() -> list[dict[str, Any]]:
+            candidates = await indexing.recommend_index_drops(
+                _driver(ctx),
+                schema=schema,
+                min_index_size_bytes=min_index_size_bytes,
+                low_scan_ratio=low_scan_ratio,
+            )
+            return [asdict(c) for c in candidates]
+
+        return await _cached_call(ctx, "recommend_index_drops", _run, schema, min_index_size_bytes, low_scan_ratio)
+
+    @server.tool(
         name="fuzzy_search",
         description=_with_example(
             "Rank a text column's values by pg_trgm trigram similarity to a "
