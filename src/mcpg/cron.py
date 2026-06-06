@@ -103,7 +103,9 @@ async def schedule_cron_job(driver: SqlDriver, name: str, schedule: str, command
 _SAFE_PATH = re.compile(r"\A[A-Za-z0-9_./\-]+\Z")
 _ABS_SAFE_PATH = re.compile(r"\A/[A-Za-z0-9_./\-]+\Z")
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
-_BACKUP_FORMATS = frozenset({"plain", "custom", "tar"})
+# Single source of truth: the keys are the allowed ``format`` values
+# and the values are the matching ``pg_dump`` short flag.
+_BACKUP_FORMAT_FLAGS = {"plain": "-Fp", "custom": "-Fc", "tar": "-Ft"}
 
 
 async def schedule_logical_backup(
@@ -146,11 +148,10 @@ async def schedule_logical_backup(
         raise CronError(f"pg_dump_path must contain only [A-Za-z0-9_./-]; got {pg_dump_path!r}")
     if database is not None and not _IDENTIFIER.match(database):
         raise CronError(f"database must be a plain identifier; got {database!r}")
-    if format not in _BACKUP_FORMATS:
-        raise CronError(f"unsupported backup format {format!r}; expected one of {sorted(_BACKUP_FORMATS)}")
+    if format not in _BACKUP_FORMAT_FLAGS:
+        raise CronError(f"unsupported backup format {format!r}; expected one of {sorted(_BACKUP_FORMAT_FLAGS)}")
 
-    format_flag = {"plain": "-Fp", "custom": "-Fc", "tar": "-Ft"}[format]
-    parts = [pg_dump_path, format_flag]
+    parts = [pg_dump_path, _BACKUP_FORMAT_FLAGS[format]]
     if schema_only:
         parts.append("--schema-only")
     if database is not None:
