@@ -8,7 +8,7 @@ graph queries, data movement, live ops, and more.
 
 [![PyPI version](https://img.shields.io/pypi/v/mcpg.svg)](https://pypi.org/project/mcpg/)
 [![Python versions](https://img.shields.io/pypi/pyversions/mcpg.svg)](https://pypi.org/project/mcpg/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/devopam/MCPg/blob/main/LICENSE)
 [![CI](https://github.com/devopam/MCPg/actions/workflows/ci.yml/badge.svg)](https://github.com/devopam/MCPg/actions/workflows/ci.yml)
 
 ---
@@ -86,7 +86,7 @@ uv sync
 `uv sync` creates a venv with all runtime + dev dependencies and exposes
 the `mcpg` console script.
 
-More detail in the [Installation Guide](docs/installation.md).
+More detail in the [Installation Guide](https://github.com/devopam/MCPg/blob/main/docs/installation.md).
 
 ---
 
@@ -384,15 +384,15 @@ illustrative round-trips:
 
 For dozens more recipes — multi-tenant routing, RLS testing, NL→SQL,
 hybrid vector + FTS search, Apache AGE Cypher, TimescaleDB, ORM schema
-exports, server-side cursors — see [`docs/cookbook.md`](docs/cookbook.md).
+exports, server-side cursors — see [`docs/cookbook.md`](https://github.com/devopam/MCPg/blob/main/docs/cookbook.md).
 
 ---
 
 ## What's in the box
 
 Compact category list. For the full, current tool reference see
-[`docs/tools.md`](docs/tools.md); for a guided walkthrough see
-[`docs/tour.md`](docs/tour.md).
+[`docs/tools.md`](https://github.com/devopam/MCPg/blob/main/docs/tools.md); for a guided walkthrough see
+[`docs/tour.md`](https://github.com/devopam/MCPg/blob/main/docs/tour.md).
 
 - **Catalog introspection** — schemas, tables, columns, indexes,
   constraints, views, functions, triggers, sequences, partitions,
@@ -448,35 +448,35 @@ Compact category list. For the full, current tool reference see
 
 ## Documentation
 
-- [`docs/installation.md`](docs/installation.md) — install + configure
-- [`docs/tour.md`](docs/tour.md) — guided tool tour
-- [`docs/cookbook.md`](docs/cookbook.md) — practical agent recipes
-- [`docs/tools.md`](docs/tools.md) — complete tool reference
-- [`docs/architecture.md`](docs/architecture.md) — how the pieces fit together
-- [`docs/scaling.md`](docs/scaling.md) — pool sizing, replicas, performance
-- [`docs/security-hardening.md`](docs/security-hardening.md) — security feature roadmap
-- [`docs/release-process.md`](docs/release-process.md) — how releases ship to PyPI
-- [`docs/adr/`](docs/adr/) — architecture decision records
+- [`docs/installation.md`](https://github.com/devopam/MCPg/blob/main/docs/installation.md) — install + configure
+- [`docs/tour.md`](https://github.com/devopam/MCPg/blob/main/docs/tour.md) — guided tool tour
+- [`docs/cookbook.md`](https://github.com/devopam/MCPg/blob/main/docs/cookbook.md) — practical agent recipes
+- [`docs/tools.md`](https://github.com/devopam/MCPg/blob/main/docs/tools.md) — complete tool reference
+- [`docs/architecture.md`](https://github.com/devopam/MCPg/blob/main/docs/architecture.md) — how the pieces fit together
+- [`docs/scaling.md`](https://github.com/devopam/MCPg/blob/main/docs/scaling.md) — pool sizing, replicas, performance
+- [`docs/security-hardening.md`](https://github.com/devopam/MCPg/blob/main/docs/security-hardening.md) — security feature roadmap
+- [`docs/release-process.md`](https://github.com/devopam/MCPg/blob/main/docs/release-process.md) — how releases ship to PyPI
+- [`docs/adr/`](https://github.com/devopam/MCPg/tree/main/docs/adr) — architecture decision records
 - Browse at **https://devopam.github.io/MCPg/**
 
 ---
 
 ## Security
 
-- Vulnerability reporting: see [`SECURITY.md`](SECURITY.md). 90-day
+- Vulnerability reporting: see [`SECURITY.md`](https://github.com/devopam/MCPg/blob/main/SECURITY.md). 90-day
   coordinated-disclosure window; reports to `devopam@gmail.com`.
 - Defence-in-depth: capability gates, SafeSQL kernel, identifier
   allowlist, audit redaction, PG TLS enforcement at startup,
   rate-limiting, OIDC JWT validation, per-session timeouts.
-- See [`docs/security-hardening.md`](docs/security-hardening.md) for
+- See [`docs/security-hardening.md`](https://github.com/devopam/MCPg/blob/main/docs/security-hardening.md) for
   the living roadmap of shipped (✅) and queued (⬜) hardening items.
 
 ---
 
 ## Release notes & changelog
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the full version history,
-[`docs/release-process.md`](docs/release-process.md) for how releases
+See [`CHANGELOG.md`](https://github.com/devopam/MCPg/blob/main/CHANGELOG.md) for the full version history,
+[`docs/release-process.md`](https://github.com/devopam/MCPg/blob/main/docs/release-process.md) for how releases
 are cut, and the [GitHub Releases](https://github.com/devopam/MCPg/releases)
 page for downloadable artifacts.
 
@@ -484,7 +484,7 @@ page for downloadable artifacts.
 
 ## Contributing
 
-Pull requests welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for
+Pull requests welcome — see [`CONTRIBUTING.md`](https://github.com/devopam/MCPg/blob/main/CONTRIBUTING.md) for
 the dev-loop setup, test conventions, and the per-PR review
 checklist.
 
@@ -492,8 +492,8 @@ checklist.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE). The vendored SQL-safety kernel at
-`src/mcpg/_vendor/sql/` is also MIT-licensed; see [`NOTICE`](NOTICE)
+MIT — see [`LICENSE`](https://github.com/devopam/MCPg/blob/main/LICENSE). The vendored SQL-safety kernel at
+`src/mcpg/_vendor/sql/` is also MIT-licensed; see [`NOTICE`](https://github.com/devopam/MCPg/blob/main/NOTICE)
 for provenance.
 
 > **Disclaimer.** Best efforts have been made to bring MCPg to
