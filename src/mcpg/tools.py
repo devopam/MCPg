@@ -2650,14 +2650,18 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
         description=(
             "Schedule a recurring pg_dump via pg_cron + COPY TO PROGRAM. The "
             "scheduled job runs pg_dump on the database host's filesystem and "
-            "writes the dump to ``destination`` on that host. ``destination`` "
-            "must be an absolute POSIX path with only [A-Za-z0-9_./-] (no "
-            "shell metacharacters) so it cannot escape the COPY TO PROGRAM "
-            "shell string. ``format`` is 'plain' | 'custom' | 'tar'; "
-            "``compress`` pipes through gzip. COPY TO PROGRAM is PostgreSQL-"
-            "superuser-only, so the connected role must be superuser for the "
-            "scheduled job to succeed at runtime. Available only in "
-            "unrestricted mode; requires pg_cron installed."
+            "writes the dump to ``destination`` on that host. ``database`` is "
+            "required — pg_dump invoked through COPY TO PROGRAM does not "
+            "inherit the connection's database and falls back to the OS user "
+            "name without ``-d``. ``destination`` must be an absolute POSIX "
+            "path with only [A-Za-z0-9_./-] (no shell metacharacters) so it "
+            "cannot escape the COPY TO PROGRAM shell string; ``database`` "
+            "additionally allows the hyphen common in real DB names. "
+            "``format`` is 'plain' | 'custom' | 'tar'; ``compress`` pipes "
+            "through gzip; ``port`` defaults to 5432. COPY TO PROGRAM is "
+            "PostgreSQL-superuser-only, so the connected role must be "
+            "superuser for the scheduled job to succeed at runtime. Available "
+            "only in unrestricted mode; requires pg_cron installed."
         ),
     )
     async def schedule_logical_backup(
@@ -2665,22 +2669,24 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
         name: str,
         schedule: str,
         destination: str,
+        database: str,
         format: str = "plain",
         schema_only: bool = False,
         compress: bool = False,
         pg_dump_path: str = "pg_dump",
-        database: str | None = None,
+        port: int = 5432,
     ) -> dict[str, Any]:
         result = await cron.schedule_logical_backup(
             _driver(ctx),
             name,
             schedule,
             destination,
+            database,
             format=format,
             schema_only=schema_only,
             compress=compress,
             pg_dump_path=pg_dump_path,
-            database=database,
+            port=port,
         )
         await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)

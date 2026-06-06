@@ -102,7 +102,10 @@ async def schedule_cron_job(driver: SqlDriver, name: str, schedule: str, command
 # splice in becomes part of a shell command on the database host.
 _SAFE_PATH = re.compile(r"\A[A-Za-z0-9_./\-]+\Z")
 _ABS_SAFE_PATH = re.compile(r"\A/[A-Za-z0-9_./\-]+\Z")
-_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
+# Looser than `_IDENTIFIER` — accepts the hyphens that real-world
+# database names commonly use (``app-prod``), while still rejecting
+# shell metacharacters and path separators.
+_DBNAME_SAFE = re.compile(r"\A[A-Za-z0-9_][A-Za-z0-9_\-]*\Z")
 # Single source of truth: the keys are the allowed ``format`` values
 # and the values are the matching ``pg_dump`` short flag.
 _BACKUP_FORMAT_FLAGS = {"plain": "-Fp", "custom": "-Fc", "tar": "-Ft"}
@@ -113,12 +116,13 @@ async def schedule_logical_backup(
     name: str,
     schedule: str,
     destination: str,
+    database: str,
     *,
     format: str = "plain",
     schema_only: bool = False,
     compress: bool = False,
     pg_dump_path: str = "pg_dump",
-    database: str | None = None,
+    port: int = 5432,
 ) -> ScheduleResult:
     """Schedule a recurring ``pg_dump`` via pg_cron + ``COPY TO PROGRAM``.
 
@@ -126,12 +130,20 @@ async def schedule_logical_backup(
     PROGRAM`` body that invokes ``pg_dump`` on the database host's
     filesystem and writes the dump to ``destination`` on that host.
 
+    ``database`` is required — ``pg_dump`` does **not** inherit the
+    current connection's database when invoked through ``COPY TO
+    PROGRAM``; without ``-d`` it falls back to the OS user name
+    (typically ``postgres``), which is almost never what the caller
+    wants. Callers must pass the database name explicitly.
+
     ``destination`` must be an absolute POSIX path containing only
     ``[A-Za-z0-9_./-]`` — shell metacharacters are rejected so the
     value cannot escape the ``COPY TO PROGRAM`` single-quoted string.
     ``pg_dump_path`` is constrained the same way (with no absolute-
     path requirement so a bare ``pg_dump`` from ``$PATH`` is allowed).
-    ``database`` must be a plain identifier when set.
+    ``database`` matches a slightly looser allowlist that accepts the
+    hyphen commonly used in real database names. ``port`` is bounded
+    to a valid TCP port and is spliced in as ``-p <port>``.
 
     ``COPY TO PROGRAM`` is **PostgreSQL-superuser-only**; the connected
     role must hold superuser to run the scheduled job. Otherwise the
@@ -146,16 +158,17 @@ async def schedule_logical_backup(
         raise CronError(f"destination must be an absolute path containing only [A-Za-z0-9_./-]; got {destination!r}")
     if not _SAFE_PATH.match(pg_dump_path):
         raise CronError(f"pg_dump_path must contain only [A-Za-z0-9_./-]; got {pg_dump_path!r}")
-    if database is not None and not _IDENTIFIER.match(database):
-        raise CronError(f"database must be a plain identifier; got {database!r}")
+    if not _DBNAME_SAFE.match(database):
+        raise CronError(f"database must contain only [A-Za-z0-9_-] (no shell metacharacters); got {database!r}")
+    if not 1 <= port <= 65535:
+        raise CronError(f"port must be in 1..65535; got {port!r}")
     if format not in _BACKUP_FORMAT_FLAGS:
         raise CronError(f"unsupported backup format {format!r}; expected one of {sorted(_BACKUP_FORMAT_FLAGS)}")
 
     parts = [pg_dump_path, _BACKUP_FORMAT_FLAGS[format]]
     if schema_only:
         parts.append("--schema-only")
-    if database is not None:
-        parts.extend(["-d", database])
+    parts.extend(["-p", str(port), "-d", database])
     pipeline = " ".join(parts)
     if compress:
         pipeline += " | gzip"

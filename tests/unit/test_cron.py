@@ -157,6 +157,7 @@ async def test_schedule_logical_backup_composes_copy_to_program() -> None:
         "nightly",
         "0 3 * * *",
         "/var/backups/db.sql",
+        "app",
     )
 
     assert result == ScheduleResult(jobid=101, name="nightly")
@@ -169,11 +170,11 @@ async def test_schedule_logical_backup_composes_copy_to_program() -> None:
     assert params == [
         "nightly",
         "0 3 * * *",
-        "COPY (SELECT 1) TO PROGRAM 'pg_dump -Fp > /var/backups/db.sql'",
+        "COPY (SELECT 1) TO PROGRAM 'pg_dump -Fp -p 5432 -d app > /var/backups/db.sql'",
     ]
 
 
-async def test_schedule_logical_backup_honours_format_schema_only_compress_and_database() -> None:
+async def test_schedule_logical_backup_honours_format_schema_only_compress_and_port() -> None:
     driver = FakeRoutingDriver(
         {
             "pg_extension": [{"present": 1}],
@@ -186,16 +187,17 @@ async def test_schedule_logical_backup_honours_format_schema_only_compress_and_d
         "weekly-schema",
         "0 4 * * 0",
         "/var/backups/schema.dump",
+        "app-prod",
         format="custom",
         schema_only=True,
         compress=True,
         pg_dump_path="/usr/local/pgsql/bin/pg_dump",
-        database="app",
+        port=5544,
     )
 
     expected_command = (
         "COPY (SELECT 1) TO PROGRAM "
-        "'/usr/local/pgsql/bin/pg_dump -Fc --schema-only -d app | gzip > /var/backups/schema.dump'"
+        "'/usr/local/pgsql/bin/pg_dump -Fc --schema-only -p 5544 -d app-prod | gzip > /var/backups/schema.dump'"
     )
     schedule_calls = [c for c in driver.calls if "cron.schedule" in c[0]]
     assert schedule_calls[0][1] == ["weekly-schema", "0 4 * * 0", expected_command]
@@ -218,7 +220,7 @@ async def test_schedule_logical_backup_rejects_unsafe_destination(destination: s
     driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
 
     with pytest.raises(CronError, match="destination"):
-        await schedule_logical_backup(driver, "n", "* * * * *", destination)  # type: ignore[arg-type]
+        await schedule_logical_backup(driver, "n", "* * * * *", destination, "app")  # type: ignore[arg-type]
 
 
 async def test_schedule_logical_backup_rejects_unsafe_pg_dump_path() -> None:
@@ -230,11 +232,23 @@ async def test_schedule_logical_backup_rejects_unsafe_pg_dump_path() -> None:
             "n",
             "* * * * *",
             "/var/backups/x.sql",
+            "app",
             pg_dump_path="pg_dump; rm -rf /",
         )
 
 
-async def test_schedule_logical_backup_rejects_unsafe_database_name() -> None:
+@pytest.mark.parametrize(
+    "database",
+    [
+        "app; DROP",  # injection
+        "app.prod",  # dot — not a valid pg identifier and ambiguous in -d
+        "app/prod",  # slash
+        "app prod",  # space
+        "-rf",  # leading hyphen would look like a flag to pg_dump
+        "",
+    ],
+)
+async def test_schedule_logical_backup_rejects_unsafe_database_name(database: str) -> None:
     driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
 
     with pytest.raises(CronError, match="database"):
@@ -243,7 +257,40 @@ async def test_schedule_logical_backup_rejects_unsafe_database_name() -> None:
             "n",
             "* * * * *",
             "/var/backups/x.sql",
-            database="app; DROP",
+            database,
+        )
+
+
+@pytest.mark.parametrize("database", ["app", "app-prod", "app_prod_v2", "App123"])
+async def test_schedule_logical_backup_accepts_hyphenated_database_names(database: str) -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "cron.schedule": [{"jobid": 1}],
+        }
+    )
+
+    await schedule_logical_backup(
+        driver,  # type: ignore[arg-type]
+        "n",
+        "* * * * *",
+        "/var/backups/x.sql",
+        database,
+    )
+
+
+@pytest.mark.parametrize("port", [0, -1, 65536, 100000])
+async def test_schedule_logical_backup_rejects_out_of_range_port(port: int) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(CronError, match="port"):
+        await schedule_logical_backup(
+            driver,  # type: ignore[arg-type]
+            "n",
+            "* * * * *",
+            "/var/backups/x.sql",
+            "app",
+            port=port,
         )
 
 
@@ -256,6 +303,7 @@ async def test_schedule_logical_backup_rejects_unsupported_format() -> None:
             "n",
             "* * * * *",
             "/var/backups/x.sql",
+            "app",
             format="directory",
         )
 
@@ -264,4 +312,4 @@ async def test_schedule_logical_backup_raises_when_extension_absent() -> None:
     driver = FakeRoutingDriver({"pg_extension": []})
 
     with pytest.raises(CronError, match="not installed"):
-        await schedule_logical_backup(driver, "n", "* * * * *", "/var/backups/x.sql")  # type: ignore[arg-type]
+        await schedule_logical_backup(driver, "n", "* * * * *", "/var/backups/x.sql", "app")  # type: ignore[arg-type]
