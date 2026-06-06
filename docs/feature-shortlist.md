@@ -63,7 +63,7 @@ not covered there:
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 5.1 | Scheduled logical backups via `pg_cron` + `dump_database` | S | Medium | Composes existing tools. |
+| 5.1 ✅ | Scheduled logical backups via `pg_cron` + `dump_database` | S | Medium | Shipped as `schedule_logical_backup`: composes `cron.schedule` with `COPY TO PROGRAM 'pg_dump ...'`. Tight allowlist on `destination`/`pg_dump_path`/`database`. PostgreSQL-superuser-only at runtime. |
 | 5.2 | WAL archive inspection | M | Low | Niche; only useful where WAL archiving is configured. |
 | 5.3 | Point-in-time recovery prep helpers | M | Low-Medium | Heavy lift for a narrow audience. |
 

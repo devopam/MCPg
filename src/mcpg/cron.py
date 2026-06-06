@@ -9,6 +9,7 @@ is not installed; the read tool returns an empty list.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from mcpg._vendor.sql import SqlDriver
@@ -94,6 +95,73 @@ async def schedule_cron_job(driver: SqlDriver, name: str, schedule: str, command
     if not rows:
         raise CronError(f"cron.schedule did not return a jobid for {name!r}")
     return ScheduleResult(jobid=rows[0].cells["jobid"], name=name)
+
+
+# Tight allowlists for everything that lands inside the COPY TO PROGRAM
+# shell string — pg_cron passes the SQL body verbatim, so anything we
+# splice in becomes part of a shell command on the database host.
+_SAFE_PATH = re.compile(r"\A[A-Za-z0-9_./\-]+\Z")
+_ABS_SAFE_PATH = re.compile(r"\A/[A-Za-z0-9_./\-]+\Z")
+_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
+_BACKUP_FORMATS = frozenset({"plain", "custom", "tar"})
+
+
+async def schedule_logical_backup(
+    driver: SqlDriver,
+    name: str,
+    schedule: str,
+    destination: str,
+    *,
+    format: str = "plain",
+    schema_only: bool = False,
+    compress: bool = False,
+    pg_dump_path: str = "pg_dump",
+    database: str | None = None,
+) -> ScheduleResult:
+    """Schedule a recurring ``pg_dump`` via pg_cron + ``COPY TO PROGRAM``.
+
+    Composes :func:`schedule_cron_job` with a ``COPY (SELECT 1) TO
+    PROGRAM`` body that invokes ``pg_dump`` on the database host's
+    filesystem and writes the dump to ``destination`` on that host.
+
+    ``destination`` must be an absolute POSIX path containing only
+    ``[A-Za-z0-9_./-]`` — shell metacharacters are rejected so the
+    value cannot escape the ``COPY TO PROGRAM`` single-quoted string.
+    ``pg_dump_path`` is constrained the same way (with no absolute-
+    path requirement so a bare ``pg_dump`` from ``$PATH`` is allowed).
+    ``database`` must be a plain identifier when set.
+
+    ``COPY TO PROGRAM`` is **PostgreSQL-superuser-only**; the connected
+    role must hold superuser to run the scheduled job. Otherwise the
+    backup will be scheduled successfully but every invocation will
+    fail at execution time.
+
+    Raises:
+        CronError: pg_cron is not installed, an argument fails
+            validation, or the underlying ``cron.schedule`` call fails.
+    """
+    if not _ABS_SAFE_PATH.match(destination):
+        raise CronError(f"destination must be an absolute path containing only [A-Za-z0-9_./-]; got {destination!r}")
+    if not _SAFE_PATH.match(pg_dump_path):
+        raise CronError(f"pg_dump_path must contain only [A-Za-z0-9_./-]; got {pg_dump_path!r}")
+    if database is not None and not _IDENTIFIER.match(database):
+        raise CronError(f"database must be a plain identifier; got {database!r}")
+    if format not in _BACKUP_FORMATS:
+        raise CronError(f"unsupported backup format {format!r}; expected one of {sorted(_BACKUP_FORMATS)}")
+
+    format_flag = {"plain": "-Fp", "custom": "-Fc", "tar": "-Ft"}[format]
+    parts = [pg_dump_path, format_flag]
+    if schema_only:
+        parts.append("--schema-only")
+    if database is not None:
+        parts.extend(["-d", database])
+    pipeline = " ".join(parts)
+    if compress:
+        pipeline += " | gzip"
+    pipeline += f" > {destination}"
+
+    sql_command = f"COPY (SELECT 1) TO PROGRAM '{pipeline}'"
+    return await schedule_cron_job(driver, name, schedule, sql_command)
 
 
 async def unschedule_cron_job(driver: SqlDriver, name: str) -> bool:

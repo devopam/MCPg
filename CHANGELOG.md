@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`schedule_logical_backup` tool.** Schedules a recurring `pg_dump`
+  via `pg_cron` + `COPY TO PROGRAM`: the cron job runs `pg_dump` on
+  the database host's filesystem and writes the dump to a caller-
+  supplied destination. Supports `plain` / `custom` / `tar` formats,
+  `schema_only`, optional `gzip` compression, and per-database
+  targeting. `destination`, `pg_dump_path`, and `database` are each
+  matched against a tight `[A-Za-z0-9_./-]` allowlist so they cannot
+  escape the `COPY TO PROGRAM` shell string. `COPY TO PROGRAM` is
+  PostgreSQL-superuser-only, so the connected role must be superuser
+  for the scheduled job to succeed at runtime. WRITE-gated; requires
+  `pg_cron` installed.
+
 ## [0.6.0] - 2026-06-05
 
 ### Added
