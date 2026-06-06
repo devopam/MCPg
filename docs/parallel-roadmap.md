@@ -134,7 +134,7 @@ All four are independent.
 
 | PR | Item | Effort | Notes |
 |---|---|---|---|
-| G1 | Scheduled logical backups via `pg_cron` + `dump_database` (5.1) | S | Composes existing tools. |
+| G1 (✅ PR) | Scheduled logical backups via `pg_cron` + `dump_database` (5.1) | S | Shipped as `schedule_logical_backup` — composes `cron.schedule` with `COPY TO PROGRAM 'pg_dump ...'`. |
 | G2 | WAL archive inspection (5.2) | M | Niche. |
 | G3 | Point-in-time recovery prep helpers (5.3) | M | Heavy lift, narrow audience. |
 

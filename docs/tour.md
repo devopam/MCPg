@@ -262,6 +262,8 @@ enable_extension(name)                               # allowlisted extensions on
 pg_cron.schedule(name, schedule, command)
 pg_cron.unschedule(name_or_id)
 pg_cron.update(name_or_id, …)
+
+schedule_logical_backup(name, schedule, destination, …)  # composes pg_cron + pg_dump via COPY TO PROGRAM
 ```
 
 ## "Manage partitions" (`unrestricted` + `MCPG_ALLOW_DDL=true` + pg_partman installed)
