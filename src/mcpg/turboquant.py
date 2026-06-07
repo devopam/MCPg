@@ -300,6 +300,219 @@ async def get_turboquant_heap_stats(driver: SqlDriver, schema: str, index: str) 
     )
 
 
+# --- advisor + audit -------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class TurboQuantAdvisorFinding:
+    """A single rule-table hit produced by :func:`recommend_turboquant_maintenance`.
+
+    ``code`` is the stable identifier — ``severity`` and the human-
+    readable ``evidence`` / ``suggested_action`` may evolve, but ``code``
+    is the contract callers script against. ``schema`` / ``index`` are
+    empty strings for cluster-level findings like ``prerequisites_unmet``
+    that don't attach to a specific index.
+    """
+
+    code: str
+    severity: str  # GOOD / WARNING / CRITICAL
+    schema: str
+    index: str
+    evidence: str
+    suggested_action: str
+
+
+# Rule codes — stable identifiers. The mapping lives here as the single
+# source of truth so the audit-database adapter and any external
+# consumers (e.g. the RAG efficiency suite once it lands) read from one
+# place. ``delta_tier_large`` is intentionally absent: the upstream
+# ``tq_index_heap_stats`` payload does not yet document a delta-row key
+# we can rely on, so the rule is deferred to a follow-up once the
+# contract is verifiable.
+_RULE_FORMAT_V1 = "format_v1_reindex_needed"
+_RULE_MAINTENANCE_DUE = "maintenance_due"
+_RULE_FAST_PATH_INELIGIBLE = "fast_path_ineligible"
+_RULE_PREREQUISITES_UNMET = "prerequisites_unmet"
+
+
+def _finding_format_v1(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFinding | None:
+    version = info.algorithm_version or ""
+    if not version.lower().startswith("v1"):
+        return None
+    return TurboQuantAdvisorFinding(
+        code=_RULE_FORMAT_V1,
+        severity="CRITICAL",
+        schema=info.schema,
+        index=info.index,
+        evidence=f"algorithm_version={version!r} — v1 indexes must be rebuilt to use the v2 on-disk format.",
+        suggested_action=f'REINDEX INDEX CONCURRENTLY "{info.schema}"."{info.index}";',
+    )
+
+
+def _finding_maintenance_due(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFinding | None:
+    if info.maintenance_recommended is not True:
+        return None
+    state = info.delta_state or "unknown"
+    return TurboQuantAdvisorFinding(
+        code=_RULE_MAINTENANCE_DUE,
+        severity="WARNING",
+        schema=info.schema,
+        index=info.index,
+        evidence=f"tq_index_metadata reports maintenance_recommended=true (delta_state={state!r}).",
+        suggested_action=f"SELECT tq_maintain_index('{info.schema}.{info.index}'::regclass);",
+    )
+
+
+def _finding_fast_path_ineligible(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFinding | None:
+    # Explicit ``is False`` — ``None`` means upstream didn't report,
+    # which is not the same as reporting "ineligible".
+    if info.fast_path_eligible is not False:
+        return None
+    return TurboQuantAdvisorFinding(
+        code=_RULE_FAST_PATH_INELIGIBLE,
+        severity="WARNING",
+        schema=info.schema,
+        index=info.index,
+        evidence=(
+            "tq_index_metadata reports fast_path_eligible=false — queries against this index will not use "
+            "the SIMD fast path. Common causes: incompatible bits/transform combination, dimension below the "
+            "fast-path threshold, or a missing capability flag."
+        ),
+        suggested_action=(
+            "Review the index's WITH (...) options against the upstream tuning matrix; "
+            "rebuild with a compatible configuration if a fast-path build is desired."
+        ),
+    )
+
+
+_PER_INDEX_RULES = (
+    _finding_format_v1,
+    _finding_maintenance_due,
+    _finding_fast_path_ineligible,
+)
+
+
+async def recommend_turboquant_maintenance(driver: SqlDriver) -> list[TurboQuantAdvisorFinding]:
+    """Walk every turboquant index and emit advisor findings.
+
+    Returns an empty list when the extension is not installed (so the
+    surface composes the same way as :func:`list_turboquant_indexes`).
+    The cluster-level rule ``prerequisites_unmet`` fires when
+    pg_turboquant is installed but its hard dependency (pgvector) is
+    not — without pgvector, no turboquant index can be created or
+    queried, so the finding short-circuits before any per-index work.
+    """
+    if not await extension_installed(driver, "pg_turboquant"):
+        return []
+
+    findings: list[TurboQuantAdvisorFinding] = []
+
+    if not await extension_installed(driver, "vector"):
+        findings.append(
+            TurboQuantAdvisorFinding(
+                code=_RULE_PREREQUISITES_UNMET,
+                severity="CRITICAL",
+                schema="",
+                index="",
+                evidence=(
+                    "pg_turboquant is installed but its hard dependency (pgvector / the ``vector`` extension) "
+                    "is not. Every turboquant index requires pgvector at CREATE INDEX time and at query time."
+                ),
+                suggested_action='CREATE EXTENSION IF NOT EXISTS "vector";',
+            )
+        )
+        # Skip per-index walking — without pgvector there can't be any
+        # working turboquant indexes anyway, and any catalog rows would
+        # produce noise rather than signal.
+        return findings
+
+    for info in await list_turboquant_indexes(driver):
+        for rule in _PER_INDEX_RULES:
+            if (finding := rule(info)) is not None:
+                findings.append(finding)
+
+    return findings
+
+
+# Score deductions by severity — single source of truth for both the
+# adapter below and any external consumers.
+_SEVERITY_DEDUCTION = {"CRITICAL": 30, "WARNING": 15, "GOOD": 0}
+
+
+# Lazily-imported audit types kept out of the module-level imports to
+# avoid a circular import: ``audit`` ultimately re-exports tools that
+# may pull in this module. The adapter lives here (not in audit.py) so
+# the rule-table contract stays in one file.
+def _adapt_finding_to_metric(finding: TurboQuantAdvisorFinding) -> Any:
+    from mcpg.audit import MetricResult
+
+    target = finding.index or "(cluster)"
+    return MetricResult(
+        name=f"turboquant:{finding.code} on {finding.schema}.{target}"
+        if finding.index
+        else f"turboquant:{finding.code}",
+        value=finding.code,
+        unit="finding",
+        target="no findings",
+        status=finding.severity,
+        severity=3 if finding.severity == "CRITICAL" else 2 if finding.severity == "WARNING" else 0,
+        evidence=finding.evidence,
+        suggestion=finding.suggested_action,
+    )
+
+
+async def audit_turboquant_indexes(driver: SqlDriver) -> Any:
+    """Scorecard adapter — returns a CategoryResult or None.
+
+    Returns ``None`` when pg_turboquant is not installed so
+    :func:`audit.audit_database` cleanly omits the category for
+    deployments that don't use the extension. Otherwise produces a
+    CategoryResult whose metrics are the advisor findings, with the
+    standard 100-point-down scoring.
+    """
+    from mcpg.audit import CategoryResult
+
+    if not await extension_installed(driver, "pg_turboquant"):
+        return None
+
+    findings = await recommend_turboquant_maintenance(driver)
+
+    score = 100
+    metrics = []
+    for finding in findings:
+        score -= _SEVERITY_DEDUCTION.get(finding.severity, 0)
+        metrics.append(_adapt_finding_to_metric(finding))
+
+    score = max(0, score)
+    status_label = "GOOD" if score >= 90 else ("WARNING" if score >= 70 else "CRITICAL")
+
+    if not metrics:
+        # No findings → emit a single GOOD baseline metric so the
+        # scorecard surfaces "category checked, all good" rather than
+        # an empty list that looks like the category didn't run.
+        from mcpg.audit import MetricResult
+
+        metrics.append(
+            MetricResult(
+                name="turboquant:no_findings",
+                value="ok",
+                unit="finding",
+                target="no findings",
+                status="GOOD",
+                severity=0,
+                evidence="All turboquant indexes pass the advisor rules.",
+                suggestion="",
+            )
+        )
+
+    return CategoryResult(
+        category="pg_turboquant Indexes",
+        status=status_label,
+        score=score,
+        metrics=metrics,
+    )
+
+
 async def get_turboquant_last_scan_stats(driver: SqlDriver) -> TurboQuantLastScanStats | None:
     """Return the backend-local diagnostic JSON for the most recent scan.
 

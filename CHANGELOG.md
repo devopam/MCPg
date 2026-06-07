@@ -8,6 +8,33 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **pg_turboquant maintenance advisor + audit category (TQ-2).** New
+  `recommend_turboquant_maintenance` tool walks every turboquant
+  index and emits stable-coded findings:
+  - `prerequisites_unmet` (CRITICAL) — pg_turboquant is installed but
+    its hard dependency (pgvector) is not. Short-circuits before any
+    per-index work since no working index can exist in that state.
+  - `format_v1_reindex_needed` (CRITICAL) — `algorithm_version`
+    starts with `v1`; emits `REINDEX INDEX CONCURRENTLY` as the
+    suggested action.
+  - `maintenance_due` (WARNING) — `tq_index_metadata` reports
+    `maintenance_recommended=true`; emits `SELECT tq_maintain_index(...)`.
+  - `fast_path_ineligible` (WARNING) — `fast_path_eligible=false`
+    (explicit `False` — `None` means "not reported" and does not
+    fire).
+  The advisor reads exclusively from `TurboQuantIndexInfo` fields
+  TQ-1 already surfaces, so it composes cleanly without duplicating
+  catalog queries. A scorecard adapter (`audit_turboquant_indexes`)
+  produces a `CategoryResult` named `"pg_turboquant Indexes"`,
+  scored 100-down with CRITICAL = -30 / WARNING = -15 (clamped at 0).
+  When the extension is not installed, the adapter returns `None` and
+  `audit_database` cleanly omits the category — stock clusters'
+  scorecards aren't padded or score-diluted. The fifth planned rule
+  (`delta_tier_large`) is deferred to backlog: the upstream
+  `tq_index_heap_stats` payload doesn't yet document a delta-row key
+  we can rely on, and shipping a rule against an unverified contract
+  would produce noise rather than signal. Will return when the
+  contract is verifiable.
 - **pg_turboquant read advisors (TQ-1).** Four read-only tools wrapping
   the [pg_turboquant](https://github.com/mayflower/pg_turboquant) ANN
   index extension's observability surface:

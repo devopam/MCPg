@@ -177,6 +177,8 @@ list_turboquant_indexes()                          # every turboquant index + tq
 get_turboquant_index_metadata(schema, index)       # algorithm_version, quantizer_family, capability_flags, …
 get_turboquant_heap_stats(schema, index)           # exact heap row count from tq_index_heap_stats
 get_turboquant_last_scan_stats()                   # most recent backend-local scan diagnostics
+recommend_turboquant_maintenance()                 # advisor — prerequisites_unmet, format_v1_reindex_needed,
+                                                   # maintenance_due, fast_path_ineligible (also feeds audit_database)
 ```
 
 ## "Move data in / out"

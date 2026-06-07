@@ -122,7 +122,7 @@ composes with this lives in
 |---|---|---|---|---|
 | 10.1 | ✅ **Shipped (TQ-1).** Read advisors for [pg_turboquant](https://github.com/mayflower/pg_turboquant): `list_turboquant_indexes`, `get_turboquant_index_metadata`, `get_turboquant_heap_stats`, `get_turboquant_last_scan_stats`. Defensive JSON parsing — documented fields are typed; the full upstream payload is preserved in `raw_metadata` / `raw` so future-added fields stay reachable. Each index info also carries `index_options` — the `WITH (...)` build-time options (`bits`, `lists`, `transform`, `normalized`) parsed from `pg_class.reloptions` into typed values. Returns empty list / `None` when the extension is absent. Lives in `mcpg.turboquant`. | S | Medium | Mirrors how `cron` / `partman` are surfaced. `pg_turboquant` added to `ENABLEABLE_EXTENSIONS`. |
 | 10.2 | `turboquant_approx_candidates` + `turboquant_rerank_candidates` + `recommend_turboquant_query_knobs` — query-execution wrappers around the dedicated `tq_*_candidates(...)` functions so callers actually exercise the extension's SIMD fast path (the pgvector operators may not), plus the per-query knob advisor. Composes the TQ-1 `tq_last_scan_stats` helper to include scan diagnostics in the response. Promoted ahead of 10.3/10.4/10.5 because it both unblocks adoption and is a hard prerequisite for the RAG efficiency suite's turboquant arm (11.1). | M | High | TQ-5 — the new ordering puts this right after TQ-1. |
-| 10.3 | `recommend_turboquant_maintenance` advisor + `audit_turboquant_indexes` category wired into `audit_database` — `format_v1_reindex_needed`, `maintenance_due`, `fast_path_ineligible`, `delta_tier_large` rules. | S-M | Medium-High | TQ-2. |
+| 10.3 | ✅ **Shipped (TQ-2).** `recommend_turboquant_maintenance` advisor + `audit_turboquant_indexes` category wired into `audit_database`. Stable-coded rules: `prerequisites_unmet` (CRITICAL — pgvector missing), `format_v1_reindex_needed` (CRITICAL — algorithm_version starts with v1), `maintenance_due` (WARNING — `maintenance_recommended=true`), `fast_path_ineligible` (WARNING — `fast_path_eligible=false`, explicit-false only). Reads exclusively from `TurboQuantIndexInfo` so it composes on TQ-1 without duplicate catalog queries. Category returns `None` when the extension is absent so `audit_database` cleanly omits it on stock clusters. `delta_tier_large` is on backlog pending upstream contract for a delta-rows key in `tq_index_heap_stats`. | S-M | Medium-High | Lives in `mcpg.turboquant`. |
 | 10.4 | `maintain_turboquant_index` — write tool wrapping `tq_maintain_index`; pre-flight confirms the named index is actually a turboquant index. Unrestricted-only. | S | Medium | TQ-3. |
 | 10.5 | `create_turboquant_index` + `reindex_turboquant_index` — DDL tools with bits/lists/transform/normalized allowlists and a single-source-of-truth metric→opclass mapping (`tq_cosine_ops` / `tq_inner_product_ops` / `tq_l2_ops`). Unrestricted + `MCPG_ALLOW_DDL`. | M | Medium-High | TQ-4. |
 
@@ -149,13 +149,18 @@ Full design plan in
 
 ## Currently deferred (no commitments)
 
-- **Multi-database support** (10.1 above) — very ambitious;
+- **Multi-database support** (12.1 above) — very ambitious;
   preferred shape today is one MCPg instance per database.
 - **Backups & DR** beyond what `dump_database` /
   `restore_database` already cover — narrow audience.
 - **Alembic / Flyway / Liquibase script ingestion** (7.1) — large
   surface; `validate_migration` + `prepare_migration` already
   cover the high-value reviewer workflow.
+- **`delta_tier_large` turboquant advisor rule** — planned as part
+  of TQ-2 but deferred until upstream documents a delta-row key in
+  `tq_index_heap_stats`. Shipping a rule against an unverified
+  payload would produce noise rather than signal. Will return when
+  the upstream contract is verifiable.
 
 ---
 

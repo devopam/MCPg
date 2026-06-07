@@ -151,7 +151,7 @@ the tool count); CHANGELOG bullet under `### Added`.
 
 ---
 
-## Phase 2 — advisor surface + `audit_database` integration (single PR)
+## Phase 2 — advisor surface + `audit_database` integration ✅ shipped (TQ-2)
 
 **Goal:** turn the metadata into MCPg-native recommendations and feed
 them into the existing `audit_database` scorecard.
@@ -182,7 +182,7 @@ async def recommend_turboquant_maintenance(driver) -> list[TurboQuantAdvisorFind
 | `format_v1_reindex_needed` | `algorithm_version` starts with `v1` | CRITICAL | `REINDEX INDEX CONCURRENTLY <idx>` |
 | `maintenance_due` | metadata flag says delta tier should merge | WARNING | `SELECT tq_maintain_index('<idx>')` |
 | `fast_path_ineligible` | `fast_path_eligible = false` | WARNING | text — usually a knob mismatch; link to the README's tuning table |
-| `delta_tier_large` | heap-stats delta rows > N% of base | WARNING | `SELECT tq_maintain_index('<idx>')` |
+| `delta_tier_large` | heap-stats delta rows > N% of base | WARNING | `SELECT tq_maintain_index('<idx>')` — **deferred to backlog**, see note below |
 
 **Tool registered:**
 
@@ -426,10 +426,18 @@ Each phase lands on its own branch / PR so reviews stay narrow and
 parallel work elsewhere isn't blocked:
 
 1. `claude/tq1-read-advisors` — Phase 1 ✅ (PR #71)
-2. `claude/tq5-query-execution` — Phase 5 (promoted ahead of 2/3/4)
-3. `claude/tq2-audit-integration` — Phase 2
+2. `claude/tq2-audit-integration` — Phase 2 ✅ (in flight after coverage sweep agreed that TQ-2 composes most directly on TQ-1's outputs)
+3. `claude/tq5-query-execution` — Phase 5
 4. `claude/tq3-maintenance-write` — Phase 3
 5. `claude/tq4-ddl-tools` — Phase 4
+
+**Note on the deferred `delta_tier_large` rule.** TQ-2's rule table
+ships with four codes (`prerequisites_unmet`, `format_v1_reindex_needed`,
+`maintenance_due`, `fast_path_ineligible`). The fifth — `delta_tier_large`
+— is on backlog: upstream's `tq_index_heap_stats` payload doesn't yet
+document a delta-row key we can rely on, and shipping a rule against an
+unverified payload would produce noise rather than signal. Returns when
+the upstream contract is verifiable.
 
 **Why TQ-5 ahead of TQ-2/3/4:** TQ-5 unblocks both adoption ("I can
 actually query the index from MCPg") and the RAG efficiency suite's

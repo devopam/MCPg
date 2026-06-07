@@ -1,7 +1,7 @@
 """Tests for the pg_turboquant read-only advisor surface."""
 
 import pytest
-from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
+from _fakes import FakeDatabase, FakeDriver, FakeParamRoutingDriver, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
@@ -11,10 +11,12 @@ from mcpg.turboquant import (
     TurboQuantHeapStats,
     TurboQuantIndexInfo,
     TurboQuantLastScanStats,
+    audit_turboquant_indexes,
     get_turboquant_heap_stats,
     get_turboquant_index_metadata,
     get_turboquant_last_scan_stats,
     list_turboquant_indexes,
+    recommend_turboquant_maintenance,
 )
 
 _READ_ONLY = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
@@ -345,6 +347,209 @@ async def test_get_turboquant_last_scan_stats_parses_full_payload() -> None:
     )
 
 
+# --- recommend_turboquant_maintenance --------------------------------------
+
+
+_TQ_PRESENT: tuple[str, tuple[str, ...]] = ("pg_extension", ("pg_turboquant",))
+_VECTOR_PRESENT: tuple[str, tuple[str, ...]] = ("pg_extension", ("vector",))
+_LIST_INDEXES = ("WHERE am.amname = 'turboquant'", None)
+
+
+def _index_row(metadata: dict, *, index: str = "embeddings_tq_idx") -> dict:
+    return {
+        "schema": "public",
+        "index": index,
+        "table": "embeddings",
+        "column": "embedding",
+        "reloptions": ["bits=4", "lists=100"],
+        "metadata": metadata,
+    }
+
+
+async def test_recommend_turboquant_maintenance_returns_empty_when_extension_absent() -> None:
+    driver = FakeParamRoutingDriver({_TQ_PRESENT: []})
+
+    assert await recommend_turboquant_maintenance(driver) == []  # type: ignore[arg-type]
+
+
+async def test_recommend_turboquant_maintenance_fires_prerequisites_unmet_when_vector_missing() -> None:
+    # pg_turboquant installed, pgvector not — cluster-level critical
+    # finding, no per-index walking.
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [],
+        }
+    )
+
+    findings = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
+    assert len(findings) == 1
+    [finding] = findings
+    assert finding.code == "prerequisites_unmet"
+    assert finding.severity == "CRITICAL"
+    assert finding.schema == ""
+    assert finding.index == ""
+    assert "vector" in finding.suggested_action.lower()
+
+
+async def test_recommend_turboquant_maintenance_fires_format_v1_rule() -> None:
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [_index_row({"algorithm_version": "v1.3"})],
+        }
+    )
+
+    [finding] = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
+    assert finding.code == "format_v1_reindex_needed"
+    assert finding.severity == "CRITICAL"
+    assert finding.index == "embeddings_tq_idx"
+    assert finding.suggested_action.startswith("REINDEX INDEX CONCURRENTLY")
+
+
+async def test_recommend_turboquant_maintenance_fires_maintenance_due_rule() -> None:
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [
+                _index_row(
+                    {
+                        "algorithm_version": "v2",
+                        "maintenance_recommended": True,
+                        "delta_state": "compaction_pending",
+                    }
+                )
+            ],
+        }
+    )
+
+    [finding] = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
+    assert finding.code == "maintenance_due"
+    assert finding.severity == "WARNING"
+    assert "tq_maintain_index" in finding.suggested_action
+
+
+async def test_recommend_turboquant_maintenance_fires_fast_path_ineligible_rule() -> None:
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [_index_row({"algorithm_version": "v2", "fast_path_eligible": False})],
+        }
+    )
+
+    [finding] = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
+    assert finding.code == "fast_path_ineligible"
+    assert finding.severity == "WARNING"
+
+
+async def test_recommend_turboquant_maintenance_silent_when_fast_path_unreported() -> None:
+    # ``None`` (key missing or null) is distinct from explicit ``False`` —
+    # don't fire on the absence of information.
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [_index_row({"algorithm_version": "v2"})],
+        }
+    )
+
+    assert await recommend_turboquant_maintenance(driver) == []  # type: ignore[arg-type]
+
+
+async def test_recommend_turboquant_maintenance_combines_findings_across_indexes() -> None:
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [
+                _index_row({"algorithm_version": "v1.4"}, index="old_idx"),
+                _index_row(
+                    {"algorithm_version": "v2", "maintenance_recommended": True},
+                    index="needs_compaction_idx",
+                ),
+                _index_row({"algorithm_version": "v2", "fast_path_eligible": False}, index="slow_idx"),
+            ],
+        }
+    )
+
+    findings = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
+    codes = sorted((f.code, f.index) for f in findings)
+    assert codes == [
+        ("fast_path_ineligible", "slow_idx"),
+        ("format_v1_reindex_needed", "old_idx"),
+        ("maintenance_due", "needs_compaction_idx"),
+    ]
+
+
+# --- audit_turboquant_indexes (scorecard adapter) --------------------------
+
+
+async def test_audit_turboquant_indexes_returns_none_when_extension_absent() -> None:
+    driver = FakeParamRoutingDriver({_TQ_PRESENT: []})
+
+    assert await audit_turboquant_indexes(driver) is None  # type: ignore[arg-type]
+
+
+async def test_audit_turboquant_indexes_emits_good_when_no_findings() -> None:
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [],  # no turboquant indexes — clean baseline
+        }
+    )
+
+    category = await audit_turboquant_indexes(driver)  # type: ignore[arg-type]
+    assert category is not None
+    assert category.category == "pg_turboquant Indexes"
+    assert category.status == "GOOD"
+    assert category.score == 100
+    assert [m.status for m in category.metrics] == ["GOOD"]
+
+
+async def test_audit_turboquant_indexes_scores_drop_with_findings() -> None:
+    # One CRITICAL (-30) + one WARNING (-15) = score 55 → CRITICAL band.
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [
+                _index_row({"algorithm_version": "v1.0"}, index="old_idx"),
+                _index_row(
+                    {"algorithm_version": "v2", "maintenance_recommended": True},
+                    index="warn_idx",
+                ),
+            ],
+        }
+    )
+
+    category = await audit_turboquant_indexes(driver)  # type: ignore[arg-type]
+    assert category is not None
+    assert category.score == 55
+    assert category.status == "CRITICAL"
+    severities = sorted(m.status for m in category.metrics)
+    assert severities == ["CRITICAL", "WARNING"]
+
+
+async def test_audit_turboquant_indexes_score_clamped_at_zero() -> None:
+    # Four CRITICALs would deduct 120; score must not go negative.
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [_index_row({"algorithm_version": "v1.0"}, index=f"old_{i}") for i in range(4)],
+        }
+    )
+
+    category = await audit_turboquant_indexes(driver)  # type: ignore[arg-type]
+    assert category is not None
+    assert category.score == 0
+    assert category.status == "CRITICAL"
+
+
 # --- MCP layer wiring ------------------------------------------------------
 
 
@@ -357,4 +562,5 @@ async def test_turboquant_tools_register_in_read_only_mode() -> None:
         "get_turboquant_index_metadata",
         "get_turboquant_heap_stats",
         "get_turboquant_last_scan_stats",
+        "recommend_turboquant_maintenance",
     } <= listed
