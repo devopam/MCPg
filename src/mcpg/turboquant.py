@@ -1,9 +1,10 @@
-"""pg_turboquant read advisors.
+"""pg_turboquant read advisors + maintenance write.
 
 `pg_turboquant <https://github.com/mayflower/pg_turboquant>`_ is a
 PostgreSQL extension providing a custom ANN index access method
 (``USING turboquant``) over pgvector ``vector`` / ``halfvec`` columns.
-This module exposes the extension's read-only observability surface:
+This module exposes the extension's read-only observability surface
+plus a single maintenance write:
 
 * :func:`list_turboquant_indexes` — every turboquant index in the
   database, joined with its ``tq_index_metadata`` payload.
@@ -12,8 +13,13 @@ This module exposes the extension's read-only observability surface:
   index.
 * :func:`get_turboquant_last_scan_stats` — the backend-local JSON
   describing the most recent turboquant scan.
+* :func:`recommend_turboquant_maintenance` — rule-table advisor.
+* :func:`audit_turboquant_indexes` — scorecard category adapter.
+* :func:`maintain_turboquant_index` — wraps ``tq_maintain_index``;
+  pre-flights that the named index is actually a turboquant index so
+  the call can't be turned into a way to probe arbitrary catalogs.
 
-All four functions return cleanly (empty list / ``None``) when the
+All read functions return cleanly (empty list / ``None``) when the
 extension is not installed, so callers can treat absence as "no
 turboquant in use" rather than a hard error.
 
@@ -33,8 +39,10 @@ expected to land in a follow-up once the signature is pinned.
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -127,6 +135,24 @@ class TurboQuantLastScanStats:
     simd_kernel: str | None
     pages_scanned: int | None
     pages_pruned: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class MaintenanceResult:
+    """Outcome of a :func:`maintain_turboquant_index` call.
+
+    All four fields are observed client-side (start/end timestamps and
+    elapsed wall time around the ``tq_maintain_index`` call). The
+    function's PG return value is deliberately not parsed — upstream
+    doesn't document a return shape and inventing one would invite a
+    breaking change later.
+    """
+
+    schema: str
+    index: str
+    started_at: str  # ISO 8601 UTC
+    completed_at: str  # ISO 8601 UTC
+    duration_seconds: float
 
 
 # --- SQL --------------------------------------------------------------------
@@ -563,4 +589,68 @@ async def get_turboquant_last_scan_stats(driver: SqlDriver) -> TurboQuantLastSca
         simd_kernel=raw.get("simd_kernel"),
         pages_scanned=int(pages_scanned) if pages_scanned is not None else None,
         pages_pruned=int(pages_pruned) if pages_pruned is not None else None,
+    )
+
+
+# Pre-flight: confirm the named index actually uses the turboquant
+# access method before calling tq_maintain_index. Without this check,
+# upstream would raise a generic error on any non-turboquant index —
+# and the error text would leak a small amount of catalog information.
+_ASSERT_IS_TURBOQUANT_SQL = """
+SELECT 1
+FROM pg_index ix
+JOIN pg_class i  ON i.oid = ix.indexrelid
+JOIN pg_namespace n ON n.oid = i.relnamespace
+JOIN pg_am am ON am.oid = i.relam
+WHERE am.amname = 'turboquant' AND n.nspname = %s AND i.relname = %s
+"""
+
+# Identifier quoting happens PG-side via format('%I.%I')::regclass,
+# so the bound params can't escape into SQL syntax even before the
+# preflight check above runs.
+_MAINTAIN_INDEX_SQL = "SELECT tq_maintain_index(format('%I.%I', %s, %s)::regclass)"
+
+
+def _utc_iso_now() -> str:
+    return datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")
+
+
+async def maintain_turboquant_index(driver: SqlDriver, schema: str, index: str) -> MaintenanceResult:
+    """Run ``tq_maintain_index`` on a single turboquant index.
+
+    The call delegates the actual delta-tier merge / compaction work
+    to upstream; this wrapper handles validation, the pre-flight
+    catalog check, and client-side wall-time measurement. The PG
+    return value of ``tq_maintain_index`` is intentionally not parsed
+    — upstream doesn't document one, and inventing a shape now would
+    force a breaking change later.
+
+    Raises:
+        TurboQuantError: extension is not installed, the identifier
+            fails validation, or the named index is not a turboquant
+            index.
+    """
+    _validate_identifier(schema, "schema")
+    _validate_identifier(index, "index")
+    if not await extension_installed(driver, "pg_turboquant"):
+        raise TurboQuantError("pg_turboquant extension is not installed in this database")
+
+    preflight = await driver.execute_query(_ASSERT_IS_TURBOQUANT_SQL, params=[schema, index], force_readonly=True)
+    if not preflight:
+        raise TurboQuantError(
+            f"index {schema}.{index} is not a turboquant index (or does not exist); refusing to call tq_maintain_index"
+        )
+
+    started_at = _utc_iso_now()
+    started_mono = time.monotonic()
+    await driver.execute_query(_MAINTAIN_INDEX_SQL, params=[schema, index], force_readonly=False)
+    duration = time.monotonic() - started_mono
+    completed_at = _utc_iso_now()
+
+    return MaintenanceResult(
+        schema=schema,
+        index=index,
+        started_at=started_at,
+        completed_at=completed_at,
+        duration_seconds=round(duration, 6),
     )

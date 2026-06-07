@@ -214,7 +214,7 @@ CHANGELOG bullet, one line in `docs/tour.md`.
 
 ---
 
-## Phase 3 — write tool: `tq_maintain_index` (single PR, small)
+## Phase 3 — write tool: `tq_maintain_index` ✅ shipped (TQ-3)
 
 **Goal:** let agents act on the Phase-2 recommendations.
 
@@ -315,10 +315,39 @@ bullet, `docs/tour.md` line.
 
 ---
 
-## Phase 5 — query execution + per-query advisor (single PR)
+## Phase 5 — query execution + per-query advisor ⏸ deferred to backlog
 
-**Status:** promoted from "out of scope" to in-scope after a coverage
-sweep. Two reasons:
+**Status update.** A second coverage sweep — run under a strict
+no-speculation principle — surfaced that the upstream README
+documents the function *names* but not:
+
+- the `query_vector` parameter's PG type (placeholder in the README,
+  not an actual type),
+- the accepted values of `metric text` (`'cosine'`? `'l2'`? the
+  opclass names?),
+- the return column shape (column names and types) of either
+  candidate function.
+
+`tq_approx_candidates(...)` and `tq_recommended_query_knobs(...)`
+also have entirely undocumented signatures. Implementing any of the
+three would require guessing pieces that upstream could change at
+any time — a wrapper built on guesses either breaks on first real
+use or forces a breaking change later. Both outcomes erode adoption
+confidence, so the phase is deferred.
+
+**Return condition:** ship when upstream documents the `query_vector`
+PG type, the accepted `metric` values, and the candidate-function
+return shape; or when a real install is available to verify against.
+
+**Consequence:** the RAG efficiency suite's turboquant arm depends
+on `tq_rerank_candidates` and is deferred in parallel. The HNSW and
+IVFFlat arms of that suite are unaffected.
+
+---
+
+## Phase 5 (original design — kept for reference) — query execution + per-query advisor
+
+Two reasons for the original promotion ahead of TQ-2/3/4:
 
 1. **Adoption.** Without these, callers can list and inspect a
    turboquant index but can't actually issue a turboquant-aware
@@ -426,10 +455,19 @@ Each phase lands on its own branch / PR so reviews stay narrow and
 parallel work elsewhere isn't blocked:
 
 1. `claude/tq1-read-advisors` — Phase 1 ✅ (PR #71)
-2. `claude/tq2-audit-integration` — Phase 2 ✅ (in flight after coverage sweep agreed that TQ-2 composes most directly on TQ-1's outputs)
-3. `claude/tq5-query-execution` — Phase 5
-4. `claude/tq3-maintenance-write` — Phase 3
-5. `claude/tq4-ddl-tools` — Phase 4
+2. `claude/tq2-audit-integration` — Phase 2 ✅ (PR #72)
+3. `claude/tq3-maintenance-write` — Phase 3 ✅ (this PR)
+4. `claude/tq4-ddl-tools` — Phase 4
+5. `claude/tq5-query-execution` — Phase 5 ⏸ **deferred** until upstream documents the missing pieces
+
+**Re-ordering note.** TQ-5 was briefly promoted ahead of TQ-2/3/4
+under an adoption argument, then deferred during the TQ-3 coverage
+sweep when a strict no-speculation review surfaced that the upstream
+signatures aren't fully documented. The phasing rationale evolved:
+TQ-2 first because it composes most directly on TQ-1's outputs;
+TQ-3 next because `tq_maintain_index` has the lowest speculation
+surface of all remaining phases; TQ-4 next because the WITH options
+and opclasses are explicitly documented as user-facing.
 
 **Note on the deferred `delta_tier_large` rule.** TQ-2's rule table
 ships with four codes (`prerequisites_unmet`, `format_v1_reindex_needed`,

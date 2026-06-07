@@ -16,6 +16,7 @@ from mcpg.turboquant import (
     get_turboquant_index_metadata,
     get_turboquant_last_scan_stats,
     list_turboquant_indexes,
+    maintain_turboquant_index,
     recommend_turboquant_maintenance,
 )
 
@@ -613,6 +614,90 @@ async def test_audit_turboquant_indexes_score_clamped_at_zero() -> None:
     assert category.status == "CRITICAL"
 
 
+# --- maintain_turboquant_index ---------------------------------------------
+
+
+_PREFLIGHT_SUBSTR = "WHERE am.amname = 'turboquant' AND n.nspname"
+
+
+async def test_maintain_turboquant_index_raises_when_extension_absent() -> None:
+    driver = FakeRoutingDriver({"pg_extension": []})
+
+    with pytest.raises(TurboQuantError, match="not installed"):
+        await maintain_turboquant_index(driver, "public", "idx")  # type: ignore[arg-type]
+
+
+async def test_maintain_turboquant_index_raises_when_index_is_not_turboquant() -> None:
+    # Extension present, preflight returns no rows (the index is real
+    # but not a turboquant index, or doesn't exist at all). Refuse
+    # rather than let upstream's error message leak catalog info.
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            _PREFLIGHT_SUBSTR: [],
+        }
+    )
+
+    with pytest.raises(TurboQuantError, match="not a turboquant index"):
+        await maintain_turboquant_index(driver, "public", "some_other_idx")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("schema", "index"),
+    [
+        ("public; DROP", "idx"),
+        ("public", "idx; DROP"),
+        ("", "idx"),
+        ("public", ""),
+        ("public.embeddings", "idx"),
+        ("public", "idx-name"),
+    ],
+)
+async def test_maintain_turboquant_index_rejects_unsafe_identifiers(schema: str, index: str) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(TurboQuantError, match="invalid"):
+        await maintain_turboquant_index(driver, schema, index)  # type: ignore[arg-type]
+
+
+async def test_maintain_turboquant_index_happy_path_returns_timings() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            _PREFLIGHT_SUBSTR: [{"present": 1}],
+            "tq_maintain_index": [{"tq_maintain_index": None}],
+        }
+    )
+
+    result = await maintain_turboquant_index(driver, "public", "embeddings_tq_idx")  # type: ignore[arg-type]
+    assert result.schema == "public"
+    assert result.index == "embeddings_tq_idx"
+    assert result.started_at.endswith("Z")
+    assert result.completed_at.endswith("Z")
+    assert result.duration_seconds >= 0.0
+
+
+async def test_maintain_turboquant_index_runs_maintenance_under_write_capability() -> None:
+    # The third query call should be the actual maintain call and must
+    # NOT have force_readonly set — a write capability check from the
+    # SqlDriver layer relies on that flag.
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            _PREFLIGHT_SUBSTR: [{"present": 1}],
+            "tq_maintain_index": [{"tq_maintain_index": None}],
+        }
+    )
+
+    await maintain_turboquant_index(driver, "public", "embeddings_tq_idx")  # type: ignore[arg-type]
+
+    maintain_calls = [c for c in driver.calls if "tq_maintain_index" in c[0]]
+    assert len(maintain_calls) == 1
+    _query, params, force_readonly = maintain_calls[0]
+    assert params == ["public", "embeddings_tq_idx"]
+    assert force_readonly is False
+
+
 # --- MCP layer wiring ------------------------------------------------------
 
 
@@ -627,3 +712,18 @@ async def test_turboquant_tools_register_in_read_only_mode() -> None:
         "get_turboquant_last_scan_stats",
         "recommend_turboquant_maintenance",
     } <= listed
+    # maintain_turboquant_index is WRITE-gated; must not be listed in
+    # read-only mode.
+    assert "maintain_turboquant_index" not in listed
+
+
+_UNRESTRICTED = load_settings(
+    {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": "unrestricted"}
+)
+
+
+async def test_maintain_turboquant_index_registers_in_unrestricted_mode() -> None:
+    server = create_server(_UNRESTRICTED, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "maintain_turboquant_index" in listed

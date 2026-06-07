@@ -2697,6 +2697,28 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
         return [asdict(f) for f in findings]
 
 
+def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="maintain_turboquant_index",
+        description=(
+            "Run tq_maintain_index on a turboquant index — lightweight "
+            "merge / compaction of the physical delta tier. The wrapper "
+            "pre-flights that the named index is actually a turboquant "
+            "index (catalog lookup on pg_am) before invoking upstream, "
+            "so the call can't be turned into a way to probe arbitrary "
+            "indexes for error messages. Returns wall-clock timestamps "
+            "and elapsed duration measured client-side; the PG return "
+            "value of tq_maintain_index is intentionally not parsed "
+            "(upstream doesn't document a return shape). Available only "
+            "in unrestricted mode; requires pg_turboquant installed."
+        ),
+    )
+    async def maintain_turboquant_index(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
+        result = await turboquant.maintain_turboquant_index(_driver(ctx), schema, index)
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_cron_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="schedule_cron_job",
@@ -3090,6 +3112,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_maintenance(server)
         _register_backend_control(server)
         _register_cron_write(server)
+        _register_turboquant_writes(server)
         _register_data_movement_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
