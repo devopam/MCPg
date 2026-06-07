@@ -170,6 +170,15 @@ monitor_embedding_drift(schema, table, embedding_column, timestamp_column,
                                                                           # between two time windows
 ```
 
+## "Inspect a pg_turboquant ANN index" (`pg_turboquant` installed)
+
+```
+list_turboquant_indexes()                          # every turboquant index + tq_index_metadata
+get_turboquant_index_metadata(schema, index)       # algorithm_version, quantizer_family, capability_flags, …
+get_turboquant_heap_stats(schema, index)           # exact heap row count from tq_index_heap_stats
+get_turboquant_last_scan_stats()                   # most recent backend-local scan diagnostics
+```
+
 ## "Move data in / out"
 
 **Read** (no opt-in needed):
