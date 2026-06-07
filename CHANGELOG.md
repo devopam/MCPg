@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **pg_turboquant read advisors (TQ-1).** Four read-only tools wrapping
+  the [pg_turboquant](https://github.com/mayflower/pg_turboquant) ANN
+  index extension's observability surface:
+  `list_turboquant_indexes`, `get_turboquant_index_metadata`,
+  `get_turboquant_heap_stats`, and `get_turboquant_last_scan_stats`.
+  Each function returns cleanly (empty list / `None`) when the
+  extension is not installed, so callers can treat absence as "no
+  turboquant in use" rather than a hard error. Documented metadata
+  keys are surfaced as typed dataclass fields; the full upstream JSON
+  payload is preserved in `raw_metadata` / `raw` so future-added
+  fields remain accessible without a code change. Identifier
+  validation (matching the `vector_tuning` rule) runs before any SQL
+  is built. `pg_turboquant` is also added to the
+  `ENABLEABLE_EXTENSIONS` allowlist so the existing `enable_extension`
+  tool can install it. The fifth planned tool
+  (`recommend_turboquant_query_knobs`, wrapping
+  `tq_recommended_query_knobs`) is intentionally deferred — its
+  upstream signature is not yet documented at the field level, and
+  shipping a guessed signature would force a breaking change later.
+
 - **`schedule_logical_backup` tool.** Schedules a recurring `pg_dump`
   via `pg_cron` + `COPY TO PROGRAM`: the cron job runs `pg_dump` on
   the database host's filesystem and writes the dump to a caller-

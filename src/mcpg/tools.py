@@ -58,6 +58,7 @@ from mcpg import (
     test_data,
     textsearch,
     timescaledb,
+    turboquant,
     vector_ops,
     vector_tuner_advanced,
     vector_tuning,
@@ -2619,6 +2620,65 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
         return [asdict(job) for job in jobs]
 
 
+def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="list_turboquant_indexes",
+        description=(
+            "List every pg_turboquant ANN index in the database along with "
+            "the metadata payload that tq_index_metadata() reports for it: "
+            "algorithm_version, quantizer_family, residual_sketch_kind, "
+            "fast_path_eligible, capability_flags, delta_state, and "
+            "maintenance_recommended. Returns an empty list when the "
+            "pg_turboquant extension is not installed."
+        ),
+    )
+    async def list_turboquant_indexes(ctx: _Ctx) -> list[dict[str, Any]]:
+        infos = await turboquant.list_turboquant_indexes(_driver(ctx))
+        return [asdict(info) for info in infos]
+
+    @server.tool(
+        name="get_turboquant_index_metadata",
+        description=(
+            "Fetch the tq_index_metadata payload for a single turboquant "
+            "index (schema.index). Documented fields are surfaced as typed "
+            "attributes; the full upstream payload is preserved in "
+            "``raw_metadata`` so advisors can reach unanticipated fields. "
+            "Raises when the extension is not installed or no turboquant "
+            "index by that name exists."
+        ),
+    )
+    async def get_turboquant_index_metadata(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
+        info = await turboquant.get_turboquant_index_metadata(_driver(ctx), schema, index)
+        return asdict(info)
+
+    @server.tool(
+        name="get_turboquant_heap_stats",
+        description=(
+            "Return the exact heap row count tq_index_heap_stats() reports "
+            "for a single turboquant index (schema.index). The raw upstream "
+            "payload is preserved in ``raw`` for any extra counters upstream "
+            "may add. Requires the pg_turboquant extension."
+        ),
+    )
+    async def get_turboquant_heap_stats(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
+        stats = await turboquant.get_turboquant_heap_stats(_driver(ctx), schema, index)
+        return asdict(stats)
+
+    @server.tool(
+        name="get_turboquant_last_scan_stats",
+        description=(
+            "Return the backend-local JSON tq_last_scan_stats() reports for "
+            "the most recent turboquant scan: score_mode, simd_kernel, "
+            "pages_scanned, pages_pruned, plus the raw payload. Returns "
+            "``null`` when the extension is absent or no turboquant scan "
+            "has run on this connection yet."
+        ),
+    )
+    async def get_turboquant_last_scan_stats(ctx: _Ctx) -> dict[str, Any] | None:
+        stats = await turboquant.get_turboquant_last_scan_stats(_driver(ctx))
+        return asdict(stats) if stats is not None else None
+
+
 def _register_cron_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="schedule_cron_job",
@@ -3004,6 +3064,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_query(server)
         _register_health(server)
         _register_liveops(server)
+        _register_turboquant_reads(server)
         _register_timescaledb_reads(server)
         _register_graphs_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):

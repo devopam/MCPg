@@ -40,6 +40,7 @@ ENABLEABLE_EXTENSIONS = frozenset(
         "pg_partman",
         "pg_buffercache",
         "pg_walinspect",
+        "pg_turboquant",
     }
 )
 

@@ -110,11 +110,39 @@ awareness, and HNSW/IVFFlat detection in `list_indexes`:
 | 9.9 | ✅ **Shipped.** `monitor_index_build` — surfaces every active `CREATE INDEX` from `pg_stat_progress_create_index` (PG12+), with resolved `schema.relation.index_name`, phase label, and a computed `progress_pct` (blocks first, tuples as fallback). Lives in `mcpg.liveops`. | S | Medium | Lives next to `list_active_queries`; useful for big-table index work. |
 | 9.10 | ✅ **Shipped.** `migrate_vector_to_halfvec` — read-only DDL planner that converts a `vector(N)` column to `halfvec(N)`. Reads the column's type + dimension + row count + every index from the catalog and emits an ordered `migration_sql` plan (drop affected indexes, `ALTER COLUMN` via `USING col::halfvec(N)`, recreate each index with its `halfvec_*_ops` sibling) plus a mirror `rollback_sql`. Returns `already_halfvec=true` (empty plan) when the column is already at the target type, and refuses any ANN index whose opclass has no halfvec sibling rather than rewrite it incorrectly. Caller is expected to validate via the shadow-migration workflow before applying. Lives in `mcpg.vector_tuning`. | S-M | Medium | Pairs with `recommend_vector_quantization`. Uses the existing shadow workflow. |
 
-## 10. Multi-database support
+## 10. pg_turboquant integration
+
+The full phased plan lives in
+[`plans/pg_turboquant-integration.md`](plans/pg_turboquant-integration.md).
+The cross-backend retrieval-quality and rerank-analytics work that
+composes with this lives in
+[`plans/rag-efficiency-suite.md`](plans/rag-efficiency-suite.md).
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 10.1 | One MCPg server, multiple `MCPG_DATABASE_URL`s — tool-level db selector | L | Medium | Today: one server = one DSN. Multi-DB means a per-tool param, a pool-per-DB, and rethinking gates. Big lift; no concrete demand yet. |
+| 10.1 | ✅ **Shipped (TQ-1).** Read advisors for [pg_turboquant](https://github.com/mayflower/pg_turboquant): `list_turboquant_indexes`, `get_turboquant_index_metadata`, `get_turboquant_heap_stats`, `get_turboquant_last_scan_stats`. Defensive JSON parsing — documented fields are typed; the full upstream payload is preserved in `raw_metadata` / `raw` so future-added fields stay reachable. Returns empty list / `None` when the extension is absent. Lives in `mcpg.turboquant`. | S | Medium | Mirrors how `cron` / `partman` are surfaced. `pg_turboquant` added to `ENABLEABLE_EXTENSIONS`. |
+| 10.2 | `recommend_turboquant_maintenance` advisor + `audit_turboquant_indexes` category wired into `audit_database` — `format_v1_reindex_needed`, `maintenance_due`, `fast_path_ineligible`, `delta_tier_large` rules. | S-M | Medium-High | Phase 2 of the plan. |
+| 10.3 | `maintain_turboquant_index` — write tool wrapping `tq_maintain_index`; pre-flight confirms the named index is actually a turboquant index. Unrestricted-only. | S | Medium | Phase 3. |
+| 10.4 | `create_turboquant_index` + `reindex_turboquant_index` — DDL tools with bits/lists/transform/normalized allowlists and a single-source-of-truth metric→opclass mapping. Unrestricted + `MCPG_ALLOW_DDL`. | M | Medium-High | Phase 4. |
+
+## 11. RAG efficiency suite
+
+Cross-backend retrieval-quality + cross-encoder rerank analytics.
+Full design plan in
+[`plans/rag-efficiency-suite.md`](plans/rag-efficiency-suite.md).
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 11.1 | `analyze_vector_search_efficiency` — one report, three backends (HNSW / IVFFlat / turboquant). Sweeps a candidate-multiplier axis mapped to the right per-backend knob (`ef_search` / `probes` / `rerank_limit`); reports recall@k, Spearman ρ + Kendall τ, p50/p95 latency, pages-pruned (turboquant), bytes-per-indexed-row; emits findings (`baseline_recall_low`, `rerank_lift_flat`, `rerank_lift_steep`, `ranking_degraded`, `pruning_ineffective`, …). Zero instrumentation cost. | M | High | Phase A of the suite. |
+| 11.2 | `audit_vector_indexes` category — tiny per-index sweep folded into `audit_database`. | S | Medium | Phase B. |
+| 11.3 | `mcpg_rag.rerank_events` schema + `setup_rag_telemetry` + `log_rerank_event` — caller-populated event table for cross-encoder analytics. `query_hash` as the join key keeps PII out by default. | S | Medium | Phase C. Adoption ask; rewards instrumentation with phase-D analytics. |
+| 11.4 | `analyze_reranker_lift`, `analyze_topk_stability`, `analyze_rerank_score_distribution`, `analyze_rerank_ndcg`, `recommend_rerank_strategy`, plus `audit_rag_pipeline` category. | M | High | Phase D — "is my cross-encoder earning its latency budget, or is it theatre?" |
+
+## 12. Multi-database support
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 12.1 | One MCPg server, multiple `MCPG_DATABASE_URL`s — tool-level db selector | L | Medium | Today: one server = one DSN. Multi-DB means a per-tool param, a pool-per-DB, and rethinking gates. Big lift; no concrete demand yet. |
 
 ---
 
