@@ -62,7 +62,12 @@ class TurboQuantIndexInfo:
 
     Documented keys are surfaced as typed fields; the full upstream
     payload is preserved in :attr:`raw_metadata` so callers can still
-    reach unanticipated fields.
+    reach unanticipated fields. :attr:`index_options` is sourced from
+    ``pg_class.reloptions`` — the ``WITH (...)`` clause the index was
+    created with, parsed into typed values (``bits``, ``lists`` as
+    ints, ``normalized`` as bool, ``transform`` as str). This gives
+    agents the build-time configuration at a glance without a separate
+    ``tq_index_metadata`` round-trip.
     """
 
     schema: str
@@ -77,6 +82,7 @@ class TurboQuantIndexInfo:
     delta_state: str | None = None
     maintenance_recommended: bool | None = None
     raw_metadata: dict[str, Any] = field(default_factory=dict)
+    index_options: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +121,7 @@ SELECT
     i.relname                                  AS index,
     t.relname                                  AS table,
     a.attname                                  AS column,
+    i.reloptions                               AS reloptions,
     tq_index_metadata(i.oid::regclass)::jsonb  AS metadata
 FROM pg_index ix
 JOIN pg_class i           ON i.oid = ix.indexrelid
@@ -132,6 +139,7 @@ SELECT
     i.relname                                  AS index,
     t.relname                                  AS table,
     a.attname                                  AS column,
+    i.reloptions                               AS reloptions,
     tq_index_metadata(i.oid::regclass)::jsonb  AS metadata
 FROM pg_index ix
 JOIN pg_class i           ON i.oid = ix.indexrelid
@@ -177,6 +185,39 @@ def _as_str_list(value: Any) -> list[str]:
     return []
 
 
+def _coerce_reloption_value(raw: str) -> Any:
+    lowered = raw.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if raw.lstrip("-").isdigit():
+        return int(raw)
+    return raw
+
+
+def _parse_reloptions(raw: Any) -> dict[str, Any]:
+    """Parse a ``pg_class.reloptions`` text[] into a typed dict.
+
+    PG stores reloptions as a text[] of ``key=value`` strings.
+    ``bits`` / ``lists`` come back as ints, ``normalized`` as bool,
+    everything else (e.g. ``transform``) as the raw string. Unknown
+    or malformed entries are skipped rather than rejected so a future
+    upstream option doesn't fail catalog reads.
+    """
+    if not isinstance(raw, list):
+        return {}
+    parsed: dict[str, Any] = {}
+    for item in raw:
+        if not isinstance(item, str) or "=" not in item:
+            continue
+        key, _, value = item.partition("=")
+        if not key:
+            continue
+        parsed[key] = _coerce_reloption_value(value)
+    return parsed
+
+
 def _index_info_from_row(row_cells: dict[str, Any]) -> TurboQuantIndexInfo:
     metadata = _as_dict(row_cells.get("metadata"))
     return TurboQuantIndexInfo(
@@ -192,6 +233,7 @@ def _index_info_from_row(row_cells: dict[str, Any]) -> TurboQuantIndexInfo:
         delta_state=metadata.get("delta_state"),
         maintenance_recommended=metadata.get("maintenance_recommended"),
         raw_metadata=metadata,
+        index_options=_parse_reloptions(row_cells.get("reloptions")),
     )
 
 

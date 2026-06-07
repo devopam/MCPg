@@ -50,6 +50,7 @@ async def test_list_turboquant_indexes_maps_rows_when_extension_present() -> Non
                     "index": "embeddings_tq_idx",
                     "table": "embeddings",
                     "column": "embedding",
+                    "reloptions": ["bits=4", "lists=100", "transform=hadamard", "normalized=true"],
                     "metadata": _FULL_METADATA,
                 }
             ],
@@ -72,6 +73,12 @@ async def test_list_turboquant_indexes_maps_rows_when_extension_present() -> Non
             delta_state="clean",
             maintenance_recommended=False,
             raw_metadata=_FULL_METADATA,
+            index_options={
+                "bits": 4,
+                "lists": 100,
+                "transform": "hadamard",
+                "normalized": True,
+            },
         )
     ]
 
@@ -102,6 +109,64 @@ async def test_list_turboquant_indexes_tolerates_partial_metadata() -> None:
     assert info.capability_flags == []
     assert info.maintenance_recommended is None
     assert info.raw_metadata == {"algorithm_version": "v1"}
+
+
+async def test_list_turboquant_indexes_handles_empty_reloptions() -> None:
+    # An index created without explicit options has reloptions = NULL —
+    # the fake driver represents that as None in the cell. The parser
+    # should produce {} rather than raise.
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname = 'turboquant'": [
+                {
+                    "schema": "public",
+                    "index": "default_idx",
+                    "table": "embeddings",
+                    "column": "embedding",
+                    "reloptions": None,
+                    "metadata": _FULL_METADATA,
+                }
+            ],
+        }
+    )
+
+    [info] = await list_turboquant_indexes(driver)  # type: ignore[arg-type]
+    assert info.index_options == {}
+
+
+async def test_list_turboquant_indexes_skips_malformed_reloptions_entries() -> None:
+    # Future upstream additions or accidentally-malformed entries
+    # should be silently skipped so catalog reads never break on a
+    # surprise option name.
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname = 'turboquant'": [
+                {
+                    "schema": "public",
+                    "index": "weird_idx",
+                    "table": "embeddings",
+                    "column": "embedding",
+                    "reloptions": [
+                        "bits=8",
+                        "no_equals_sign_at_all",  # malformed → skipped
+                        "=missing_key",  # empty key → skipped
+                        "future_option=banana",  # unknown key → preserved as str
+                        "lists=-1",  # negative ints parse
+                    ],
+                    "metadata": _FULL_METADATA,
+                }
+            ],
+        }
+    )
+
+    [info] = await list_turboquant_indexes(driver)  # type: ignore[arg-type]
+    assert info.index_options == {
+        "bits": 8,
+        "future_option": "banana",
+        "lists": -1,
+    }
 
 
 async def test_list_turboquant_indexes_decodes_json_text_payload() -> None:
@@ -173,6 +238,7 @@ async def test_get_turboquant_index_metadata_returns_mapped_row() -> None:
                     "index": "embeddings_tq_idx",
                     "table": "embeddings",
                     "column": "embedding",
+                    "reloptions": ["bits=4", "lists=100", "transform=hadamard", "normalized=true"],
                     "metadata": _FULL_METADATA,
                 }
             ],

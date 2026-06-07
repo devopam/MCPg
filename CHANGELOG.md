@@ -22,7 +22,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   validation (matching the `vector_tuning` rule) runs before any SQL
   is built. `pg_turboquant` is also added to the
   `ENABLEABLE_EXTENSIONS` allowlist so the existing `enable_extension`
-  tool can install it. The fifth planned tool
+  tool can install it. Each `TurboQuantIndexInfo` also carries the
+  index's `WITH (...)` build-time options (`bits`, `lists`,
+  `transform`, `normalized`) parsed from `pg_class.reloptions` into a
+  typed `index_options` dict — agents see the configuration at a
+  glance without a second round-trip. Unknown reloption keys are
+  preserved as strings rather than rejected, so a future upstream
+  option doesn't break catalog reads. The fifth planned tool
   (`recommend_turboquant_query_knobs`, wrapping
   `tq_recommended_query_knobs`) is intentionally deferred — its
   upstream signature is not yet documented at the field level, and
