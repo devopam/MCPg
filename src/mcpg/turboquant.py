@@ -33,6 +33,7 @@ expected to land in a follow-up once the signature is pinned.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -50,10 +51,9 @@ class TurboQuantError(Exception):
     """Raised when a pg_turboquant operation cannot complete."""
 
 
-def _quoted(name: str, kind: str) -> str:
+def _validate_identifier(name: str, kind: str) -> None:
     if not _IDENTIFIER.match(name):
         raise TurboQuantError(f"invalid {kind} name: {name!r}")
-    return f'"{name}"'
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,8 +164,6 @@ def _as_dict(value: Any) -> dict[str, Any]:
         return value
     if isinstance(value, str):
         try:
-            import json
-
             decoded = json.loads(value)
         except ValueError:
             return {}
@@ -222,8 +220,8 @@ async def get_turboquant_index_metadata(driver: SqlDriver, schema: str, index: s
             name is not a plain identifier, or no turboquant index with
             that name exists.
     """
-    _quoted(schema, "schema")
-    _quoted(index, "index")
+    _validate_identifier(schema, "schema")
+    _validate_identifier(index, "index")
     if not await extension_installed(driver, "pg_turboquant"):
         raise TurboQuantError("pg_turboquant extension is not installed in this database")
     rows = await driver.execute_query(_FETCH_ONE_INDEX_SQL, params=[schema, index], force_readonly=True)
@@ -239,8 +237,8 @@ async def get_turboquant_heap_stats(driver: SqlDriver, schema: str, index: str) 
         TurboQuantError: extension is not installed or the identifier
             fails validation.
     """
-    _quoted(schema, "schema")
-    _quoted(index, "index")
+    _validate_identifier(schema, "schema")
+    _validate_identifier(index, "index")
     if not await extension_installed(driver, "pg_turboquant"):
         raise TurboQuantError("pg_turboquant extension is not installed in this database")
     rows = await driver.execute_query(_HEAP_STATS_SQL, params=[schema, index], force_readonly=True)
