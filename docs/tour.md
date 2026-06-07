@@ -267,6 +267,12 @@ run_ddl(sql, schema=null, table=null)                # one DDL statement; option
 enable_extension(name)                               # allowlisted extensions only
 ```
 
+## "Maintain a pg_turboquant index" (`unrestricted` + pg_turboquant installed)
+
+```
+maintain_turboquant_index(schema, index)             # wraps tq_maintain_index; catalog-preflighted; client-side timings
+```
+
 ## "Schedule a job" (`unrestricted` + pg_cron installed)
 
 ```

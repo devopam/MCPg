@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`maintain_turboquant_index` write tool (TQ-3).** Wraps upstream
+  `tq_maintain_index(<schema>.<index>::regclass)` for lightweight
+  merge / compaction of a turboquant index's physical delta tier.
+  Identifier validation runs first; a catalog pre-flight
+  (`pg_index ⨝ pg_am WHERE am.amname = 'turboquant'`) then confirms
+  the named index is actually a turboquant index before invoking
+  upstream — without this, an attacker could probe arbitrary
+  catalogs via upstream's error messages. The wrapper measures
+  client-side timings (start, end, elapsed) and returns those in a
+  `MaintenanceResult`; the PG return value of `tq_maintain_index`
+  is intentionally not parsed because upstream doesn't document a
+  return shape and inventing one would invite a breaking change
+  later. Gated under WRITE (unrestricted mode); registered in a new
+  `_register_turboquant_writes` family.
+
 - **pg_turboquant maintenance advisor + audit category (TQ-2).** New
   `recommend_turboquant_maintenance` tool walks every turboquant
   index and emits stable-coded findings:
