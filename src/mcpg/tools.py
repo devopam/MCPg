@@ -2678,6 +2678,24 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
         stats = await turboquant.get_turboquant_last_scan_stats(_driver(ctx))
         return asdict(stats) if stats is not None else None
 
+    @server.tool(
+        name="recommend_turboquant_maintenance",
+        description=(
+            "Walk every pg_turboquant index and emit advisor findings. Rules "
+            "currently surfaced: ``prerequisites_unmet`` (CRITICAL — pgvector "
+            "is missing), ``format_v1_reindex_needed`` (CRITICAL — algorithm_version "
+            "starts with v1, needs REINDEX), ``maintenance_due`` (WARNING — "
+            "tq_index_metadata reports maintenance_recommended=true), and "
+            "``fast_path_ineligible`` (WARNING — fast_path_eligible=false). Each "
+            "finding carries a ready-to-run ``suggested_action`` SQL statement. "
+            "Returns an empty list when the extension is not installed. Also "
+            "feeds the ``pg_turboquant Indexes`` category in audit_database."
+        ),
+    )
+    async def recommend_turboquant_maintenance(ctx: _Ctx) -> list[dict[str, Any]]:
+        findings = await turboquant.recommend_turboquant_maintenance(_driver(ctx))
+        return [asdict(f) for f in findings]
+
 
 def _register_cron_write(server: FastMCP[AppContext]) -> None:
     @server.tool(

@@ -1141,6 +1141,8 @@ async def _check_custom_logs(driver: SqlDriver, log_table: str | None) -> list[T
 
 async def audit_database(driver: SqlDriver, schema: str, log_table: str | None = None) -> AuditReport:
     """Execute comprehensive performance checks, compile scores, recommendations, and issues."""
+    from mcpg.turboquant import audit_turboquant_indexes
+
     ver, dbname = await _get_version_and_db(driver)
 
     # 1. Execute categories
@@ -1150,7 +1152,14 @@ async def audit_database(driver: SqlDriver, schema: str, log_table: str | None =
     cat_bloat = await audit_cleanliness_bloat(driver, schema)
     cat_slow = await audit_slow_queries(driver)
 
+    # Optional categories — only included when the relevant extension
+    # is installed, so a stock cluster's scorecard isn't padded with
+    # empty sections and the overall score isn't diluted.
+    cat_turboquant = await audit_turboquant_indexes(driver)
+
     categories = [cat_mem, cat_tx, cat_lock, cat_bloat, cat_slow]
+    if cat_turboquant is not None:
+        categories.append(cat_turboquant)
 
     # 2. Dynamic scoring
     overall_score = round(sum(cat.score for cat in categories) / len(categories))
