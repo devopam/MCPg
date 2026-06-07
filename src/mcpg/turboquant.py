@@ -734,18 +734,18 @@ def _validate_metric(metric: str) -> None:
         raise TurboQuantError(f"unsupported metric {metric!r}; expected one of {expected}")
 
 
-def _validate_bits(bits: int | None) -> None:
-    if bits is None:
-        return
-    if not isinstance(bits, int) or isinstance(bits, bool) or not _BITS_MIN <= bits <= _BITS_MAX:
-        raise TurboQuantError(f"bits must be an int in [{_BITS_MIN}..{_BITS_MAX}]; got {bits!r}")
+def _validate_int_option(name: str, value: int | None, lo: int, hi: int) -> None:
+    """Validate a bounded integer DDL option.
 
-
-def _validate_lists(lists: int | None) -> None:
-    if lists is None:
+    Bools are explicitly rejected even though ``bool`` is a subclass
+    of ``int`` — accepting ``True`` as ``bits=1`` would silently
+    coerce a typed argument that almost certainly indicates a caller
+    bug.
+    """
+    if value is None:
         return
-    if not isinstance(lists, int) or isinstance(lists, bool) or not _LISTS_MIN <= lists <= _LISTS_MAX:
-        raise TurboQuantError(f"lists must be an int in [{_LISTS_MIN}..{_LISTS_MAX}]; got {lists!r}")
+    if not isinstance(value, int) or isinstance(value, bool) or not lo <= value <= hi:
+        raise TurboQuantError(f"{name} must be an int in [{lo}..{hi}]; got {value!r}")
 
 
 def _validate_transform(transform: str | None) -> None:
@@ -838,10 +838,11 @@ async def create_turboquant_index(
     _validate_identifier(column, "column")
     _validate_identifier(index_name, "index_name")
     _validate_metric(metric)
-    _validate_bits(bits)
-    _validate_lists(lists)
+    _validate_int_option("bits", bits, _BITS_MIN, _BITS_MAX)
+    _validate_int_option("lists", lists, _LISTS_MIN, _LISTS_MAX)
     _validate_transform(transform)
     _validate_bool(normalized, "normalized")
+    _validate_bool(concurrently, "concurrently")
 
     if not await extension_installed(database.driver(), "pg_turboquant"):
         raise TurboQuantError("pg_turboquant extension is not installed in this database")
@@ -902,6 +903,7 @@ async def reindex_turboquant_index(
     """
     _validate_identifier(schema, "schema")
     _validate_identifier(index, "index")
+    _validate_bool(concurrently, "concurrently")
 
     driver = database.driver()
     if not await extension_installed(driver, "pg_turboquant"):

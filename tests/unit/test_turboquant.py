@@ -728,6 +728,8 @@ async def test_create_turboquant_index_raises_when_extension_absent() -> None:
         ("transform", "none", "unsupported transform"),
         ("transform", "fft", "unsupported transform"),
         ("normalized", "yes", "normalized must be a bool"),
+        ("concurrently", "yes", "concurrently must be a bool"),
+        ("concurrently", 1, "concurrently must be a bool"),
     ],
 )
 async def test_create_turboquant_index_validates_options(kwarg: str, value: Any, match: str) -> None:
@@ -879,6 +881,13 @@ async def test_reindex_turboquant_index_honours_concurrently_false() -> None:
     result = await reindex_turboquant_index(db, "public", "idx", concurrently=False)  # type: ignore[arg-type]
     assert result.reindex_sql == 'REINDEX INDEX "public"."idx"'
     assert db.unmanaged == ['REINDEX INDEX "public"."idx"']
+
+
+@pytest.mark.parametrize("bad", ["yes", 1, "true"])
+async def test_reindex_turboquant_index_rejects_non_bool_concurrently(bad: Any) -> None:
+    db = _ddl_db_with_extension_installed()
+    with pytest.raises(TurboQuantError, match="concurrently must be a bool"):
+        await reindex_turboquant_index(db, "public", "idx", concurrently=bad)  # type: ignore[arg-type]
 
 
 # --- MCP layer wiring ------------------------------------------------------
