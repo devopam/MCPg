@@ -251,7 +251,7 @@ arbitrary indexes for error messages.
 
 ---
 
-## Phase 4 — DDL tools: `create_turboquant_index`, `reindex_turboquant_index` (single PR)
+## Phase 4 — DDL tools: `create_turboquant_index`, `reindex_turboquant_index` ✅ shipped (TQ-4)
 
 **Goal:** complete the CRUD loop. This is the highest-blast-radius
 piece, so it lands last and behind the strictest gate.
@@ -456,8 +456,8 @@ parallel work elsewhere isn't blocked:
 
 1. `claude/tq1-read-advisors` — Phase 1 ✅ (PR #71)
 2. `claude/tq2-audit-integration` — Phase 2 ✅ (PR #72)
-3. `claude/tq3-maintenance-write` — Phase 3 ✅ (this PR)
-4. `claude/tq4-ddl-tools` — Phase 4
+3. `claude/tq3-maintenance-write` — Phase 3 ✅ (PR #73)
+4. `claude/tq4-ddl-tools` — Phase 4 ✅ (this PR)
 5. `claude/tq5-query-execution` — Phase 5 ⏸ **deferred** until upstream documents the missing pieces
 
 **Re-ordering note.** TQ-5 was briefly promoted ahead of TQ-2/3/4

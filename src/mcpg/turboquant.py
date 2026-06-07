@@ -1,10 +1,11 @@
-"""pg_turboquant read advisors + maintenance write.
+"""pg_turboquant read advisors + maintenance + DDL.
 
 `pg_turboquant <https://github.com/mayflower/pg_turboquant>`_ is a
 PostgreSQL extension providing a custom ANN index access method
 (``USING turboquant``) over pgvector ``vector`` / ``halfvec`` columns.
-This module exposes the extension's read-only observability surface
-plus a single maintenance write:
+This module exposes the extension's read-only observability surface,
+a maintenance write, and the DDL operations needed to create or
+rebuild a turboquant index:
 
 * :func:`list_turboquant_indexes` — every turboquant index in the
   database, joined with its ``tq_index_metadata`` payload.
@@ -18,6 +19,12 @@ plus a single maintenance write:
 * :func:`maintain_turboquant_index` — wraps ``tq_maintain_index``;
   pre-flights that the named index is actually a turboquant index so
   the call can't be turned into a way to probe arbitrary catalogs.
+* :func:`create_turboquant_index` — builds a
+  ``CREATE INDEX … USING turboquant`` statement under tight
+  allowlists (metric → opclass mapping, ``bits`` / ``lists`` /
+  ``transform`` / ``normalized`` options) and runs it on autocommit.
+* :func:`reindex_turboquant_index` — ``REINDEX INDEX [CONCURRENTLY]``
+  with the same pre-flight as the maintenance helper.
 
 All read functions return cleanly (empty list / ``None``) when the
 extension is not installed, so callers can treat absence as "no
@@ -47,6 +54,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mcpg._vendor.sql import SqlDriver
+from mcpg.database import Database
 from mcpg.extensions import extension_installed
 
 # Plain unquoted PostgreSQL identifier — matches the rule used by
@@ -135,6 +143,67 @@ class TurboQuantLastScanStats:
     simd_kernel: str | None
     pages_scanned: int | None
     pages_pruned: int | None
+
+
+# Metric → upstream operator class. Single source of truth used by
+# the DDL builder; surfaced by name here so external consumers (and
+# future per-query knob helpers) can rely on the same mapping.
+_TQ_OPS_FOR_METRIC: dict[str, str] = {
+    "cosine": "tq_cosine_ops",
+    "inner_product": "tq_inner_product_ops",
+    "l2": "tq_l2_ops",
+}
+
+# `transform` allowlist. README only documents ``hadamard`` as a
+# user-facing value — we refuse anything else rather than guess.
+# Omitting the option entirely (the function's default) lets upstream
+# apply its own default, which is what we want when the caller hasn't
+# stated a preference.
+_VALID_TRANSFORMS: frozenset[str] = frozenset({"hadamard"})
+
+# Safety bounds — these are guards, not claims about what upstream
+# accepts. The README documents the option names but not valid value
+# ranges; passing through user-supplied values within these bounds
+# lets upstream reject anything genuinely invalid with its own
+# (informative) error message.
+_BITS_MIN, _BITS_MAX = 1, 64
+_LISTS_MIN, _LISTS_MAX = 0, 1_000_000
+
+
+@dataclass(frozen=True, slots=True)
+class CreateIndexResult:
+    """Outcome of a :func:`create_turboquant_index` call.
+
+    The rendered ``create_sql`` is included for auditability — every
+    identifier in it has already been passed through
+    :func:`_pg_quote_ident`, and every option value through the bounds
+    or allowlist checks above.
+    """
+
+    schema: str
+    table: str
+    column: str
+    index_name: str
+    metric: str
+    options: dict[str, Any]
+    concurrently: bool
+    create_sql: str
+    started_at: str
+    completed_at: str
+    duration_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class ReindexResult:
+    """Outcome of a :func:`reindex_turboquant_index` call."""
+
+    schema: str
+    index: str
+    concurrently: bool
+    reindex_sql: str
+    started_at: str
+    completed_at: str
+    duration_seconds: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -650,6 +719,215 @@ async def maintain_turboquant_index(driver: SqlDriver, schema: str, index: str) 
     return MaintenanceResult(
         schema=schema,
         index=index,
+        started_at=started_at,
+        completed_at=completed_at,
+        duration_seconds=round(duration, 6),
+    )
+
+
+# --- DDL --------------------------------------------------------------------
+
+
+def _validate_metric(metric: str) -> None:
+    if metric not in _TQ_OPS_FOR_METRIC:
+        expected = ", ".join(sorted(_TQ_OPS_FOR_METRIC))
+        raise TurboQuantError(f"unsupported metric {metric!r}; expected one of {expected}")
+
+
+def _validate_bits(bits: int | None) -> None:
+    if bits is None:
+        return
+    if not isinstance(bits, int) or isinstance(bits, bool) or not _BITS_MIN <= bits <= _BITS_MAX:
+        raise TurboQuantError(f"bits must be an int in [{_BITS_MIN}..{_BITS_MAX}]; got {bits!r}")
+
+
+def _validate_lists(lists: int | None) -> None:
+    if lists is None:
+        return
+    if not isinstance(lists, int) or isinstance(lists, bool) or not _LISTS_MIN <= lists <= _LISTS_MAX:
+        raise TurboQuantError(f"lists must be an int in [{_LISTS_MIN}..{_LISTS_MAX}]; got {lists!r}")
+
+
+def _validate_transform(transform: str | None) -> None:
+    if transform is None:
+        return
+    if transform not in _VALID_TRANSFORMS:
+        expected = ", ".join(sorted(_VALID_TRANSFORMS))
+        raise TurboQuantError(
+            f"unsupported transform {transform!r}; expected one of {{{expected}}}. "
+            "Omit the argument to let upstream apply its default."
+        )
+
+
+def _validate_bool(value: bool | None, kind: str) -> None:
+    if value is None:
+        return
+    if not isinstance(value, bool):
+        raise TurboQuantError(f"{kind} must be a bool; got {value!r}")
+
+
+def _build_with_clause(
+    *, bits: int | None, lists: int | None, transform: str | None, normalized: bool | None
+) -> tuple[str, dict[str, Any]]:
+    """Render the ``WITH (...)`` tail of a CREATE INDEX statement.
+
+    Returns the rendered clause (empty string when no options are set
+    so the SQL stays uncluttered) plus a parallel dict for the result
+    object's ``options`` field.
+    """
+    options: dict[str, Any] = {}
+    parts: list[str] = []
+    if bits is not None:
+        options["bits"] = bits
+        parts.append(f"bits = {bits}")
+    if lists is not None:
+        options["lists"] = lists
+        parts.append(f"lists = {lists}")
+    if transform is not None:
+        options["transform"] = transform
+        parts.append(f"transform = {_pg_quote_literal(transform)}")
+    if normalized is not None:
+        options["normalized"] = normalized
+        parts.append(f"normalized = {'true' if normalized else 'false'}")
+    clause = f" WITH ({', '.join(parts)})" if parts else ""
+    return clause, options
+
+
+async def create_turboquant_index(
+    database: Database,
+    schema: str,
+    table: str,
+    column: str,
+    index_name: str,
+    metric: str,
+    *,
+    bits: int | None = None,
+    lists: int | None = None,
+    transform: str | None = None,
+    normalized: bool | None = None,
+    concurrently: bool = True,
+) -> CreateIndexResult:
+    """Build and execute ``CREATE INDEX … USING turboquant``.
+
+    ``index_name`` is mandatory — we don't query back PG's
+    auto-generated name to avoid an extra round-trip and the
+    catalog-shape assumptions that would come with it. ``metric``
+    selects the upstream operator class through
+    :data:`_TQ_OPS_FOR_METRIC`. Index options that aren't supplied
+    are simply omitted from the ``WITH (...)`` clause so upstream's
+    defaults apply.
+
+    Identifier safety: every schema / table / column / index-name
+    string goes through :func:`_pg_quote_ident`. ``transform`` (if
+    supplied) goes through :func:`_pg_quote_literal`. ``bits`` /
+    ``lists`` / ``normalized`` are validated to safe types and ranges
+    before they reach SQL. The full rendered statement is preserved
+    in :attr:`CreateIndexResult.create_sql` for auditability.
+
+    The statement runs on an autocommit connection via
+    :meth:`Database.run_unmanaged` because ``CREATE INDEX
+    CONCURRENTLY`` cannot run inside a transaction block.
+
+    Raises:
+        TurboQuantError: extension is not installed, any identifier
+            fails validation, any option fails its allowlist or bounds
+            check, or the underlying DDL fails.
+    """
+    _validate_identifier(schema, "schema")
+    _validate_identifier(table, "table")
+    _validate_identifier(column, "column")
+    _validate_identifier(index_name, "index_name")
+    _validate_metric(metric)
+    _validate_bits(bits)
+    _validate_lists(lists)
+    _validate_transform(transform)
+    _validate_bool(normalized, "normalized")
+
+    if not await extension_installed(database.driver(), "pg_turboquant"):
+        raise TurboQuantError("pg_turboquant extension is not installed in this database")
+
+    opclass = _TQ_OPS_FOR_METRIC[metric]
+    with_clause, options = _build_with_clause(bits=bits, lists=lists, transform=transform, normalized=normalized)
+    concurrently_clause = " CONCURRENTLY" if concurrently else ""
+    qualified_table = f"{_pg_quote_ident(schema)}.{_pg_quote_ident(table)}"
+
+    sql = (
+        f"CREATE INDEX{concurrently_clause} {_pg_quote_ident(index_name)} "
+        f"ON {qualified_table} "
+        f"USING turboquant ({_pg_quote_ident(column)} {opclass})"
+        f"{with_clause}"
+    )
+
+    started_at = _utc_iso_now()
+    started_mono = time.monotonic()
+    await database.run_unmanaged(sql)
+    duration = time.monotonic() - started_mono
+    completed_at = _utc_iso_now()
+
+    return CreateIndexResult(
+        schema=schema,
+        table=table,
+        column=column,
+        index_name=index_name,
+        metric=metric,
+        options=options,
+        concurrently=concurrently,
+        create_sql=sql,
+        started_at=started_at,
+        completed_at=completed_at,
+        duration_seconds=round(duration, 6),
+    )
+
+
+async def reindex_turboquant_index(
+    database: Database,
+    schema: str,
+    index: str,
+    *,
+    concurrently: bool = True,
+) -> ReindexResult:
+    """Run ``REINDEX INDEX [CONCURRENTLY] schema.index``.
+
+    Same pre-flight as :func:`maintain_turboquant_index`: confirm the
+    named index is actually a turboquant index before running, so the
+    call can't be turned into a way to probe arbitrary catalogs via
+    PostgreSQL's error messages.
+
+    Runs on an autocommit connection because ``REINDEX CONCURRENTLY``
+    cannot run inside a transaction block.
+
+    Raises:
+        TurboQuantError: extension is not installed, identifier fails
+            validation, or the named index is not a turboquant index.
+    """
+    _validate_identifier(schema, "schema")
+    _validate_identifier(index, "index")
+
+    driver = database.driver()
+    if not await extension_installed(driver, "pg_turboquant"):
+        raise TurboQuantError("pg_turboquant extension is not installed in this database")
+
+    preflight = await driver.execute_query(_ASSERT_IS_TURBOQUANT_SQL, params=[schema, index], force_readonly=True)
+    if not preflight:
+        raise TurboQuantError(
+            f"index {schema}.{index} is not a turboquant index (or does not exist); refusing to REINDEX"
+        )
+
+    concurrently_clause = " CONCURRENTLY" if concurrently else ""
+    qualified = f"{_pg_quote_ident(schema)}.{_pg_quote_ident(index)}"
+    sql = f"REINDEX INDEX{concurrently_clause} {qualified}"
+
+    started_at = _utc_iso_now()
+    started_mono = time.monotonic()
+    await database.run_unmanaged(sql)
+    duration = time.monotonic() - started_mono
+    completed_at = _utc_iso_now()
+
+    return ReindexResult(
+        schema=schema,
+        index=index,
+        concurrently=concurrently,
+        reindex_sql=sql,
         started_at=started_at,
         completed_at=completed_at,
         duration_seconds=round(duration, 6),

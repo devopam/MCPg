@@ -2719,6 +2719,75 @@ def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="create_turboquant_index",
+        description=(
+            "Build a CREATE INDEX … USING turboquant statement under tight "
+            "allowlists and run it on autocommit (CONCURRENTLY can't run "
+            "inside a transaction). ``metric`` is 'cosine' | 'inner_product' "
+            "| 'l2' (mapped to the matching tq_*_ops opclass). Index options "
+            "``bits`` (1..64), ``lists`` (0..1_000_000), ``transform`` "
+            "(allowlist: 'hadamard'), ``normalized`` (bool) are all optional; "
+            "any not supplied are omitted from the WITH clause so upstream's "
+            "defaults apply. The rendered CREATE INDEX SQL is returned in "
+            "``create_sql`` for auditability. Performs DDL — requires "
+            "unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed."
+        ),
+    )
+    async def create_turboquant_index(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        index_name: str,
+        metric: str,
+        bits: int | None = None,
+        lists: int | None = None,
+        transform: str | None = None,
+        normalized: bool | None = None,
+        concurrently: bool = True,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await turboquant.create_turboquant_index(
+            database,
+            schema,
+            table,
+            column,
+            index_name,
+            metric,
+            bits=bits,
+            lists=lists,
+            transform=transform,
+            normalized=normalized,
+            concurrently=concurrently,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="reindex_turboquant_index",
+        description=(
+            "REINDEX a turboquant index. Pre-flight confirms the named "
+            "index is actually a turboquant index (catalog lookup on "
+            "pg_am) before running. ``concurrently=True`` is the default "
+            "and runs on autocommit since REINDEX CONCURRENTLY can't "
+            "run inside a transaction. Performs DDL — requires "
+            "unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed."
+        ),
+    )
+    async def reindex_turboquant_index(
+        ctx: _Ctx,
+        schema: str,
+        index: str,
+        concurrently: bool = True,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await turboquant.reindex_turboquant_index(database, schema, index, concurrently=concurrently)
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_cron_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="schedule_cron_job",
@@ -3117,6 +3186,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)
+        _register_turboquant_ddl(server)
         _register_timescaledb_writes(server)
         _register_graphs_writes(server)
     if is_permitted(settings.access_mode, Capability.MIGRATE) and settings.allow_ddl:

@@ -1,5 +1,7 @@
 """Tests for the pg_turboquant read-only advisor surface."""
 
+from typing import Any
+
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeParamRoutingDriver, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
@@ -12,12 +14,14 @@ from mcpg.turboquant import (
     TurboQuantIndexInfo,
     TurboQuantLastScanStats,
     audit_turboquant_indexes,
+    create_turboquant_index,
     get_turboquant_heap_stats,
     get_turboquant_index_metadata,
     get_turboquant_last_scan_stats,
     list_turboquant_indexes,
     maintain_turboquant_index,
     recommend_turboquant_maintenance,
+    reindex_turboquant_index,
 )
 
 _READ_ONLY = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
@@ -698,6 +702,185 @@ async def test_maintain_turboquant_index_runs_maintenance_under_write_capability
     assert force_readonly is False
 
 
+# --- create_turboquant_index (DDL) -----------------------------------------
+
+
+def _ddl_db_with_extension_installed() -> FakeDatabase:
+    """A FakeDatabase whose driver reports pg_turboquant as installed."""
+    return FakeDatabase(FakeRoutingDriver({"pg_extension": [{"present": 1}]}))  # type: ignore[arg-type]
+
+
+async def test_create_turboquant_index_raises_when_extension_absent() -> None:
+    db = FakeDatabase(FakeRoutingDriver({"pg_extension": []}))  # type: ignore[arg-type]
+    with pytest.raises(TurboQuantError, match="not installed"):
+        await create_turboquant_index(db, "public", "embeddings", "embedding", "idx", "cosine")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("kwarg", "value", "match"),
+    [
+        ("metric", "manhattan", "unsupported metric"),
+        ("bits", 0, "bits must be an int"),
+        ("bits", 65, "bits must be an int"),
+        ("bits", True, "bits must be an int"),  # bool is rejected even though it's a subclass of int
+        ("lists", -1, "lists must be an int"),
+        ("lists", 2_000_000, "lists must be an int"),
+        ("transform", "none", "unsupported transform"),
+        ("transform", "fft", "unsupported transform"),
+        ("normalized", "yes", "normalized must be a bool"),
+    ],
+)
+async def test_create_turboquant_index_validates_options(kwarg: str, value: Any, match: str) -> None:
+    db = _ddl_db_with_extension_installed()
+    kwargs: dict[str, Any] = {
+        "schema": "public",
+        "table": "embeddings",
+        "column": "embedding",
+        "index_name": "idx",
+        "metric": "cosine",
+    }
+    if kwarg == "metric":
+        kwargs["metric"] = value
+    else:
+        kwargs[kwarg] = value
+    with pytest.raises(TurboQuantError, match=match):
+        await create_turboquant_index(db, **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["schema", "table", "column", "index_name"],
+)
+async def test_create_turboquant_index_rejects_unsafe_identifiers(field: str) -> None:
+    db = _ddl_db_with_extension_installed()
+    kwargs = {
+        "schema": "public",
+        "table": "embeddings",
+        "column": "embedding",
+        "index_name": "idx",
+        "metric": "cosine",
+    }
+    kwargs[field] = "bad; DROP TABLE x"
+    with pytest.raises(TurboQuantError, match="invalid"):
+        await create_turboquant_index(db, **kwargs)  # type: ignore[arg-type]
+
+
+async def test_create_turboquant_index_renders_minimal_sql_when_no_options() -> None:
+    db = _ddl_db_with_extension_installed()
+    result = await create_turboquant_index(
+        db,  # type: ignore[arg-type]
+        "public",
+        "embeddings",
+        "embedding",
+        "embeddings_tq_idx",
+        "cosine",
+    )
+    expected = (
+        'CREATE INDEX CONCURRENTLY "embeddings_tq_idx" '
+        'ON "public"."embeddings" '
+        'USING turboquant ("embedding" tq_cosine_ops)'
+    )
+    assert result.create_sql == expected
+    assert db.unmanaged == [expected]
+    assert result.options == {}
+    assert result.concurrently is True
+    assert result.duration_seconds >= 0.0
+
+
+async def test_create_turboquant_index_renders_with_options() -> None:
+    db = _ddl_db_with_extension_installed()
+    result = await create_turboquant_index(
+        db,  # type: ignore[arg-type]
+        "public",
+        "embeddings",
+        "embedding",
+        "embeddings_tq_idx",
+        "inner_product",
+        bits=4,
+        lists=100,
+        transform="hadamard",
+        normalized=True,
+        concurrently=False,
+    )
+    expected = (
+        'CREATE INDEX "embeddings_tq_idx" '
+        'ON "public"."embeddings" '
+        'USING turboquant ("embedding" tq_inner_product_ops) '
+        "WITH (bits = 4, lists = 100, transform = 'hadamard', normalized = true)"
+    )
+    assert result.create_sql == expected
+    assert db.unmanaged == [expected]
+    assert result.options == {"bits": 4, "lists": 100, "transform": "hadamard", "normalized": True}
+
+
+async def test_create_turboquant_index_quotes_mixed_case_identifiers() -> None:
+    # The catalog can legally hold mixed-case / quote-containing
+    # names; the rendered SQL must survive PG parsing.
+    db = _ddl_db_with_extension_installed()
+    result = await create_turboquant_index(
+        db,  # type: ignore[arg-type]
+        "MySchema",
+        "My_Table",
+        "My_Column",
+        "My_Idx",
+        "l2",
+    )
+    expected = 'CREATE INDEX CONCURRENTLY "My_Idx" ON "MySchema"."My_Table" USING turboquant ("My_Column" tq_l2_ops)'
+    assert result.create_sql == expected
+
+
+# --- reindex_turboquant_index ----------------------------------------------
+
+
+async def test_reindex_turboquant_index_raises_when_extension_absent() -> None:
+    db = FakeDatabase(FakeRoutingDriver({"pg_extension": []}))  # type: ignore[arg-type]
+    with pytest.raises(TurboQuantError, match="not installed"):
+        await reindex_turboquant_index(db, "public", "idx")  # type: ignore[arg-type]
+
+
+async def test_reindex_turboquant_index_raises_when_index_is_not_turboquant() -> None:
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                _PREFLIGHT_SUBSTR: [],
+            }
+        )
+    )
+    with pytest.raises(TurboQuantError, match="not a turboquant index"):
+        await reindex_turboquant_index(db, "public", "other_idx")  # type: ignore[arg-type]
+
+
+async def test_reindex_turboquant_index_renders_sql_and_runs_unmanaged() -> None:
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                _PREFLIGHT_SUBSTR: [{"present": 1}],
+            }
+        )
+    )
+    result = await reindex_turboquant_index(db, "public", "embeddings_tq_idx")  # type: ignore[arg-type]
+    expected = 'REINDEX INDEX CONCURRENTLY "public"."embeddings_tq_idx"'
+    assert result.reindex_sql == expected
+    assert db.unmanaged == [expected]
+    assert result.concurrently is True
+
+
+async def test_reindex_turboquant_index_honours_concurrently_false() -> None:
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                _PREFLIGHT_SUBSTR: [{"present": 1}],
+            }
+        )
+    )
+    result = await reindex_turboquant_index(db, "public", "idx", concurrently=False)  # type: ignore[arg-type]
+    assert result.reindex_sql == 'REINDEX INDEX "public"."idx"'
+    assert db.unmanaged == ['REINDEX INDEX "public"."idx"']
+
+
 # --- MCP layer wiring ------------------------------------------------------
 
 
@@ -727,3 +910,22 @@ async def test_maintain_turboquant_index_registers_in_unrestricted_mode() -> Non
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "maintain_turboquant_index" in listed
+    # DDL tools are gated by MCPG_ALLOW_DDL as well — absent without it.
+    assert "create_turboquant_index" not in listed
+    assert "reindex_turboquant_index" not in listed
+
+
+_DDL = load_settings(
+    {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_ACCESS_MODE": "unrestricted",
+        "MCPG_ALLOW_DDL": "true",
+    }
+)
+
+
+async def test_turboquant_ddl_tools_register_with_ddl_opt_in() -> None:
+    server = create_server(_DDL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert {"create_turboquant_index", "reindex_turboquant_index"} <= listed

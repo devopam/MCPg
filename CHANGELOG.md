@@ -8,6 +8,29 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`create_turboquant_index` + `reindex_turboquant_index` DDL tools (TQ-4).**
+  Completes the pg_turboquant integration. The create tool builds
+  `CREATE INDEX … USING turboquant` under tight allowlists: `metric`
+  selects the opclass from a single-source-of-truth dict
+  (`tq_cosine_ops` / `tq_inner_product_ops` / `tq_l2_ops`), `bits`
+  is bounded `1..64`, `lists` is bounded `0..1_000_000`,
+  `transform` is an explicit allowlist of `{'hadamard'}` only
+  (README documents this one value — others are refused rather than
+  guessed), and `normalized` must be a true Python bool. Any option
+  not supplied is omitted from the `WITH (...)` clause so upstream
+  applies its default. The reindex tool wraps
+  `REINDEX INDEX [CONCURRENTLY]` and applies the same catalog
+  pre-flight as `maintain_turboquant_index` to refuse non-turboquant
+  indexes. Both run via `Database.run_unmanaged` so they execute on
+  an autocommit connection (`CONCURRENTLY` cannot run inside a
+  transaction). Every identifier (schema/table/column/index/name)
+  passes through `_validate_identifier` and then `_pg_quote_ident`;
+  every option value passes through bounds or allowlist checks. The
+  rendered SQL is preserved in `create_sql` / `reindex_sql` on the
+  result for auditability. Gated under unrestricted +
+  `MCPG_ALLOW_DDL`; registered in a new `_register_turboquant_ddl`
+  family.
+
 - **`maintain_turboquant_index` write tool (TQ-3).** Wraps upstream
   `tq_maintain_index(<schema>.<index>::regclass)` for lightweight
   merge / compaction of a turboquant index's physical delta tier.
