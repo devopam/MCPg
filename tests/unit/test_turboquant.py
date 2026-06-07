@@ -459,6 +459,69 @@ async def test_recommend_turboquant_maintenance_silent_when_fast_path_unreported
     assert await recommend_turboquant_maintenance(driver) == []  # type: ignore[arg-type]
 
 
+async def test_recommend_turboquant_maintenance_quotes_identifiers_in_suggested_sql() -> None:
+    # PG allows mixed-case names, embedded quotes, and embedded
+    # apostrophes via delimited identifiers — catalog rows can carry
+    # any of these. The suggested SQL must survive PG parsing in all
+    # three cases.
+    nasty_row = {
+        "schema": 'My"Schema',  # embedded double quote → double it inside ident
+        "index": "Mixed-Case Index",  # mixed case + space → must stay quoted
+        "table": "embeddings",
+        "column": "embedding",
+        "reloptions": None,
+        "metadata": {
+            "algorithm_version": "v1.0",
+            "maintenance_recommended": True,
+        },
+    }
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [nasty_row],
+        }
+    )
+
+    findings = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
+    by_code = {f.code: f for f in findings}
+
+    # REINDEX is identifier-quoted: schema's " is doubled, both names
+    # are kept quoted (so case + space survive).
+    assert (
+        by_code["format_v1_reindex_needed"].suggested_action
+        == 'REINDEX INDEX CONCURRENTLY "My""Schema"."Mixed-Case Index";'
+    )
+    # tq_maintain_index takes a regclass string — needs both layers
+    # (identifier-quote first, literal-quote second).
+    assert by_code["maintenance_due"].suggested_action == (
+        'SELECT tq_maintain_index(\'"My""Schema"."Mixed-Case Index"\'::regclass);'
+    )
+
+
+async def test_recommend_turboquant_maintenance_quotes_apostrophe_in_regclass_literal() -> None:
+    # If an identifier contains a single quote, the regclass literal's
+    # outer ' would close prematurely without escaping.
+    row = {
+        "schema": "O'Reilly",
+        "index": "idx",
+        "table": "embeddings",
+        "column": "embedding",
+        "reloptions": None,
+        "metadata": {"algorithm_version": "v2", "maintenance_recommended": True},
+    }
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [row],
+        }
+    )
+
+    [finding] = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
+    assert finding.suggested_action == "SELECT tq_maintain_index('\"O''Reilly\".\"idx\"'::regclass);"
+
+
 async def test_recommend_turboquant_maintenance_combines_findings_across_indexes() -> None:
     driver = FakeParamRoutingDriver(
         {

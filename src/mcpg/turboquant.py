@@ -56,6 +56,25 @@ def _validate_identifier(name: str, kind: str) -> None:
         raise TurboQuantError(f"invalid {kind} name: {name!r}")
 
 
+def _pg_quote_ident(name: str) -> str:
+    """Quote a PostgreSQL identifier the way ``format('%I')`` would.
+
+    Wraps ``name`` in double quotes and doubles any embedded ``"``.
+    Used for suggested-action SQL where the schema / index names come
+    from the catalog (mixed-case and special characters are legal in
+    PG via delimited identifiers).
+    """
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _pg_quote_literal(text: str) -> str:
+    """Quote a PostgreSQL string literal the way ``format('%L')`` would.
+
+    Wraps ``text`` in single quotes and doubles any embedded ``'``.
+    """
+    return "'" + text.replace("'", "''") + "'"
+
+
 @dataclass(frozen=True, slots=True)
 class TurboQuantIndexInfo:
     """A turboquant index and the metadata `tq_index_metadata` reports for it.
@@ -339,13 +358,14 @@ def _finding_format_v1(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFinding | 
     version = info.algorithm_version or ""
     if not version.lower().startswith("v1"):
         return None
+    qualified = f"{_pg_quote_ident(info.schema)}.{_pg_quote_ident(info.index)}"
     return TurboQuantAdvisorFinding(
         code=_RULE_FORMAT_V1,
         severity="CRITICAL",
         schema=info.schema,
         index=info.index,
         evidence=f"algorithm_version={version!r} — v1 indexes must be rebuilt to use the v2 on-disk format.",
-        suggested_action=f'REINDEX INDEX CONCURRENTLY "{info.schema}"."{info.index}";',
+        suggested_action=f"REINDEX INDEX CONCURRENTLY {qualified};",
     )
 
 
@@ -353,13 +373,20 @@ def _finding_maintenance_due(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFind
     if info.maintenance_recommended is not True:
         return None
     state = info.delta_state or "unknown"
+    # Two-layer escaping: identifiers go inside a string literal that
+    # itself becomes a regclass. Identifier-quote first (so case and
+    # specials survive PG's identifier parsing), then literal-quote
+    # the whole qualified name (so the surrounding 'string' survives
+    # parsing too — important when the name contains a single quote).
+    qualified = f"{_pg_quote_ident(info.schema)}.{_pg_quote_ident(info.index)}"
+    literal = _pg_quote_literal(qualified)
     return TurboQuantAdvisorFinding(
         code=_RULE_MAINTENANCE_DUE,
         severity="WARNING",
         schema=info.schema,
         index=info.index,
         evidence=f"tq_index_metadata reports maintenance_recommended=true (delta_state={state!r}).",
-        suggested_action=f"SELECT tq_maintain_index('{info.schema}.{info.index}'::regclass);",
+        suggested_action=f"SELECT tq_maintain_index({literal}::regclass);",
     )
 
 
