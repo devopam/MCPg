@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`audit_vector_indexes` scorecard category (RAG-B).** Folds
+  `analyze_vector_search_efficiency` into `audit_database`. Walks
+  `pg_index` for every HNSW / IVFFlat / turboquant index in user
+  schemas, runs a small per-index sweep (sample_size=10,
+  multipliers=(1, 4), 30 queries per index) and surfaces the findings
+  as a `CategoryResult` named `"ANN Index Efficiency"`. Returns
+  `None` when pgvector isn't installed or no ANN indexes exist, so
+  the category is cleanly omitted on stock clusters — no padding,
+  no score dilution. Composite-PK and PK-less tables are skipped
+  silently (surfaced as a GOOD baseline metric so the operator sees
+  what was skipped). Per-index failures are isolated: one index
+  raising doesn't sink the rest of the audit. Same scoring
+  convention as `audit_turboquant_indexes` (CRITICAL = -30,
+  WARNING = -15, clamped at 0). Lives in `mcpg.rag_efficiency`.
+
 - **`analyze_vector_search_efficiency` cross-backend retrieval-quality
   report (RAG-A).** One report shape, three backends — HNSW, IVFFlat,
   and pg_turboquant. Detects the index's access method (`pg_am`),

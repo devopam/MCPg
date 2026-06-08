@@ -424,12 +424,16 @@ instrumentation; rerank second because it needs a schema and adoption.
   careful handling beyond Phase A's no-speculation discipline.
 - Branch: `claude/rag1-vector-efficiency`.
 
-### Phase B — `audit_database` integration for Design 1 (1 PR)
+### Phase B — `audit_database` integration ✅ shipped
 
-- `audit_vector_indexes` category, wired into `audit_database`
-  the way `audit_turboquant_indexes` is in the turboquant plan.
-- Tiny sample budget (10 queries × 2 multipliers per index).
-- Tests: scorecard surfaces findings with the right severity.
+- `audit_vector_indexes` category wired into `audit_database` via
+  the same lazy-import pattern as `audit_turboquant_indexes`.
+- Sample budget: 10 samples + (1, 4) multipliers = 30 queries per
+  index. Bounded even on databases with several ANN indexes.
+- Composite-PK and PK-less tables skipped silently (audit
+  reports what it can, surfaces the rest as GOOD baseline
+  metrics). Per-index failures isolated — one raise doesn't
+  sink the audit.
 - Branch: `claude/rag2-vector-audit`.
 
 ### Phase C — Design 2 schema + logging (1 PR)
