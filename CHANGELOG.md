@@ -6,6 +6,50 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`analyze_vector_search_efficiency` cross-backend retrieval-quality
+  report (RAG-A).** One report shape, three backends — HNSW, IVFFlat,
+  and pg_turboquant. Detects the index's access method (`pg_am`),
+  picks the right per-backend knob (`ef_search` for HNSW, `probes`
+  for IVFFlat, `candidate_limit` for turboquant), samples query
+  vectors from the table itself, computes a brute-force exact
+  baseline via the pgvector function-form distance (documented as
+  non-indexed), and sweeps the approximate retrieval across a
+  multiplier curve. Reports `recall@k`, Spearman rank correlation,
+  Kendall tau, per-query p50/p95 wall-clock latency, and (turboquant
+  only) the page-pruning ratio from `tq_last_scan_stats`.
+
+  Rule table (every signal documented, no speculation):
+  - `baseline_recall_low` (CRITICAL) — `recall@k` at the default knob
+    is below 0.80.
+  - `rerank_lift_flat` (WARNING) — recall barely moves across the
+    sweep (knob over-provisioned), suppressed when baseline is
+    already low so the suggested action stays correct.
+  - `rerank_lift_steep` (WARNING) — recall jumps from `<0.70` to
+    `>=0.95` between the 1x and 4x multiplier (knob too tight).
+  - `ranking_degraded` (WARNING) — recall stays high but Spearman
+    rank correlation drops below 0.50 (right rows, wrong order).
+  - `pruning_ineffective` (WARNING, turboquant only) — median
+    `pages_pruned / pages_scanned < 0.10`.
+
+  Statistical helpers (Spearman, Kendall tau-b with ties, recall@k,
+  percentile interpolation) are pure-Python — no SciPy / NumPy at
+  runtime. Identifier safety, `_MAX_SAMPLE_SIZE = 100` cap, and
+  `SET LOCAL` (transaction-scoped GUC restore) match the
+  `mcpg.vector_tuning` conventions. Each call burns
+  `sample_size x (1 + len(multipliers))` queries; the brute-force
+  baseline is sequential on the table, so this is an ad-hoc
+  diagnostic — the docstring is explicit. `inner_product` is
+  deferred to a follow-up because the pgvector operator (negated)
+  and the function form (raw) order opposite directions, which
+  requires careful handling beyond Phase A's scope.
+
+  Read-only; registered as a new `_register_rag_efficiency` family
+  in `tools.py`. Lives in `mcpg.rag_efficiency`. The turboquant arm
+  composes with `mcpg.turboquant.turboquant_rerank_candidates` and
+  `get_turboquant_last_scan_stats` shipped in earlier PRs.
+
 ### Changed (BREAKING)
 
 - **`TurboQuantIndexInfo` field alignment to verified upstream keys.**

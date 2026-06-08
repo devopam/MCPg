@@ -170,6 +170,20 @@ monitor_embedding_drift(schema, table, embedding_column, timestamp_column,
                                                                           # between two time windows
 ```
 
+## "Is my ANN index pulling its weight?" (cross-backend RAG efficiency)
+
+```
+analyze_vector_search_efficiency(schema, table, column, id_column,
+                                 index_name=null, k=10, sample_size=30,
+                                 candidate_multipliers=[1,2,4,10],
+                                 metric="cosine")
+                                                                          # detects HNSW / IVFFlat / turboquant,
+                                                                          # sweeps the right per-backend knob,
+                                                                          # reports recall@k + rank correlation +
+                                                                          # latency + (turboquant) pages-pruned;
+                                                                          # ad-hoc diagnostic, not a cron tool
+```
+
 ## "Inspect a pg_turboquant ANN index" (`pg_turboquant` installed)
 
 ```

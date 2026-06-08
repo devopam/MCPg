@@ -407,15 +407,21 @@ helpers:
 Two designs, four phases. Vector first because it needs zero
 instrumentation; rerank second because it needs a schema and adoption.
 
-### Phase A — `analyze_vector_search_efficiency` core (1 PR)
+### Phase A — `analyze_vector_search_efficiency` core ✅ shipped
 
-- New module `src/mcpg/rag_efficiency.py` with the shared stat
-  helpers + Design 1 public API.
-- New tool `analyze_vector_search_efficiency` registered under
-  `_register_vector_efficiency`.
-- Unit tests: stat helpers (8–10 cases), backend detection,
-  knob-mapping table, the rule table (one fixture per rule code,
-  both fires-and-doesn't-fire), MCP registration smoke.
+- Module `src/mcpg/rag_efficiency.py` with the stat helpers
+  (Spearman, Kendall tau-b with ties, recall@k, average-rank
+  helper, percentile interpolation).
+- Tool `analyze_vector_search_efficiency` registered under
+  `_register_rag_efficiency`.
+- Five rule codes shipped (per the table at the top of this doc).
+- Turboquant arm composes with `mcpg.turboquant`'s
+  `turboquant_rerank_candidates` + `get_turboquant_last_scan_stats`
+  helpers (which is why TQ-5 was un-deferred first).
+- `inner_product` metric deferred to a follow-up — the pgvector
+  operator form (`<#>`, negated) and function form
+  (`inner_product()`, raw) order opposite directions, requiring
+  careful handling beyond Phase A's no-speculation discipline.
 - Branch: `claude/rag1-vector-efficiency`.
 
 ### Phase B — `audit_database` integration for Design 1 (1 PR)
@@ -443,8 +449,57 @@ instrumentation; rerank second because it needs a schema and adoption.
   graceful path.
 - Branch: `claude/rag4-rerank-analytics`.
 
+### Phase E — adaptive thresholds (future, optional)
+
+**Motivation.** Phase A ships with hardcoded rule thresholds
+(`baseline_recall_low` at 0.80, `pruning_ineffective` at 0.10, …)
+picked from intuition rather than data. They're fine defaults but
+say nothing about *this* deployment's normal range. An adaptive
+framework replaces them with corpus-percentile thresholds learned
+from accumulated observations of the same function — "you're in the
+bottom 5% of recall@10 across HNSW indexes in this database" is more
+actionable than "you're below 0.80".
+
+**Shape.** Mirrors Design 2's caller-populated-table pattern:
+
+```sql
+CREATE TABLE mcpg_rag.efficiency_observations (
+    observation_id BIGSERIAL PRIMARY KEY,
+    observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    schema_name TEXT, table_name TEXT, column_name TEXT, index_name TEXT,
+    backend TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    k INT NOT NULL,
+    sample_size INT NOT NULL,
+    recall_baseline DOUBLE PRECISION,
+    rerank_lift_curve JSONB,
+    spearman DOUBLE PRECISION,
+    kendall DOUBLE PRECISION,
+    pages_pruned_ratio_p50 DOUBLE PRECISION,
+    duration_seconds DOUBLE PRECISION,
+    extra JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+```
+
+**Tools.** `setup_efficiency_observations()` (DDL),
+`record_efficiency_observation(report)` (write),
+`recommend_efficiency_thresholds(window, backend, metric, k)`
+(read — computes corpus percentiles like recall-low = p10,
+lift-flat = p10 of the "10x recall − baseline" deltas).
+
+**Integration.** `_evaluate_rules` already takes a plain `dict` of
+metrics; Phase E injects a `thresholds: dict[str, float]` argument,
+falling back to the hardcoded defaults when the corpus has fewer
+than N observations. Single insertion point, no downstream change.
+
+**Branch:** `claude/rag5-adaptive-thresholds`. **Depends on:** Phase
+A (the function whose outputs feed the observation table).
+
+---
+
 **Sequencing:** A → B and C → D are independent tracks. Could land
 A → C → B → D. Phase D depends only on C; Phase B depends only on A.
+Phase E depends only on A.
 No phase touches the same files as another except `tools.py` (one
 new registrar each, adjacent-block conflict only) and `CHANGELOG.md`
 (top-of-section).
