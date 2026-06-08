@@ -273,6 +273,17 @@ enable_extension(name)                               # allowlisted extensions on
 maintain_turboquant_index(schema, index)             # wraps tq_maintain_index; catalog-preflighted; client-side timings
 ```
 
+## "Create or rebuild a pg_turboquant index" (`unrestricted` + `MCPG_ALLOW_DDL=true` + pg_turboquant installed)
+
+```
+create_turboquant_index(schema, table, column, index_name, metric,
+                        bits=null, lists=null, transform=null,
+                        normalized=null, concurrently=true)
+                                                     # metric ∈ {cosine, inner_product, l2}; CONCURRENTLY runs autocommit
+reindex_turboquant_index(schema, index, concurrently=true)
+                                                     # catalog-preflighted REINDEX [CONCURRENTLY]
+```
+
 ## "Schedule a job" (`unrestricted` + pg_cron installed)
 
 ```
