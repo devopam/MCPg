@@ -13,14 +13,21 @@ documented return conditions.
    16, 17, 18 supported with pre-built binaries. `pg_textsearch` is
    PG 17/18-only today; `vchord_bm25` is pre-1.0 and ships primarily
    as Docker images.
-2. **Stable surface, deep release cadence.** 233 releases, latest
-   v0.24.0 (June 2026), ~8.9k stars on the parent paradedb monorepo.
-   The v2 API (`pdb.*` schema) is the documented stable contract.
-3. **Documented hybrid with pgvector.** Their "Hybrid Search Missing
-   Manual" blog gives an explicit pattern:
-   `0.7 * paradedb.score_bm25(id) + 0.3 * paradedb.score_vector(id)`.
-   MCPg's RAG efficiency suite (`analyze_vector_search_efficiency`)
-   composes naturally with this.
+2. **Stable surface, deep release cadence** (as of 2026-06). Many
+   releases on the parent ParadeDB monorepo with a healthy star
+   count and active commit history. The v2 API (`pdb.*` schema) is
+   the documented stable contract. Numbers shift; the durable
+   signal is the active release cadence on a stable schema.
+3. **Documented hybrid with pgvector.** ParadeDB's "Hybrid Search
+   Missing Manual" documents the v2 pattern — `pdb.score(key)` from
+   the BM25 side, weighted-summed against a pgvector distance
+   expression. The exact arithmetic (linear blend, RRF, or a
+   tunable weight knob) is one of the four §2 unknowns the
+   pre-implementation read needs to pin down — the agent's research
+   captured the *existence* of the pattern, not its v2-exact
+   form. MCPg's RAG efficiency suite
+   (`analyze_vector_search_efficiency`) composes naturally with
+   either shape.
 4. **Compositional richness.** `pdb.score`, `pdb.snippet`,
    `pdb.snippets`, `pdb.agg`, `pdb.more_like_this`, `pdb.regex`,
    `pdb.parse` — the surface is rich enough to wrap as distinct
@@ -65,14 +72,21 @@ pg_turboquant pre-implementation read) needs to confirm:
    `CREATE INDEX … USING bm25 (…) WITH (…)` examples from the
    integration tests are the source of truth.
 3. **Pre-built binary distribution coverage.** Which PG distros
-   are covered out-of-box (Tigerdata/Timescale images, Neon, RDS,
-   self-managed). Bare-source installs need Rust + pgrx.
+   are covered out-of-box (Tiger Data / Timescale images, Neon,
+   RDS, self-managed). Bare-source installs need Rust + pgrx.
 4. **AGPL-3.0 redistribution implications** for MCPg's
    downstream consumers. The `pg_search` extension is AGPL; MCPg's
    wrapper does not statically link against it (PG extensions run
    in-process but the license boundary is at the PG dynamic-load
    layer). This needs an explicit decision from the project owner
    before wide adoption.
+5. **The v2 hybrid-search arithmetic.** ParadeDB's "Hybrid Search
+   Missing Manual" documents a pattern combining `pdb.score(key)`
+   with a pgvector distance expression. The agent's research
+   captured the *existence* of the pattern, not its v2-exact form
+   (linear weighted sum, RRF, normalized combinations, …). Read
+   the v2 blog post + any sample queries in `pg_search/tests/`
+   before settling the BM-3 implementation.
 
 These unknowns map 1-to-1 to a TQ-style "post-investigation"
 agent run. Same discipline: read the upstream SQL definitions
@@ -123,25 +137,31 @@ database, read each index's catalog metadata.
   into a typed dict, analogous to TQ-1's `index_options`.
 - Extension presence check via `extension_installed`.
 - `pg_search` added to `ENABLEABLE_EXTENSIONS`.
-- Branch: `claude/bm1-observability`.
+- Branch (proposed): `claude/bm1-observability`.
 
 ### Phase BM-2 — search execution (1 PR)
 
 Wraps the `@@@` operator and the core `pdb.score` / `pdb.snippet`
 projection helpers as MCPg tools.
 
-- `pg_search_run(driver, schema, table, column, query, *, limit, return_snippets=False)`
+`pg_search` indexes can cover **one or many** columns (or the
+entire table). The wrappers reflect that — `columns` is a
+`list[str] | None`, where `None` means "search the whole index".
+The single-column case is just `columns=["body"]`.
+
+- `pg_search_run(driver, schema, table, query, *, columns=None, limit, return_snippets=False)`
   → `list[PgSearchHit]` with id, score, optional snippet.
-- `pg_search_more_like_this(driver, schema, table, column, document_id, *, limit)`
+- `pg_search_more_like_this(driver, schema, table, document_id, *, columns=None, limit)`
   → `list[PgSearchHit]`.
 - `pg_search_parse_query(driver, query_string, *, lenient=False)`
   — surfaces the parsed query structure for debugging.
 
-Validation: every identifier (schema/table/column) through
-`_validate_identifier`; `limit` bounded `1..10_000`. `query` and
-`document_id` go in as bound params — never spliced into SQL.
+Validation: every identifier (schema/table/each entry in `columns`)
+through `_validate_identifier`; `limit` bounded `1..10_000`.
+`query` and `document_id` go in as bound params — never spliced
+into SQL.
 
-- Branch: `claude/bm2-search-execution`.
+- Branch (proposed): `claude/bm2-search-execution`.
 
 ### Phase BM-3 — hybrid-search composition (1 PR)
 
@@ -149,16 +169,20 @@ Composes BM25 + pgvector into one MCPg tool, mirroring the
 ParadeDB "Hybrid Search Missing Manual" pattern.
 
 - `hybrid_bm25_vector_search(driver, schema, table, *, query_text,
-  query_vector, bm25_column, vector_column, vector_metric, k,
-  bm25_weight=0.7, vector_weight=0.3)`
+  query_vector, vector_column, vector_metric, k,
+  bm25_columns=None, bm25_weight=0.7, vector_weight=0.3)`
   → `list[HybridHit]` with combined score, plus the per-source
   scores for transparency.
+
+`bm25_columns=None` searches the entire BM25 index (ParadeDB's
+default behavior — the index can cover multiple columns or the
+whole table). Pass an explicit list to restrict to a subset.
 
 Composes with the RAG efficiency suite — once shipped,
 `analyze_vector_search_efficiency` can be re-used to tune the
 vector arm of a hybrid query.
 
-- Branch: `claude/bm3-hybrid-search`.
+- Branch (proposed): `claude/bm3-hybrid-search`.
 
 ### Phase BM-4 — DDL (1 PR)
 
@@ -173,7 +197,7 @@ vector arm of a hybrid query.
 Allowlist-validated `text_config`, `tokenizer`, `k1`/`b` bounds.
 Gated under unrestricted + `MCPG_ALLOW_DDL`.
 
-- Branch: `claude/bm4-ddl`.
+- Branch (proposed): `claude/bm4-ddl`.
 
 ### Phase BM-5 — advisor + audit category (1 PR)
 
@@ -183,7 +207,7 @@ Gated under unrestricted + `MCPG_ALLOW_DDL`.
 signals only; threshold list TBD after Phase BM-1 reveals what
 metadata `pg_search` exposes.
 
-- Branch: `claude/bm5-audit`.
+- Branch (proposed): `claude/bm5-audit`.
 
 ## 5. Sequencing
 
