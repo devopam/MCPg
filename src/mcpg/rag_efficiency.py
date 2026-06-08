@@ -430,7 +430,8 @@ def _evaluate_rules(report_partial: dict[str, Any]) -> list[VectorEfficiencyFind
 
 
 _DETECT_INDEX_SQL = """
-SELECT n.nspname AS schema, i.relname AS index, am.amname AS backend, a.attname AS column
+SELECT n.nspname AS schema, i.relname AS index, t.relname AS table,
+       am.amname AS backend, a.attname AS column
 FROM pg_index ix
 JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_class t ON t.oid = ix.indrelid
@@ -471,6 +472,16 @@ async def _detect_index(
         if not rows:
             raise VectorEfficiencyError(f"no HNSW / IVFFlat / turboquant index named {schema}.{index_name}")
         cells = rows[0].cells
+        # The catalog row carries the index's actual table + column;
+        # both must match what the caller said they're analyzing.
+        # Without the table check, an index named `idx` in this schema
+        # on a *different* table that happens to share a column name
+        # would pass — and the brute-force baseline below would run
+        # against the wrong relation, producing meaningless recall.
+        if cells.get("table") != table:
+            raise VectorEfficiencyError(
+                f"index {schema}.{index_name} is on table {cells.get('table')!r}, not {table!r}"
+            )
         if cells.get("column") != column:
             raise VectorEfficiencyError(
                 f"index {schema}.{index_name} is not on column {column!r} (it indexes {cells.get('column')!r})"
@@ -557,14 +568,22 @@ async def _approx_top_k_pgvector(
     knob_value: int,
     exclude_id: Any,
 ) -> tuple[list[Any], list[float], float]:
-    """HNSW / IVFFlat path. Returns (ids, distances, latency_ms)."""
+    """HNSW / IVFFlat path. Returns (ids, distances, latency_ms).
+
+    ``SET LOCAL`` only persists for the duration of the transaction
+    it runs in. Two separate ``execute_query`` calls land in two
+    separate (implicit) transactions, so a ``SET LOCAL`` in the first
+    is a no-op for the second. We work around this by sending both
+    statements as one semicolon-separated string in a single call —
+    the same pattern :func:`mcpg.vector_tuner_advanced.analyze_hnsw_recall`
+    uses. ``knob_value`` is an int produced by our own
+    :func:`_knob_value_for_multiplier`, so interpolating it into the
+    SQL text is safe.
+    """
     operator = _DISTANCE_OPERATORS[metric]
     guc = _GUC_NAMESPACE[backend]
-    # SET LOCAL leaves the GUC restored after the transaction; the
-    # following statement runs in the same implicit autocommit-style
-    # transaction MCPg uses elsewhere, but keep ``SET LOCAL`` defensively.
-    await driver.execute_query(f"SET LOCAL {guc} = %s", params=[knob_value], force_readonly=False)
     sql = (
+        f"SET LOCAL {guc} = {knob_value}; "
         f"SELECT {_quoted(id_column)} AS id, "
         f"({_quoted(column)} {operator} %s::vector) AS dist "
         f"FROM {_quoted(schema)}.{_quoted(table)} "
@@ -716,12 +735,13 @@ async def analyze_vector_search_efficiency(
 
     curve: list[RerankLiftPoint] = []
     all_pruned_ratios: list[float] = []
-    # For Spearman / Kendall we compare per-sample approx-vs-exact
-    # rank vectors at the baseline (first multiplier) — that's the
-    # "is the score order preserved at typical operating point?"
-    # measurement.
-    baseline_ranks_approx: list[float] = []
-    baseline_ranks_exact: list[float] = []
+    # For Spearman / Kendall we compute the correlation *per sample*
+    # at the baseline (first multiplier), then average across
+    # samples. A global concat of distances would mix query-to-query
+    # distance scale differences with within-query ranking quality —
+    # the latter is what we actually want to measure.
+    per_sample_spearmans: list[float] = []
+    per_sample_kendalls: list[float] = []
 
     for mult_idx, multiplier in enumerate(candidate_multipliers):
         knob_value = _knob_value_for_multiplier(backend, k, multiplier)
@@ -742,11 +762,16 @@ async def analyze_vector_search_efficiency(
             per_sample_recalls.append(_recall_at_k(approx_ids, exact_ids))
             per_sample_latencies.append(latency_ms)
             if mult_idx == 0:
-                # Build rank-correlation vectors on the union of ids
-                # so Spearman/Kendall see comparable positions.
-                _accumulate_rank_pairs(
-                    approx_ids, approx_dists, exact_ids, exact_dists, baseline_ranks_approx, baseline_ranks_exact
-                )
+                # Per-sample rank correlation on the IDs that appear
+                # in both top-k lists. Requires at least 2 overlapping
+                # IDs to be defined — otherwise skipped (don't pollute
+                # the average with degenerate 0.0s).
+                sample_approx: list[float] = []
+                sample_exact: list[float] = []
+                _accumulate_rank_pairs(approx_ids, approx_dists, exact_ids, exact_dists, sample_approx, sample_exact)
+                if len(sample_approx) >= 2:
+                    per_sample_spearmans.append(_spearman(sample_approx, sample_exact))
+                    per_sample_kendalls.append(_kendall_tau(sample_approx, sample_exact))
         mean_recall = sum(per_sample_recalls) / len(per_sample_recalls)
         curve.append(
             RerankLiftPoint(
@@ -759,8 +784,8 @@ async def analyze_vector_search_efficiency(
             )
         )
 
-    spearman = _spearman(baseline_ranks_approx, baseline_ranks_exact)
-    kendall = _kendall_tau(baseline_ranks_approx, baseline_ranks_exact)
+    spearman = sum(per_sample_spearmans) / len(per_sample_spearmans) if per_sample_spearmans else 0.0
+    kendall = sum(per_sample_kendalls) / len(per_sample_kendalls) if per_sample_kendalls else 0.0
     pages_pruned_ratio_p50 = (
         _percentile(all_pruned_ratios, 0.50) if backend == "turboquant" and all_pruned_ratios else None
     )

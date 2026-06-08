@@ -324,11 +324,48 @@ async def test_analyze_raises_when_named_index_is_on_wrong_column() -> None:
             # Detect-by-name lookup returns the index, but on a
             # different column than what the caller asked about.
             "i.relname = %s AND am.amname IN": [
-                {"schema": "public", "index": "my_idx", "backend": "hnsw", "column": "other_column"}
+                {
+                    "schema": "public",
+                    "index": "my_idx",
+                    "table": "embeddings",
+                    "backend": "hnsw",
+                    "column": "other_column",
+                }
             ],
         }
     )
     with pytest.raises(VectorEfficiencyError, match="not on column"):
+        await analyze_vector_search_efficiency(
+            driver,  # type: ignore[arg-type]
+            "public",
+            "embeddings",
+            "embedding",
+            "id",
+            index_name="my_idx",
+        )
+
+
+async def test_analyze_raises_when_named_index_is_on_wrong_table() -> None:
+    # An index named `my_idx` in schema `public` could exist on any
+    # number of tables. Without a table check, an index on a
+    # different table that happens to share a column name would slip
+    # through and the brute-force baseline below would run against
+    # the wrong relation.
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "i.relname = %s AND am.amname IN": [
+                {
+                    "schema": "public",
+                    "index": "my_idx",
+                    "table": "other_table",  # NOT "embeddings"
+                    "backend": "hnsw",
+                    "column": "embedding",  # same column name as the caller's request
+                }
+            ],
+        }
+    )
+    with pytest.raises(VectorEfficiencyError, match="not 'embeddings'"):
         await analyze_vector_search_efficiency(
             driver,  # type: ignore[arg-type]
             "public",
