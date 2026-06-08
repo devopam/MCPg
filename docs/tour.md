@@ -174,11 +174,31 @@ monitor_embedding_drift(schema, table, embedding_column, timestamp_column,
 
 ```
 list_turboquant_indexes()                          # every turboquant index + tq_index_metadata
-get_turboquant_index_metadata(schema, index)       # algorithm_version, quantizer_family, capability_flags, …
+get_turboquant_index_metadata(schema, index)       # algorithm_version, quantizer_family, capability_flags, delta_*…
 get_turboquant_heap_stats(schema, index)           # exact heap row count from tq_index_heap_stats
 get_turboquant_last_scan_stats()                   # most recent backend-local scan diagnostics
 recommend_turboquant_maintenance()                 # advisor — prerequisites_unmet, format_v1_reindex_needed,
-                                                   # maintenance_due, fast_path_ineligible (also feeds audit_database)
+                                                   # maintenance_due, fast_path_ineligible, delta_tier_large
+                                                   # (also feeds audit_database)
+```
+
+## "Query a pg_turboquant ANN index" (`pg_turboquant` installed)
+
+```
+turboquant_approx_candidates(schema, table, id_column, embedding_column,
+                             query_vector, metric, candidate_limit,
+                             probes=null, oversample_factor=null,
+                             half_precision=false)
+                                                   # approximate k-NN; metric ∈ {cosine, inner_product, l2}
+turboquant_rerank_candidates(schema, table, id_column, embedding_column,
+                             query_vector, metric, candidate_limit, final_limit,
+                             probes=null, oversample_factor=null,
+                             half_precision=false)
+                                                   # approx + SQL-side exact rerank; returns both ranks/distances
+recommend_turboquant_query_knobs(candidate_limit, final_limit=null,
+                                 index_schema=null, index_name=null,
+                                 filter_selectivity=null)
+                                                   # per-query knob advisor; pass index for context-aware values
 ```
 
 ## "Move data in / out"

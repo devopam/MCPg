@@ -21,7 +21,10 @@ from mcpg.turboquant import (
     list_turboquant_indexes,
     maintain_turboquant_index,
     recommend_turboquant_maintenance,
+    recommend_turboquant_query_knobs,
     reindex_turboquant_index,
+    turboquant_approx_candidates,
+    turboquant_rerank_candidates,
 )
 
 _READ_ONLY = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
@@ -464,6 +467,73 @@ async def test_recommend_turboquant_maintenance_silent_when_fast_path_unreported
     assert await recommend_turboquant_maintenance(driver) == []  # type: ignore[arg-type]
 
 
+async def test_recommend_turboquant_maintenance_fires_delta_tier_large_rule() -> None:
+    # delta_health.merge_recommended=True → upstream's own advisory
+    # → fire the WARNING with a tq_maintain_index suggested-action.
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [
+                _index_row(
+                    {
+                        "algorithm_version": "v2",
+                        "delta_live_count": 50_000,
+                        "delta_batch_page_count": 800,
+                        "delta_health": {
+                            "merge_recommended": True,
+                            "page_depth": 12,
+                            "live_fraction": 0.4,
+                        },
+                    }
+                )
+            ],
+        }
+    )
+
+    [finding] = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
+    assert finding.code == "delta_tier_large"
+    assert finding.severity == "WARNING"
+    assert "delta_live_count=50000" in finding.evidence
+    assert "delta_batch_page_count=800" in finding.evidence
+    assert "tq_maintain_index" in finding.suggested_action
+
+
+async def test_recommend_turboquant_maintenance_silent_when_delta_health_unreported() -> None:
+    # Absent delta_health → no fire (don't fire on absence of info,
+    # same convention as fast_path_ineligible).
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [_index_row({"algorithm_version": "v2"})],
+        }
+    )
+
+    assert await recommend_turboquant_maintenance(driver) == []  # type: ignore[arg-type]
+
+
+async def test_recommend_turboquant_maintenance_silent_when_merge_not_recommended() -> None:
+    # merge_recommended=False → don't fire (the index is fine).
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [{"present": 1}],
+            _LIST_INDEXES: [
+                _index_row(
+                    {
+                        "algorithm_version": "v2",
+                        "delta_live_count": 100,
+                        "delta_health": {"merge_recommended": False},
+                    }
+                )
+            ],
+        }
+    )
+
+    assert await recommend_turboquant_maintenance(driver) == []  # type: ignore[arg-type]
+
+
 async def test_recommend_turboquant_maintenance_quotes_identifiers_in_suggested_sql() -> None:
     # PG allows mixed-case names, embedded quotes, and embedded
     # apostrophes via delimited identifiers — catalog rows can carry
@@ -669,7 +739,7 @@ async def test_maintain_turboquant_index_happy_path_returns_timings() -> None:
         {
             "pg_extension": [{"present": 1}],
             _PREFLIGHT_SUBSTR: [{"present": 1}],
-            "tq_maintain_index": [{"tq_maintain_index": None}],
+            "tq_maintain_index": [{"result": {}}],
         }
     )
 
@@ -679,6 +749,37 @@ async def test_maintain_turboquant_index_happy_path_returns_timings() -> None:
     assert result.started_at.endswith("Z")
     assert result.completed_at.endswith("Z")
     assert result.duration_seconds >= 0.0
+    # Empty / missing JSON payload → all parsed fields None, raw == {}
+    assert result.delta_merge_performed is None
+    assert result.merged_delta_count is None
+    assert result.recycled_delta_page_count is None
+    assert result.raw == {}
+
+
+async def test_maintain_turboquant_index_surfaces_upstream_return_json() -> None:
+    # tq_maintain_index returns a documented JSON shape — verified
+    # against src/tq_maintenance.h in the upstream investigation.
+    # delta_merge_performed=true means upstream actually did work;
+    # the other two counters quantify it.
+    payload = {
+        "delta_merge_performed": True,
+        "merged_delta_count": 1234,
+        "recycled_delta_page_count": 56,
+        "future_field_upstream_might_add": "preserved-in-raw",
+    }
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            _PREFLIGHT_SUBSTR: [{"present": 1}],
+            "tq_maintain_index": [{"result": payload}],
+        }
+    )
+
+    result = await maintain_turboquant_index(driver, "public", "embeddings_tq_idx")  # type: ignore[arg-type]
+    assert result.delta_merge_performed is True
+    assert result.merged_delta_count == 1234
+    assert result.recycled_delta_page_count == 56
+    assert result.raw == payload
 
 
 async def test_maintain_turboquant_index_runs_maintenance_under_write_capability() -> None:
@@ -689,7 +790,7 @@ async def test_maintain_turboquant_index_runs_maintenance_under_write_capability
         {
             "pg_extension": [{"present": 1}],
             _PREFLIGHT_SUBSTR: [{"present": 1}],
-            "tq_maintain_index": [{"tq_maintain_index": None}],
+            "tq_maintain_index": [{"result": {}}],
         }
     )
 
@@ -890,6 +991,343 @@ async def test_reindex_turboquant_index_rejects_non_bool_concurrently(bad: Any) 
         await reindex_turboquant_index(db, "public", "idx", concurrently=bad)  # type: ignore[arg-type]
 
 
+# --- TQ-5: query execution + per-query knobs --------------------------------
+
+
+async def test_turboquant_approx_candidates_raises_when_extension_absent() -> None:
+    driver = FakeRoutingDriver({"pg_extension": []})
+    with pytest.raises(TurboQuantError, match="not installed"):
+        await turboquant_approx_candidates(
+            driver,  # type: ignore[arg-type]
+            "public",
+            "embeddings",
+            "id",
+            "embedding",
+            [0.1, 0.2, 0.3],
+            "cosine",
+            10,
+        )
+
+
+@pytest.mark.parametrize(
+    "metric",
+    ["manhattan", "tq_cosine_ops", "Cosine", "ip"],
+)
+async def test_turboquant_approx_candidates_rejects_unsupported_metric(metric: str) -> None:
+    # Note: ``ip`` is the upstream lexical token, but MCPg's public-
+    # facing name is ``inner_product`` (a 3-name mapping centralised
+    # in _TQ_METRIC_TEXT_FOR_METRIC). Callers should always use the
+    # public name; the wrapper translates internally.
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    with pytest.raises(TurboQuantError, match="unsupported metric"):
+        await turboquant_approx_candidates(
+            driver,  # type: ignore[arg-type]
+            "public",
+            "embeddings",
+            "id",
+            "embedding",
+            [0.1, 0.2, 0.3],
+            metric,
+            10,
+        )
+
+
+@pytest.mark.parametrize("field", ["schema", "table", "id_column", "embedding_column"])
+async def test_turboquant_approx_candidates_rejects_unsafe_identifiers(field: str) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    kwargs: dict[str, Any] = {
+        "schema": "public",
+        "table": "embeddings",
+        "id_column": "id",
+        "embedding_column": "embedding",
+        "query_vector": [0.1, 0.2, 0.3],
+        "metric": "cosine",
+        "candidate_limit": 10,
+    }
+    kwargs[field] = "bad; DROP"
+    with pytest.raises(TurboQuantError, match="invalid"):
+        await turboquant_approx_candidates(driver, **kwargs)  # type: ignore[arg-type]
+
+
+async def test_turboquant_approx_candidates_rejects_non_positive_candidate_limit() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    with pytest.raises(TurboQuantError, match="candidate_limit"):
+        await turboquant_approx_candidates(
+            driver,  # type: ignore[arg-type]
+            "public",
+            "embeddings",
+            "id",
+            "embedding",
+            [0.1, 0.2],
+            "cosine",
+            0,
+        )
+
+
+async def test_turboquant_approx_candidates_translates_metric_and_returns_rows() -> None:
+    rows_returned = [
+        {"candidate_id": "abc", "approximate_rank": 1, "approximate_distance": 0.1},
+        {"candidate_id": "def", "approximate_rank": 2, "approximate_distance": 0.2},
+    ]
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "tq_approx_candidates": rows_returned,
+        }
+    )
+    candidates = await turboquant_approx_candidates(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "embeddings",
+        "id",
+        "embedding",
+        [0.1, 0.2, 0.3],
+        "inner_product",  # public name
+        10,
+    )
+    assert len(candidates) == 2
+    assert candidates[0].candidate_id == "abc"
+    assert candidates[1].approximate_rank == 2
+    # Confirm the wrapper actually translated "inner_product" → "ip"
+    # in the bound params (rather than passing the public name through
+    # to upstream, which would error).
+    call = next(c for c in driver.calls if "tq_approx_candidates" in c[0])
+    _query, params, _ro = call
+    assert "ip" in params  # the runtime metric token
+
+
+async def test_turboquant_approx_candidates_serializes_list_query_vector() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "tq_approx_candidates": [],
+        }
+    )
+    await turboquant_approx_candidates(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "embeddings",
+        "id",
+        "embedding",
+        [1.5, 2.5, 3.5],
+        "l2",
+        10,
+    )
+    call = next(c for c in driver.calls if "tq_approx_candidates" in c[0])
+    _query, params, _ro = call
+    assert "[1.5,2.5,3.5]" in params
+
+
+async def test_turboquant_approx_candidates_passes_through_text_vector() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "tq_approx_candidates": [],
+        }
+    )
+    await turboquant_approx_candidates(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "embeddings",
+        "id",
+        "embedding",
+        "[7,8,9]",  # pre-formatted
+        "l2",
+        10,
+    )
+    call = next(c for c in driver.calls if "tq_approx_candidates" in c[0])
+    _query, params, _ro = call
+    assert "[7,8,9]" in params
+
+
+async def test_turboquant_approx_candidates_half_precision_selects_halfvec() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "tq_approx_candidates": [],
+        }
+    )
+    await turboquant_approx_candidates(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "embeddings",
+        "id",
+        "embedding",
+        [0.1, 0.2],
+        "cosine",
+        10,
+        half_precision=True,
+    )
+    call = next(c for c in driver.calls if "tq_approx_candidates" in c[0])
+    query, _params, _ro = call
+    assert "::halfvec" in query
+    assert "::vector," not in query  # only the halfvec cast
+
+
+async def test_turboquant_rerank_candidates_returns_both_rank_pairs() -> None:
+    rows_returned = [
+        {
+            "candidate_id": "abc",
+            "approximate_rank": 1,
+            "approximate_distance": 0.10,
+            "exact_rank": 1,
+            "exact_distance": 0.05,
+        },
+        {
+            "candidate_id": "def",
+            "approximate_rank": 2,
+            "approximate_distance": 0.20,
+            "exact_rank": 3,
+            "exact_distance": 0.18,
+        },
+    ]
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "tq_rerank_candidates": rows_returned,
+        }
+    )
+    candidates = await turboquant_rerank_candidates(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "embeddings",
+        "id",
+        "embedding",
+        [0.1, 0.2, 0.3],
+        "cosine",
+        100,
+        10,
+    )
+    assert len(candidates) == 2
+    assert candidates[1].exact_rank == 3
+    assert candidates[1].exact_distance == 0.18
+
+
+async def test_turboquant_rerank_candidates_rejects_non_positive_final_limit() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    with pytest.raises(TurboQuantError, match="final_limit"):
+        await turboquant_rerank_candidates(
+            driver,  # type: ignore[arg-type]
+            "public",
+            "embeddings",
+            "id",
+            "embedding",
+            [0.1, 0.2],
+            "cosine",
+            100,
+            0,
+        )
+
+
+# --- recommend_turboquant_query_knobs --------------------------------------
+
+
+async def test_recommend_turboquant_query_knobs_plain_overload() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "tq_recommended_query_knobs": [
+                {
+                    "probes": 32,
+                    "oversample_factor": 4,
+                    "max_visited_codes": 50_000,
+                    "max_visited_pages": 1_000,
+                }
+            ],
+        }
+    )
+    knobs = await recommend_turboquant_query_knobs(driver, 100)  # type: ignore[arg-type]
+    assert knobs.probes == 32
+    assert knobs.oversample_factor == 4
+    assert knobs.max_visited_codes == 50_000
+    assert knobs.max_visited_pages == 1_000
+    # Confirm we used the no-regclass overload (only 2 params bound)
+    call = next(c for c in driver.calls if "tq_recommended_query_knobs" in c[0])
+    _query, params, _ro = call
+    assert params == [100, None]
+
+
+async def test_recommend_turboquant_query_knobs_index_aware_overload() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "tq_recommended_query_knobs": [
+                {
+                    "probes": 64,
+                    "oversample_factor": 2,
+                    "max_visited_codes": None,
+                    "max_visited_pages": None,
+                }
+            ],
+        }
+    )
+    knobs = await recommend_turboquant_query_knobs(
+        driver,  # type: ignore[arg-type]
+        100,
+        final_limit=10,
+        index_schema="public",
+        index_name="embeddings_tq_idx",
+        filter_selectivity=0.3,
+    )
+    assert knobs.probes == 64
+    assert knobs.max_visited_codes is None  # None passthrough
+    call = next(c for c in driver.calls if "tq_recommended_query_knobs" in c[0])
+    query, params, _ro = call
+    assert "regclass" in query  # used the regclass overload
+    assert "public" in params and "embeddings_tq_idx" in params
+
+
+async def test_recommend_turboquant_query_knobs_rejects_partial_index_arg() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    with pytest.raises(TurboQuantError, match="both index_schema and index_name"):
+        await recommend_turboquant_query_knobs(
+            driver,  # type: ignore[arg-type]
+            100,
+            index_schema="public",
+        )
+    with pytest.raises(TurboQuantError, match="both index_schema and index_name"):
+        await recommend_turboquant_query_knobs(
+            driver,  # type: ignore[arg-type]
+            100,
+            index_name="idx",
+        )
+
+
+async def test_recommend_turboquant_query_knobs_rejects_filter_selectivity_without_index() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    with pytest.raises(TurboQuantError, match="filter_selectivity only applies"):
+        await recommend_turboquant_query_knobs(
+            driver,  # type: ignore[arg-type]
+            100,
+            filter_selectivity=0.5,
+        )
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+async def test_recommend_turboquant_query_knobs_rejects_non_finite_selectivity(bad: float) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    with pytest.raises(TurboQuantError, match="filter_selectivity must be finite"):
+        await recommend_turboquant_query_knobs(
+            driver,  # type: ignore[arg-type]
+            100,
+            index_schema="public",
+            index_name="idx",
+            filter_selectivity=bad,
+        )
+
+
+async def test_recommend_turboquant_query_knobs_returns_all_none_when_empty() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "tq_recommended_query_knobs": [],  # upstream may return no row
+        }
+    )
+    knobs = await recommend_turboquant_query_knobs(driver, 100)  # type: ignore[arg-type]
+    assert knobs.probes is None
+    assert knobs.oversample_factor is None
+
+
 # --- MCP layer wiring ------------------------------------------------------
 
 
@@ -903,6 +1341,9 @@ async def test_turboquant_tools_register_in_read_only_mode() -> None:
         "get_turboquant_heap_stats",
         "get_turboquant_last_scan_stats",
         "recommend_turboquant_maintenance",
+        "turboquant_approx_candidates",
+        "turboquant_rerank_candidates",
+        "recommend_turboquant_query_knobs",
     } <= listed
     # maintain_turboquant_index is WRITE-gated; must not be listed in
     # read-only mode.
