@@ -35,9 +35,15 @@ from mcpg.database import Database
 _SCHEMA_NAME = "mcpg_rag"
 _TABLE_NAME = "rerank_events"
 
-# SMALLINT bounds — bi/cross encoder ranks are 1-based positions in
-# the candidate list, so 1..32767 covers any sane candidate pool.
-_SMALLINT_MIN, _SMALLINT_MAX = 1, 32767
+# Ranks are 1-based positions in the candidate list. Stored as
+# SMALLINT, so the column-type ceiling caps the upper bound; the
+# lower bound is the smallest valid rank (1, not 0).
+_RANK_MIN, _RANK_MAX = 1, 32767
+
+# Full signed SMALLINT range — applies to ``ground_truth_relevance``
+# (which is a relevance *grade*, so 0 and small negatives are valid;
+# distinct from a position rank).
+_SMALLINT_LO, _SMALLINT_HI = -32768, 32767
 
 _SETUP_SQL_SCHEMA = f"CREATE SCHEMA IF NOT EXISTS {_SCHEMA_NAME}"
 
@@ -135,6 +141,14 @@ async def setup_rag_telemetry(database: Database) -> RagTelemetrySetupResult:
     The DDL runs through :meth:`Database.run_unmanaged` because
     ``CREATE SCHEMA`` cannot be re-issued inside a failed transaction
     and we want each statement to commit independently.
+
+    **Concurrent-setup caveat.** Two callers racing the probe-then-
+    DDL pattern can both observe "not there" and both run their
+    ``CREATE … IF NOT EXISTS``; the ``IF NOT EXISTS`` makes the
+    second one a no-op (so correctness is preserved), but both
+    results will report ``created=True`` for the same object. The
+    flag is for telling first-call from steady-state callers, not
+    for atomic ownership; treat it as advisory under concurrency.
     """
     driver = database.driver()
     had_schema = await _exists(driver, _PROBE_SCHEMA_SQL, [_SCHEMA_NAME])
@@ -157,14 +171,47 @@ async def setup_rag_telemetry(database: Database) -> RagTelemetrySetupResult:
     )
 
 
-def _validate_rank(name: str, value: int) -> None:
-    """Bounds check for SMALLINT-stored ranks.
+def _validate_int(
+    name: str,
+    value: Any,
+    *,
+    allow_none: bool = False,
+    min_value: int | None = None,
+    max_value: int | None = None,
+) -> None:
+    """Type + optional bounds check for an integer field.
 
-    Bools are explicitly rejected (subclass-of-int caught the
-    `concurrently=True` bug back on TQ-4 #74; same trap here).
+    Bools are explicitly rejected even though ``bool`` is a subclass
+    of ``int`` — same trap caught on TQ-4 (#74) where
+    ``concurrently=True`` would have slipped through if we hadn't
+    been strict. Bound checks are skipped when their argument is
+    ``None``, so callers can opt into range checking per field.
     """
-    if not isinstance(value, int) or isinstance(value, bool) or not _SMALLINT_MIN <= value <= _SMALLINT_MAX:
-        raise RagTelemetryError(f"{name} must be an int in [{_SMALLINT_MIN}..{_SMALLINT_MAX}]; got {value!r}")
+    if value is None:
+        if allow_none:
+            return
+        raise RagTelemetryError(f"{name} must be int; got None")
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise RagTelemetryError(f"{name} must be int; got {value!r}")
+    if min_value is not None and value < min_value:
+        raise RagTelemetryError(f"{name} must be >= {min_value}; got {value!r}")
+    if max_value is not None and value > max_value:
+        raise RagTelemetryError(f"{name} must be <= {max_value}; got {value!r}")
+
+
+def _validate_rank(name: str, value: int) -> None:
+    """Thin wrapper over :func:`_validate_int` for rank fields."""
+    _validate_int(name, value, min_value=_RANK_MIN, max_value=_RANK_MAX)
+
+
+def _validate_numeric(name: str, value: Any, *, allow_none: bool = False) -> None:
+    """Type check for ``DOUBLE PRECISION`` columns. Rejects bools."""
+    if value is None:
+        if allow_none:
+            return
+        raise RagTelemetryError(f"{name} must be numeric; got None")
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise RagTelemetryError(f"{name} must be numeric; got {value!r}")
 
 
 def _validate_text(name: str, value: str) -> None:
@@ -226,26 +273,36 @@ async def log_rerank_event(
     _validate_text("retrieval_index", retrieval_index)
     _validate_text("retrieval_backend", retrieval_backend)
     _validate_text("reranker_model", reranker_model)
-    if not isinstance(candidate_id, int) or isinstance(candidate_id, bool):
-        raise RagTelemetryError(f"candidate_id must be int; got {candidate_id!r}")
+    _validate_int("candidate_id", candidate_id)
     _validate_rank("bi_encoder_rank", bi_encoder_rank)
     _validate_rank("cross_encoder_rank", cross_encoder_rank)
-    if not isinstance(cross_encoder_score, (int, float)) or isinstance(cross_encoder_score, bool):
-        raise RagTelemetryError(f"cross_encoder_score must be numeric; got {cross_encoder_score!r}")
-    if bi_encoder_score is not None and (
-        not isinstance(bi_encoder_score, (int, float)) or isinstance(bi_encoder_score, bool)
-    ):
-        raise RagTelemetryError(f"bi_encoder_score must be numeric or None; got {bi_encoder_score!r}")
+    _validate_numeric("cross_encoder_score", cross_encoder_score)
+    _validate_numeric("bi_encoder_score", bi_encoder_score, allow_none=True)
     if not isinstance(used_in_context, bool):
         raise RagTelemetryError(f"used_in_context must be bool; got {used_in_context!r}")
-    if ground_truth_relevance is not None and (
-        not isinstance(ground_truth_relevance, int) or isinstance(ground_truth_relevance, bool)
-    ):
-        raise RagTelemetryError(f"ground_truth_relevance must be int or None; got {ground_truth_relevance!r}")
+    # ground_truth_relevance is a relevance *grade*, not a position
+    # rank — 0 (irrelevant) is a valid value, so the bound is the
+    # full signed SMALLINT range, not the rank range starting at 1.
+    _validate_int(
+        "ground_truth_relevance",
+        ground_truth_relevance,
+        allow_none=True,
+        min_value=_SMALLINT_LO,
+        max_value=_SMALLINT_HI,
+    )
     if extra is not None and not isinstance(extra, dict):
         raise RagTelemetryError(f"extra must be dict or None; got {type(extra).__name__}")
 
-    extra_json = json.dumps(extra) if extra is not None else "{}"
+    # Wrap json.dumps so non-serialisable values (datetimes, custom
+    # classes, …) surface as RagTelemetryError rather than a generic
+    # TypeError from deep inside the stdlib.
+    if extra is None:
+        extra_json = "{}"
+    else:
+        try:
+            extra_json = json.dumps(extra)
+        except (TypeError, ValueError) as exc:
+            raise RagTelemetryError(f"extra must be JSON-serialisable: {exc}") from exc
 
     rows = await driver.execute_query(
         _INSERT_EVENT_SQL,

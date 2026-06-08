@@ -98,7 +98,7 @@ async def test_setup_idempotent_when_everything_already_exists() -> None:
         ("reranker_model", "", "non-empty string"),
         ("candidate_id", "42", "candidate_id"),
         ("bi_encoder_rank", 0, "bi_encoder_rank"),  # below SMALLINT min (1)
-        ("bi_encoder_rank", 99_999, "bi_encoder_rank"),  # above SMALLINT max
+        ("bi_encoder_rank", 99_999, "bi_encoder_rank"),  # above SMALLINT rank max
         ("bi_encoder_rank", True, "bi_encoder_rank"),  # bool rejected
         ("cross_encoder_rank", 0, "cross_encoder_rank"),
         ("cross_encoder_score", "0.5", "cross_encoder_score"),
@@ -112,6 +112,37 @@ async def test_log_rejects_invalid_field(field: str, value: Any, match: str) -> 
     driver = FakeRoutingDriver({})
     kwargs = _valid_event_kwargs(**{field: value})
     with pytest.raises(RagTelemetryError, match=match):
+        await log_rerank_event(driver, **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad", [-32_769, 32_768, 100_000])
+async def test_log_rejects_ground_truth_relevance_outside_smallint(bad: int) -> None:
+    # SMALLINT range is [-32768, 32767]. Values outside that would
+    # historically pass Python validation and fail at INSERT time as
+    # a DB error — sourcery + gemini both flagged this independently.
+    driver = FakeRoutingDriver({})
+    kwargs = _valid_event_kwargs(ground_truth_relevance=bad)
+    with pytest.raises(RagTelemetryError, match="ground_truth_relevance"):
+        await log_rerank_event(driver, **kwargs)  # type: ignore[arg-type]
+
+
+async def test_log_accepts_ground_truth_relevance_zero() -> None:
+    # Relevance grades use 0 (irrelevant). The earlier validator
+    # used the rank lower bound (1) which would have wrongly rejected
+    # this. Regression coverage for the rank/grade distinction.
+    driver = FakeRoutingDriver({"INSERT INTO mcpg_rag.rerank_events": [{"event_id": 1}]})
+    await log_rerank_event(driver, **_valid_event_kwargs(ground_truth_relevance=0))  # type: ignore[arg-type]
+
+
+async def test_log_rejects_non_json_serialisable_extra() -> None:
+    # Datetime, custom classes, sets, etc. — json.dumps raises
+    # TypeError. The wrapper turns it into RagTelemetryError so
+    # callers don't see stdlib internals leaking through.
+    import datetime as _dt
+
+    driver = FakeRoutingDriver({})
+    kwargs = _valid_event_kwargs(extra={"when": _dt.datetime.now(_dt.UTC)})
+    with pytest.raises(RagTelemetryError, match="JSON-serialisable"):
         await log_rerank_event(driver, **kwargs)  # type: ignore[arg-type]
 
 
