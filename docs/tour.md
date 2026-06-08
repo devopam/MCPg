@@ -174,12 +174,13 @@ monitor_embedding_drift(schema, table, embedding_column, timestamp_column,
 
 ```
 list_turboquant_indexes()                          # every turboquant index + tq_index_metadata
-get_turboquant_index_metadata(schema, index)       # algorithm_version, quantizer_family, capability_flags, delta_*…
+get_turboquant_index_metadata(schema, index)       # access_method, opclass, input_type, heap_*, capabilities,
+                                                   # operability, delta_* (live_count, batch_page_count, head/tail block,
+                                                   # page_depth, live_fraction, merge_recommended, merge_thresholds)
 get_turboquant_heap_stats(schema, index)           # exact heap row count from tq_index_heap_stats
 get_turboquant_last_scan_stats()                   # most recent backend-local scan diagnostics
-recommend_turboquant_maintenance()                 # advisor — prerequisites_unmet, format_v1_reindex_needed,
-                                                   # maintenance_due, fast_path_ineligible, delta_tier_large
-                                                   # (also feeds audit_database)
+recommend_turboquant_maintenance()                 # advisor — prerequisites_unmet (CRITICAL),
+                                                   # delta_tier_large (WARNING); also feeds audit_database
 ```
 
 ## "Query a pg_turboquant ANN index" (`pg_turboquant` installed)

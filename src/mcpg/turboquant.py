@@ -28,21 +28,25 @@ All read functions return cleanly (empty list / ``None``) when the
 extension is not installed, so callers can treat absence as "no
 turboquant in use" rather than a hard error.
 
-**Upstream contract notes.** Original TQ-1 fields
-(``algorithm_version``, ``quantizer_family``,
+**Upstream contract notes.** The TQ-field-alignment pass removed
+seven fields the original TQ-1 implementation had inherited from
+README prose (``algorithm_version``, ``quantizer_family``,
 ``residual_sketch_kind``, ``fast_path_eligible``,
-``capability_flags``, ``delta_state``, ``maintenance_recommended``)
-were sourced from README prose, which describes the metadata
-contents in English. The post-investigation pass found that
-upstream's actual JSON keys differ — the truly documented keys
-(per ``src/tq_extension.c``) include
-``delta_live_count``, ``delta_batch_page_count``, and
-``delta_health.merge_recommended``. The new
-:attr:`TurboQuantIndexInfo.delta_*` fields source from those
-verified keys; the original prose-sourced fields are preserved for
-backwards compatibility but may return ``None`` when no upstream
-key by that name exists. ``raw_metadata`` always carries the full
-payload — callers needing absolute fidelity should read from there.
+``capability_flags``, ``delta_state``,
+``maintenance_recommended``) along with three rules that depended
+on them (``format_v1_reindex_needed``, ``maintenance_due``,
+``fast_path_ineligible``). None of those keys appear in upstream's
+actual JSON payload (per ``src/tq_extension.c`` +
+``sql/pg_turboquant--0.1.0.sql``), so the fields would have always
+returned ``None`` and the rules would have never fired against a
+real install. The replacement fields (``access_method``,
+``opclass``, ``input_type``, ``heap_relation``,
+``heap_live_rows_estimate``, ``capabilities``, ``operability``,
+the ``delta_*`` set, and ``delta_merge_thresholds``) are sourced
+from verified upstream keys; the remaining advisor rules
+(``prerequisites_unmet``, ``delta_tier_large``) source from
+verified signals. ``raw_metadata`` always carries the full payload
+for callers needing fidelity to keys not surfaced as typed fields.
 """
 
 from __future__ import annotations
@@ -96,40 +100,64 @@ def _pg_quote_literal(text: str) -> str:
 class TurboQuantIndexInfo:
     """A turboquant index and the metadata `tq_index_metadata` reports for it.
 
-    Documented keys are surfaced as typed fields; the full upstream
-    payload is preserved in :attr:`raw_metadata` so callers can still
-    reach unanticipated fields. :attr:`index_options` is sourced from
-    ``pg_class.reloptions`` — the ``WITH (...)`` clause the index was
-    created with, parsed into typed values (``bits``, ``lists`` as
-    ints, ``normalized`` as bool, ``transform`` as str). This gives
-    agents the build-time configuration at a glance without a separate
-    ``tq_index_metadata`` round-trip.
+    Every typed field on this class is sourced from a key that has
+    been verified in upstream's source
+    (`sql/pg_turboquant--0.1.0.sql` + `src/tq_extension.c`):
 
-    The ``delta_*`` fields surface the upstream delta-tier counters
-    that ``tq_index_metadata`` reports — :attr:`delta_live_count`
-    (rows currently in the delta tier),
-    :attr:`delta_batch_page_count` (delta-tier pages), and
-    :attr:`delta_merge_recommended` (upstream's own boolean advisory,
-    read from ``delta_health.merge_recommended``). These power the
-    ``delta_tier_large`` advisor rule.
+    * Catalog-level: :attr:`schema`, :attr:`index`, :attr:`table`,
+      :attr:`column`.
+    * `tq_index_metadata` top-level: :attr:`access_method`,
+      :attr:`opclass`, :attr:`input_type`, :attr:`heap_relation`,
+      :attr:`heap_live_rows_estimate`, :attr:`capabilities`,
+      :attr:`operability`.
+    * Delta-tier counters: :attr:`delta_enabled`,
+      :attr:`delta_live_count`, :attr:`delta_batch_page_count`,
+      :attr:`delta_head_block`, :attr:`delta_tail_block`.
+    * `delta_health` sub-object: :attr:`delta_page_depth`,
+      :attr:`delta_live_fraction`, :attr:`delta_merge_recommended`,
+      :attr:`delta_merge_thresholds`. :attr:`delta_merge_recommended`
+      powers the ``delta_tier_large`` advisor rule.
+
+    :attr:`raw_metadata` always carries the full ``tq_index_metadata``
+    payload so callers can reach anything not surfaced as a typed
+    field. :attr:`index_options` is sourced separately from
+    ``pg_class.reloptions`` and parsed into typed values
+    (``bits``, ``lists`` as ints, ``normalized`` as bool,
+    ``transform`` as str).
+
+    *Note on the alignment.* The original TQ-1 dataclass exposed
+    fields named after README prose (``algorithm_version``,
+    ``quantizer_family``, ``residual_sketch_kind``,
+    ``fast_path_eligible``, ``capability_flags``, ``delta_state``,
+    ``maintenance_recommended``) — those key names don't appear in
+    upstream's actual JSON output. The TQ-field-alignment PR removed
+    them. Callers needing equivalent information should read
+    :attr:`capabilities` / :attr:`operability` / :attr:`raw_metadata`
+    until upstream documents what's in those sub-objects.
     """
 
     schema: str
     index: str
     table: str
     column: str
-    algorithm_version: str | None
-    quantizer_family: str | None
-    residual_sketch_kind: str | None
-    fast_path_eligible: bool | None
-    capability_flags: list[str] = field(default_factory=list)
-    delta_state: str | None = None
-    maintenance_recommended: bool | None = None
-    raw_metadata: dict[str, Any] = field(default_factory=dict)
-    index_options: dict[str, Any] = field(default_factory=dict)
+    access_method: str | None = None
+    opclass: str | None = None
+    input_type: str | None = None
+    heap_relation: str | None = None
+    heap_live_rows_estimate: int | None = None
+    capabilities: dict[str, Any] = field(default_factory=dict)
+    operability: dict[str, Any] = field(default_factory=dict)
+    delta_enabled: bool | None = None
     delta_live_count: int | None = None
     delta_batch_page_count: int | None = None
+    delta_head_block: int | None = None
+    delta_tail_block: int | None = None
+    delta_page_depth: int | None = None
+    delta_live_fraction: float | None = None
     delta_merge_recommended: bool | None = None
+    delta_merge_thresholds: dict[str, Any] = field(default_factory=dict)
+    raw_metadata: dict[str, Any] = field(default_factory=dict)
+    index_options: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,12 +340,6 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
-def _as_str_list(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item) for item in value]
-    return []
-
-
 def _coerce_reloption_value(raw: str) -> Any:
     lowered = raw.lower()
     if lowered == "true":
@@ -360,32 +382,57 @@ def _maybe_int(value: Any) -> int | None:
         return None
 
 
+def _maybe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _maybe_bool(value: Any) -> bool | None:
+    """Strict bool reader — only ``True`` / ``False`` survive.
+
+    Reject everything else (``0``, ``1``, ``"true"``, ``None`` …) so
+    rules that key on ``is True`` / ``is False`` never get tricked by
+    truthiness.
+    """
+    return value if isinstance(value, bool) else None
+
+
 def _index_info_from_row(row_cells: dict[str, Any]) -> TurboQuantIndexInfo:
     metadata = _as_dict(row_cells.get("metadata"))
     # ``delta_health`` is a nested object documented in upstream's C
     # source as ``{ page_depth, live_fraction, merge_recommended,
     # merge_thresholds }``. Read it defensively — a missing or
-    # mis-typed sub-object yields ``None`` rather than raising, so
-    # this code keeps working across upstream schema drift.
+    # mis-typed sub-object yields ``None`` / empty dict rather than
+    # raising, so this code keeps working across upstream schema
+    # drift.
     delta_health = _as_dict(metadata.get("delta_health"))
-    merge_recommended = delta_health.get("merge_recommended")
     return TurboQuantIndexInfo(
         schema=row_cells["schema"],
         index=row_cells["index"],
         table=row_cells["table"],
         column=row_cells.get("column") or "",
-        algorithm_version=metadata.get("algorithm_version"),
-        quantizer_family=metadata.get("quantizer_family"),
-        residual_sketch_kind=metadata.get("residual_sketch_kind"),
-        fast_path_eligible=metadata.get("fast_path_eligible"),
-        capability_flags=_as_str_list(metadata.get("capability_flags")),
-        delta_state=metadata.get("delta_state"),
-        maintenance_recommended=metadata.get("maintenance_recommended"),
-        raw_metadata=metadata,
-        index_options=_parse_reloptions(row_cells.get("reloptions")),
+        access_method=metadata.get("access_method"),
+        opclass=metadata.get("opclass"),
+        input_type=metadata.get("input_type"),
+        heap_relation=metadata.get("heap_relation"),
+        heap_live_rows_estimate=_maybe_int(metadata.get("heap_live_rows_estimate")),
+        capabilities=_as_dict(metadata.get("capabilities")),
+        operability=_as_dict(metadata.get("operability")),
+        delta_enabled=_maybe_bool(metadata.get("delta_enabled")),
         delta_live_count=_maybe_int(metadata.get("delta_live_count")),
         delta_batch_page_count=_maybe_int(metadata.get("delta_batch_page_count")),
-        delta_merge_recommended=merge_recommended if isinstance(merge_recommended, bool) else None,
+        delta_head_block=_maybe_int(metadata.get("delta_head_block")),
+        delta_tail_block=_maybe_int(metadata.get("delta_tail_block")),
+        delta_page_depth=_maybe_int(delta_health.get("page_depth")),
+        delta_live_fraction=_maybe_float(delta_health.get("live_fraction")),
+        delta_merge_recommended=_maybe_bool(delta_health.get("merge_recommended")),
+        delta_merge_thresholds=_as_dict(delta_health.get("merge_thresholds")),
+        raw_metadata=metadata,
+        index_options=_parse_reloptions(row_cells.get("reloptions")),
     )
 
 
@@ -474,76 +521,14 @@ class TurboQuantAdvisorFinding:
     suggested_action: str
 
 
-# Rule codes — stable identifiers. The mapping lives here as the single
-# source of truth so the audit-database adapter and any external
-# consumers (e.g. the RAG efficiency suite once it lands) read from one
-# place. ``delta_tier_large`` is intentionally absent: the upstream
-# ``tq_index_heap_stats`` payload does not yet document a delta-row key
-# we can rely on, so the rule is deferred to a follow-up once the
-# contract is verifiable.
-_RULE_FORMAT_V1 = "format_v1_reindex_needed"
-_RULE_MAINTENANCE_DUE = "maintenance_due"
-_RULE_FAST_PATH_INELIGIBLE = "fast_path_ineligible"
+# Rule codes — stable identifiers. Every rule's underlying signal is
+# sourced from a verified key in upstream's source. Three earlier
+# rules (``format_v1_reindex_needed``, ``maintenance_due``,
+# ``fast_path_ineligible``) were removed in the TQ-field-alignment
+# pass when their source fields turned out to be README prose, not
+# actual upstream keys — see the module docstring for context.
 _RULE_PREREQUISITES_UNMET = "prerequisites_unmet"
 _RULE_DELTA_TIER_LARGE = "delta_tier_large"
-
-
-def _finding_format_v1(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFinding | None:
-    version = info.algorithm_version or ""
-    if not version.lower().startswith("v1"):
-        return None
-    qualified = f"{_pg_quote_ident(info.schema)}.{_pg_quote_ident(info.index)}"
-    return TurboQuantAdvisorFinding(
-        code=_RULE_FORMAT_V1,
-        severity="CRITICAL",
-        schema=info.schema,
-        index=info.index,
-        evidence=f"algorithm_version={version!r} — v1 indexes must be rebuilt to use the v2 on-disk format.",
-        suggested_action=f"REINDEX INDEX CONCURRENTLY {qualified};",
-    )
-
-
-def _finding_maintenance_due(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFinding | None:
-    if info.maintenance_recommended is not True:
-        return None
-    state = info.delta_state or "unknown"
-    # Two-layer escaping: identifiers go inside a string literal that
-    # itself becomes a regclass. Identifier-quote first (so case and
-    # specials survive PG's identifier parsing), then literal-quote
-    # the whole qualified name (so the surrounding 'string' survives
-    # parsing too — important when the name contains a single quote).
-    qualified = f"{_pg_quote_ident(info.schema)}.{_pg_quote_ident(info.index)}"
-    literal = _pg_quote_literal(qualified)
-    return TurboQuantAdvisorFinding(
-        code=_RULE_MAINTENANCE_DUE,
-        severity="WARNING",
-        schema=info.schema,
-        index=info.index,
-        evidence=f"tq_index_metadata reports maintenance_recommended=true (delta_state={state!r}).",
-        suggested_action=f"SELECT tq_maintain_index({literal}::regclass);",
-    )
-
-
-def _finding_fast_path_ineligible(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFinding | None:
-    # Explicit ``is False`` — ``None`` means upstream didn't report,
-    # which is not the same as reporting "ineligible".
-    if info.fast_path_eligible is not False:
-        return None
-    return TurboQuantAdvisorFinding(
-        code=_RULE_FAST_PATH_INELIGIBLE,
-        severity="WARNING",
-        schema=info.schema,
-        index=info.index,
-        evidence=(
-            "tq_index_metadata reports fast_path_eligible=false — queries against this index will not use "
-            "the SIMD fast path. Common causes: incompatible bits/transform combination, dimension below the "
-            "fast-path threshold, or a missing capability flag."
-        ),
-        suggested_action=(
-            "Review the index's WITH (...) options against the upstream tuning matrix; "
-            "rebuild with a compatible configuration if a fast-path build is desired."
-        ),
-    )
 
 
 def _finding_delta_tier_large(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFinding | None:
@@ -551,7 +536,7 @@ def _finding_delta_tier_large(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFin
     # is computed inside the extension against thresholds it owns, so
     # MCPg doesn't need to invent a ratio of its own. Only fires on
     # explicit ``True`` — ``None`` (not reported) is treated as
-    # absence of information, the same way fast_path_ineligible does.
+    # absence of information.
     if info.delta_merge_recommended is not True:
         return None
     rows = info.delta_live_count if info.delta_live_count is not None else "unknown"
@@ -571,12 +556,7 @@ def _finding_delta_tier_large(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFin
     )
 
 
-_PER_INDEX_RULES = (
-    _finding_format_v1,
-    _finding_maintenance_due,
-    _finding_delta_tier_large,
-    _finding_fast_path_ineligible,
-)
+_PER_INDEX_RULES = (_finding_delta_tier_large,)
 
 
 async def recommend_turboquant_maintenance(driver: SqlDriver) -> list[TurboQuantAdvisorFinding]:
