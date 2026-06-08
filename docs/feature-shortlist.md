@@ -140,17 +140,32 @@ Full design plan in
 | 11.4 | `analyze_reranker_lift`, `analyze_topk_stability`, `analyze_rerank_score_distribution`, `analyze_rerank_ndcg`, `recommend_rerank_strategy`, plus `audit_rag_pipeline` category. | M | High | Phase D — "is my cross-encoder earning its latency budget, or is it theatre?" |
 | 11.5 | **Adaptive thresholds for the efficiency rule table** (Phase E). `mcpg_rag.efficiency_observations` table + `setup_efficiency_observations` (DDL) + `record_efficiency_observation` (write) + `recommend_efficiency_thresholds` (read). Once enough observations accumulate, the rule evaluator pulls corpus-percentile thresholds (e.g. recall-low = p10) instead of the hardcoded defaults. Single insertion point in `_evaluate_rules`. | M | Medium-High | Self-learning framework — surfaces "below p5 in this deployment" rather than "below 0.80". |
 
-## 12. Multi-database support
+## 12. BM25 sparse search
+
+Full planning doc in
+[`plans/bm25-integration.md`](plans/bm25-integration.md). A three-way
+comparison of `pg_search` (ParadeDB), `pg_textsearch` (Tiger Data),
+and `pg_tokenizer` + `vchord_bm25` (VectorChord) selected `pg_search`
+as the first integration target. The other two are deferred with
+documented return conditions.
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 12.1 | One MCPg server, multiple `MCPG_DATABASE_URL`s — tool-level db selector | L | Medium | Today: one server = one DSN. Multi-DB means a per-tool param, a pool-per-DB, and rethinking gates. Big lift; no concrete demand yet. |
+| 12.1 | **`pg_search` (ParadeDB) wrapper** — five-phase integration: BM-1 observability, BM-2 search execution (`pg_search_run`, `pg_search_more_like_this`, `pg_search_parse_query`), BM-3 hybrid BM25+pgvector composition, BM-4 DDL (`create_pg_search_index`, `reindex_pg_search_index`), BM-5 advisor + audit category. Composes naturally with the RAG efficiency suite. | L | High | Selected over the alternatives for PG 14-18 coverage + pre-built binaries + stable v2 API + documented hybrid pattern. |
+| 12.2 | **`pg_textsearch` (Tiger Data) wrapper — deferred.** PG 17/18-only today; no phrase queries. Returns when PG 14-16 support lands or when TimescaleDB integration motivates the lineage match. | L | Medium-High | Strong fallback. |
+| 12.3 | **`pg_tokenizer` + `vchord_bm25` wrapper — deferred.** Pre-1.0 (0.3.0); split-extension install; no documented pgvector hybrid pattern. Strong CJK tokenizer story (Jieba, Lindera, BERT). Returns when CJK / multilingual is a top-line goal. | L | Medium | Strong third choice. |
+
+## 13. Multi-database support
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 13.1 | One MCPg server, multiple `MCPG_DATABASE_URL`s — tool-level db selector | L | Medium | Today: one server = one DSN. Multi-DB means a per-tool param, a pool-per-DB, and rethinking gates. Big lift; no concrete demand yet. |
 
 ---
 
 ## Currently deferred (no commitments)
 
-- **Multi-database support** (12.1 above) — very ambitious;
+- **Multi-database support** (13.1 above) — very ambitious;
   preferred shape today is one MCPg instance per database.
 - **Backups & DR** beyond what `dump_database` /
   `restore_database` already cover — narrow audience.

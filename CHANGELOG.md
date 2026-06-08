@@ -6,6 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Docs
+
+- **Doc-sync after the turboquant + RAG-A/B PR wave.** Tool count in
+  `docs/tour.md`, `docs/user-guide.md`, and `docs/tools.md` bumped
+  from 141 to 154. The `docs/tools.md` tool index now lists every
+  tool registered by `tools.py` (verified by reconciling
+  `grep '@server.tool' src/mcpg/tools.py` against the listed
+  tools). New rows for the pg_turboquant observability / write /
+  DDL groupings; existing rows extended with
+  `analyze_vector_search_efficiency` (RAG-A),
+  `verify_audit_chain` / `prune_audit_events`,
+  `verify_connection_encryption`, `get_compact_schema`,
+  `mmr_search`, `optimize_query`, the pgvector advisor follow-ups
+  (`tune_vector_index`, `vector_recall_at_k`, `analyze_hnsw_recall`),
+  and `schedule_logical_backup` under a unified "pg_cron
+  scheduling (gated)" row. Stale `pg_cron.schedule` / `partman.*`
+  naming convention corrected to the actual tool names
+  (`schedule_cron_job` / `partman_create_parent` etc.).
+
+- **Planning doc for the BM25 sparse-search integration.** A focused
+  three-way comparison of `pg_search` (ParadeDB), `pg_textsearch`
+  (Tiger Data), and `pg_tokenizer + vchord_bm25` (VectorChord)
+  selected `pg_search` as the first integration target. Five-phase
+  plan in `docs/plans/bm25-integration.md` (BM-1 observability →
+  BM-5 advisor + audit). The other two are deferred with
+  documented return conditions. Feature-shortlist gains a new
+  section 12 (BM25); the old section 12 (Multi-database support)
+  is renumbered to section 13.
+
 ### Added
 
 - **`audit_vector_indexes` scorecard category (RAG-B).** Folds

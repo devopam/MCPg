@@ -36,7 +36,7 @@ plumbing:
 | `MCPG_SLOW_CALL_THRESHOLD_MS` / `MCPG_LOG_FORMAT` | Log a structured "slow call" record when a tool exceeds the threshold; switch the logger between `text` and `json` formats. |
 | `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config (Anthropic / OpenAI / Gemini). |
 
-## Tool index (141 tools)
+## Tool index (154 tools)
 
 | Category | Tools |
 |---|---|
@@ -46,13 +46,18 @@ plumbing:
 | **Query intelligence** | `run_select`, `run_select_parallel`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql` |
 | **Server-side cursors** | `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors` |
 | **Composite + diagnostic** | `summarize_table`, `why_is_this_slow`, `find_unused_objects`, `find_sensitive_columns`, `detect_n_plus_one`, `lint_naming_conventions`, `test_rls_for_role`, `list_locks`, `find_blocking_chains`, `walk_blocking_chains`, `read_pg_stat_io`, `read_pg_buffercache_summary`, `read_pg_buffercache_relations`, `read_pg_wal_records`, `read_pg_wal_stats` |
-| **Health & tuning** | `check_database_health`, `audit_database`, `analyze_workload`, `recommend_indexes`, `recommend_index_drops`, `run_advisors` |
-| **Search** | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `hybrid_search`, `geo_search` |
-| **Vector tuning advisors** | `recommend_vector_index`, `analyze_vector_search`, `analyze_vector_table`, `recommend_vector_quantization` |
+| **Health & tuning** | `check_database_health`, `audit_database`, `analyze_workload`, `recommend_indexes`, `recommend_index_drops`, `run_advisors`, `optimize_query` |
+| **Search** | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `hybrid_search`, `geo_search`, `mmr_search` |
+| **Vector tuning advisors** | `recommend_vector_index`, `analyze_vector_search`, `analyze_vector_table`, `recommend_vector_quantization`, `tune_vector_index`, `vector_recall_at_k`, `analyze_hnsw_recall`, `analyze_vector_search_efficiency` |
 | **Vector analytics (pgvector)** | `cross_table_similarity`, `cluster_vectors`, `detect_vector_outliers`, `monitor_embedding_drift`, `migrate_vector_to_halfvec`, `analyze_distance_metric`, `import_vectors` |
+| **pg_turboquant — observability + query** | `list_turboquant_indexes`, `get_turboquant_index_metadata`, `get_turboquant_heap_stats`, `get_turboquant_last_scan_stats`, `recommend_turboquant_maintenance`, `turboquant_approx_candidates`, `turboquant_rerank_candidates`, `recommend_turboquant_query_knobs` |
+| **pg_turboquant — write (gated)** | `maintain_turboquant_index` |
+| **pg_turboquant — DDL (gated)** | `create_turboquant_index`, `reindex_turboquant_index` |
 | **Apache AGE graph + Cypher** | `list_graphs`, `describe_graph`, `run_cypher`, `create_graph` (gated), `drop_graph` (gated) |
-| **Live ops** | `list_active_queries`, `list_replicas`, `monitor_index_build` |
-| **Audit trail** | `list_audit_events` |
+| **Live ops** | `list_active_queries`, `list_replicas`, `monitor_index_build`, `verify_connection_encryption` |
+| **Audit trail** | `list_audit_events`, `verify_audit_chain`, `prune_audit_events` |
+| **Catalog — compact** | `get_compact_schema` |
+| **pg_cron scheduling (gated)** | `list_cron_jobs`, `schedule_cron_job`, `unschedule_cron_job`, `schedule_logical_backup` |
 | **Data movement — read** | `export_query`, `export_table` |
 | **Data movement — write (gated)** | `import_csv`, `import_json` |
 | **Data movement — subprocess (gated)** | `dump_database`, `restore_database`, `copy_table_between_databases` |
@@ -62,8 +67,7 @@ plumbing:
 | **Test-data factory** | `generate_test_data` (generates SQL — does not execute), `seed_table_with_sample_data` (generates and executes; WRITE-gated) |
 | **TimescaleDB hypertables (gated for writes)** | `list_hypertables`, `list_chunks`, `create_hypertable`, `add_compression_policy`, `add_retention_policy` |
 | **ORM-DSL exporters** | `generate_prisma_schema`, `generate_drizzle_schema`, `generate_sqlalchemy_models`, `generate_sqlc_schema`, `generate_diesel_schema`, `generate_jooq_config`, `generate_ent_schemas`, `generate_ecto_schemas` |
-| **pg_cron write (gated)** | `pg_cron.schedule`, `pg_cron.unschedule`, `pg_cron.update` |
-| **pg_partman write (gated)** | `partman.create_parent`, `partman.run_maintenance`, `partman.drop_partition_time` |
+| **pg_partman write (gated)** | `partman_create_parent`, `partman_run_maintenance`, `partman_drop_partition` |
 | **Write & DDL (gated)** | `run_write`, `run_ddl`, `run_maintenance`, `cancel_query`, `terminate_backend`, `enable_extension` |
 
 > The reference sections below describe the v0.4.0-era tools in

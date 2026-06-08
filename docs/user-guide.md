@@ -35,7 +35,7 @@ first time, skim it as a reference after.
 ## What MCPg is
 
 MCPg is an MCP server that exposes a PostgreSQL database to an AI
-agent through a fixed, audited set of **141 tools**. The agent never
+agent through a fixed, audited set of **154 tools**. The agent never
 gets a raw database connection — it can only call the tools MCPg
 registers, every call is validated, and every call is logged. MCPg
 runs as a single async process and ships as both a PyPI package
