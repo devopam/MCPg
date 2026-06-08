@@ -49,6 +49,7 @@ from mcpg import (
     partman,
     prisma,
     query,
+    rag_efficiency,
     rls,
     schema_diff,
     schema_docs,
@@ -729,6 +730,53 @@ def _register_schema_diff(server: FastMCP[AppContext]) -> None:
     async def compare_schemas(ctx: _Ctx, left_schema: str, right_schema: str) -> dict[str, Any]:
         diff = await schema_diff.compare_schemas(_driver(ctx), left_schema, right_schema)
         return asdict(diff)
+
+
+def _register_rag_efficiency(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="analyze_vector_search_efficiency",
+        description=(
+            "Cross-backend retrieval-quality report for a pgvector or "
+            "pg_turboquant ANN index. Detects the backend (HNSW / IVFFlat / "
+            "turboquant), sweeps the matching per-backend knob "
+            "(ef_search / probes / candidate_limit) across a multiplier "
+            "curve, computes recall@k vs a brute-force exact baseline, "
+            "Spearman + Kendall rank correlation, per-query p50/p95 "
+            "wall-clock latency, and (for turboquant) the page-pruning "
+            "ratio from tq_last_scan_stats. Emits findings: "
+            "``baseline_recall_low`` (CRITICAL), ``rerank_lift_flat`` / "
+            "``rerank_lift_steep`` / ``ranking_degraded`` / "
+            "``pruning_ineffective`` (WARNING). Burns "
+            "sample_size x (1 + len(candidate_multipliers)) queries; "
+            "ad-hoc diagnostic, not a cron tool. Requires the vector "
+            "extension; turboquant-arm metrics require pg_turboquant."
+        ),
+    )
+    async def analyze_vector_search_efficiency(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        id_column: str,
+        index_name: str | None = None,
+        k: int = 10,
+        sample_size: int = 30,
+        candidate_multipliers: list[int] | None = None,
+        metric: str = "cosine",
+    ) -> dict[str, Any]:
+        report = await rag_efficiency.analyze_vector_search_efficiency(
+            _driver(ctx),
+            schema,
+            table,
+            column,
+            id_column,
+            index_name=index_name,
+            k=k,
+            sample_size=sample_size,
+            candidate_multipliers=tuple(candidate_multipliers) if candidate_multipliers else (1, 2, 4, 10),
+            metric=metric,
+        )
+        return asdict(report)
 
 
 def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
@@ -3277,6 +3325,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_diagrams(server)
         _register_schema_diff(server)
         _register_vector_tuning(server)
+        _register_rag_efficiency(server)
         _register_prisma(server)
         _register_advisors(server)
         _register_composite(server)
