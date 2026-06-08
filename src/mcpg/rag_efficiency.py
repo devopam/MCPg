@@ -838,3 +838,210 @@ def _accumulate_rank_pairs(
     for iid in set(approx_score) & set(exact_score):
         out_approx.append(approx_score[iid])
         out_exact.append(exact_score[iid])
+
+
+# --- audit_database adapter (Phase B) --------------------------------------
+
+
+# Walk pg_index for every ANN index across all user schemas. Returned
+# in (schema, table, column, index_name, backend) tuples so the audit
+# walker can call analyze_vector_search_efficiency on each in turn.
+# Single-column indexes only (``ix.indkey[0]`` with ``indnatts = 1``);
+# composite ANN indexes are rare and would need a different sweep.
+_LIST_ALL_ANN_INDEXES_SQL = """
+SELECT n.nspname AS schema,
+       t.relname AS table,
+       a.attname AS column,
+       i.relname AS index,
+       am.amname AS backend
+FROM pg_index ix
+JOIN pg_class i ON i.oid = ix.indexrelid
+JOIN pg_class t ON t.oid = ix.indrelid
+JOIN pg_namespace n ON n.oid = i.relnamespace
+JOIN pg_am am ON am.oid = i.relam
+JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ix.indkey[0]
+WHERE am.amname IN ('hnsw', 'ivfflat', 'turboquant')
+  AND ix.indnatts = 1
+  AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+ORDER BY n.nspname, t.relname, i.relname
+"""
+
+
+# Single-column PRIMARY KEY lookup. Returns the pk column name when
+# the table has exactly one primary-key column, ``None`` otherwise.
+# Composite PKs and PK-less tables are both unauditable here — the
+# audit walker skips them silently rather than guessing.
+_DETECT_SINGLE_COL_PK_SQL = """
+SELECT a.attname AS pk_column
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+WHERE n.nspname = %s AND c.relname = %s AND i.indisprimary = true
+  AND i.indnatts = 1
+"""
+
+
+# Audit-time sample budget. Each per-index sweep runs
+# 1 brute-force + len(multipliers) approx per sample.
+# With 10 x (1 + 2) = 30 queries per index, the audit stays bounded
+# even on databases with several ANN indexes.
+_AUDIT_SAMPLE_SIZE = 10
+_AUDIT_MULTIPLIERS: tuple[int, ...] = (1, 4)
+
+# Severity → score deduction. Mirrors mcpg.turboquant's adapter so the
+# two categories produce comparable scorecards.
+_SEVERITY_DEDUCTION = {"CRITICAL": 30, "WARNING": 15, "GOOD": 0}
+
+
+async def _detect_single_column_pk(driver: SqlDriver, schema: str, table: str) -> str | None:
+    """Return the table's single-column primary key, or ``None``.
+
+    Composite PKs and PK-less tables both return ``None`` — the audit
+    walker treats both as unauditable rather than guessing an id
+    column.
+    """
+    rows = await driver.execute_query(_DETECT_SINGLE_COL_PK_SQL, params=[schema, table], force_readonly=True)
+    if not rows:
+        return None
+    return str(rows[0].cells["pk_column"])
+
+
+async def audit_vector_indexes(driver: SqlDriver) -> Any:
+    """Scorecard adapter — returns a CategoryResult or None.
+
+    Returns ``None`` when there are no ANN indexes (HNSW / IVFFlat /
+    turboquant) in user schemas, so :func:`audit.audit_database`
+    cleanly omits the category from deployments that don't use them.
+
+    Otherwise walks every ANN index, runs a small
+    :func:`analyze_vector_search_efficiency` sweep per index
+    (sample_size=10, multipliers=(1, 4)), and emits each finding as a
+    MetricResult. Tables without a single-column primary key are
+    skipped silently — the audit reports what it can, not what it
+    can't.
+    """
+    # Late import — audit imports rag_efficiency at function-call
+    # time, not at module load, so we keep the dependency direction
+    # one-way at module-load time.
+    from mcpg.audit import CategoryResult, MetricResult
+
+    if not await extension_installed(driver, "vector"):
+        # No pgvector → no ANN indexes possible. Omit the category.
+        return None
+
+    rows = await driver.execute_query(_LIST_ALL_ANN_INDEXES_SQL, force_readonly=True)
+    if not rows:
+        return None
+
+    metrics: list[MetricResult] = []
+    score = 100
+    indexes_audited = 0
+    indexes_skipped: list[tuple[str, str, str]] = []  # (schema.index, reason, ...)
+
+    for row in rows:
+        cells = row.cells
+        schema = cells["schema"]
+        table = cells["table"]
+        column = cells["column"]
+        index_name = cells["index"]
+        # Skip tables we can't audit (no single-column PK).
+        pk = await _detect_single_column_pk(driver, schema, table)
+        if pk is None:
+            indexes_skipped.append((f"{schema}.{index_name}", "no single-column primary key", table))
+            continue
+        try:
+            report = await analyze_vector_search_efficiency(
+                driver,
+                schema,
+                table,
+                column,
+                pk,
+                index_name=index_name,
+                k=10,
+                sample_size=_AUDIT_SAMPLE_SIZE,
+                candidate_multipliers=_AUDIT_MULTIPLIERS,
+            )
+        except VectorEfficiencyError as exc:
+            # An unexpected per-index failure (e.g. metric mismatch
+            # for a custom opclass) shouldn't sink the whole audit.
+            indexes_skipped.append((f"{schema}.{index_name}", str(exc), table))
+            continue
+
+        indexes_audited += 1
+        if not report.findings:
+            metrics.append(
+                MetricResult(
+                    name=f"vector_efficiency:no_findings on {schema}.{index_name}",
+                    value="ok",
+                    unit="finding",
+                    target="no findings",
+                    status="GOOD",
+                    severity=0,
+                    evidence=(
+                        f"recall@10 baseline {report.recall_at_k_baseline:.3f}, "
+                        f"Spearman {report.score_rank_correlation_spearman:.3f} — within thresholds."
+                    ),
+                    suggestion="",
+                )
+            )
+            continue
+        for finding in report.findings:
+            score -= _SEVERITY_DEDUCTION.get(finding.severity, 0)
+            metrics.append(
+                MetricResult(
+                    name=f"vector_efficiency:{finding.code} on {schema}.{index_name}",
+                    value=finding.code,
+                    unit="finding",
+                    target="no findings",
+                    status=finding.severity,
+                    severity=3 if finding.severity == "CRITICAL" else 2 if finding.severity == "WARNING" else 0,
+                    evidence=finding.evidence,
+                    suggestion=finding.suggested_action,
+                )
+            )
+
+    if indexes_audited == 0 and not indexes_skipped:
+        # No ANN indexes after filtering by schema — same as the
+        # empty-result short-circuit above.
+        return None
+
+    # Surface skipped indexes as an INFO baseline metric (status
+    # GOOD so they don't deduct from the score, but the operator
+    # sees them).
+    for label, reason, _table in indexes_skipped:
+        metrics.append(
+            MetricResult(
+                name=f"vector_efficiency:skipped on {label}",
+                value="skipped",
+                unit="finding",
+                target="auditable",
+                status="GOOD",
+                severity=0,
+                evidence=f"skipped: {reason}",
+                suggestion="",
+            )
+        )
+
+    if not metrics:
+        metrics.append(
+            MetricResult(
+                name="vector_efficiency:no_findings",
+                value="ok",
+                unit="finding",
+                target="no findings",
+                status="GOOD",
+                severity=0,
+                evidence="All ANN indexes pass the advisor rules.",
+                suggestion="",
+            )
+        )
+
+    score = max(0, score)
+    status_label = "GOOD" if score >= 90 else ("WARNING" if score >= 70 else "CRITICAL")
+    return CategoryResult(
+        category="ANN Index Efficiency",
+        status=status_label,
+        score=score,
+        metrics=metrics,
+    )

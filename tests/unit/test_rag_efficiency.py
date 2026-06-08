@@ -402,6 +402,99 @@ async def test_analyze_returns_empty_report_when_table_is_empty() -> None:
     assert report.findings == []
 
 
+# --- audit_vector_indexes (Phase B) ----------------------------------------
+
+
+async def test_audit_vector_indexes_returns_none_when_pgvector_absent() -> None:
+    from mcpg.rag_efficiency import audit_vector_indexes
+
+    driver = FakeRoutingDriver({"pg_extension": []})
+    assert await audit_vector_indexes(driver) is None  # type: ignore[arg-type]
+
+
+async def test_audit_vector_indexes_returns_none_when_no_ann_indexes() -> None:
+    from mcpg.rag_efficiency import audit_vector_indexes
+
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname IN ('hnsw', 'ivfflat', 'turboquant')": [],
+        }
+    )
+    assert await audit_vector_indexes(driver) is None  # type: ignore[arg-type]
+
+
+async def test_audit_vector_indexes_skips_table_without_single_col_pk() -> None:
+    # ANN index exists but the table has no single-column PK → audit
+    # walker skips the index, surfaces it as a GOOD baseline metric
+    # so the operator sees it, score stays at 100.
+    from mcpg.rag_efficiency import audit_vector_indexes
+
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname IN ('hnsw', 'ivfflat', 'turboquant')": [
+                {
+                    "schema": "public",
+                    "table": "embeddings",
+                    "column": "embedding",
+                    "index": "embeddings_hnsw_idx",
+                    "backend": "hnsw",
+                }
+            ],
+            "AND i.indisprimary = true": [],  # no single-col PK
+        }
+    )
+
+    category = await audit_vector_indexes(driver)  # type: ignore[arg-type]
+    assert category is not None
+    assert category.score == 100
+    assert category.status == "GOOD"
+    [skip_metric] = category.metrics
+    assert "skipped" in skip_metric.value
+    assert "single-column primary key" in skip_metric.evidence
+
+
+async def test_audit_vector_indexes_emits_good_baseline_when_no_findings() -> None:
+    # ANN index audit completes with no findings → GOOD baseline.
+    from mcpg.rag_efficiency import audit_vector_indexes
+
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname IN ('hnsw', 'ivfflat', 'turboquant')": [
+                {
+                    "schema": "public",
+                    "table": "embeddings",
+                    "column": "embedding",
+                    "index": "embeddings_hnsw_idx",
+                    "backend": "hnsw",
+                }
+            ],
+            "AND i.indisprimary = true": [{"pk_column": "id"}],
+            # Detect-by-name confirms the index is on the right table+col.
+            "AND i.relname = %s AND am.amname IN": [
+                {
+                    "schema": "public",
+                    "index": "embeddings_hnsw_idx",
+                    "table": "embeddings",
+                    "backend": "hnsw",
+                    "column": "embedding",
+                }
+            ],
+            # Empty sample → empty report → no findings.
+            "ORDER BY ": [],
+        }
+    )
+
+    category = await audit_vector_indexes(driver)  # type: ignore[arg-type]
+    assert category is not None
+    assert category.score == 100
+    assert category.status == "GOOD"
+    # The "no findings" metric is emitted per index that audited cleanly.
+    assert any("no_findings" in m.name for m in category.metrics)
+
+
 # --- MCP layer wiring ------------------------------------------------------
 
 
