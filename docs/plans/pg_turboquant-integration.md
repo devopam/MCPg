@@ -473,13 +473,18 @@ TQ-3 next because `tq_maintain_index` has the lowest speculation
 surface of all remaining phases; TQ-4 next because the WITH options
 and opclasses are explicitly documented as user-facing.
 
-**Note on the deferred `delta_tier_large` rule.** TQ-2's rule table
-ships with four codes (`prerequisites_unmet`, `format_v1_reindex_needed`,
-`maintenance_due`, `fast_path_ineligible`). The fifth — `delta_tier_large`
-— is on backlog: upstream's `tq_index_heap_stats` payload doesn't yet
-document a delta-row key we can rely on, and shipping a rule against an
-unverified payload would produce noise rather than signal. Returns when
-the upstream contract is verifiable.
+**Note on rule evolution.** TQ-2 originally shipped four rules
+(`prerequisites_unmet`, `format_v1_reindex_needed`, `maintenance_due`,
+`fast_path_ineligible`). The post-investigation pass added a fifth
+(`delta_tier_large`). The TQ-field-alignment pass then removed three
+(`format_v1_reindex_needed`, `maintenance_due`,
+`fast_path_ineligible`) — the source fields they keyed on
+(`algorithm_version`, `maintenance_recommended`, `fast_path_eligible`)
+turned out to be README prose, not actual upstream JSON keys, so the
+rules never fired against a real install. Remaining rules:
+`prerequisites_unmet` (cluster-level, doesn't read metadata) and
+`delta_tier_large` (sources from the verified
+`delta_health.merge_recommended` key).
 
 **Why TQ-5 ahead of TQ-2/3/4:** TQ-5 unblocks both adoption ("I can
 actually query the index from MCPg") and the RAG efficiency suite's

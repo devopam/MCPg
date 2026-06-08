@@ -2683,13 +2683,12 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
         description=(
             "Walk every pg_turboquant index and emit advisor findings. Rules "
             "currently surfaced: ``prerequisites_unmet`` (CRITICAL — pgvector "
-            "is missing), ``format_v1_reindex_needed`` (CRITICAL — algorithm_version "
-            "starts with v1, needs REINDEX), ``maintenance_due`` (WARNING — "
-            "tq_index_metadata reports maintenance_recommended=true), and "
-            "``fast_path_ineligible`` (WARNING — fast_path_eligible=false). Each "
-            "finding carries a ready-to-run ``suggested_action`` SQL statement. "
-            "Returns an empty list when the extension is not installed. Also "
-            "feeds the ``pg_turboquant Indexes`` category in audit_database."
+            "is missing) and ``delta_tier_large`` (WARNING — upstream's own "
+            "``delta_health.merge_recommended=true`` advisory, emits a "
+            "``tq_maintain_index`` suggested_action). Each finding carries a "
+            "ready-to-run ``suggested_action`` SQL statement. Returns an empty "
+            "list when the extension is not installed. Also feeds the "
+            "``pg_turboquant Indexes`` category in audit_database."
         ),
     )
     async def recommend_turboquant_maintenance(ctx: _Ctx) -> list[dict[str, Any]]:

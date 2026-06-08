@@ -30,14 +30,29 @@ from mcpg.turboquant import (
 _READ_ONLY = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
 
+# Verified upstream JSON keys from
+# src/tq_extension.c + sql/pg_turboquant--0.1.0.sql. Fixture covers
+# every typed field on TurboQuantIndexInfo so the row-mapper test
+# can assert structural equality.
 _FULL_METADATA = {
-    "algorithm_version": "v2",
-    "quantizer_family": "turboquant",
-    "residual_sketch_kind": "hadamard",
-    "fast_path_eligible": True,
-    "capability_flags": ["simd_avx512", "fast_path"],
-    "delta_state": "clean",
-    "maintenance_recommended": False,
+    "access_method": "turboquant",
+    "opclass": "tq_cosine_ops",
+    "input_type": "vector",
+    "heap_relation": "public.embeddings",
+    "heap_live_rows_estimate": 1_000_000,
+    "capabilities": {"simd_kernels": ["avx2", "avx512"]},
+    "operability": {"fast_path": True},
+    "delta_enabled": True,
+    "delta_live_count": 0,
+    "delta_batch_page_count": 0,
+    "delta_head_block": 12,
+    "delta_tail_block": 12,
+    "delta_health": {
+        "page_depth": 0,
+        "live_fraction": 0.0,
+        "merge_recommended": False,
+        "merge_thresholds": {"live_count": 10_000, "page_depth": 100, "live_percent": 0.1},
+    },
 }
 
 
@@ -75,13 +90,22 @@ async def test_list_turboquant_indexes_maps_rows_when_extension_present() -> Non
             index="embeddings_tq_idx",
             table="embeddings",
             column="embedding",
-            algorithm_version="v2",
-            quantizer_family="turboquant",
-            residual_sketch_kind="hadamard",
-            fast_path_eligible=True,
-            capability_flags=["simd_avx512", "fast_path"],
-            delta_state="clean",
-            maintenance_recommended=False,
+            access_method="turboquant",
+            opclass="tq_cosine_ops",
+            input_type="vector",
+            heap_relation="public.embeddings",
+            heap_live_rows_estimate=1_000_000,
+            capabilities={"simd_kernels": ["avx2", "avx512"]},
+            operability={"fast_path": True},
+            delta_enabled=True,
+            delta_live_count=0,
+            delta_batch_page_count=0,
+            delta_head_block=12,
+            delta_tail_block=12,
+            delta_page_depth=0,
+            delta_live_fraction=0.0,
+            delta_merge_recommended=False,
+            delta_merge_thresholds={"live_count": 10_000, "page_depth": 100, "live_percent": 0.1},
             raw_metadata=_FULL_METADATA,
             index_options={
                 "bits": 4,
@@ -95,7 +119,7 @@ async def test_list_turboquant_indexes_maps_rows_when_extension_present() -> Non
 
 async def test_list_turboquant_indexes_tolerates_partial_metadata() -> None:
     # Upstream may add or remove keys; missing documented keys fall
-    # through to None / [] rather than raising.
+    # through to None / [] / {} rather than raising.
     driver = FakeRoutingDriver(
         {
             "pg_extension": [{"present": 1}],
@@ -105,7 +129,7 @@ async def test_list_turboquant_indexes_tolerates_partial_metadata() -> None:
                     "index": "minimal_idx",
                     "table": "embeddings",
                     "column": "embedding",
-                    "metadata": {"algorithm_version": "v1"},
+                    "metadata": {"access_method": "turboquant"},
                 }
             ],
         }
@@ -114,11 +138,12 @@ async def test_list_turboquant_indexes_tolerates_partial_metadata() -> None:
     infos = await list_turboquant_indexes(driver)  # type: ignore[arg-type]
 
     [info] = infos
-    assert info.algorithm_version == "v1"
-    assert info.quantizer_family is None
-    assert info.capability_flags == []
-    assert info.maintenance_recommended is None
-    assert info.raw_metadata == {"algorithm_version": "v1"}
+    assert info.access_method == "turboquant"
+    assert info.opclass is None
+    assert info.capabilities == {}
+    assert info.delta_merge_recommended is None
+    assert info.delta_merge_thresholds == {}
+    assert info.raw_metadata == {"access_method": "turboquant"}
 
 
 async def test_list_turboquant_indexes_handles_empty_reloptions() -> None:
@@ -191,15 +216,15 @@ async def test_list_turboquant_indexes_decodes_json_text_payload() -> None:
                     "index": "txt_idx",
                     "table": "embeddings",
                     "column": "embedding",
-                    "metadata": '{"algorithm_version": "v2", "fast_path_eligible": true}',
+                    "metadata": '{"access_method": "turboquant", "delta_enabled": true}',
                 }
             ],
         }
     )
 
     [info] = await list_turboquant_indexes(driver)  # type: ignore[arg-type]
-    assert info.algorithm_version == "v2"
-    assert info.fast_path_eligible is True
+    assert info.access_method == "turboquant"
+    assert info.delta_enabled is True
 
 
 # --- get_turboquant_index_metadata -----------------------------------------
@@ -256,8 +281,9 @@ async def test_get_turboquant_index_metadata_returns_mapped_row() -> None:
     )
 
     info = await get_turboquant_index_metadata(driver, "public", "embeddings_tq_idx")  # type: ignore[arg-type]
-    assert info.algorithm_version == "v2"
-    assert info.maintenance_recommended is False
+    assert info.access_method == "turboquant"
+    assert info.opclass == "tq_cosine_ops"
+    assert info.delta_merge_recommended is False
 
 
 # --- get_turboquant_heap_stats ---------------------------------------------
@@ -400,73 +426,6 @@ async def test_recommend_turboquant_maintenance_fires_prerequisites_unmet_when_v
     assert "vector" in finding.suggested_action.lower()
 
 
-async def test_recommend_turboquant_maintenance_fires_format_v1_rule() -> None:
-    driver = FakeParamRoutingDriver(
-        {
-            _TQ_PRESENT: [{"present": 1}],
-            _VECTOR_PRESENT: [{"present": 1}],
-            _LIST_INDEXES: [_index_row({"algorithm_version": "v1.3"})],
-        }
-    )
-
-    [finding] = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
-    assert finding.code == "format_v1_reindex_needed"
-    assert finding.severity == "CRITICAL"
-    assert finding.index == "embeddings_tq_idx"
-    assert finding.suggested_action.startswith("REINDEX INDEX CONCURRENTLY")
-
-
-async def test_recommend_turboquant_maintenance_fires_maintenance_due_rule() -> None:
-    driver = FakeParamRoutingDriver(
-        {
-            _TQ_PRESENT: [{"present": 1}],
-            _VECTOR_PRESENT: [{"present": 1}],
-            _LIST_INDEXES: [
-                _index_row(
-                    {
-                        "algorithm_version": "v2",
-                        "maintenance_recommended": True,
-                        "delta_state": "compaction_pending",
-                    }
-                )
-            ],
-        }
-    )
-
-    [finding] = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
-    assert finding.code == "maintenance_due"
-    assert finding.severity == "WARNING"
-    assert "tq_maintain_index" in finding.suggested_action
-
-
-async def test_recommend_turboquant_maintenance_fires_fast_path_ineligible_rule() -> None:
-    driver = FakeParamRoutingDriver(
-        {
-            _TQ_PRESENT: [{"present": 1}],
-            _VECTOR_PRESENT: [{"present": 1}],
-            _LIST_INDEXES: [_index_row({"algorithm_version": "v2", "fast_path_eligible": False})],
-        }
-    )
-
-    [finding] = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
-    assert finding.code == "fast_path_ineligible"
-    assert finding.severity == "WARNING"
-
-
-async def test_recommend_turboquant_maintenance_silent_when_fast_path_unreported() -> None:
-    # ``None`` (key missing or null) is distinct from explicit ``False`` —
-    # don't fire on the absence of information.
-    driver = FakeParamRoutingDriver(
-        {
-            _TQ_PRESENT: [{"present": 1}],
-            _VECTOR_PRESENT: [{"present": 1}],
-            _LIST_INDEXES: [_index_row({"algorithm_version": "v2"})],
-        }
-    )
-
-    assert await recommend_turboquant_maintenance(driver) == []  # type: ignore[arg-type]
-
-
 async def test_recommend_turboquant_maintenance_fires_delta_tier_large_rule() -> None:
     # delta_health.merge_recommended=True → upstream's own advisory
     # → fire the WARNING with a tq_maintain_index suggested-action.
@@ -477,7 +436,6 @@ async def test_recommend_turboquant_maintenance_fires_delta_tier_large_rule() ->
             _LIST_INDEXES: [
                 _index_row(
                     {
-                        "algorithm_version": "v2",
                         "delta_live_count": 50_000,
                         "delta_batch_page_count": 800,
                         "delta_health": {
@@ -500,13 +458,12 @@ async def test_recommend_turboquant_maintenance_fires_delta_tier_large_rule() ->
 
 
 async def test_recommend_turboquant_maintenance_silent_when_delta_health_unreported() -> None:
-    # Absent delta_health → no fire (don't fire on absence of info,
-    # same convention as fast_path_ineligible).
+    # Absent delta_health → no fire (don't fire on absence of info).
     driver = FakeParamRoutingDriver(
         {
             _TQ_PRESENT: [{"present": 1}],
             _VECTOR_PRESENT: [{"present": 1}],
-            _LIST_INDEXES: [_index_row({"algorithm_version": "v2"})],
+            _LIST_INDEXES: [_index_row({"access_method": "turboquant"})],
         }
     )
 
@@ -522,7 +479,6 @@ async def test_recommend_turboquant_maintenance_silent_when_merge_not_recommende
             _LIST_INDEXES: [
                 _index_row(
                     {
-                        "algorithm_version": "v2",
                         "delta_live_count": 100,
                         "delta_health": {"merge_recommended": False},
                     }
@@ -538,17 +494,15 @@ async def test_recommend_turboquant_maintenance_quotes_identifiers_in_suggested_
     # PG allows mixed-case names, embedded quotes, and embedded
     # apostrophes via delimited identifiers — catalog rows can carry
     # any of these. The suggested SQL must survive PG parsing in all
-    # three cases.
+    # cases (delta_tier_large's tq_maintain_index call wraps the
+    # qualified name in both identifier and literal quoting).
     nasty_row = {
         "schema": 'My"Schema',  # embedded double quote → double it inside ident
         "index": "Mixed-Case Index",  # mixed case + space → must stay quoted
         "table": "embeddings",
         "column": "embedding",
         "reloptions": None,
-        "metadata": {
-            "algorithm_version": "v1.0",
-            "maintenance_recommended": True,
-        },
+        "metadata": {"delta_health": {"merge_recommended": True}},
     }
     driver = FakeParamRoutingDriver(
         {
@@ -558,20 +512,11 @@ async def test_recommend_turboquant_maintenance_quotes_identifiers_in_suggested_
         }
     )
 
-    findings = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
-    by_code = {f.code: f for f in findings}
-
-    # REINDEX is identifier-quoted: schema's " is doubled, both names
-    # are kept quoted (so case + space survive).
-    assert (
-        by_code["format_v1_reindex_needed"].suggested_action
-        == 'REINDEX INDEX CONCURRENTLY "My""Schema"."Mixed-Case Index";'
-    )
+    [finding] = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
+    assert finding.code == "delta_tier_large"
     # tq_maintain_index takes a regclass string — needs both layers
     # (identifier-quote first, literal-quote second).
-    assert by_code["maintenance_due"].suggested_action == (
-        'SELECT tq_maintain_index(\'"My""Schema"."Mixed-Case Index"\'::regclass);'
-    )
+    assert finding.suggested_action == ('SELECT tq_maintain_index(\'"My""Schema"."Mixed-Case Index"\'::regclass);')
 
 
 async def test_recommend_turboquant_maintenance_quotes_apostrophe_in_regclass_literal() -> None:
@@ -583,7 +528,7 @@ async def test_recommend_turboquant_maintenance_quotes_apostrophe_in_regclass_li
         "table": "embeddings",
         "column": "embedding",
         "reloptions": None,
-        "metadata": {"algorithm_version": "v2", "maintenance_recommended": True},
+        "metadata": {"delta_health": {"merge_recommended": True}},
     }
     driver = FakeParamRoutingDriver(
         {
@@ -595,31 +540,6 @@ async def test_recommend_turboquant_maintenance_quotes_apostrophe_in_regclass_li
 
     [finding] = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
     assert finding.suggested_action == "SELECT tq_maintain_index('\"O''Reilly\".\"idx\"'::regclass);"
-
-
-async def test_recommend_turboquant_maintenance_combines_findings_across_indexes() -> None:
-    driver = FakeParamRoutingDriver(
-        {
-            _TQ_PRESENT: [{"present": 1}],
-            _VECTOR_PRESENT: [{"present": 1}],
-            _LIST_INDEXES: [
-                _index_row({"algorithm_version": "v1.4"}, index="old_idx"),
-                _index_row(
-                    {"algorithm_version": "v2", "maintenance_recommended": True},
-                    index="needs_compaction_idx",
-                ),
-                _index_row({"algorithm_version": "v2", "fast_path_eligible": False}, index="slow_idx"),
-            ],
-        }
-    )
-
-    findings = await recommend_turboquant_maintenance(driver)  # type: ignore[arg-type]
-    codes = sorted((f.code, f.index) for f in findings)
-    assert codes == [
-        ("fast_path_ineligible", "slow_idx"),
-        ("format_v1_reindex_needed", "old_idx"),
-        ("maintenance_due", "needs_compaction_idx"),
-    ]
 
 
 # --- audit_turboquant_indexes (scorecard adapter) --------------------------
@@ -648,37 +568,52 @@ async def test_audit_turboquant_indexes_emits_good_when_no_findings() -> None:
     assert [m.status for m in category.metrics] == ["GOOD"]
 
 
-async def test_audit_turboquant_indexes_scores_drop_with_findings() -> None:
-    # One CRITICAL (-30) + one WARNING (-15) = score 55 → CRITICAL band.
+async def test_audit_turboquant_indexes_scores_drop_with_warnings() -> None:
+    # Two delta_tier_large WARNINGs (-15 each) = 100 - 30 = 70 →
+    # WARNING band.
     driver = FakeParamRoutingDriver(
         {
             _TQ_PRESENT: [{"present": 1}],
             _VECTOR_PRESENT: [{"present": 1}],
             _LIST_INDEXES: [
-                _index_row({"algorithm_version": "v1.0"}, index="old_idx"),
-                _index_row(
-                    {"algorithm_version": "v2", "maintenance_recommended": True},
-                    index="warn_idx",
-                ),
+                _index_row({"delta_health": {"merge_recommended": True}}, index=f"warn_{i}") for i in range(2)
             ],
         }
     )
 
     category = await audit_turboquant_indexes(driver)  # type: ignore[arg-type]
     assert category is not None
-    assert category.score == 55
-    assert category.status == "CRITICAL"
-    severities = sorted(m.status for m in category.metrics)
-    assert severities == ["CRITICAL", "WARNING"]
+    assert category.score == 70
+    assert category.status == "WARNING"
+    assert [m.status for m in category.metrics] == ["WARNING", "WARNING"]
+
+
+async def test_audit_turboquant_indexes_score_drops_critically_on_prerequisites_unmet() -> None:
+    # pg_turboquant installed but pgvector absent → CRITICAL cluster-
+    # level finding, score 100 - 30 = 70 → WARNING band (single
+    # CRITICAL is short of the CRITICAL-band threshold of <70).
+    driver = FakeParamRoutingDriver(
+        {
+            _TQ_PRESENT: [{"present": 1}],
+            _VECTOR_PRESENT: [],
+        }
+    )
+
+    category = await audit_turboquant_indexes(driver)  # type: ignore[arg-type]
+    assert category is not None
+    assert category.score == 70
+    assert [m.status for m in category.metrics] == ["CRITICAL"]
 
 
 async def test_audit_turboquant_indexes_score_clamped_at_zero() -> None:
-    # Four CRITICALs would deduct 120; score must not go negative.
+    # 8 WARNINGs would deduct 120; score must not go negative.
     driver = FakeParamRoutingDriver(
         {
             _TQ_PRESENT: [{"present": 1}],
             _VECTOR_PRESENT: [{"present": 1}],
-            _LIST_INDEXES: [_index_row({"algorithm_version": "v1.0"}, index=f"old_{i}") for i in range(4)],
+            _LIST_INDEXES: [
+                _index_row({"delta_health": {"merge_recommended": True}}, index=f"warn_{i}") for i in range(8)
+            ],
         }
     )
 

@@ -6,6 +6,37 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+
+- **`TurboQuantIndexInfo` field alignment to verified upstream keys.**
+  A direct read of `src/tq_extension.c` confirmed that seven fields
+  the original TQ-1 implementation exposed (`algorithm_version`,
+  `quantizer_family`, `residual_sketch_kind`, `fast_path_eligible`,
+  `capability_flags`, `delta_state`, `maintenance_recommended`)
+  don't appear in upstream's actual `tq_index_metadata` JSON
+  payload — they were extracted from English prose in the README,
+  not from the source. Those fields are removed in this PR, along
+  with three advisor rules that depended on them
+  (`format_v1_reindex_needed`, `maintenance_due`,
+  `fast_path_ineligible`) — those rules' keying conditions never
+  matched against a real install and were effectively no-ops.
+
+  New typed fields (sourced from verified keys): `access_method`,
+  `opclass`, `input_type`, `heap_relation`,
+  `heap_live_rows_estimate`, `capabilities` (dict), `operability`
+  (dict), `delta_enabled`, `delta_head_block`, `delta_tail_block`,
+  `delta_page_depth`, `delta_live_fraction`,
+  `delta_merge_thresholds` (dict). The previously-added
+  `delta_live_count`, `delta_batch_page_count`, and
+  `delta_merge_recommended` are kept.
+
+  Remaining advisor rules: `prerequisites_unmet` (CRITICAL —
+  pgvector missing) and `delta_tier_large` (WARNING — upstream's
+  own `delta_health.merge_recommended` advisory). Callers needing
+  fast-path-eligibility / algorithm-version information should
+  read `capabilities` / `operability` / `raw_metadata` directly
+  until upstream documents what's in those sub-objects.
+
 ### Added
 
 - **pg_turboquant post-investigation enhancements (TQ-5 un-deferred,
