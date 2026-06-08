@@ -2696,6 +2696,119 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
         findings = await turboquant.recommend_turboquant_maintenance(_driver(ctx))
         return [asdict(f) for f in findings]
 
+    @server.tool(
+        name="turboquant_approx_candidates",
+        description=(
+            "Run tq_approx_candidates against a turboquant index — approximate "
+            "k-NN retrieval, no exact rerank. ``metric`` is 'cosine' | "
+            "'inner_product' | 'l2' (mapped to upstream's runtime metric "
+            "text). ``half_precision=True`` switches to the halfvec overload. "
+            "``probes`` / ``oversample_factor`` are optional per-query knobs "
+            "(consider calling ``recommend_turboquant_query_knobs`` first). "
+            "Requires the pg_turboquant extension."
+        ),
+    )
+    async def turboquant_approx_candidates(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        id_column: str,
+        embedding_column: str,
+        query_vector: list[float] | str,
+        metric: str,
+        candidate_limit: int,
+        probes: int | None = None,
+        oversample_factor: int | None = None,
+        half_precision: bool = False,
+    ) -> list[dict[str, Any]]:
+        candidates = await turboquant.turboquant_approx_candidates(
+            _driver(ctx),
+            schema,
+            table,
+            id_column,
+            embedding_column,
+            query_vector,
+            metric,
+            candidate_limit,
+            probes=probes,
+            oversample_factor=oversample_factor,
+            half_precision=half_precision,
+        )
+        return [asdict(c) for c in candidates]
+
+    @server.tool(
+        name="turboquant_rerank_candidates",
+        description=(
+            "Run tq_rerank_candidates against a turboquant index — approximate "
+            "retrieval followed by SQL-side exact rerank to ``final_limit`` "
+            "results. Returns the candidates with both approximate and exact "
+            "ranks / distances. ``half_precision=True`` switches to the "
+            "halfvec overload. Requires the pg_turboquant extension."
+        ),
+    )
+    async def turboquant_rerank_candidates(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        id_column: str,
+        embedding_column: str,
+        query_vector: list[float] | str,
+        metric: str,
+        candidate_limit: int,
+        final_limit: int,
+        probes: int | None = None,
+        oversample_factor: int | None = None,
+        half_precision: bool = False,
+    ) -> list[dict[str, Any]]:
+        candidates = await turboquant.turboquant_rerank_candidates(
+            _driver(ctx),
+            schema,
+            table,
+            id_column,
+            embedding_column,
+            query_vector,
+            metric,
+            candidate_limit,
+            final_limit,
+            probes=probes,
+            oversample_factor=oversample_factor,
+            half_precision=half_precision,
+        )
+        return [asdict(c) for c in candidates]
+
+    @server.tool(
+        name="recommend_turboquant_query_knobs",
+        description=(
+            "Run tq_recommended_query_knobs — per-query knob advisor. Two "
+            "modes: plain (just ``candidate_limit`` + optional "
+            "``final_limit``) gives generic recommendations; index-aware "
+            "(supply both ``index_schema`` and ``index_name``, plus optional "
+            "``filter_selectivity``) specialises the recommendations to the "
+            "named index's catalog state. Returns ``probes``, "
+            "``oversample_factor``, ``max_visited_codes``, "
+            "``max_visited_pages`` — pass these to "
+            "``turboquant_approx_candidates`` / "
+            "``turboquant_rerank_candidates``. Requires pg_turboquant."
+        ),
+    )
+    async def recommend_turboquant_query_knobs(
+        ctx: _Ctx,
+        candidate_limit: int,
+        final_limit: int | None = None,
+        index_schema: str | None = None,
+        index_name: str | None = None,
+        filter_selectivity: float | None = None,
+    ) -> dict[str, Any]:
+        knobs = await turboquant.recommend_turboquant_query_knobs(
+            _driver(ctx),
+            candidate_limit,
+            final_limit=final_limit,
+            index_schema=index_schema,
+            index_name=index_name,
+            filter_selectivity=filter_selectivity,
+        )
+        return asdict(knobs)
+
 
 def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
     @server.tool(

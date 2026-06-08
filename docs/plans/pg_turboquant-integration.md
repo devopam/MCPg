@@ -182,7 +182,7 @@ async def recommend_turboquant_maintenance(driver) -> list[TurboQuantAdvisorFind
 | `format_v1_reindex_needed` | `algorithm_version` starts with `v1` | CRITICAL | `REINDEX INDEX CONCURRENTLY <idx>` |
 | `maintenance_due` | metadata flag says delta tier should merge | WARNING | `SELECT tq_maintain_index('<idx>')` |
 | `fast_path_ineligible` | `fast_path_eligible = false` | WARNING | text — usually a knob mismatch; link to the README's tuning table |
-| `delta_tier_large` | heap-stats delta rows > N% of base | WARNING | `SELECT tq_maintain_index('<idx>')` — **deferred to backlog**, see note below |
+| `delta_tier_large` | upstream's own `delta_health.merge_recommended = true` | WARNING | `SELECT tq_maintain_index('<idx>')` — ✅ **shipped** in the post-investigation PR after upstream's actual key names were read from C source |
 
 **Tool registered:**
 
@@ -315,33 +315,37 @@ bullet, `docs/tour.md` line.
 
 ---
 
-## Phase 5 — query execution + per-query advisor ⏸ deferred to backlog
+## Phase 5 — query execution + per-query advisor ✅ shipped (post-investigation)
 
-**Status update.** A second coverage sweep — run under a strict
-no-speculation principle — surfaced that the upstream README
-documents the function *names* but not:
+**Status update.** Originally deferred under the no-speculation
+principle because the README documents function *names* without the
+`query_vector` PG type, the accepted `metric text` values, or the
+return column shape. A focused investigation of upstream's actual
+SQL definitions (`sql/pg_turboquant--0.1.0.sql`) resolved every gap:
 
-- the `query_vector` parameter's PG type (placeholder in the README,
-  not an actual type),
-- the accepted values of `metric text` (`'cosine'`? `'l2'`? the
-  opclass names?),
-- the return column shape (column names and types) of either
-  candidate function.
+- `query_vector` is pgvector `vector` with a parallel `halfvec`
+  overload.
+- `metric text` accepts `'cosine'`, `'ip'`, `'l2'` (lowercase,
+  validated in upstream's `tq_metric_order_operator()`).
+- Return shapes are full `RETURNS TABLE(...)` declarations — exact
+  column names and types are documented in the SQL file.
 
-`tq_approx_candidates(...)` and `tq_recommended_query_knobs(...)`
-also have entirely undocumented signatures. Implementing any of the
-three would require guessing pieces that upstream could change at
-any time — a wrapper built on guesses either breaks on first real
-use or forces a breaking change later. Both outcomes erode adoption
-confidence, so the phase is deferred.
+With those resolved, three new read-only tools shipped:
 
-**Return condition:** ship when upstream documents the `query_vector`
-PG type, the accepted `metric` values, and the candidate-function
-return shape; or when a real install is available to verify against.
+- `turboquant_approx_candidates(schema, table, id_column, embedding_column, query_vector, metric, candidate_limit, probes?, oversample_factor?, half_precision?)`
+- `turboquant_rerank_candidates(...)` — same plus `final_limit` and
+  exact-rerank columns.
+- `recommend_turboquant_query_knobs(candidate_limit, final_limit?, index_schema?, index_name?, filter_selectivity?)`
+  — dispatches between upstream's plain and index-aware overloads.
 
-**Consequence:** the RAG efficiency suite's turboquant arm depends
-on `tq_rerank_candidates` and is deferred in parallel. The HNSW and
-IVFFlat arms of that suite are unaffected.
+Public-facing `metric` names match TQ-4 (`cosine` / `inner_product`
+/ `l2`) and translate internally to upstream's tokens via a new
+`_TQ_METRIC_TEXT_FOR_METRIC` mapping — single source of truth, kept
+distinct from TQ-4's `_TQ_OPS_FOR_METRIC` (opclass identifiers).
+
+**Consequence:** the RAG efficiency suite's turboquant arm is now
+un-blocked — `analyze_vector_search_efficiency` can sweep
+`rerank_limit` via `tq_rerank_candidates`.
 
 ---
 
@@ -458,7 +462,7 @@ parallel work elsewhere isn't blocked:
 2. `claude/tq2-audit-integration` — Phase 2 ✅ (PR #72)
 3. `claude/tq3-maintenance-write` — Phase 3 ✅ (PR #73)
 4. `claude/tq4-ddl-tools` — Phase 4 ✅ (this PR)
-5. `claude/tq5-query-execution` — Phase 5 ⏸ **deferred** until upstream documents the missing pieces
+5. `claude/tq-post-investigation` — Phase 5 ✅ un-deferred + `delta_tier_large` rule + `tq_maintain_index` return JSON surfacing, all enabled by directly reading upstream's SQL definitions and C source
 
 **Re-ordering note.** TQ-5 was briefly promoted ahead of TQ-2/3/4
 under an adoption argument, then deferred during the TQ-3 coverage

@@ -121,7 +121,7 @@ composes with this lives in
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
 | 10.1 | ✅ **Shipped (TQ-1).** Read advisors for [pg_turboquant](https://github.com/mayflower/pg_turboquant): `list_turboquant_indexes`, `get_turboquant_index_metadata`, `get_turboquant_heap_stats`, `get_turboquant_last_scan_stats`. Defensive JSON parsing — documented fields are typed; the full upstream payload is preserved in `raw_metadata` / `raw` so future-added fields stay reachable. Each index info also carries `index_options` — the `WITH (...)` build-time options (`bits`, `lists`, `transform`, `normalized`) parsed from `pg_class.reloptions` into typed values. Returns empty list / `None` when the extension is absent. Lives in `mcpg.turboquant`. | S | Medium | Mirrors how `cron` / `partman` are surfaced. `pg_turboquant` added to `ENABLEABLE_EXTENSIONS`. |
-| 10.2 | ⏸ **Deferred to backlog (TQ-5).** Query-execution wrappers around `tq_approx_candidates` / `tq_rerank_candidates` and a per-query knob advisor `recommend_turboquant_query_knobs`. The upstream README documents the function names but **not** the `query_vector` parameter's PG type, the accepted `metric text` values, or the return column shape — for the latter two functions the entire signature is undocumented. Per the no-speculation principle (a wrapper with guessed args / return shape would either break on first real use or force a breaking change later), this is deferred until upstream documents those pieces, or until we have a real install to verify against. **Consequence:** the RAG efficiency suite's turboquant arm (11.1) is also deferred until then — HNSW + IVFFlat still land. | M | High | See `plans/pg_turboquant-integration.md` Phase 5. |
+| 10.2 | ✅ **Shipped (TQ-5, post-investigation).** Three read-only query tools: `turboquant_approx_candidates`, `turboquant_rerank_candidates`, `recommend_turboquant_query_knobs`. Argument types + return shapes taken verbatim from upstream's `sql/pg_turboquant--0.1.0.sql` (no speculation). `metric` accepts the same public-facing names as TQ-4 (`cosine` / `inner_product` / `l2`) and translates internally to upstream's lexical token via a new `_TQ_METRIC_TEXT_FOR_METRIC` mapping. `half_precision=True` switches to the upstream `halfvec` overload. The knob advisor dispatches between upstream's plain and index-aware overloads based on whether `index_schema`/`index_name` are supplied. Un-defers the RAG efficiency suite's turboquant arm. | M | High | See `plans/pg_turboquant-integration.md` Phase 5. |
 | 10.3 | ✅ **Shipped (TQ-2).** `recommend_turboquant_maintenance` advisor + `audit_turboquant_indexes` category wired into `audit_database`. Stable-coded rules: `prerequisites_unmet` (CRITICAL — pgvector missing), `format_v1_reindex_needed` (CRITICAL — algorithm_version starts with v1), `maintenance_due` (WARNING — `maintenance_recommended=true`), `fast_path_ineligible` (WARNING — `fast_path_eligible=false`, explicit-false only). Reads exclusively from `TurboQuantIndexInfo` so it composes on TQ-1 without duplicate catalog queries. Category returns `None` when the extension is absent so `audit_database` cleanly omits it on stock clusters. `delta_tier_large` is on backlog pending upstream contract for a delta-rows key in `tq_index_heap_stats`. | S-M | Medium-High | Lives in `mcpg.turboquant`. |
 | 10.4 | ✅ **Shipped (TQ-3).** `maintain_turboquant_index` — write tool wrapping `tq_maintain_index(...)`. Identifier validation + catalog pre-flight (`pg_index ⨝ pg_am`) confirms the named index is actually a turboquant index before invoking upstream. Client-side wall-time measurement; upstream's PG return value is intentionally not parsed (no documented return shape). WRITE-gated. Lives in `mcpg.turboquant`. | S | Medium | Composes directly on TQ-2's `maintenance_due` suggested action. |
 | 10.5 | ✅ **Shipped (TQ-4).** `create_turboquant_index` + `reindex_turboquant_index` DDL tools. `metric` allowlist of 3 → single-source-of-truth opclass dict (`tq_cosine_ops` / `tq_inner_product_ops` / `tq_l2_ops`); `bits` bounded `1..64`; `lists` bounded `0..1_000_000`; `transform` allowlist of `{'hadamard'}` only (no `'none'` guess); `normalized` strict bool. Any option not supplied is omitted from the WITH clause so upstream's default applies. Identifier safety via `_validate_identifier` + `_pg_quote_ident`. Runs via `Database.run_unmanaged` (CONCURRENTLY needs autocommit). Rendered SQL preserved on the result for auditability. Unrestricted + `MCPG_ALLOW_DDL`. Lives in `mcpg.turboquant`. | M | Medium-High | Completes the pg_turboquant integration. |
@@ -156,21 +156,10 @@ Full design plan in
 - **Alembic / Flyway / Liquibase script ingestion** (7.1) — large
   surface; `validate_migration` + `prepare_migration` already
   cover the high-value reviewer workflow.
-- **`delta_tier_large` turboquant advisor rule** — planned as part
-  of TQ-2 but deferred until upstream documents a delta-row key in
-  `tq_index_heap_stats`. Shipping a rule against an unverified
-  payload would produce noise rather than signal. Will return when
-  the upstream contract is verifiable.
-- **pg_turboquant query-execution wrappers (TQ-5)** — `turboquant_approx_candidates`,
-  `turboquant_rerank_candidates`, `recommend_turboquant_query_knobs`.
-  Deferred under the no-speculation principle: the README documents
-  function *names* but not the `query_vector` PG type, the accepted
-  `metric text` values, or any return column shape. Two of three
-  functions have entirely undocumented signatures. Will return when
-  upstream documents inputs + return shape, or when a real install
-  is available to verify against. The RAG efficiency suite's
-  turboquant arm depends on this and is deferred in parallel; HNSW
-  and IVFFlat coverage in that suite is not affected.
+_(`delta_tier_large` and TQ-5, previously listed here, were
+un-deferred after a focused upstream investigation read the C source
+and SQL definitions directly — see CHANGELOG for the
+post-investigation enhancements PR.)_
 
 ---
 

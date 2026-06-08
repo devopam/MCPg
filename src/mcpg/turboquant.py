@@ -1,47 +1,48 @@
-"""pg_turboquant read advisors + maintenance + DDL.
+"""pg_turboquant integration: observability + advisor + write + DDL + query.
 
 `pg_turboquant <https://github.com/mayflower/pg_turboquant>`_ is a
 PostgreSQL extension providing a custom ANN index access method
 (``USING turboquant``) over pgvector ``vector`` / ``halfvec`` columns.
-This module exposes the extension's read-only observability surface,
-a maintenance write, and the DDL operations needed to create or
-rebuild a turboquant index:
+This module covers the full extension surface — read, advise,
+maintain, build, and query:
 
-* :func:`list_turboquant_indexes` — every turboquant index in the
-  database, joined with its ``tq_index_metadata`` payload.
-* :func:`get_turboquant_index_metadata` — the metadata for one index.
-* :func:`get_turboquant_heap_stats` — exact heap row count for one
-  index.
-* :func:`get_turboquant_last_scan_stats` — the backend-local JSON
-  describing the most recent turboquant scan.
-* :func:`recommend_turboquant_maintenance` — rule-table advisor.
-* :func:`audit_turboquant_indexes` — scorecard category adapter.
+* :func:`list_turboquant_indexes`, :func:`get_turboquant_index_metadata`,
+  :func:`get_turboquant_heap_stats`, :func:`get_turboquant_last_scan_stats`
+  — observability.
+* :func:`recommend_turboquant_maintenance`, :func:`audit_turboquant_indexes`
+  — rule-table advisor + scorecard category adapter.
 * :func:`maintain_turboquant_index` — wraps ``tq_maintain_index``;
   pre-flights that the named index is actually a turboquant index so
   the call can't be turned into a way to probe arbitrary catalogs.
-* :func:`create_turboquant_index` — builds a
-  ``CREATE INDEX … USING turboquant`` statement under tight
-  allowlists (metric → opclass mapping, ``bits`` / ``lists`` /
-  ``transform`` / ``normalized`` options) and runs it on autocommit.
-* :func:`reindex_turboquant_index` — ``REINDEX INDEX [CONCURRENTLY]``
-  with the same pre-flight as the maintenance helper.
+* :func:`create_turboquant_index`, :func:`reindex_turboquant_index`
+  — DDL.
+* :func:`turboquant_approx_candidates`,
+  :func:`turboquant_rerank_candidates`,
+  :func:`recommend_turboquant_query_knobs` — query-execution and
+  per-query knob advisor. Added in TQ-post-investigation after the
+  upstream SQL definitions were read directly from
+  ``sql/pg_turboquant--0.1.0.sql``; argument types and return
+  shapes are taken verbatim, not inferred.
 
 All read functions return cleanly (empty list / ``None``) when the
 extension is not installed, so callers can treat absence as "no
 turboquant in use" rather than a hard error.
 
-**Upstream contract assumptions.** Upstream documents
-``tq_last_scan_stats()`` as returning JSON. The other functions are
-documented by the README only at the prose level
-("reports algorithm version, quantizer family, …") — this module
-treats them as returning JSON / JSONB as well, parses the documented
-keys defensively (with ``.get()``), and preserves the raw payload in
-:attr:`TurboQuantIndexInfo.raw_metadata` so any unanticipated fields
-remain accessible to downstream advisors. The
-``tq_recommended_query_knobs(...)`` advisor is **not** wrapped here:
-its upstream signature is not documented at the field level yet, and
-we'd rather skip a tool than ship one with a guessed signature. It is
-expected to land in a follow-up once the signature is pinned.
+**Upstream contract notes.** Original TQ-1 fields
+(``algorithm_version``, ``quantizer_family``,
+``residual_sketch_kind``, ``fast_path_eligible``,
+``capability_flags``, ``delta_state``, ``maintenance_recommended``)
+were sourced from README prose, which describes the metadata
+contents in English. The post-investigation pass found that
+upstream's actual JSON keys differ — the truly documented keys
+(per ``src/tq_extension.c``) include
+``delta_live_count``, ``delta_batch_page_count``, and
+``delta_health.merge_recommended``. The new
+:attr:`TurboQuantIndexInfo.delta_*` fields source from those
+verified keys; the original prose-sourced fields are preserved for
+backwards compatibility but may return ``None`` when no upstream
+key by that name exists. ``raw_metadata`` always carries the full
+payload — callers needing absolute fidelity should read from there.
 """
 
 from __future__ import annotations
@@ -103,6 +104,14 @@ class TurboQuantIndexInfo:
     ints, ``normalized`` as bool, ``transform`` as str). This gives
     agents the build-time configuration at a glance without a separate
     ``tq_index_metadata`` round-trip.
+
+    The ``delta_*`` fields surface the upstream delta-tier counters
+    that ``tq_index_metadata`` reports — :attr:`delta_live_count`
+    (rows currently in the delta tier),
+    :attr:`delta_batch_page_count` (delta-tier pages), and
+    :attr:`delta_merge_recommended` (upstream's own boolean advisory,
+    read from ``delta_health.merge_recommended``). These power the
+    ``delta_tier_large`` advisor rule.
     """
 
     schema: str
@@ -118,6 +127,9 @@ class TurboQuantIndexInfo:
     maintenance_recommended: bool | None = None
     raw_metadata: dict[str, Any] = field(default_factory=dict)
     index_options: dict[str, Any] = field(default_factory=dict)
+    delta_live_count: int | None = None
+    delta_batch_page_count: int | None = None
+    delta_merge_recommended: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,11 +222,14 @@ class ReindexResult:
 class MaintenanceResult:
     """Outcome of a :func:`maintain_turboquant_index` call.
 
-    All four fields are observed client-side (start/end timestamps and
-    elapsed wall time around the ``tq_maintain_index`` call). The
-    function's PG return value is deliberately not parsed — upstream
-    doesn't document a return shape and inventing one would invite a
-    breaking change later.
+    Client-side observables (timestamps + elapsed wall time) plus the
+    upstream return JSON parsed into typed fields. The documented
+    keys (per `src/tq_maintenance.h`) are
+    :attr:`delta_merge_performed`, :attr:`merged_delta_count`, and
+    :attr:`recycled_delta_page_count`; all are parsed defensively
+    (``None`` when absent) and the full raw payload is preserved in
+    :attr:`raw` so any additional fields upstream adds stay
+    accessible.
     """
 
     schema: str
@@ -222,6 +237,10 @@ class MaintenanceResult:
     started_at: str  # ISO 8601 UTC
     completed_at: str  # ISO 8601 UTC
     duration_seconds: float
+    delta_merge_performed: bool | None = None
+    merged_delta_count: int | None = None
+    recycled_delta_page_count: int | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 # --- SQL --------------------------------------------------------------------
@@ -332,8 +351,24 @@ def _parse_reloptions(raw: Any) -> dict[str, Any]:
     return parsed
 
 
+def _maybe_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _index_info_from_row(row_cells: dict[str, Any]) -> TurboQuantIndexInfo:
     metadata = _as_dict(row_cells.get("metadata"))
+    # ``delta_health`` is a nested object documented in upstream's C
+    # source as ``{ page_depth, live_fraction, merge_recommended,
+    # merge_thresholds }``. Read it defensively — a missing or
+    # mis-typed sub-object yields ``None`` rather than raising, so
+    # this code keeps working across upstream schema drift.
+    delta_health = _as_dict(metadata.get("delta_health"))
+    merge_recommended = delta_health.get("merge_recommended")
     return TurboQuantIndexInfo(
         schema=row_cells["schema"],
         index=row_cells["index"],
@@ -348,6 +383,9 @@ def _index_info_from_row(row_cells: dict[str, Any]) -> TurboQuantIndexInfo:
         maintenance_recommended=metadata.get("maintenance_recommended"),
         raw_metadata=metadata,
         index_options=_parse_reloptions(row_cells.get("reloptions")),
+        delta_live_count=_maybe_int(metadata.get("delta_live_count")),
+        delta_batch_page_count=_maybe_int(metadata.get("delta_batch_page_count")),
+        delta_merge_recommended=merge_recommended if isinstance(merge_recommended, bool) else None,
     )
 
 
@@ -447,6 +485,7 @@ _RULE_FORMAT_V1 = "format_v1_reindex_needed"
 _RULE_MAINTENANCE_DUE = "maintenance_due"
 _RULE_FAST_PATH_INELIGIBLE = "fast_path_ineligible"
 _RULE_PREREQUISITES_UNMET = "prerequisites_unmet"
+_RULE_DELTA_TIER_LARGE = "delta_tier_large"
 
 
 def _finding_format_v1(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFinding | None:
@@ -507,9 +546,35 @@ def _finding_fast_path_ineligible(info: TurboQuantIndexInfo) -> TurboQuantAdviso
     )
 
 
+def _finding_delta_tier_large(info: TurboQuantIndexInfo) -> TurboQuantAdvisorFinding | None:
+    # Trust upstream's own advisory. ``delta_health.merge_recommended``
+    # is computed inside the extension against thresholds it owns, so
+    # MCPg doesn't need to invent a ratio of its own. Only fires on
+    # explicit ``True`` — ``None`` (not reported) is treated as
+    # absence of information, the same way fast_path_ineligible does.
+    if info.delta_merge_recommended is not True:
+        return None
+    rows = info.delta_live_count if info.delta_live_count is not None else "unknown"
+    pages = info.delta_batch_page_count if info.delta_batch_page_count is not None else "unknown"
+    qualified = f"{_pg_quote_ident(info.schema)}.{_pg_quote_ident(info.index)}"
+    literal = _pg_quote_literal(qualified)
+    return TurboQuantAdvisorFinding(
+        code=_RULE_DELTA_TIER_LARGE,
+        severity="WARNING",
+        schema=info.schema,
+        index=info.index,
+        evidence=(
+            f"tq_index_metadata reports delta_health.merge_recommended=true "
+            f"(delta_live_count={rows}, delta_batch_page_count={pages})."
+        ),
+        suggested_action=f"SELECT tq_maintain_index({literal}::regclass);",
+    )
+
+
 _PER_INDEX_RULES = (
     _finding_format_v1,
     _finding_maintenance_due,
+    _finding_delta_tier_large,
     _finding_fast_path_ineligible,
 )
 
@@ -677,7 +742,7 @@ WHERE am.amname = 'turboquant' AND n.nspname = %s AND i.relname = %s
 # Identifier quoting happens PG-side via format('%I.%I')::regclass,
 # so the bound params can't escape into SQL syntax even before the
 # preflight check above runs.
-_MAINTAIN_INDEX_SQL = "SELECT tq_maintain_index(format('%I.%I', %s, %s)::regclass)"
+_MAINTAIN_INDEX_SQL = "SELECT tq_maintain_index(format('%I.%I', %s, %s)::regclass)::jsonb AS result"
 
 
 def _utc_iso_now() -> str:
@@ -689,10 +754,14 @@ async def maintain_turboquant_index(driver: SqlDriver, schema: str, index: str) 
 
     The call delegates the actual delta-tier merge / compaction work
     to upstream; this wrapper handles validation, the pre-flight
-    catalog check, and client-side wall-time measurement. The PG
-    return value of ``tq_maintain_index`` is intentionally not parsed
-    — upstream doesn't document one, and inventing a shape now would
-    force a breaking change later.
+    catalog check, client-side wall-time measurement, and defensive
+    parsing of the upstream return JSON. Documented keys
+    (:attr:`MaintenanceResult.delta_merge_performed`,
+    :attr:`MaintenanceResult.merged_delta_count`,
+    :attr:`MaintenanceResult.recycled_delta_page_count`) are surfaced
+    as typed fields; the full payload is preserved in
+    :attr:`MaintenanceResult.raw` so any future-added keys remain
+    accessible without a code change.
 
     Raises:
         TurboQuantError: extension is not installed, the identifier
@@ -712,16 +781,22 @@ async def maintain_turboquant_index(driver: SqlDriver, schema: str, index: str) 
 
     started_at = _utc_iso_now()
     started_mono = time.monotonic()
-    await driver.execute_query(_MAINTAIN_INDEX_SQL, params=[schema, index], force_readonly=False)
+    rows = await driver.execute_query(_MAINTAIN_INDEX_SQL, params=[schema, index], force_readonly=False)
     duration = time.monotonic() - started_mono
     completed_at = _utc_iso_now()
 
+    raw = _as_dict(rows[0].cells.get("result")) if rows else {}
+    merge_performed = raw.get("delta_merge_performed")
     return MaintenanceResult(
         schema=schema,
         index=index,
         started_at=started_at,
         completed_at=completed_at,
         duration_seconds=round(duration, 6),
+        delta_merge_performed=merge_performed if isinstance(merge_performed, bool) else None,
+        merged_delta_count=_maybe_int(raw.get("merged_delta_count")),
+        recycled_delta_page_count=_maybe_int(raw.get("recycled_delta_page_count")),
+        raw=raw,
     )
 
 
@@ -933,4 +1008,328 @@ async def reindex_turboquant_index(
         started_at=started_at,
         completed_at=completed_at,
         duration_seconds=round(duration, 6),
+    )
+
+
+# --- TQ-5: query execution + per-query knobs --------------------------------
+#
+# Surface confirmed against `sql/pg_turboquant--0.1.0.sql` upstream:
+# every function below has a fully-documented signature (arguments,
+# types, return columns). The wrappers below are thin shells — they
+# validate, build SQL with bind params, and unpack the typed return
+# table. No upstream return shape is invented.
+
+# Public-facing metric → upstream's runtime ``metric text`` token.
+# Note: TQ-4's _TQ_OPS_FOR_METRIC uses the same public names but
+# maps to opclass identifiers (``tq_*_ops``). The query functions
+# use a different lexical domain (lowercase short codes) — both
+# mappings live here as single sources of truth so an external
+# rename only happens in one place.
+_TQ_METRIC_TEXT_FOR_METRIC: dict[str, str] = {
+    "cosine": "cosine",
+    "inner_product": "ip",
+    "l2": "l2",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class TurboQuantCandidate:
+    """A row from ``tq_approx_candidates``."""
+
+    candidate_id: str
+    approximate_rank: int
+    approximate_distance: float
+
+
+@dataclass(frozen=True, slots=True)
+class TurboQuantRerankedCandidate:
+    """A row from ``tq_rerank_candidates``."""
+
+    candidate_id: str
+    approximate_rank: int
+    approximate_distance: float
+    exact_rank: int
+    exact_distance: float
+
+
+@dataclass(frozen=True, slots=True)
+class TurboQuantQueryKnobs:
+    """Tuning knobs returned by ``tq_recommended_query_knobs``."""
+
+    probes: int | None
+    oversample_factor: int | None
+    max_visited_codes: int | None
+    max_visited_pages: int | None
+
+
+def _tq_vector_literal(vec: list[float]) -> str:
+    """Serialize a Python list to pgvector text format ``[v1,v2,...]``."""
+    return "[" + ",".join(str(float(v)) for v in vec) + "]"
+
+
+def _validate_query_metric(metric: str) -> None:
+    if metric not in _TQ_METRIC_TEXT_FOR_METRIC:
+        expected = ", ".join(sorted(_TQ_METRIC_TEXT_FOR_METRIC))
+        raise TurboQuantError(f"unsupported metric {metric!r}; expected one of {expected}")
+
+
+def _validate_positive_int(name: str, value: int, *, allow_zero: bool = False) -> None:
+    """``candidate_limit`` / ``final_limit`` validation.
+
+    Catches the bool-as-int subclass quirk the option helpers also
+    guard against.
+    """
+    minimum = 0 if allow_zero else 1
+    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+        op = ">=" if allow_zero else ">"
+        raise TurboQuantError(f"{name} must be an int {op} 0; got {value!r}")
+
+
+def _query_vector_to_param(query_vector: list[float] | str) -> str:
+    """Coerce a list-of-floats or a pre-formatted text literal.
+
+    Pre-formatted strings (e.g. ``"[1.0,2.0]"``) pass through; lists
+    are serialized. The wrapper accepts both for parity with
+    ``vector_search`` in :mod:`mcpg.vector_ops`.
+    """
+    if isinstance(query_vector, str):
+        return query_vector
+    if not isinstance(query_vector, list):
+        raise TurboQuantError(f"query_vector must be list[float] or str; got {type(query_vector).__name__}")
+    return _tq_vector_literal(query_vector)
+
+
+# Filter-selectivity is documented as ``double precision`` with no
+# stated range; we accept any float and let upstream reject anything
+# truly invalid. Reject NaN / inf explicitly because those would be
+# silently coerced by PG.
+def _validate_filter_selectivity(value: float | None) -> None:
+    if value is None:
+        return
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise TurboQuantError(f"filter_selectivity must be a number; got {value!r}")
+    fval = float(value)
+    import math  # local import — only this validator needs it
+
+    if math.isnan(fval) or math.isinf(fval):
+        raise TurboQuantError(f"filter_selectivity must be finite; got {value!r}")
+
+
+async def turboquant_approx_candidates(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    id_column: str,
+    embedding_column: str,
+    query_vector: list[float] | str,
+    metric: str,
+    candidate_limit: int,
+    *,
+    probes: int | None = None,
+    oversample_factor: int | None = None,
+    half_precision: bool = False,
+) -> list[TurboQuantCandidate]:
+    """Wrap ``tq_approx_candidates`` — approximate retrieval, no rerank.
+
+    ``half_precision`` selects between the ``vector`` (default) and
+    ``halfvec`` overloads upstream provides. ``metric`` is the
+    public-facing name (``cosine`` / ``inner_product`` / ``l2``) and
+    is translated to upstream's runtime token (``cosine`` / ``ip`` /
+    ``l2``) via :data:`_TQ_METRIC_TEXT_FOR_METRIC`.
+
+    Raises:
+        TurboQuantError: extension is not installed, any identifier
+            fails validation, metric / limit / probe values fail
+            their checks.
+    """
+    _validate_identifier(schema, "schema")
+    _validate_identifier(table, "table")
+    _validate_identifier(id_column, "id_column")
+    _validate_identifier(embedding_column, "embedding_column")
+    _validate_query_metric(metric)
+    _validate_positive_int("candidate_limit", candidate_limit)
+    _validate_int_option("probes", probes, 1, 1_000_000)
+    _validate_int_option("oversample_factor", oversample_factor, 1, 1_000_000)
+    _validate_bool(half_precision, "half_precision")
+
+    if not await extension_installed(driver, "pg_turboquant"):
+        raise TurboQuantError("pg_turboquant extension is not installed in this database")
+
+    vector_type = "halfvec" if half_precision else "vector"
+    sql = (
+        "SELECT candidate_id, approximate_rank, approximate_distance "
+        "FROM tq_approx_candidates("
+        "format('%I.%I', %s, %s)::regclass, "
+        "%s::name, %s::name, "
+        f"%s::{vector_type}, "
+        "%s, %s, %s, %s)"
+    )
+    rows = await driver.execute_query(
+        sql,
+        params=[
+            schema,
+            table,
+            id_column,
+            embedding_column,
+            _query_vector_to_param(query_vector),
+            _TQ_METRIC_TEXT_FOR_METRIC[metric],
+            candidate_limit,
+            probes,
+            oversample_factor,
+        ],
+        force_readonly=True,
+    )
+    return [
+        TurboQuantCandidate(
+            candidate_id=str(row.cells["candidate_id"]),
+            approximate_rank=int(row.cells["approximate_rank"]),
+            approximate_distance=float(row.cells["approximate_distance"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def turboquant_rerank_candidates(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    id_column: str,
+    embedding_column: str,
+    query_vector: list[float] | str,
+    metric: str,
+    candidate_limit: int,
+    final_limit: int,
+    *,
+    probes: int | None = None,
+    oversample_factor: int | None = None,
+    half_precision: bool = False,
+) -> list[TurboQuantRerankedCandidate]:
+    """Wrap ``tq_rerank_candidates`` — approximate retrieval + SQL-side exact rerank.
+
+    Same validation surface as :func:`turboquant_approx_candidates`
+    plus ``final_limit`` (the top-K to keep after the exact rerank).
+    """
+    _validate_identifier(schema, "schema")
+    _validate_identifier(table, "table")
+    _validate_identifier(id_column, "id_column")
+    _validate_identifier(embedding_column, "embedding_column")
+    _validate_query_metric(metric)
+    _validate_positive_int("candidate_limit", candidate_limit)
+    _validate_positive_int("final_limit", final_limit)
+    _validate_int_option("probes", probes, 1, 1_000_000)
+    _validate_int_option("oversample_factor", oversample_factor, 1, 1_000_000)
+    _validate_bool(half_precision, "half_precision")
+
+    if not await extension_installed(driver, "pg_turboquant"):
+        raise TurboQuantError("pg_turboquant extension is not installed in this database")
+
+    vector_type = "halfvec" if half_precision else "vector"
+    sql = (
+        "SELECT candidate_id, approximate_rank, approximate_distance, exact_rank, exact_distance "
+        "FROM tq_rerank_candidates("
+        "format('%I.%I', %s, %s)::regclass, "
+        "%s::name, %s::name, "
+        f"%s::{vector_type}, "
+        "%s, %s, %s, %s, %s)"
+    )
+    rows = await driver.execute_query(
+        sql,
+        params=[
+            schema,
+            table,
+            id_column,
+            embedding_column,
+            _query_vector_to_param(query_vector),
+            _TQ_METRIC_TEXT_FOR_METRIC[metric],
+            candidate_limit,
+            final_limit,
+            probes,
+            oversample_factor,
+        ],
+        force_readonly=True,
+    )
+    return [
+        TurboQuantRerankedCandidate(
+            candidate_id=str(row.cells["candidate_id"]),
+            approximate_rank=int(row.cells["approximate_rank"]),
+            approximate_distance=float(row.cells["approximate_distance"]),
+            exact_rank=int(row.cells["exact_rank"]),
+            exact_distance=float(row.cells["exact_distance"]),
+        )
+        for row in rows or []
+    ]
+
+
+async def recommend_turboquant_query_knobs(
+    driver: SqlDriver,
+    candidate_limit: int,
+    *,
+    final_limit: int | None = None,
+    index_schema: str | None = None,
+    index_name: str | None = None,
+    filter_selectivity: float | None = None,
+) -> TurboQuantQueryKnobs:
+    """Wrap ``tq_recommended_query_knobs`` — per-query knob advisor.
+
+    Two upstream overloads:
+
+    * Plain: ``(candidate_limit, final_limit?)`` — no index context.
+    * Index-aware: ``(indexed_index regclass, candidate_limit,
+      final_limit?, filter_selectivity?)`` — recommendations
+      specialised to one index's catalog state.
+
+    The wrapper dispatches based on whether ``index_schema`` /
+    ``index_name`` are supplied. Both or neither — supplying only one
+    is rejected up front rather than producing a confusing PG error.
+    ``filter_selectivity`` is only valid with an index.
+    """
+    _validate_positive_int("candidate_limit", candidate_limit)
+    if final_limit is not None:
+        _validate_positive_int("final_limit", final_limit)
+    if (index_schema is None) != (index_name is None):
+        raise TurboQuantError(
+            "specify both index_schema and index_name, or neither — they identify a single regclass argument"
+        )
+    if filter_selectivity is not None and index_schema is None:
+        raise TurboQuantError(
+            "filter_selectivity only applies when index_schema / index_name are provided "
+            "(it's an arg to the index-aware overload)"
+        )
+    if index_schema is not None and index_name is not None:
+        _validate_identifier(index_schema, "index_schema")
+        _validate_identifier(index_name, "index_name")
+    _validate_filter_selectivity(filter_selectivity)
+
+    if not await extension_installed(driver, "pg_turboquant"):
+        raise TurboQuantError("pg_turboquant extension is not installed in this database")
+
+    if index_schema is None:
+        sql = (
+            "SELECT probes, oversample_factor, max_visited_codes, max_visited_pages "
+            "FROM tq_recommended_query_knobs(%s, %s)"
+        )
+        params: list[Any] = [candidate_limit, final_limit]
+    else:
+        sql = (
+            "SELECT probes, oversample_factor, max_visited_codes, max_visited_pages "
+            "FROM tq_recommended_query_knobs(format('%I.%I', %s, %s)::regclass, %s, %s, %s)"
+        )
+        params = [index_schema, index_name, candidate_limit, final_limit, filter_selectivity]
+
+    rows = await driver.execute_query(sql, params=params, force_readonly=True)
+    if not rows:
+        # Upstream may return no row when there's nothing to suggest;
+        # surface that as an all-None knob set rather than raising.
+        return TurboQuantQueryKnobs(
+            probes=None,
+            oversample_factor=None,
+            max_visited_codes=None,
+            max_visited_pages=None,
+        )
+    cells = rows[0].cells
+    return TurboQuantQueryKnobs(
+        probes=_maybe_int(cells.get("probes")),
+        oversample_factor=_maybe_int(cells.get("oversample_factor")),
+        max_visited_codes=_maybe_int(cells.get("max_visited_codes")),
+        max_visited_pages=_maybe_int(cells.get("max_visited_pages")),
     )

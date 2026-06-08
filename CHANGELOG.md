@@ -8,6 +8,57 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **pg_turboquant post-investigation enhancements (TQ-5 un-deferred,
+  `delta_tier_large` rule shipped, `tq_maintain_index` return JSON
+  surfaced).** A focused investigation of upstream's
+  `sql/pg_turboquant--0.1.0.sql` and `src/tq_extension.c` resolved
+  three previously-deferred items:
+
+  - **`delta_tier_large` advisor rule** (was deferred in TQ-2).
+    `tq_index_metadata` was found to expose `delta_live_count`,
+    `delta_batch_page_count`, and `delta_health.merge_recommended`.
+    `TurboQuantIndexInfo` gains three typed fields sourced from
+    those verified keys (the original prose-sourced fields like
+    `delta_state` / `maintenance_recommended` are preserved for
+    backwards compatibility). The new rule trusts upstream's own
+    `merge_recommended` boolean rather than computing an MCPg-side
+    threshold — no speculation, the extension decides.
+
+  - **`tq_maintain_index` return JSON** (was deferred in TQ-3).
+    Upstream's return shape is documented (per `src/tq_maintenance.h`):
+    `delta_merge_performed`, `merged_delta_count`,
+    `recycled_delta_page_count`. `MaintenanceResult` surfaces these
+    three plus the raw payload; missing keys map to `None` via the
+    same defensive-parsing pattern used elsewhere in the module.
+
+  - **TQ-5 query execution + per-query knob advisor** (was deferred
+    in TQ-3 PR). Full signatures (arguments + return tables) were
+    read verbatim from upstream's SQL definitions, removing every
+    speculation gap that motivated the original defer.
+    Three new read-only tools:
+    - `turboquant_approx_candidates(schema, table, id_column, embedding_column, query_vector, metric, candidate_limit, probes?, oversample_factor?, half_precision?)`
+      returns `[{candidate_id, approximate_rank, approximate_distance}]`.
+    - `turboquant_rerank_candidates(...)` adds `final_limit` and
+      returns the exact-rerank fields too (`exact_rank`,
+      `exact_distance`).
+    - `recommend_turboquant_query_knobs(candidate_limit, final_limit?, index_schema?, index_name?, filter_selectivity?)`
+      dispatches between upstream's plain and index-aware overloads
+      based on whether `index_schema`/`index_name` are supplied.
+
+    `metric` accepts the same public-facing names as TQ-4
+    (`cosine` / `inner_product` / `l2`) but is translated internally
+    to upstream's runtime token (`cosine` / `ip` / `l2`) via a new
+    `_TQ_METRIC_TEXT_FOR_METRIC` mapping — single source of truth,
+    separate from TQ-4's opclass mapping which lives in the same
+    file. `half_precision=True` switches to upstream's `halfvec`
+    overload. `query_vector` accepts a `list[float]` or a
+    pre-formatted text literal, matching the existing
+    `vector_search` convention.
+
+  This un-defers the RAG efficiency suite's turboquant arm
+  (`analyze_vector_search_efficiency` can now sweep `rerank_limit`
+  via `tq_rerank_candidates`).
+
 - **`create_turboquant_index` + `reindex_turboquant_index` DDL tools (TQ-4).**
   Completes the pg_turboquant integration. The create tool builds
   `CREATE INDEX … USING turboquant` under tight allowlists: `metric`
