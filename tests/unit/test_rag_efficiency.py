@@ -289,6 +289,32 @@ def test_adaptive_threshold_non_numeric_value_falls_back_to_default() -> None:
     assert any(f.code == "baseline_recall_low" for f in findings)
 
 
+def test_adaptive_threshold_bool_values_rejected_as_numeric_overrides() -> None:
+    # Booleans are subclasses of int in Python — without an explicit
+    # `not isinstance(value, bool)` guard in `_threshold`, `True`
+    # would silently become 1.0 and the rule would fire on every
+    # baseline below that. The guard ensures both ``True`` and
+    # ``False`` fall back to the hardcoded default 0.80 regardless
+    # of which value the caller supplied. Codifies the trap
+    # discovered on TQ-4 (#74) so future refactors don't reintroduce
+    # it.
+    for bool_override in (True, False):
+        # baseline=0.75 (< 0.80 default) → fires regardless of override.
+        partial = _partial(baseline=0.75)
+        partial["thresholds"] = {"baseline_recall_low": bool_override}
+        findings = _evaluate_rules(partial)
+        assert any(f.code == "baseline_recall_low" for f in findings), (
+            f"default 0.80 should still apply with bool override={bool_override}"
+        )
+        # baseline=0.85 (>= 0.80) → does NOT fire regardless of override.
+        partial = _partial(baseline=0.85)
+        partial["thresholds"] = {"baseline_recall_low": bool_override}
+        findings = _evaluate_rules(partial)
+        assert all(f.code != "baseline_recall_low" for f in findings), (
+            f"default 0.80 should still apply with bool override={bool_override}"
+        )
+
+
 # --- analyze_vector_search_efficiency: input validation -------------------
 
 

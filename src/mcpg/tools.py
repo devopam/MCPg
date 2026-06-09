@@ -3059,11 +3059,14 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
             "observation per analyze_vector_search_efficiency run. Fields "
             "mirror VectorEfficiencyReport one-to-one; pass the report's "
             "schema_name / table_name / column_name / index_name / "
-            "backend / metric / k / sample_size / recall_at_k_baseline / "
-            "rerank_lift_curve (as list[dict]) / score_rank_correlation_* / "
+            "backend / metric / k / sample_size / recall_baseline / "
+            "rerank_lift_curve (as list[dict]) / spearman / kendall / "
             "pages_pruned_ratio_p50 / duration_seconds + optional extra "
-            "dict. Available only in unrestricted mode; the table must be "
-            "created first via setup_efficiency_observations."
+            "dict. Tool arguments recall_baseline / spearman / kendall "
+            "correspond to VectorEfficiencyReport.recall_at_k_baseline / "
+            "score_rank_correlation_spearman / score_rank_correlation_kendall "
+            "respectively. Available only in unrestricted mode; the table "
+            "must be created first via setup_efficiency_observations."
         ),
     )
     async def record_efficiency_observation(

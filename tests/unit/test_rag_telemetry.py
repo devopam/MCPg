@@ -273,6 +273,34 @@ def _valid_observation_kwargs(**overrides: Any) -> dict[str, Any]:
     return base
 
 
+def test_percentile_implementations_match_across_modules() -> None:
+    # Two copies of _percentile exist (mcpg.rag_efficiency,
+    # mcpg.rag_telemetry) so the dependency direction stays one-way
+    # at import time. Lock the two against drift by asserting they
+    # produce identical output for a representative grid of inputs.
+    from mcpg.rag_efficiency import _percentile as eff_pct
+    from mcpg.rag_telemetry import _percentile as tel_pct
+
+    cases: list[tuple[list[float], float]] = [
+        ([], 0.5),
+        ([1.0], 0.5),
+        ([10.0, 20.0, 30.0, 40.0], 0.0),
+        ([10.0, 20.0, 30.0, 40.0], 0.10),
+        ([10.0, 20.0, 30.0, 40.0], 0.25),
+        ([10.0, 20.0, 30.0, 40.0], 0.50),
+        ([10.0, 20.0, 30.0, 40.0], 0.75),
+        ([10.0, 20.0, 30.0, 40.0], 0.90),
+        ([10.0, 20.0, 30.0, 40.0], 1.0),
+        ([1.0, 1.0, 1.0, 1.0, 1.0], 0.5),
+        ([0.0, 0.5, 1.0], 0.3),
+        ([0.0, 0.5, 1.0], 0.7),
+    ]
+    for values, q in cases:
+        assert tel_pct(values, q) == pytest.approx(eff_pct(values, q)), (
+            f"_percentile drift: values={values}, q={q}, tel={tel_pct(values, q)}, eff={eff_pct(values, q)}"
+        )
+
+
 async def test_setup_efficiency_observations_first_run_creates_table_and_indexes() -> None:
     db = FakeDatabase(FakeRoutingDriver({}))  # type: ignore[arg-type]
     result = await setup_efficiency_observations(db)  # type: ignore[arg-type]
@@ -319,6 +347,43 @@ async def test_record_efficiency_observation_rejects_invalid_k() -> None:
     driver = FakeRoutingDriver({})
     with pytest.raises(RagTelemetryError, match="k"):
         await record_efficiency_observation(driver, **_valid_observation_kwargs(k=0))  # type: ignore[arg-type]
+
+
+async def test_record_efficiency_observation_rejects_non_list_curve() -> None:
+    driver = FakeRoutingDriver({})
+    bad = {"not": "a list"}
+    with pytest.raises(RagTelemetryError, match="rerank_lift_curve must be list"):
+        await record_efficiency_observation(  # type: ignore[arg-type]
+            driver, **_valid_observation_kwargs(rerank_lift_curve=bad)
+        )
+
+
+async def test_record_efficiency_observation_rejects_non_dict_extra() -> None:
+    driver = FakeRoutingDriver({})
+    with pytest.raises(RagTelemetryError, match="extra must be dict"):
+        await record_efficiency_observation(  # type: ignore[arg-type]
+            driver, **_valid_observation_kwargs(extra="not-a-dict")
+        )
+
+
+async def test_record_efficiency_observation_rejects_non_json_serialisable_extra() -> None:
+    # Mirrors the curve test — non-serialisable values inside extra
+    # surface as RagTelemetryError, not stdlib TypeError.
+    driver = FakeRoutingDriver({})
+    bad_extra = {"forbidden": {1, 2, 3}}  # set is not json-serialisable
+    with pytest.raises(RagTelemetryError, match=r"extra must be JSON-serialisable"):
+        await record_efficiency_observation(  # type: ignore[arg-type]
+            driver, **_valid_observation_kwargs(extra=bad_extra)
+        )
+
+
+async def test_record_efficiency_observation_raises_when_insert_returns_no_row() -> None:
+    # Pathological — PG returned no row from the RETURNING clause.
+    # Shouldn't happen with a valid statement, but the guard must
+    # fail loud rather than invent an observation_id.
+    driver = FakeRoutingDriver({})  # no INSERT route → empty result
+    with pytest.raises(RagTelemetryError, match="did not return observation_id"):
+        await record_efficiency_observation(driver, **_valid_observation_kwargs())  # type: ignore[arg-type]
 
 
 async def test_record_efficiency_observation_serializes_curve_as_jsonb() -> None:
@@ -397,10 +462,15 @@ async def test_recommend_thresholds_falls_back_per_metric_when_too_few_non_nulls
         )
     driver = FakeRoutingDriver({"FROM mcpg_rag.efficiency_observations": rows})
     result = await recommend_efficiency_thresholds(driver)  # type: ignore[arg-type]
+    # At least one metric was adapted (recall + pruning), so the
+    # roll-up flag is True.
     assert result.derived_from_corpus is True
     from mcpg.rag_efficiency import _THRESHOLD_RANKING_DEGRADED_SPEARMAN
 
     assert result.ranking_degraded_spearman == _THRESHOLD_RANKING_DEGRADED_SPEARMAN  # fallback
+    assert result.ranking_degraded_spearman_adapted is False  # per-metric flag captures the truth
+    assert result.baseline_recall_low_adapted is True
+    assert result.pruning_ineffective_adapted is True
     assert 0.50 < result.baseline_recall_low < 0.60  # adapted
 
 

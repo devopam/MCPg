@@ -399,20 +399,33 @@ class RecordEfficiencyObservationResult:
 class EfficiencyThresholds:
     """Thresholds for evaluating an :func:`analyze_vector_search_efficiency` report.
 
-    When ``derived_from_corpus`` is True, the listed thresholds were
-    computed as percentiles over recorded observations matching the
-    filter. When False, they're the module-level defaults from
-    :mod:`mcpg.rag_efficiency`. ``corpus_size`` reports how many rows
-    contributed (zero when defaults are returned).
+    Each of the three adapted thresholds carries its own ``*_adapted``
+    boolean: ``True`` means the value was computed as a corpus
+    percentile, ``False`` means it fell back to the module-level
+    default from :mod:`mcpg.rag_efficiency`. Fallback happens both
+    when the overall corpus is below :data:`_MIN_CORPUS_FOR_ADAPT`
+    *and* per-metric when an individual column has too few non-null
+    rows to compute a meaningful percentile.
 
-    Phase E currently adapts three thresholds; the rest remain at
-    their hardcoded defaults regardless of corpus size and are
-    re-exported here so callers see one unified surface.
+    The roll-up ``derived_from_corpus`` is ``any(...)`` of the three
+    per-metric flags — true when *at least one* threshold actually
+    came from corpus data. Earlier shape (single flag set on
+    corpus_size alone) misled callers when individual metrics were
+    sparsely populated.
+
+    ``corpus_size`` reports the total filtered row count (zero when
+    the full-defaults branch returned). The four non-adapted
+    thresholds (``rerank_lift_*``, ``ranking_degraded_recall``) are
+    re-exported as defaults so callers see one unified threshold
+    surface.
     """
 
     baseline_recall_low: float
+    baseline_recall_low_adapted: bool
     ranking_degraded_spearman: float
+    ranking_degraded_spearman_adapted: bool
     pruning_ineffective: float
+    pruning_ineffective_adapted: bool
     # Non-adapted (defaults always):
     rerank_lift_flat_delta: float
     rerank_lift_steep_low: float
@@ -632,8 +645,11 @@ async def recommend_efficiency_thresholds(
     if corpus_size < _MIN_CORPUS_FOR_ADAPT:
         return EfficiencyThresholds(
             baseline_recall_low=_THRESHOLD_RECALL_LOW,
+            baseline_recall_low_adapted=False,
             ranking_degraded_spearman=_THRESHOLD_RANKING_DEGRADED_SPEARMAN,
+            ranking_degraded_spearman_adapted=False,
             pruning_ineffective=_THRESHOLD_PRUNING_INEFFECTIVE,
+            pruning_ineffective_adapted=False,
             rerank_lift_flat_delta=_THRESHOLD_RERANK_FLAT_DELTA,
             rerank_lift_steep_low=_THRESHOLD_RERANK_STEEP_LOW,
             rerank_lift_steep_high=_THRESHOLD_RERANK_STEEP_HIGH,
@@ -656,28 +672,29 @@ async def recommend_efficiency_thresholds(
         if pp is not None:
             pruning_values.append(float(pp))
 
-    # p10 → "you're in the bottom decile of the corpus". When a
-    # specific metric has too few non-null contributors, fall back
-    # to the default so we don't synthesise a threshold from 3
-    # observations.
+    # p10 → "you're in the bottom decile of the corpus". Each metric
+    # has its own ``adapted`` flag so callers can tell which
+    # individual thresholds came from corpus vs default; the
+    # roll-up ``derived_from_corpus`` is ``any(...)`` of the three.
+    # Per-metric fallback fires when a column has too few non-null
+    # contributors — we don't synthesise a threshold from 3 rows.
+    recall_adapted = len(recall_values) >= _MIN_CORPUS_FOR_ADAPT
+    spearman_adapted = len(spearman_values) >= _MIN_CORPUS_FOR_ADAPT
+    pruning_adapted = len(pruning_values) >= _MIN_CORPUS_FOR_ADAPT
+
     return EfficiencyThresholds(
-        baseline_recall_low=(
-            _percentile(recall_values, 0.10) if len(recall_values) >= _MIN_CORPUS_FOR_ADAPT else _THRESHOLD_RECALL_LOW
-        ),
+        baseline_recall_low=(_percentile(recall_values, 0.10) if recall_adapted else _THRESHOLD_RECALL_LOW),
+        baseline_recall_low_adapted=recall_adapted,
         ranking_degraded_spearman=(
-            _percentile(spearman_values, 0.10)
-            if len(spearman_values) >= _MIN_CORPUS_FOR_ADAPT
-            else _THRESHOLD_RANKING_DEGRADED_SPEARMAN
+            _percentile(spearman_values, 0.10) if spearman_adapted else _THRESHOLD_RANKING_DEGRADED_SPEARMAN
         ),
-        pruning_ineffective=(
-            _percentile(pruning_values, 0.10)
-            if len(pruning_values) >= _MIN_CORPUS_FOR_ADAPT
-            else _THRESHOLD_PRUNING_INEFFECTIVE
-        ),
+        ranking_degraded_spearman_adapted=spearman_adapted,
+        pruning_ineffective=(_percentile(pruning_values, 0.10) if pruning_adapted else _THRESHOLD_PRUNING_INEFFECTIVE),
+        pruning_ineffective_adapted=pruning_adapted,
         rerank_lift_flat_delta=_THRESHOLD_RERANK_FLAT_DELTA,
         rerank_lift_steep_low=_THRESHOLD_RERANK_STEEP_LOW,
         rerank_lift_steep_high=_THRESHOLD_RERANK_STEEP_HIGH,
         ranking_degraded_recall=_THRESHOLD_RANKING_DEGRADED_RECALL,
         corpus_size=corpus_size,
-        derived_from_corpus=True,
+        derived_from_corpus=any((recall_adapted, spearman_adapted, pruning_adapted)),
     )
