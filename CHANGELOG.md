@@ -8,6 +8,53 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Adaptive thresholds framework (RAG-E).** Optional self-learning
+  layer over `analyze_vector_search_efficiency` (RAG-A): record
+  observations into a new `mcpg_rag.efficiency_observations` table,
+  then let `recommend_efficiency_thresholds` compute corpus-percentile
+  thresholds that replace the hardcoded defaults for callers that opt
+  in. "You're in the bottom decile of recall@10 for HNSW+cosine+k=10
+  in this deployment" is more actionable than "you're below 0.80".
+
+  New tools:
+  - `setup_efficiency_observations` (DDL-gated, idempotent — same
+    probe-then-DDL pattern as `setup_rag_telemetry`; reports
+    `{schema_created, table_created, indexes_created}`).
+  - `record_efficiency_observation` (WRITE-gated) — fields mirror
+    `VectorEfficiencyReport` one-to-one. Inputs validated via the
+    existing `_validate_int` / `_validate_numeric` helpers from
+    RAG-C (bool-as-int rejected; `extra` JSON-serialised with the
+    same `TypeError`-wrap pattern).
+  - `recommend_efficiency_thresholds` (READ) — returns
+    `EfficiencyThresholds` with the seven values + `corpus_size` +
+    `derived_from_corpus` flag. Filters: `days` (default 30),
+    `backend`, `metric`, `k` — callers ask "what's normal across
+    this configuration".
+
+  Phase E adapts three of the seven vector-efficiency thresholds
+  (the ones with the highest signal):
+  - `baseline_recall_low` ← p10 of `recall_baseline` corpus.
+  - `ranking_degraded_spearman` ← p10 of `spearman` corpus.
+  - `pruning_ineffective` ← p10 of `pages_pruned_ratio_p50` corpus.
+
+  The other four (`rerank_lift_flat_delta`, `rerank_lift_steep_low`,
+  `rerank_lift_steep_high`, `ranking_degraded_recall`) keep their
+  module-level defaults and are re-exported on the same dataclass so
+  callers see one unified surface. When the matching corpus is smaller
+  than `_MIN_CORPUS_FOR_ADAPT = 30`, all three adapted thresholds
+  silently fall back to defaults (with `derived_from_corpus=False`).
+
+  Integration: `analyze_vector_search_efficiency` gains an optional
+  `thresholds: dict[str, float] | None` keyword. When supplied, the
+  rule evaluator picks adapted values per rule via a new `_threshold`
+  helper; otherwise the module-level `_THRESHOLD_*` constants apply.
+  Non-numeric or missing dict entries silently fall back to defaults
+  so a partial corpus doesn't crash the rule loop.
+
+  RAG analytics over `mcpg_rag.rerank_events` (RAG-D) are out of
+  scope for Phase E — their thresholds live on a different events
+  table and can be added in a follow-up if needed.
+
 ## [0.6.1] - 2026-06-09
 
 ### Added

@@ -462,7 +462,7 @@ instrumentation; rerank second because it needs a schema and adoption.
   Kendall / percentile helpers from Phase A.
 - Branch: `claude/rag4-rerank-analytics`.
 
-### Phase E — adaptive thresholds (future, optional)
+### Phase E — adaptive thresholds ✅ shipped
 
 **Motivation.** Phase A ships with hardcoded rule thresholds
 (`baseline_recall_low` at 0.80, `pruning_ineffective` at 0.10, …)

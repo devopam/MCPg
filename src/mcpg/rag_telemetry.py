@@ -325,3 +325,376 @@ async def log_rerank_event(
     if not rows:
         raise RagTelemetryError("INSERT did not return event_id")
     return LogRerankEventResult(event_id=int(rows[0].cells["event_id"]))
+
+
+# --- Phase E: efficiency observations + adaptive thresholds ---------------
+#
+# Optional storage + corpus-percentile threshold framework for
+# analyze_vector_search_efficiency (RAG-A). Callers record one
+# observation per run; recommend_efficiency_thresholds computes
+# per-deployment thresholds from accumulated history; the analytic
+# (or anyone evaluating its rules) can swap the hardcoded defaults
+# for the corpus-derived values.
+
+_EFFICIENCY_TABLE = "efficiency_observations"
+
+# Minimum corpus size before adaptive thresholds replace the
+# hardcoded defaults. Three observations isn't a corpus; thirty
+# starts to look like a deployment baseline.
+_MIN_CORPUS_FOR_ADAPT = 30
+
+_SETUP_SQL_EFFICIENCY_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {_SCHEMA_NAME}.{_EFFICIENCY_TABLE} (
+    observation_id            BIGSERIAL PRIMARY KEY,
+    observed_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    schema_name               TEXT        NOT NULL,
+    table_name                TEXT        NOT NULL,
+    column_name               TEXT        NOT NULL,
+    index_name                TEXT        NOT NULL,
+    backend                   TEXT        NOT NULL,
+    metric                    TEXT        NOT NULL,
+    k                         INT         NOT NULL,
+    sample_size               INT         NOT NULL,
+    recall_baseline           DOUBLE PRECISION,
+    rerank_lift_curve         JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    spearman                  DOUBLE PRECISION,
+    kendall                   DOUBLE PRECISION,
+    pages_pruned_ratio_p50    DOUBLE PRECISION,
+    duration_seconds          DOUBLE PRECISION,
+    extra                     JSONB       NOT NULL DEFAULT '{{}}'::jsonb
+)
+"""
+
+_SETUP_SQL_EFFICIENCY_INDEXES: tuple[tuple[str, str], ...] = (
+    (
+        f"{_EFFICIENCY_TABLE}_observed_at_idx",
+        f"CREATE INDEX IF NOT EXISTS {_EFFICIENCY_TABLE}_observed_at_idx "
+        f"ON {_SCHEMA_NAME}.{_EFFICIENCY_TABLE} (observed_at)",
+    ),
+    (
+        f"{_EFFICIENCY_TABLE}_backend_metric_k_idx",
+        f"CREATE INDEX IF NOT EXISTS {_EFFICIENCY_TABLE}_backend_metric_k_idx "
+        f"ON {_SCHEMA_NAME}.{_EFFICIENCY_TABLE} (backend, metric, k, observed_at)",
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class EfficiencyObservationsSetupResult:
+    """Outcome of :func:`setup_efficiency_observations`."""
+
+    schema_created: bool
+    table_created: bool
+    indexes_created: int
+
+
+@dataclass(frozen=True, slots=True)
+class RecordEfficiencyObservationResult:
+    """Outcome of :func:`record_efficiency_observation`."""
+
+    observation_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class EfficiencyThresholds:
+    """Thresholds for evaluating an :func:`analyze_vector_search_efficiency` report.
+
+    Each of the three adapted thresholds carries its own ``*_adapted``
+    boolean: ``True`` means the value was computed as a corpus
+    percentile, ``False`` means it fell back to the module-level
+    default from :mod:`mcpg.rag_efficiency`. Fallback happens both
+    when the overall corpus is below :data:`_MIN_CORPUS_FOR_ADAPT`
+    *and* per-metric when an individual column has too few non-null
+    rows to compute a meaningful percentile.
+
+    The roll-up ``derived_from_corpus`` is ``any(...)`` of the three
+    per-metric flags — true when *at least one* threshold actually
+    came from corpus data. Earlier shape (single flag set on
+    corpus_size alone) misled callers when individual metrics were
+    sparsely populated.
+
+    ``corpus_size`` reports the total filtered row count (zero when
+    the full-defaults branch returned). The four non-adapted
+    thresholds (``rerank_lift_*``, ``ranking_degraded_recall``) are
+    re-exported as defaults so callers see one unified threshold
+    surface.
+    """
+
+    baseline_recall_low: float
+    baseline_recall_low_adapted: bool
+    ranking_degraded_spearman: float
+    ranking_degraded_spearman_adapted: bool
+    pruning_ineffective: float
+    pruning_ineffective_adapted: bool
+    # Non-adapted (defaults always):
+    rerank_lift_flat_delta: float
+    rerank_lift_steep_low: float
+    rerank_lift_steep_high: float
+    ranking_degraded_recall: float
+    corpus_size: int
+    derived_from_corpus: bool
+
+
+async def setup_efficiency_observations(database: Database) -> EfficiencyObservationsSetupResult:
+    """Create the ``mcpg_rag.efficiency_observations`` table + indexes.
+
+    Idempotent. Uses the same probe-then-DDL pattern as
+    :func:`setup_rag_telemetry`; the same concurrent-setup caveat
+    applies (the result's ``created`` flags are advisory, not
+    atomic).
+    """
+    driver = database.driver()
+    had_schema = await _exists(driver, _PROBE_SCHEMA_SQL, [_SCHEMA_NAME])
+    await database.run_unmanaged(_SETUP_SQL_SCHEMA)
+
+    had_table = await _exists(driver, _PROBE_TABLE_SQL, [_SCHEMA_NAME, _EFFICIENCY_TABLE])
+    await database.run_unmanaged(_SETUP_SQL_EFFICIENCY_TABLE)
+
+    indexes_created = 0
+    for index_name, sql in _SETUP_SQL_EFFICIENCY_INDEXES:
+        had_index = await _exists(driver, _PROBE_INDEX_SQL, [_SCHEMA_NAME, index_name])
+        await database.run_unmanaged(sql)
+        if not had_index:
+            indexes_created += 1
+
+    return EfficiencyObservationsSetupResult(
+        schema_created=not had_schema,
+        table_created=not had_table,
+        indexes_created=indexes_created,
+    )
+
+
+_INSERT_OBSERVATION_SQL = f"""
+INSERT INTO {_SCHEMA_NAME}.{_EFFICIENCY_TABLE} (
+    schema_name, table_name, column_name, index_name,
+    backend, metric, k, sample_size,
+    recall_baseline, rerank_lift_curve, spearman, kendall,
+    pages_pruned_ratio_p50, duration_seconds, extra
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s::jsonb)
+RETURNING observation_id
+"""
+
+
+async def record_efficiency_observation(
+    driver: SqlDriver,
+    *,
+    schema_name: str,
+    table_name: str,
+    column_name: str,
+    index_name: str,
+    backend: str,
+    metric: str,
+    k: int,
+    sample_size: int,
+    recall_baseline: float | None,
+    rerank_lift_curve: list[dict[str, Any]] | None,
+    spearman: float | None,
+    kendall: float | None,
+    pages_pruned_ratio_p50: float | None,
+    duration_seconds: float | None,
+    extra: dict[str, Any] | None = None,
+) -> RecordEfficiencyObservationResult:
+    """Insert one row into ``mcpg_rag.efficiency_observations``.
+
+    Fields mirror :class:`mcpg.rag_efficiency.VectorEfficiencyReport`
+    one-to-one; callers typically take a freshly-produced report and
+    forward its fields here. ``rerank_lift_curve`` is the list of
+    ``{candidate_multiplier, knob_value, recall_at_k, ...}`` dicts
+    (the report's ``rerank_lift_curve`` after ``asdict``).
+    """
+    _validate_text("schema_name", schema_name)
+    _validate_text("table_name", table_name)
+    _validate_text("column_name", column_name)
+    _validate_text("index_name", index_name)
+    _validate_text("backend", backend)
+    _validate_text("metric", metric)
+    _validate_int("k", k, min_value=1, max_value=10_000)
+    _validate_int("sample_size", sample_size, min_value=0, max_value=10_000)
+    _validate_numeric("recall_baseline", recall_baseline, allow_none=True)
+    _validate_numeric("spearman", spearman, allow_none=True)
+    _validate_numeric("kendall", kendall, allow_none=True)
+    _validate_numeric("pages_pruned_ratio_p50", pages_pruned_ratio_p50, allow_none=True)
+    _validate_numeric("duration_seconds", duration_seconds, allow_none=True)
+    if rerank_lift_curve is not None and not isinstance(rerank_lift_curve, list):
+        raise RagTelemetryError(f"rerank_lift_curve must be list[dict] or None; got {type(rerank_lift_curve).__name__}")
+    if extra is not None and not isinstance(extra, dict):
+        raise RagTelemetryError(f"extra must be dict or None; got {type(extra).__name__}")
+
+    # Both jsonb-bound fields wrap json.dumps in try/except so
+    # non-serialisable values (datetimes, custom classes, Decimals
+    # …) surface as RagTelemetryError instead of stdlib TypeError.
+    # The two paths are kept symmetric on purpose.
+    try:
+        curve_json = json.dumps(rerank_lift_curve) if rerank_lift_curve is not None else "[]"
+    except (TypeError, ValueError) as exc:
+        raise RagTelemetryError(f"rerank_lift_curve must be JSON-serialisable: {exc}") from exc
+    try:
+        extra_json = json.dumps(extra) if extra is not None else "{}"
+    except (TypeError, ValueError) as exc:
+        raise RagTelemetryError(f"extra must be JSON-serialisable: {exc}") from exc
+
+    rows = await driver.execute_query(
+        _INSERT_OBSERVATION_SQL,
+        params=[
+            schema_name,
+            table_name,
+            column_name,
+            index_name,
+            backend,
+            metric,
+            k,
+            sample_size,
+            recall_baseline,
+            curve_json,
+            spearman,
+            kendall,
+            pages_pruned_ratio_p50,
+            duration_seconds,
+            extra_json,
+        ],
+        force_readonly=False,
+    )
+    if not rows:
+        raise RagTelemetryError("INSERT did not return observation_id")
+    return RecordEfficiencyObservationResult(observation_id=int(rows[0].cells["observation_id"]))
+
+
+def _percentile(values: list[float], q: float) -> float:
+    """Linear-interpolated percentile; mirrors mcpg.rag_efficiency._percentile.
+
+    Local copy so this module doesn't depend on rag_efficiency at
+    import time — the dependency direction stays
+    rag_efficiency → rag_telemetry (analytics over telemetry storage).
+    """
+    if not values:
+        return 0.0
+    s = sorted(values)
+    if len(s) == 1:
+        return s[0]
+    pos = q * (len(s) - 1)
+    lo = int(pos)
+    hi = lo + 1 if lo < len(s) - 1 else lo
+    if lo == hi:
+        return s[lo]
+    return s[lo] + (s[hi] - s[lo]) * (pos - lo)
+
+
+async def recommend_efficiency_thresholds(
+    driver: SqlDriver,
+    *,
+    days: int = 30,
+    backend: str | None = None,
+    metric: str | None = None,
+    k: int | None = None,
+) -> EfficiencyThresholds:
+    """Compute corpus-percentile thresholds for the vector-search rule table.
+
+    Pulls non-null ``recall_baseline``, ``spearman``, and
+    ``pages_pruned_ratio_p50`` over the window and computes the 10th
+    percentile of each — those become the per-deployment "you're
+    below the corpus" threshold for ``baseline_recall_low``,
+    ``ranking_degraded_spearman``, and ``pruning_ineffective``
+    respectively. When the matching corpus is smaller than
+    :data:`_MIN_CORPUS_FOR_ADAPT`, falls back to the module-level
+    defaults from :mod:`mcpg.rag_efficiency`.
+
+    Filters (``backend``, ``metric``, ``k``) all default to ``None``
+    (no filter) so a caller can ask "what's normal across all my
+    HNSW indexes" or "what's normal for HNSW+cosine+k=10
+    specifically" depending on how much corpus they have.
+    """
+    from mcpg.rag_efficiency import (
+        _THRESHOLD_PRUNING_INEFFECTIVE,
+        _THRESHOLD_RANKING_DEGRADED_RECALL,
+        _THRESHOLD_RANKING_DEGRADED_SPEARMAN,
+        _THRESHOLD_RECALL_LOW,
+        _THRESHOLD_RERANK_FLAT_DELTA,
+        _THRESHOLD_RERANK_STEEP_HIGH,
+        _THRESHOLD_RERANK_STEEP_LOW,
+    )
+
+    _validate_int("days", days, min_value=1, max_value=365)
+    if backend is not None:
+        _validate_text("backend", backend)
+    if metric is not None:
+        _validate_text("metric", metric)
+    if k is not None:
+        _validate_int("k", k, min_value=1, max_value=10_000)
+
+    parts = ["observed_at >= now() - make_interval(days => %s)"]
+    params: list[Any] = [days]
+    if backend is not None:
+        parts.append("backend = %s")
+        params.append(backend)
+    if metric is not None:
+        parts.append("metric = %s")
+        params.append(metric)
+    if k is not None:
+        parts.append("k = %s")
+        params.append(k)
+    where_sql = " AND ".join(parts)
+
+    sql = (
+        "SELECT recall_baseline, spearman, pages_pruned_ratio_p50 "
+        f"FROM {_SCHEMA_NAME}.{_EFFICIENCY_TABLE} WHERE {where_sql}"
+    )
+    rows = await driver.execute_query(sql, params=params, force_readonly=True)
+    corpus_size = len(rows or [])
+
+    if corpus_size < _MIN_CORPUS_FOR_ADAPT:
+        return EfficiencyThresholds(
+            baseline_recall_low=_THRESHOLD_RECALL_LOW,
+            baseline_recall_low_adapted=False,
+            ranking_degraded_spearman=_THRESHOLD_RANKING_DEGRADED_SPEARMAN,
+            ranking_degraded_spearman_adapted=False,
+            pruning_ineffective=_THRESHOLD_PRUNING_INEFFECTIVE,
+            pruning_ineffective_adapted=False,
+            rerank_lift_flat_delta=_THRESHOLD_RERANK_FLAT_DELTA,
+            rerank_lift_steep_low=_THRESHOLD_RERANK_STEEP_LOW,
+            rerank_lift_steep_high=_THRESHOLD_RERANK_STEEP_HIGH,
+            ranking_degraded_recall=_THRESHOLD_RANKING_DEGRADED_RECALL,
+            corpus_size=corpus_size,
+            derived_from_corpus=False,
+        )
+
+    recall_values: list[float] = []
+    spearman_values: list[float] = []
+    pruning_values: list[float] = []
+    for row in rows or []:
+        rb = row.cells.get("recall_baseline")
+        if rb is not None:
+            recall_values.append(float(rb))
+        sp = row.cells.get("spearman")
+        if sp is not None:
+            spearman_values.append(float(sp))
+        pp = row.cells.get("pages_pruned_ratio_p50")
+        if pp is not None:
+            pruning_values.append(float(pp))
+
+    # p10 → "you're in the bottom decile of the corpus". Each metric
+    # has its own ``adapted`` flag so callers can tell which
+    # individual thresholds came from corpus vs default; the
+    # roll-up ``derived_from_corpus`` is ``any(...)`` of the three.
+    # Per-metric fallback fires when a column has too few non-null
+    # contributors — we don't synthesise a threshold from 3 rows.
+    recall_adapted = len(recall_values) >= _MIN_CORPUS_FOR_ADAPT
+    spearman_adapted = len(spearman_values) >= _MIN_CORPUS_FOR_ADAPT
+    pruning_adapted = len(pruning_values) >= _MIN_CORPUS_FOR_ADAPT
+
+    return EfficiencyThresholds(
+        baseline_recall_low=(_percentile(recall_values, 0.10) if recall_adapted else _THRESHOLD_RECALL_LOW),
+        baseline_recall_low_adapted=recall_adapted,
+        ranking_degraded_spearman=(
+            _percentile(spearman_values, 0.10) if spearman_adapted else _THRESHOLD_RANKING_DEGRADED_SPEARMAN
+        ),
+        ranking_degraded_spearman_adapted=spearman_adapted,
+        pruning_ineffective=(_percentile(pruning_values, 0.10) if pruning_adapted else _THRESHOLD_PRUNING_INEFFECTIVE),
+        pruning_ineffective_adapted=pruning_adapted,
+        rerank_lift_flat_delta=_THRESHOLD_RERANK_FLAT_DELTA,
+        rerank_lift_steep_low=_THRESHOLD_RERANK_STEEP_LOW,
+        rerank_lift_steep_high=_THRESHOLD_RERANK_STEEP_HIGH,
+        ranking_degraded_recall=_THRESHOLD_RANKING_DEGRADED_RECALL,
+        corpus_size=corpus_size,
+        derived_from_corpus=any((recall_adapted, spearman_adapted, pruning_adapted)),
+    )

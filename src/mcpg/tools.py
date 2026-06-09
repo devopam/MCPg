@@ -3052,6 +3052,62 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
         await ctx.request_context.lifespan_context.cache.clear()
         return asdict(result)
 
+    @server.tool(
+        name="record_efficiency_observation",
+        description=(
+            "Insert one row into mcpg_rag.efficiency_observations - one "
+            "observation per analyze_vector_search_efficiency run. Fields "
+            "mirror VectorEfficiencyReport one-to-one; pass the report's "
+            "schema_name / table_name / column_name / index_name / "
+            "backend / metric / k / sample_size / recall_baseline / "
+            "rerank_lift_curve (as list[dict]) / spearman / kendall / "
+            "pages_pruned_ratio_p50 / duration_seconds + optional extra "
+            "dict. Tool arguments recall_baseline / spearman / kendall "
+            "correspond to VectorEfficiencyReport.recall_at_k_baseline / "
+            "score_rank_correlation_spearman / score_rank_correlation_kendall "
+            "respectively. Available only in unrestricted mode; the table "
+            "must be created first via setup_efficiency_observations."
+        ),
+    )
+    async def record_efficiency_observation(
+        ctx: _Ctx,
+        schema_name: str,
+        table_name: str,
+        column_name: str,
+        index_name: str,
+        backend: str,
+        metric: str,
+        k: int,
+        sample_size: int,
+        recall_baseline: float | None,
+        rerank_lift_curve: list[dict[str, Any]] | None,
+        spearman: float | None,
+        kendall: float | None,
+        pages_pruned_ratio_p50: float | None,
+        duration_seconds: float | None,
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        result = await rag_telemetry.record_efficiency_observation(
+            _driver(ctx),
+            schema_name=schema_name,
+            table_name=table_name,
+            column_name=column_name,
+            index_name=index_name,
+            backend=backend,
+            metric=metric,
+            k=k,
+            sample_size=sample_size,
+            recall_baseline=recall_baseline,
+            rerank_lift_curve=rerank_lift_curve,
+            spearman=spearman,
+            kendall=kendall,
+            pages_pruned_ratio_p50=pages_pruned_ratio_p50,
+            duration_seconds=duration_seconds,
+            extra=extra,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
 
 def _register_rag_telemetry_ddl(server: FastMCP[AppContext]) -> None:
     @server.tool(
@@ -3070,6 +3126,60 @@ def _register_rag_telemetry_ddl(server: FastMCP[AppContext]) -> None:
         database = ctx.request_context.lifespan_context.database
         result = await rag_telemetry.setup_rag_telemetry(database)
         await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="setup_efficiency_observations",
+        description=(
+            "Create the ``mcpg_rag.efficiency_observations`` table + two "
+            "indexes (``observed_at``, composite ``(backend, metric, k, "
+            "observed_at)``). Idempotent — safe to re-run; returns "
+            "``{schema_created, table_created, indexes_created}``. "
+            "Required before any ``record_efficiency_observation`` call "
+            "or before ``recommend_efficiency_thresholds`` can return "
+            "corpus-derived values. Performs DDL — requires unrestricted "
+            "mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def setup_efficiency_observations(ctx: _Ctx) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await rag_telemetry.setup_efficiency_observations(database)
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
+def _register_rag_telemetry_efficiency_read(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="recommend_efficiency_thresholds",
+        description=(
+            "Compute corpus-percentile thresholds from accumulated "
+            "``mcpg_rag.efficiency_observations`` history. Phase E currently "
+            "adapts three thresholds: ``baseline_recall_low`` (p10 of "
+            "recall_baseline), ``ranking_degraded_spearman`` (p10 of "
+            "spearman), and ``pruning_ineffective`` (p10 of "
+            "pages_pruned_ratio_p50). The remaining four thresholds stay "
+            "at their hardcoded defaults. Filters by ``days`` window + "
+            "optional ``backend`` / ``metric`` / ``k`` so callers can ask "
+            "'what's normal for HNSW+cosine+k=10 in this deployment' vs "
+            "'what's normal globally'. Falls back to defaults (with "
+            "``derived_from_corpus=false``) when the corpus is smaller "
+            "than the minimum required."
+        ),
+    )
+    async def recommend_efficiency_thresholds(
+        ctx: _Ctx,
+        days: int = 30,
+        backend: str | None = None,
+        metric: str | None = None,
+        k: int | None = None,
+    ) -> dict[str, Any]:
+        result = await rag_telemetry.recommend_efficiency_thresholds(
+            _driver(ctx),
+            days=days,
+            backend=backend,
+            metric=metric,
+            k=k,
+        )
         return asdict(result)
 
 
@@ -3521,6 +3631,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_vector_tuning(server)
         _register_rag_efficiency(server)
         _register_rag_analytics(server)
+        _register_rag_telemetry_efficiency_read(server)
         _register_prisma(server)
         _register_advisors(server)
         _register_composite(server)

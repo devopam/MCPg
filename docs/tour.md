@@ -351,6 +351,23 @@ log_rerank_event(query_hash, retrieval_index,        # one row per (query, candi
                  extra={})                            # query_hash keeps PII out of the table by default
 ```
 
+## "Learn per-deployment efficiency thresholds" (`unrestricted` + `MCPG_ALLOW_DDL=true` for setup)
+
+```
+setup_efficiency_observations()                      # creates mcpg_rag.efficiency_observations + 2 indexes
+record_efficiency_observation(schema_name, table_name, column_name, index_name,
+                              backend, metric, k, sample_size,
+                              recall_baseline, rerank_lift_curve,
+                              spearman, kendall, pages_pruned_ratio_p50,
+                              duration_seconds, extra={})
+                                                     # one row per analyze_vector_search_efficiency run
+
+recommend_efficiency_thresholds(days=30, backend=null, metric=null, k=null)
+                                                     # corpus-percentile thresholds; baseline_recall_low /
+                                                     # ranking_degraded_spearman / pruning_ineffective adapted;
+                                                     # falls back to defaults when corpus < 30 observations
+```
+
 ## "Schedule a job" (`unrestricted` + pg_cron installed)
 
 ```

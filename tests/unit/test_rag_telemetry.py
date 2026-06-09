@@ -236,3 +236,276 @@ async def test_setup_rag_telemetry_registers_with_ddl_opt_in() -> None:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "setup_rag_telemetry" in listed
     assert "log_rerank_event" in listed  # WRITE is implied by unrestricted
+
+
+# --- Phase E: efficiency observations + adaptive thresholds ---------------
+
+
+from mcpg.rag_telemetry import (  # noqa: E402
+    EfficiencyObservationsSetupResult,
+    RecordEfficiencyObservationResult,
+    recommend_efficiency_thresholds,
+    record_efficiency_observation,
+    setup_efficiency_observations,
+)
+
+
+def _valid_observation_kwargs(**overrides: Any) -> dict[str, Any]:
+    base = {
+        "schema_name": "public",
+        "table_name": "embeddings",
+        "column_name": "embedding",
+        "index_name": "embeddings_hnsw_idx",
+        "backend": "hnsw",
+        "metric": "cosine",
+        "k": 10,
+        "sample_size": 30,
+        "recall_baseline": 0.95,
+        "rerank_lift_curve": [
+            {"candidate_multiplier": 1, "knob_name": "ef_search", "knob_value": 20, "recall_at_k": 0.95},
+        ],
+        "spearman": 0.92,
+        "kendall": 0.88,
+        "pages_pruned_ratio_p50": None,
+        "duration_seconds": 1.234,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_percentile_implementations_match_across_modules() -> None:
+    # Two copies of _percentile exist (mcpg.rag_efficiency,
+    # mcpg.rag_telemetry) so the dependency direction stays one-way
+    # at import time. Lock the two against drift by asserting they
+    # produce identical output for a representative grid of inputs.
+    from mcpg.rag_efficiency import _percentile as eff_pct
+    from mcpg.rag_telemetry import _percentile as tel_pct
+
+    cases: list[tuple[list[float], float]] = [
+        ([], 0.5),
+        ([1.0], 0.5),
+        ([10.0, 20.0, 30.0, 40.0], 0.0),
+        ([10.0, 20.0, 30.0, 40.0], 0.10),
+        ([10.0, 20.0, 30.0, 40.0], 0.25),
+        ([10.0, 20.0, 30.0, 40.0], 0.50),
+        ([10.0, 20.0, 30.0, 40.0], 0.75),
+        ([10.0, 20.0, 30.0, 40.0], 0.90),
+        ([10.0, 20.0, 30.0, 40.0], 1.0),
+        ([1.0, 1.0, 1.0, 1.0, 1.0], 0.5),
+        ([0.0, 0.5, 1.0], 0.3),
+        ([0.0, 0.5, 1.0], 0.7),
+    ]
+    for values, q in cases:
+        assert tel_pct(values, q) == pytest.approx(eff_pct(values, q)), (
+            f"_percentile drift: values={values}, q={q}, tel={tel_pct(values, q)}, eff={eff_pct(values, q)}"
+        )
+
+
+async def test_setup_efficiency_observations_first_run_creates_table_and_indexes() -> None:
+    db = FakeDatabase(FakeRoutingDriver({}))  # type: ignore[arg-type]
+    result = await setup_efficiency_observations(db)  # type: ignore[arg-type]
+    assert result == EfficiencyObservationsSetupResult(
+        schema_created=True,
+        table_created=True,
+        indexes_created=2,
+    )
+    # Four run_unmanaged calls: schema + table + 2 indexes.
+    assert len(db.unmanaged) == 4
+
+
+async def test_setup_efficiency_observations_idempotent_when_exists() -> None:
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_namespace WHERE nspname": [{"found": 1}],
+                "pg_class c JOIN pg_namespace": [{"found": 1}],
+            }
+        )
+    )
+    result = await setup_efficiency_observations(db)  # type: ignore[arg-type]
+    assert result.schema_created is False
+    assert result.table_created is False
+    assert result.indexes_created == 0
+
+
+async def test_record_efficiency_observation_happy_path_returns_id() -> None:
+    driver = FakeRoutingDriver({"INSERT INTO mcpg_rag.efficiency_observations": [{"observation_id": 42}]})
+    result = await record_efficiency_observation(driver, **_valid_observation_kwargs())  # type: ignore[arg-type]
+    assert result == RecordEfficiencyObservationResult(observation_id=42)
+
+
+async def test_record_efficiency_observation_marks_call_write_capable() -> None:
+    driver = FakeRoutingDriver({"INSERT INTO mcpg_rag.efficiency_observations": [{"observation_id": 1}]})
+    await record_efficiency_observation(driver, **_valid_observation_kwargs())  # type: ignore[arg-type]
+    insert_calls = [c for c in driver.calls if "INSERT INTO mcpg_rag.efficiency_observations" in c[0]]
+    assert len(insert_calls) == 1
+    _query, _params, force_readonly = insert_calls[0]
+    assert force_readonly is False
+
+
+async def test_record_efficiency_observation_rejects_invalid_k() -> None:
+    driver = FakeRoutingDriver({})
+    with pytest.raises(RagTelemetryError, match="k"):
+        await record_efficiency_observation(driver, **_valid_observation_kwargs(k=0))  # type: ignore[arg-type]
+
+
+async def test_record_efficiency_observation_rejects_non_list_curve() -> None:
+    driver = FakeRoutingDriver({})
+    bad = {"not": "a list"}
+    with pytest.raises(RagTelemetryError, match="rerank_lift_curve must be list"):
+        await record_efficiency_observation(  # type: ignore[arg-type]
+            driver, **_valid_observation_kwargs(rerank_lift_curve=bad)
+        )
+
+
+async def test_record_efficiency_observation_rejects_non_dict_extra() -> None:
+    driver = FakeRoutingDriver({})
+    with pytest.raises(RagTelemetryError, match="extra must be dict"):
+        await record_efficiency_observation(  # type: ignore[arg-type]
+            driver, **_valid_observation_kwargs(extra="not-a-dict")
+        )
+
+
+async def test_record_efficiency_observation_rejects_non_json_serialisable_extra() -> None:
+    # Mirrors the curve test — non-serialisable values inside extra
+    # surface as RagTelemetryError, not stdlib TypeError.
+    driver = FakeRoutingDriver({})
+    bad_extra = {"forbidden": {1, 2, 3}}  # set is not json-serialisable
+    with pytest.raises(RagTelemetryError, match=r"extra must be JSON-serialisable"):
+        await record_efficiency_observation(  # type: ignore[arg-type]
+            driver, **_valid_observation_kwargs(extra=bad_extra)
+        )
+
+
+async def test_record_efficiency_observation_raises_when_insert_returns_no_row() -> None:
+    # Pathological — PG returned no row from the RETURNING clause.
+    # Shouldn't happen with a valid statement, but the guard must
+    # fail loud rather than invent an observation_id.
+    driver = FakeRoutingDriver({})  # no INSERT route → empty result
+    with pytest.raises(RagTelemetryError, match="did not return observation_id"):
+        await record_efficiency_observation(driver, **_valid_observation_kwargs())  # type: ignore[arg-type]
+
+
+async def test_record_efficiency_observation_serializes_curve_as_jsonb() -> None:
+    driver = FakeRoutingDriver({"INSERT INTO mcpg_rag.efficiency_observations": [{"observation_id": 1}]})
+    await record_efficiency_observation(driver, **_valid_observation_kwargs())  # type: ignore[arg-type]
+    insert_call = next(c for c in driver.calls if "INSERT INTO mcpg_rag.efficiency_observations" in c[0])
+    _query, params, _ro = insert_call
+    assert params is not None
+    # curve is the 10th positional param (after schema/table/column/index/
+    # backend/metric/k/sample_size/recall_baseline).
+    assert "candidate_multiplier" in params[9]
+
+
+async def test_record_efficiency_observation_rejects_non_json_serialisable_curve() -> None:
+    # Symmetric to the extra-validation: a non-serialisable value
+    # inside the lift curve (datetime, custom class, …) surfaces as
+    # RagTelemetryError, not a stdlib TypeError.
+    import datetime as _dt
+
+    driver = FakeRoutingDriver({})
+    bad_curve = [{"candidate_multiplier": 1, "captured_at": _dt.datetime.now(_dt.UTC)}]
+    with pytest.raises(RagTelemetryError, match=r"rerank_lift_curve.*JSON-serialisable"):
+        await record_efficiency_observation(  # type: ignore[arg-type]
+            driver, **_valid_observation_kwargs(rerank_lift_curve=bad_curve)
+        )
+
+
+async def test_recommend_thresholds_returns_defaults_when_corpus_small() -> None:
+    # Default thresholds (from rag_efficiency module constants) when
+    # there's not enough corpus to learn from.
+    driver = FakeRoutingDriver({"FROM mcpg_rag.efficiency_observations": []})
+    result = await recommend_efficiency_thresholds(driver)  # type: ignore[arg-type]
+    assert result.derived_from_corpus is False
+    assert result.corpus_size == 0
+    # Sanity: the defaults are the values from rag_efficiency.
+    from mcpg.rag_efficiency import _THRESHOLD_PRUNING_INEFFECTIVE, _THRESHOLD_RECALL_LOW
+
+    assert result.baseline_recall_low == _THRESHOLD_RECALL_LOW
+    assert result.pruning_ineffective == _THRESHOLD_PRUNING_INEFFECTIVE
+
+
+async def test_recommend_thresholds_derives_from_corpus_at_threshold() -> None:
+    # 30 observations is the minimum; recall_baseline values span
+    # 0.5 .. 1.0, so p10 should land near 0.55.
+    rows = []
+    for i in range(30):
+        rows.append(
+            {
+                "recall_baseline": 0.5 + i / 100.0,
+                "spearman": 0.6 + i / 100.0,
+                "pages_pruned_ratio_p50": 0.1 + i / 100.0,
+            }
+        )
+    driver = FakeRoutingDriver({"FROM mcpg_rag.efficiency_observations": rows})
+    result = await recommend_efficiency_thresholds(driver)  # type: ignore[arg-type]
+    assert result.derived_from_corpus is True
+    assert result.corpus_size == 30
+    # p10 of (0.50..0.79) ≈ 0.529 — adaptive, not the 0.80 default.
+    assert 0.50 < result.baseline_recall_low < 0.60
+    assert 0.60 < result.ranking_degraded_spearman < 0.70
+    assert 0.10 < result.pruning_ineffective < 0.20
+
+
+async def test_recommend_thresholds_falls_back_per_metric_when_too_few_non_nulls() -> None:
+    # 30 rows total, but only 5 have non-null spearman → spearman
+    # threshold falls back to default, while recall + pruning are
+    # corpus-derived.
+    rows = []
+    for i in range(30):
+        rows.append(
+            {
+                "recall_baseline": 0.5 + i / 100.0,
+                "spearman": 0.5 if i < 5 else None,
+                "pages_pruned_ratio_p50": 0.1 + i / 100.0,
+            }
+        )
+    driver = FakeRoutingDriver({"FROM mcpg_rag.efficiency_observations": rows})
+    result = await recommend_efficiency_thresholds(driver)  # type: ignore[arg-type]
+    # At least one metric was adapted (recall + pruning), so the
+    # roll-up flag is True.
+    assert result.derived_from_corpus is True
+    from mcpg.rag_efficiency import _THRESHOLD_RANKING_DEGRADED_SPEARMAN
+
+    assert result.ranking_degraded_spearman == _THRESHOLD_RANKING_DEGRADED_SPEARMAN  # fallback
+    assert result.ranking_degraded_spearman_adapted is False  # per-metric flag captures the truth
+    assert result.baseline_recall_low_adapted is True
+    assert result.pruning_ineffective_adapted is True
+    assert 0.50 < result.baseline_recall_low < 0.60  # adapted
+
+
+async def test_recommend_thresholds_window_validation() -> None:
+    driver = FakeRoutingDriver({})
+    with pytest.raises(RagTelemetryError, match="days"):
+        await recommend_efficiency_thresholds(driver, days=0)  # type: ignore[arg-type]
+
+
+# --- MCP layer wiring -----------------------------------------------------
+
+
+async def test_efficiency_tools_absent_in_read_only_mode() -> None:
+    server = create_server(_READ_ONLY, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    # Read mode: only the read tool, but NOT the read tool yet because
+    # an empty events table is fine — confirm absence of the write/DDL.
+    assert "record_efficiency_observation" not in listed
+    assert "setup_efficiency_observations" not in listed
+    # recommend_efficiency_thresholds IS a read tool, available in every mode.
+    assert "recommend_efficiency_thresholds" in listed
+
+
+async def test_efficiency_write_tool_registers_in_unrestricted() -> None:
+    server = create_server(_UNRESTRICTED, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "record_efficiency_observation" in listed
+    # DDL still absent without MCPG_ALLOW_DDL
+    assert "setup_efficiency_observations" not in listed
+
+
+async def test_efficiency_setup_tool_registers_with_ddl_opt_in() -> None:
+    server = create_server(_DDL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "setup_efficiency_observations" in listed
