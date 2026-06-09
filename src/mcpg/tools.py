@@ -791,8 +791,8 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
             "confirms the bi-encoder order. Optional ``model`` / "
             "``retrieval_index`` filters. Surfaces ``reranker_idle`` "
             "(WARNING) when the reranker rarely changes ordering. Reads "
-            "from mcpg_rag.rerank_events; returns empty when the table "
-            "doesn't exist."
+            "from mcpg_rag.rerank_events; returns a report with zero "
+            "counts when the table doesn't exist or the window is empty."
         ),
     )
     async def analyze_reranker_lift(
@@ -813,7 +813,9 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
             "per query, aggregated. High mean Jaccard means the reranker "
             "isn't actually changing the top-K membership. Surfaces "
             "``topk_stable`` (WARNING) when the rerank is barely earning "
-            "its place at this K. Reads from mcpg_rag.rerank_events."
+            "its place at this K. Reads from mcpg_rag.rerank_events; returns a "
+            "report with zero counts when the table doesn't exist or the "
+            "window is empty."
         ),
     )
     async def analyze_topk_stability(
@@ -842,10 +844,15 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
         ctx: _Ctx,
         days: int = 7,
         model: str | None = None,
+        retrieval_index: str | None = None,
         n_buckets: int = 20,
     ) -> dict[str, Any]:
         report = await rag_efficiency.analyze_rerank_score_distribution(
-            _driver(ctx), days=days, model=model, n_buckets=n_buckets
+            _driver(ctx),
+            days=days,
+            model=model,
+            retrieval_index=retrieval_index,
+            n_buckets=n_buckets,
         )
         return asdict(report)
 

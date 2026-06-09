@@ -1154,6 +1154,7 @@ class TopKStabilityReport:
 class RerankScoreDistributionReport:
     window_days: int
     model: str | None
+    retrieval_index: str | None
     event_count: int
     histogram: list[int]
     bucket_edges: list[float]
@@ -1228,6 +1229,25 @@ def _build_where_and_params(
     return " AND ".join(parts), params
 
 
+def _normalize_query_hash(value: Any) -> bytes:
+    """Coerce a query_hash cell value into a stable ``bytes`` key.
+
+    psycopg returns BYTEA as ``bytes`` / ``bytearray`` / ``memoryview``
+    by default, but a few driver / serialiser combinations hand back
+    a hex- or base64-encoded ``str``. ``bytes(str_obj)`` would raise
+    ``TypeError`` in that case, so encode through UTF-8 instead — the
+    resulting bytes are still a stable group key, which is all the
+    aggregations need.
+    """
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    return bytes(value)  # last-resort fallthrough for anything buffer-shaped
+
+
 async def _events_table_exists(driver: SqlDriver) -> bool:
     rows = await driver.execute_query(
         "SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -1278,7 +1298,7 @@ async def analyze_reranker_lift(
     rows = await driver.execute_query(sql, params=params, force_readonly=True)
     per_query: dict[bytes, list[tuple[int, int]]] = {}
     for row in rows or []:
-        per_query.setdefault(bytes(row.cells["query_hash"]), []).append(
+        per_query.setdefault(_normalize_query_hash(row.cells["query_hash"]), []).append(
             (int(row.cells["bi_encoder_rank"]), int(row.cells["cross_encoder_rank"]))
         )
     spearmans: list[float] = []
@@ -1379,7 +1399,7 @@ async def analyze_topk_stability(
     rows = await driver.execute_query(sql, params=params, force_readonly=True)
     per_query: dict[bytes, list[tuple[int, int, int]]] = {}
     for row in rows or []:
-        per_query.setdefault(bytes(row.cells["query_hash"]), []).append(
+        per_query.setdefault(_normalize_query_hash(row.cells["query_hash"]), []).append(
             (
                 int(row.cells["candidate_id"]),
                 int(row.cells["bi_encoder_rank"]),
@@ -1442,6 +1462,7 @@ async def analyze_rerank_score_distribution(
     *,
     days: int = _DEFAULT_WINDOW_DAYS,
     model: str | None = None,
+    retrieval_index: str | None = None,
     n_buckets: int = 20,
 ) -> RerankScoreDistributionReport:
     """Histogram of cross_encoder_score values + top-decile share.
@@ -1452,18 +1473,20 @@ async def analyze_rerank_score_distribution(
     """
     _validate_window(days)
     _validate_optional_text("model", model)
+    _validate_optional_text("retrieval_index", retrieval_index)
     if not isinstance(n_buckets, int) or isinstance(n_buckets, bool) or n_buckets <= 0 or n_buckets > 100:
         raise VectorEfficiencyError(f"n_buckets must be an int in [1..100]; got {n_buckets!r}")
     if not await _events_table_exists(driver):
         return RerankScoreDistributionReport(
             window_days=days,
             model=model,
+            retrieval_index=retrieval_index,
             event_count=0,
             histogram=[0] * n_buckets,
             bucket_edges=[],
             top_decile_share=0.0,
         )
-    where_sql, params = _build_where_and_params(days, model, None)
+    where_sql, params = _build_where_and_params(days, model, retrieval_index)
     sql = f"SELECT cross_encoder_score AS score FROM mcpg_rag.rerank_events WHERE {where_sql} ORDER BY score"
     rows = await driver.execute_query(sql, params=params, force_readonly=True)
     values = [float(row.cells["score"]) for row in rows or []]
@@ -1471,6 +1494,7 @@ async def analyze_rerank_score_distribution(
         return RerankScoreDistributionReport(
             window_days=days,
             model=model,
+            retrieval_index=retrieval_index,
             event_count=0,
             histogram=[0] * n_buckets,
             bucket_edges=[],
@@ -1505,6 +1529,7 @@ async def analyze_rerank_score_distribution(
     return RerankScoreDistributionReport(
         window_days=days,
         model=model,
+        retrieval_index=retrieval_index,
         event_count=len(values),
         histogram=histogram,
         bucket_edges=edges,
@@ -1551,18 +1576,22 @@ async def analyze_rerank_ndcg(
         f"FROM mcpg_rag.rerank_events WHERE {where_sql}"
     )
     rows = await driver.execute_query(sql, params=params, force_readonly=True)
-    per_query: dict[bytes, list[tuple[int, int, int]]] = {}
+    # Grade kept as ``float`` — _ndcg_at_k handles both int and float
+    # grades natively, and the SMALLINT column can be widened to a
+    # graded scale (0..4, or fractional probabilities) in the future
+    # without an int-truncation surprise.
+    per_query: dict[bytes, list[tuple[int, int, float]]] = {}
     for row in rows or []:
         grade = row.cells.get("ground_truth_relevance")
         if grade is None:
             # WHERE clause filters NULL grades, but defensively skip
             # any that slip through (e.g. drivers that don't apply WHERE).
             continue
-        per_query.setdefault(bytes(row.cells["query_hash"]), []).append(
+        per_query.setdefault(_normalize_query_hash(row.cells["query_hash"]), []).append(
             (
                 int(row.cells["bi_encoder_rank"]),
                 int(row.cells["cross_encoder_rank"]),
-                int(grade),
+                float(grade),
             )
         )
     bi_scores: list[float] = []
@@ -1653,7 +1682,7 @@ async def recommend_rerank_strategy(
     _validate_optional_text("retrieval_index", retrieval_index)
     lift = await analyze_reranker_lift(driver, days=days, retrieval_index=retrieval_index)
     stability = await analyze_topk_stability(driver, days=days, retrieval_index=retrieval_index)
-    distribution = await analyze_rerank_score_distribution(driver, days=days)
+    distribution = await analyze_rerank_score_distribution(driver, days=days, retrieval_index=retrieval_index)
     ndcg = await analyze_rerank_ndcg(driver, days=days, retrieval_index=retrieval_index)
 
     findings: list[VectorEfficiencyFinding] = []

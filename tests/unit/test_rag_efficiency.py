@@ -708,6 +708,29 @@ async def test_analyze_rerank_score_distribution_fires_on_top_decile_clustering(
     assert any(f.code == "score_clustering" for f in report.findings)
 
 
+async def test_analyze_rerank_score_distribution_carries_retrieval_index_filter() -> None:
+    # Regression for gemini's PR #81 finding: the analytic must
+    # accept ``retrieval_index`` and surface it on the report so a
+    # caller scoping by index gets per-pipeline metrics.
+    from mcpg.rag_efficiency import analyze_rerank_score_distribution
+
+    driver = FakeRoutingDriver(
+        {
+            _NO_EVENTS_TABLE: [{"present": 1}],
+            "FROM mcpg_rag.rerank_events": [{"score": 0.5}],
+        }
+    )
+    report = await analyze_rerank_score_distribution(
+        driver,  # type: ignore[arg-type]
+        retrieval_index="public.embeddings_hnsw_idx",
+    )
+    assert report.retrieval_index == "public.embeddings_hnsw_idx"
+    # And the SQL must have carried the filter as a bound param.
+    rel_call = next(c for c in driver.calls if "FROM mcpg_rag.rerank_events" in c[0])
+    _query, params, _ro = rel_call
+    assert "public.embeddings_hnsw_idx" in (params or [])
+
+
 async def test_analyze_rerank_ndcg_fires_hurts_when_cross_order_is_worse() -> None:
     from mcpg.rag_efficiency import analyze_rerank_ndcg
 
