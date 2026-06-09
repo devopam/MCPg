@@ -1,3 +1,6 @@
+
+
+
 # MCPg
 
 **A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
@@ -6,12 +9,22 @@ tune a Postgres database — over 100 tools spanning catalog introspection,
 query intelligence, natural-language SQL, structural diffs, hybrid search,
 graph queries, data movement, live ops, and more.
 
+
 [![PyPI version](https://img.shields.io/pypi/v/mcpg.svg)](https://pypi.org/project/mcpg/)
 [![Python versions](https://img.shields.io/pypi/pyversions/mcpg.svg)](https://pypi.org/project/mcpg/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/devopam/MCPg/blob/main/LICENSE)
 [![CI](https://github.com/devopam/MCPg/actions/workflows/ci.yml/badge.svg)](https://github.com/devopam/MCPg/actions/workflows/ci.yml)
+[![Stars](https://img.shields.io/github/stars/devopam/MCPg)](https://github.com/devopam/MCPg)
 
 ---
+
+| Aspect              | MCPg                              |
+|---------------------|-----------------------------------|
+| Safety              | Read-only default + AST validation |
+| Transport           | stdio + HTTP/SSE                  |
+| Install             | `pip install mcpg`                |
+| Postgres Versions   | 14–18                             |
+| Key Differentiator  | Production observability + multi-tenancy |
 
 ## Why MCPg
 
@@ -45,6 +58,11 @@ graph queries, data movement, live ops, and more.
   covers PG **14, 15, 16, 17, 18** on every push.
 
 ---
+
+### Featured In
+- mcp.so  
+- mcpservers.org  
+- Official MCP Registry (coming soon)
 
 ## Install
 
