@@ -451,13 +451,15 @@ instrumentation; rerank second because it needs a schema and adoption.
   validators — same pattern as TQ-4's `concurrently`.
 - Branch: `claude/rag3-rerank-schema`.
 
-### Phase D — Design 2 analytics + advisor + audit hook (1 PR)
+### Phase D — Design 2 analytics + advisor + audit hook ✅ shipped
 
-- The four analytics tools + `recommend_rerank_strategy` +
-  `audit_rag_pipeline`.
-- Tests: fixture DBs with synthetic events covering each rule
-  code; audit-database integration end-to-end; empty-table
-  graceful path.
+- Four analytics tools + `recommend_rerank_strategy` +
+  `audit_rag_pipeline` category in `audit_database`.
+- Five rule codes: `reranker_idle`, `topk_stable`,
+  `score_clustering`, `rerank_hurts_ndcg`, `rerank_lifts_ndcg`.
+- Pure-Python `_jaccard`, `_ndcg_at_k`, `_histogram` helpers added
+  to `mcpg.rag_efficiency` alongside the existing Spearman /
+  Kendall / percentile helpers from Phase A.
 - Branch: `claude/rag4-rerank-analytics`.
 
 ### Phase E — adaptive thresholds (future, optional)

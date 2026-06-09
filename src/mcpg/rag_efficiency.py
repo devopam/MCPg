@@ -1045,3 +1045,729 @@ async def audit_vector_indexes(driver: SqlDriver) -> Any:
         score=score,
         metrics=metrics,
     )
+
+
+# --- RAG-D: reranker analytics --------------------------------------------
+#
+# Reads from mcpg_rag.rerank_events (the schema shipped in RAG-C) and
+# produces five analytics + a roll-up advisor + an audit category. All
+# the heavy stats run in pure Python on rows pulled with a single
+# query per analytic — no pushed-down aggregations beyond filtering.
+
+# Thresholds — gathered here so the future Phase E adaptive-thresholds
+# framework can override them in one place.
+_THRESHOLD_RERANKER_IDLE_KENDALL = 0.85
+_THRESHOLD_TOPK_STABLE_JACCARD = 0.90
+_THRESHOLD_SCORE_CLUSTERING_TOP_DECILE = 0.50
+_THRESHOLD_NDCG_HURTS_DELTA = -0.02
+_THRESHOLD_NDCG_LIFTS_DELTA = 0.05
+
+# Default analysis window — matches the plan's "last 7 days" framing.
+_DEFAULT_WINDOW_DAYS = 7
+
+
+def _jaccard(a: list[Any], b: list[Any]) -> float:
+    """Set-overlap Jaccard: |A inter B| / |A union B|.
+
+    Returns 0.0 when both sides are empty (rather than a NaN).
+    """
+    sa, sb = set(a), set(b)
+    union = sa | sb
+    if not union:
+        return 0.0
+    return len(sa & sb) / len(union)
+
+
+def _ndcg_at_k(grades: list[float], k: int) -> float:
+    """NDCG@k from a list of relevance grades in *display order*.
+
+    ``grades[0]`` is the grade of the item ranked 1, ``grades[1]`` of
+    item ranked 2, and so on. Returns 0.0 when the ideal DCG is zero
+    (all grades zero) so the metric stays in ``[0, 1]`` for callers.
+    """
+    if k <= 0 or not grades:
+        return 0.0
+    cut = grades[:k]
+    dcg = sum(g / math.log2(i + 2) for i, g in enumerate(cut))
+    ideal = sorted(grades, reverse=True)[:k]
+    idcg = sum(g / math.log2(i + 2) for i, g in enumerate(ideal))
+    if idcg <= 0:
+        return 0.0
+    return dcg / idcg
+
+
+def _histogram(values: list[float], n_buckets: int = 20) -> list[int]:
+    """Equal-width histogram. Returns a list of ``n_buckets`` counts.
+
+    The last bucket includes the max value (inclusive on both edges).
+    """
+    if n_buckets <= 0 or not values:
+        return [0] * max(n_buckets, 0)
+    lo, hi = min(values), max(values)
+    if hi == lo:
+        # All values identical → everything in the last bucket so the
+        # caller's "top-decile share" computation still works.
+        out = [0] * n_buckets
+        out[-1] = len(values)
+        return out
+    width = (hi - lo) / n_buckets
+    counts = [0] * n_buckets
+    for v in values:
+        idx = int((v - lo) / width)
+        if idx >= n_buckets:
+            idx = n_buckets - 1
+        counts[idx] += 1
+    return counts
+
+
+# --- dataclasses ----------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class RerankerLiftReport:
+    window_days: int
+    model: str | None
+    retrieval_index: str | None
+    query_count: int
+    mean_spearman: float
+    mean_kendall: float
+    p25_spearman: float
+    p75_spearman: float
+    interpretation: str  # "reranker actively reorders" / "reranker mostly confirms"
+    findings: list[VectorEfficiencyFinding] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class TopKStabilityReport:
+    window_days: int
+    k: int
+    model: str | None
+    retrieval_index: str | None
+    query_count: int
+    mean_jaccard: float
+    p25_jaccard: float
+    p75_jaccard: float
+    findings: list[VectorEfficiencyFinding] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class RerankScoreDistributionReport:
+    window_days: int
+    model: str | None
+    retrieval_index: str | None
+    event_count: int
+    histogram: list[int]
+    bucket_edges: list[float]
+    top_decile_share: float
+    findings: list[VectorEfficiencyFinding] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class NDCGReport:
+    window_days: int
+    k: int
+    model: str | None
+    retrieval_index: str | None
+    labeled_query_count: int
+    ndcg_at_k_under_bi_order: float
+    ndcg_at_k_under_cross_order: float
+    delta: float  # cross - bi
+    findings: list[VectorEfficiencyFinding] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class RerankRecommendation:
+    """Roll-up advisor — pulls in the four analytics and picks the
+    most actionable finding for the window."""
+
+    window_days: int
+    retrieval_index: str | None
+    summary: str
+    findings: list[VectorEfficiencyFinding]
+
+
+# --- shared SQL fragment + helpers ----------------------------------------
+
+
+def _validate_optional_text(name: str, value: str | None) -> None:
+    if value is None:
+        return
+    if not isinstance(value, str) or not value:
+        raise VectorEfficiencyError(f"{name} must be a non-empty string or None; got {value!r}")
+
+
+def _validate_window(days: int) -> None:
+    if not isinstance(days, int) or isinstance(days, bool) or days <= 0 or days > 365:
+        raise VectorEfficiencyError(f"window days must be an int in [1..365]; got {days!r}")
+
+
+def _validate_k(k: int) -> None:
+    if not isinstance(k, int) or isinstance(k, bool) or k <= 0 or k > 1000:
+        raise VectorEfficiencyError(f"k must be an int in [1..1000]; got {k!r}")
+
+
+def _build_where_and_params(
+    days: int, model: str | None, retrieval_index: str | None, *, require_labeled: bool = False
+) -> tuple[str, list[Any]]:
+    """Compose the WHERE clause + params for an analytics query.
+
+    Window goes first (always present); model + retrieval_index are
+    optional. ``require_labeled`` adds the
+    ``ground_truth_relevance IS NOT NULL`` predicate the NDCG analytic
+    needs.
+    """
+    parts = ["occurred_at >= now() - make_interval(days => %s)"]
+    params: list[Any] = [days]
+    if model is not None:
+        parts.append("reranker_model = %s")
+        params.append(model)
+    if retrieval_index is not None:
+        parts.append("retrieval_index = %s")
+        params.append(retrieval_index)
+    if require_labeled:
+        parts.append("ground_truth_relevance IS NOT NULL")
+    return " AND ".join(parts), params
+
+
+def _normalize_query_hash(value: Any) -> bytes:
+    """Coerce a query_hash cell value into a stable ``bytes`` key.
+
+    psycopg returns BYTEA as ``bytes`` / ``bytearray`` / ``memoryview``
+    by default, but a few driver / serialiser combinations hand back
+    a hex- or base64-encoded ``str``. ``bytes(str_obj)`` would raise
+    ``TypeError`` in that case, so encode through UTF-8 instead — the
+    resulting bytes are still a stable group key, which is all the
+    aggregations need.
+    """
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    return bytes(value)  # last-resort fallthrough for anything buffer-shaped
+
+
+async def _events_table_exists(driver: SqlDriver) -> bool:
+    rows = await driver.execute_query(
+        "SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = 'mcpg_rag' AND c.relname = 'rerank_events' AND c.relkind = 'r'",
+        force_readonly=True,
+    )
+    return bool(rows)
+
+
+# --- analyze_reranker_lift ------------------------------------------------
+
+
+async def analyze_reranker_lift(
+    driver: SqlDriver,
+    *,
+    days: int = _DEFAULT_WINDOW_DAYS,
+    model: str | None = None,
+    retrieval_index: str | None = None,
+) -> RerankerLiftReport:
+    """Per-query Spearman + Kendall correlation between bi and cross ranks.
+
+    Aggregated across queries in the window. Low correlation = the
+    reranker is actively reordering (doing real work). High
+    correlation = the reranker mostly confirms the bi-encoder order
+    (its compute is being spent).
+    """
+    _validate_window(days)
+    _validate_optional_text("model", model)
+    _validate_optional_text("retrieval_index", retrieval_index)
+    if not await _events_table_exists(driver):
+        return RerankerLiftReport(
+            window_days=days,
+            model=model,
+            retrieval_index=retrieval_index,
+            query_count=0,
+            mean_spearman=0.0,
+            mean_kendall=0.0,
+            p25_spearman=0.0,
+            p75_spearman=0.0,
+            interpretation="no events table",
+        )
+    where_sql, params = _build_where_and_params(days, model, retrieval_index)
+    sql = (
+        "SELECT query_hash, bi_encoder_rank, cross_encoder_rank "
+        f"FROM mcpg_rag.rerank_events WHERE {where_sql} "
+        "ORDER BY query_hash, bi_encoder_rank"
+    )
+    rows = await driver.execute_query(sql, params=params, force_readonly=True)
+    per_query: dict[bytes, list[tuple[int, int]]] = {}
+    for row in rows or []:
+        per_query.setdefault(_normalize_query_hash(row.cells["query_hash"]), []).append(
+            (int(row.cells["bi_encoder_rank"]), int(row.cells["cross_encoder_rank"]))
+        )
+    spearmans: list[float] = []
+    kendalls: list[float] = []
+    for pairs in per_query.values():
+        if len(pairs) < 2:
+            continue
+        xs = [float(p[0]) for p in pairs]
+        ys = [float(p[1]) for p in pairs]
+        spearmans.append(_spearman(xs, ys))
+        kendalls.append(_kendall_tau(xs, ys))
+    if not spearmans:
+        return RerankerLiftReport(
+            window_days=days,
+            model=model,
+            retrieval_index=retrieval_index,
+            query_count=0,
+            mean_spearman=0.0,
+            mean_kendall=0.0,
+            p25_spearman=0.0,
+            p75_spearman=0.0,
+            interpretation="insufficient data",
+        )
+    mean_spearman = sum(spearmans) / len(spearmans)
+    mean_kendall = sum(kendalls) / len(kendalls)
+    p25 = _percentile(spearmans, 0.25)
+    p75 = _percentile(spearmans, 0.75)
+    findings: list[VectorEfficiencyFinding] = []
+    if mean_kendall > _THRESHOLD_RERANKER_IDLE_KENDALL:
+        findings.append(
+            VectorEfficiencyFinding(
+                code="reranker_idle",
+                severity="WARNING",
+                evidence=(
+                    f"mean Kendall tau={mean_kendall:.3f} > {_THRESHOLD_RERANKER_IDLE_KENDALL} — the reranker "
+                    f"rarely changes ordering across {len(spearmans)} queries."
+                ),
+                suggested_action=(
+                    "Consider skipping the reranker at this K and saving the latency. Likely candidates: "
+                    "shorter inputs, simple lookups, queries where bi-encoder confidence is already high."
+                ),
+            )
+        )
+    interpretation = (
+        "reranker mostly confirms" if mean_kendall > _THRESHOLD_RERANKER_IDLE_KENDALL else "reranker actively reorders"
+    )
+    return RerankerLiftReport(
+        window_days=days,
+        model=model,
+        retrieval_index=retrieval_index,
+        query_count=len(spearmans),
+        mean_spearman=mean_spearman,
+        mean_kendall=mean_kendall,
+        p25_spearman=p25,
+        p75_spearman=p75,
+        interpretation=interpretation,
+        findings=findings,
+    )
+
+
+# --- analyze_topk_stability -----------------------------------------------
+
+
+async def analyze_topk_stability(
+    driver: SqlDriver,
+    *,
+    days: int = _DEFAULT_WINDOW_DAYS,
+    k: int = 10,
+    model: str | None = None,
+    retrieval_index: str | None = None,
+) -> TopKStabilityReport:
+    """Jaccard overlap between top-K-by-bi-rank and top-K-by-cross-rank.
+
+    High mean Jaccard means the reranker isn't actually changing the
+    top-K membership — the same items are returned, just in a
+    different order.
+    """
+    _validate_window(days)
+    _validate_k(k)
+    _validate_optional_text("model", model)
+    _validate_optional_text("retrieval_index", retrieval_index)
+    if not await _events_table_exists(driver):
+        return TopKStabilityReport(
+            window_days=days,
+            k=k,
+            model=model,
+            retrieval_index=retrieval_index,
+            query_count=0,
+            mean_jaccard=0.0,
+            p25_jaccard=0.0,
+            p75_jaccard=0.0,
+        )
+    where_sql, params = _build_where_and_params(days, model, retrieval_index)
+    sql = (
+        "SELECT query_hash, candidate_id, bi_encoder_rank, cross_encoder_rank "
+        f"FROM mcpg_rag.rerank_events WHERE {where_sql}"
+    )
+    rows = await driver.execute_query(sql, params=params, force_readonly=True)
+    per_query: dict[bytes, list[tuple[int, int, int]]] = {}
+    for row in rows or []:
+        per_query.setdefault(_normalize_query_hash(row.cells["query_hash"]), []).append(
+            (
+                int(row.cells["candidate_id"]),
+                int(row.cells["bi_encoder_rank"]),
+                int(row.cells["cross_encoder_rank"]),
+            )
+        )
+    jaccards: list[float] = []
+    for items in per_query.values():
+        top_bi = [c for c, b, _ in sorted(items, key=lambda t: t[1])[:k]]
+        top_cross = [c for c, _, x in sorted(items, key=lambda t: t[2])[:k]]
+        jaccards.append(_jaccard(top_bi, top_cross))
+    if not jaccards:
+        return TopKStabilityReport(
+            window_days=days,
+            k=k,
+            model=model,
+            retrieval_index=retrieval_index,
+            query_count=0,
+            mean_jaccard=0.0,
+            p25_jaccard=0.0,
+            p75_jaccard=0.0,
+        )
+    mean = sum(jaccards) / len(jaccards)
+    p25 = _percentile(jaccards, 0.25)
+    p75 = _percentile(jaccards, 0.75)
+    findings: list[VectorEfficiencyFinding] = []
+    if mean > _THRESHOLD_TOPK_STABLE_JACCARD:
+        findings.append(
+            VectorEfficiencyFinding(
+                code="topk_stable",
+                severity="WARNING",
+                evidence=(
+                    f"mean Jaccard={mean:.3f} > {_THRESHOLD_TOPK_STABLE_JACCARD} at k={k}: the same items appear "
+                    f"in the top-{k} before and after rerank across {len(jaccards)} queries."
+                ),
+                suggested_action=(
+                    "Rerank is barely earning its place at this K. Skip the reranker for queries you can pre-"
+                    "classify as 'easy', or shrink K so the reranker has fewer no-ops."
+                ),
+            )
+        )
+    return TopKStabilityReport(
+        window_days=days,
+        k=k,
+        model=model,
+        retrieval_index=retrieval_index,
+        query_count=len(jaccards),
+        mean_jaccard=mean,
+        p25_jaccard=p25,
+        p75_jaccard=p75,
+        findings=findings,
+    )
+
+
+# --- analyze_rerank_score_distribution ------------------------------------
+
+
+async def analyze_rerank_score_distribution(
+    driver: SqlDriver,
+    *,
+    days: int = _DEFAULT_WINDOW_DAYS,
+    model: str | None = None,
+    retrieval_index: str | None = None,
+    n_buckets: int = 20,
+) -> RerankScoreDistributionReport:
+    """Histogram of cross_encoder_score values + top-decile share.
+
+    Clustering at the top of the range is a known failure mode for
+    some commercial rerankers (e.g. half the scores all fall in
+    [0.9, 1.0]) — they're not discriminating.
+    """
+    _validate_window(days)
+    _validate_optional_text("model", model)
+    _validate_optional_text("retrieval_index", retrieval_index)
+    if not isinstance(n_buckets, int) or isinstance(n_buckets, bool) or n_buckets <= 0 or n_buckets > 100:
+        raise VectorEfficiencyError(f"n_buckets must be an int in [1..100]; got {n_buckets!r}")
+    if not await _events_table_exists(driver):
+        return RerankScoreDistributionReport(
+            window_days=days,
+            model=model,
+            retrieval_index=retrieval_index,
+            event_count=0,
+            histogram=[0] * n_buckets,
+            bucket_edges=[],
+            top_decile_share=0.0,
+        )
+    where_sql, params = _build_where_and_params(days, model, retrieval_index)
+    sql = f"SELECT cross_encoder_score AS score FROM mcpg_rag.rerank_events WHERE {where_sql} ORDER BY score"
+    rows = await driver.execute_query(sql, params=params, force_readonly=True)
+    values = [float(row.cells["score"]) for row in rows or []]
+    if not values:
+        return RerankScoreDistributionReport(
+            window_days=days,
+            model=model,
+            retrieval_index=retrieval_index,
+            event_count=0,
+            histogram=[0] * n_buckets,
+            bucket_edges=[],
+            top_decile_share=0.0,
+        )
+    histogram = _histogram(values, n_buckets)
+    lo, hi = min(values), max(values)
+    # Bucket edges: n_buckets+1 numbers from lo to hi.
+    width = (hi - lo) / n_buckets if hi != lo else 0.0
+    edges = [lo + i * width for i in range(n_buckets + 1)]
+    # Top decile (last 10% of buckets) — for n_buckets=20 that's the
+    # last 2 buckets.
+    top_decile_count = sum(histogram[-max(1, n_buckets // 10) :])
+    top_decile_share = top_decile_count / len(values)
+    findings: list[VectorEfficiencyFinding] = []
+    if top_decile_share > _THRESHOLD_SCORE_CLUSTERING_TOP_DECILE:
+        findings.append(
+            VectorEfficiencyFinding(
+                code="score_clustering",
+                severity="WARNING",
+                evidence=(
+                    f"{top_decile_share:.0%} of rerank scores fall in the top decile of the range — the "
+                    "reranker isn't discriminating. Common with some commercial models when inputs are "
+                    "too short or too similar."
+                ),
+                suggested_action=(
+                    "Try a different reranker model, calibrate the scores (e.g. Platt scaling on a labeled "
+                    "set), or feed longer/more distinctive inputs."
+                ),
+            )
+        )
+    return RerankScoreDistributionReport(
+        window_days=days,
+        model=model,
+        retrieval_index=retrieval_index,
+        event_count=len(values),
+        histogram=histogram,
+        bucket_edges=edges,
+        top_decile_share=top_decile_share,
+        findings=findings,
+    )
+
+
+# --- analyze_rerank_ndcg --------------------------------------------------
+
+
+async def analyze_rerank_ndcg(
+    driver: SqlDriver,
+    *,
+    days: int = _DEFAULT_WINDOW_DAYS,
+    k: int = 10,
+    model: str | None = None,
+    retrieval_index: str | None = None,
+) -> NDCGReport:
+    """NDCG@k under bi-encoder ordering vs cross-encoder ordering.
+
+    Gated on ``ground_truth_relevance IS NOT NULL`` — only labeled
+    rows count. The delta (cross - bi) is the actual lift the
+    reranker provides on labeled data.
+    """
+    _validate_window(days)
+    _validate_k(k)
+    _validate_optional_text("model", model)
+    _validate_optional_text("retrieval_index", retrieval_index)
+    if not await _events_table_exists(driver):
+        return NDCGReport(
+            window_days=days,
+            k=k,
+            model=model,
+            retrieval_index=retrieval_index,
+            labeled_query_count=0,
+            ndcg_at_k_under_bi_order=0.0,
+            ndcg_at_k_under_cross_order=0.0,
+            delta=0.0,
+        )
+    where_sql, params = _build_where_and_params(days, model, retrieval_index, require_labeled=True)
+    sql = (
+        "SELECT query_hash, bi_encoder_rank, cross_encoder_rank, ground_truth_relevance "
+        f"FROM mcpg_rag.rerank_events WHERE {where_sql}"
+    )
+    rows = await driver.execute_query(sql, params=params, force_readonly=True)
+    # Grade kept as ``float`` — _ndcg_at_k handles both int and float
+    # grades natively, and the SMALLINT column can be widened to a
+    # graded scale (0..4, or fractional probabilities) in the future
+    # without an int-truncation surprise.
+    per_query: dict[bytes, list[tuple[int, int, float]]] = {}
+    for row in rows or []:
+        grade = row.cells.get("ground_truth_relevance")
+        if grade is None:
+            # WHERE clause filters NULL grades, but defensively skip
+            # any that slip through (e.g. drivers that don't apply WHERE).
+            continue
+        per_query.setdefault(_normalize_query_hash(row.cells["query_hash"]), []).append(
+            (
+                int(row.cells["bi_encoder_rank"]),
+                int(row.cells["cross_encoder_rank"]),
+                float(grade),
+            )
+        )
+    bi_scores: list[float] = []
+    cross_scores: list[float] = []
+    for items in per_query.values():
+        # Grades in bi-rank order:
+        bi_order = sorted(items, key=lambda t: t[0])
+        bi_grades = [float(g) for _, _, g in bi_order]
+        cross_order = sorted(items, key=lambda t: t[1])
+        cross_grades = [float(g) for _, _, g in cross_order]
+        bi_scores.append(_ndcg_at_k(bi_grades, k))
+        cross_scores.append(_ndcg_at_k(cross_grades, k))
+    if not bi_scores:
+        return NDCGReport(
+            window_days=days,
+            k=k,
+            model=model,
+            retrieval_index=retrieval_index,
+            labeled_query_count=0,
+            ndcg_at_k_under_bi_order=0.0,
+            ndcg_at_k_under_cross_order=0.0,
+            delta=0.0,
+        )
+    bi_mean = sum(bi_scores) / len(bi_scores)
+    cross_mean = sum(cross_scores) / len(cross_scores)
+    delta = cross_mean - bi_mean
+    findings: list[VectorEfficiencyFinding] = []
+    if delta < _THRESHOLD_NDCG_HURTS_DELTA:
+        findings.append(
+            VectorEfficiencyFinding(
+                code="rerank_hurts_ndcg",
+                severity="CRITICAL",
+                evidence=(
+                    f"NDCG@{k} drops by {delta:.3f} (bi={bi_mean:.3f} → cross={cross_mean:.3f}) across "
+                    f"{len(bi_scores)} labeled queries. The reranker is making it worse."
+                ),
+                suggested_action=(
+                    "Investigate model/version/prompt regression on labeled traffic. Roll back the most "
+                    "recent reranker change or A/B the current model against a known-good baseline."
+                ),
+            )
+        )
+    elif delta > _THRESHOLD_NDCG_LIFTS_DELTA:
+        findings.append(
+            VectorEfficiencyFinding(
+                code="rerank_lifts_ndcg",
+                severity="GOOD",
+                evidence=(
+                    f"NDCG@{k} lifts by {delta:.3f} (bi={bi_mean:.3f} → cross={cross_mean:.3f}) across "
+                    f"{len(bi_scores)} labeled queries. The reranker is doing real work."
+                ),
+                suggested_action="No change needed — track this baseline to detect drift.",
+            )
+        )
+    return NDCGReport(
+        window_days=days,
+        k=k,
+        model=model,
+        retrieval_index=retrieval_index,
+        labeled_query_count=len(bi_scores),
+        ndcg_at_k_under_bi_order=bi_mean,
+        ndcg_at_k_under_cross_order=cross_mean,
+        delta=delta,
+        findings=findings,
+    )
+
+
+# --- recommend_rerank_strategy --------------------------------------------
+
+
+async def recommend_rerank_strategy(
+    driver: SqlDriver,
+    *,
+    days: int = _DEFAULT_WINDOW_DAYS,
+    retrieval_index: str | None = None,
+) -> RerankRecommendation:
+    """Roll-up advisor over the four analytics for one window.
+
+    Returns a single recommendation built from whichever finding has
+    the most actionable signal. The plan calls out three end-states:
+
+    * Reranker is theatre (topk_stable + reranker_idle both fire).
+    * Reranker is hurting (rerank_hurts_ndcg fires).
+    * Reranker is critical / healthy (rerank_lifts_ndcg + no
+      stability findings).
+    """
+    _validate_window(days)
+    _validate_optional_text("retrieval_index", retrieval_index)
+    lift = await analyze_reranker_lift(driver, days=days, retrieval_index=retrieval_index)
+    stability = await analyze_topk_stability(driver, days=days, retrieval_index=retrieval_index)
+    distribution = await analyze_rerank_score_distribution(driver, days=days, retrieval_index=retrieval_index)
+    ndcg = await analyze_rerank_ndcg(driver, days=days, retrieval_index=retrieval_index)
+
+    findings: list[VectorEfficiencyFinding] = []
+    findings.extend(lift.findings)
+    findings.extend(stability.findings)
+    findings.extend(distribution.findings)
+    findings.extend(ndcg.findings)
+
+    # Pick the headline message based on which combination fired.
+    codes = {f.code for f in findings}
+    if "rerank_hurts_ndcg" in codes:
+        summary = "Reranker is making NDCG worse on labeled data — investigate immediately."
+    elif "reranker_idle" in codes and "topk_stable" in codes:
+        summary = (
+            "Reranker is theatre at this K — top-K is stable and ranks are mostly preserved. "
+            "Consider skipping the reranker for queries you can pre-classify as easy."
+        )
+    elif "rerank_lifts_ndcg" in codes:
+        summary = "Reranker is doing real work — NDCG lift is significant. Keep it."
+    elif "score_clustering" in codes:
+        summary = "Reranker scores cluster at the top of the range — not discriminating. Calibrate or switch model."
+    elif not findings:
+        summary = "No actionable findings in this window — reranker pipeline looks healthy."
+    else:
+        summary = "Mixed signals — review the individual analytics."
+
+    return RerankRecommendation(
+        window_days=days,
+        retrieval_index=retrieval_index,
+        summary=summary,
+        findings=findings,
+    )
+
+
+# --- audit_rag_pipeline ---------------------------------------------------
+
+
+async def audit_rag_pipeline(driver: SqlDriver) -> Any:
+    """Scorecard adapter for the RAG reranker pipeline.
+
+    Returns ``None`` when ``mcpg_rag.rerank_events`` doesn't exist
+    (the common case until the caller opts in by running
+    ``setup_rag_telemetry``). When the table is there, runs
+    :func:`recommend_rerank_strategy` over the default 7-day window
+    and surfaces each finding as a :class:`MetricResult`.
+    """
+    from mcpg.audit import CategoryResult, MetricResult
+
+    if not await _events_table_exists(driver):
+        return None
+    recommendation = await recommend_rerank_strategy(driver)
+    score = 100
+    metrics: list[MetricResult] = []
+    for finding in recommendation.findings:
+        score -= _SEVERITY_DEDUCTION.get(finding.severity, 0)
+        metrics.append(
+            MetricResult(
+                name=f"rag_pipeline:{finding.code}",
+                value=finding.code,
+                unit="finding",
+                target="no findings",
+                status=finding.severity,
+                severity=3 if finding.severity == "CRITICAL" else 2 if finding.severity == "WARNING" else 0,
+                evidence=finding.evidence,
+                suggestion=finding.suggested_action,
+            )
+        )
+    if not metrics:
+        metrics.append(
+            MetricResult(
+                name="rag_pipeline:no_findings",
+                value="ok",
+                unit="finding",
+                target="no findings",
+                status="GOOD",
+                severity=0,
+                evidence=recommendation.summary,
+                suggestion="",
+            )
+        )
+    score = max(0, score)
+    status_label = "GOOD" if score >= 90 else ("WARNING" if score >= 70 else "CRITICAL")
+    return CategoryResult(
+        category="RAG Reranker Pipeline",
+        status=status_label,
+        score=score,
+        metrics=metrics,
+    )

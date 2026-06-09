@@ -8,6 +8,50 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **RAG reranker analytics + advisor + audit category (RAG-D).** Five
+  read-only tools over the `mcpg_rag.rerank_events` table shipped in
+  RAG-C, plus a new `audit_rag_pipeline` category wired into
+  `audit_database`. Reads only; the storage layer (RAG-C) provides
+  the writes.
+
+  Analytics (each filterable by `model` + `retrieval_index`, with a
+  `days` window default of 7):
+  - `analyze_reranker_lift` — per-query Spearman / Kendall
+    correlation between bi-encoder and cross-encoder ranks,
+    aggregated. Surfaces `reranker_idle` (WARNING) when mean
+    Kendall tau exceeds 0.85 (the reranker rarely changes
+    ordering).
+  - `analyze_topk_stability` — Jaccard overlap between
+    top-K-by-bi-rank and top-K-by-cross-rank per query. Surfaces
+    `topk_stable` (WARNING) when mean Jaccard exceeds 0.90 (rerank
+    is barely earning its place at this K).
+  - `analyze_rerank_score_distribution` — equal-width histogram of
+    `cross_encoder_score` values + top-decile share. Surfaces
+    `score_clustering` (WARNING) when more than 50% of scores land
+    in the top decile (the reranker isn't discriminating).
+  - `analyze_rerank_ndcg` — NDCG@k under bi-ordering vs
+    cross-ordering, averaged across labeled queries
+    (`ground_truth_relevance IS NOT NULL`). Surfaces
+    `rerank_hurts_ndcg` (CRITICAL, delta < -0.02) or
+    `rerank_lifts_ndcg` (GOOD, delta > 0.05).
+
+  Roll-up advisor `recommend_rerank_strategy` runs all four
+  analytics for one window and produces a single headline summary
+  picking the most actionable signal. The new `audit_rag_pipeline`
+  category in `audit_database` invokes the advisor over the
+  default 7-day window and turns each finding into a `MetricResult`
+  (same severity → score deduction as `audit_turboquant_indexes`
+  and `audit_vector_indexes`). Returns `None` when the events
+  table doesn't exist, so stock deployments are cleanly omitted
+  from the scorecard.
+
+  New helpers in `mcpg.rag_efficiency`: `_jaccard` (set overlap),
+  `_ndcg_at_k` (log-discount sum), `_histogram` (equal-width
+  buckets). Pure-Python, consistent with the no-SciPy stance.
+  Threshold constants live at the module top so the future Phase E
+  adaptive-thresholds framework can override them in one place.
+  All five tools are READ-gated.
+
 - **`mcpg_rag.rerank_events` schema + `setup_rag_telemetry` /
   `log_rerank_event` tools (RAG-C).** Storage layer for the
   forthcoming Phase D analytics (reranker lift, top-K stability,
