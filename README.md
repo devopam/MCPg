@@ -517,3 +517,5 @@ for provenance.
 > **Disclaimer.** Best efforts have been made to bring MCPg to
 > production grade, but it remains an actively developed project and
 > may contain issues. See the License terms for indemnity details.
+
+<!-- mcp-name: io.github.devopam/mcpg -->

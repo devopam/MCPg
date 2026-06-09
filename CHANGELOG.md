@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+## [0.6.1] - 2026-06-09
+
+### Added
+
+- **MCP Registry Integration.** Added `server.json` configuration and automated publishing workflow to register MCPg on the official Model Context Protocol registry (`registry.modelcontextprotocol.io`). Added `mcp-name` verification comment in `README.md` to satisfy PyPI ownership verification.
+
 - **RAG reranker analytics + advisor + audit category (RAG-D).** Five
   read-only tools over the `mcpg_rag.rerank_events` table shipped in
   RAG-C, plus a new `audit_rag_pipeline` category wired into

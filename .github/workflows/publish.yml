@@ -159,3 +159,19 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "MCPg ${GITHUB_REF_NAME}" \
             --notes-file /tmp/notes.md
+
+  publish-mcp-registry:
+    name: Publish to MCP Registry
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          sudo mv mcp-publisher /usr/local/bin/
+      - name: Authenticate to MCP Registry
+        run: mcp-publisher login github-oidc
+      - name: Publish server to MCP Registry
+        run: mcp-publisher publish
