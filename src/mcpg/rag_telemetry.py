@@ -508,7 +508,14 @@ async def record_efficiency_observation(
     if extra is not None and not isinstance(extra, dict):
         raise RagTelemetryError(f"extra must be dict or None; got {type(extra).__name__}")
 
-    curve_json = json.dumps(rerank_lift_curve) if rerank_lift_curve is not None else "[]"
+    # Both jsonb-bound fields wrap json.dumps in try/except so
+    # non-serialisable values (datetimes, custom classes, Decimals
+    # …) surface as RagTelemetryError instead of stdlib TypeError.
+    # The two paths are kept symmetric on purpose.
+    try:
+        curve_json = json.dumps(rerank_lift_curve) if rerank_lift_curve is not None else "[]"
+    except (TypeError, ValueError) as exc:
+        raise RagTelemetryError(f"rerank_lift_curve must be JSON-serialisable: {exc}") from exc
     try:
         extra_json = json.dumps(extra) if extra is not None else "{}"
     except (TypeError, ValueError) as exc:

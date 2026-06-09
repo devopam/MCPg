@@ -332,6 +332,20 @@ async def test_record_efficiency_observation_serializes_curve_as_jsonb() -> None
     assert "candidate_multiplier" in params[9]
 
 
+async def test_record_efficiency_observation_rejects_non_json_serialisable_curve() -> None:
+    # Symmetric to the extra-validation: a non-serialisable value
+    # inside the lift curve (datetime, custom class, …) surfaces as
+    # RagTelemetryError, not a stdlib TypeError.
+    import datetime as _dt
+
+    driver = FakeRoutingDriver({})
+    bad_curve = [{"candidate_multiplier": 1, "captured_at": _dt.datetime.now(_dt.UTC)}]
+    with pytest.raises(RagTelemetryError, match=r"rerank_lift_curve.*JSON-serialisable"):
+        await record_efficiency_observation(  # type: ignore[arg-type]
+            driver, **_valid_observation_kwargs(rerank_lift_curve=bad_curve)
+        )
+
+
 async def test_recommend_thresholds_returns_defaults_when_corpus_small() -> None:
     # Default thresholds (from rag_efficiency module constants) when
     # there's not enough corpus to learn from.
