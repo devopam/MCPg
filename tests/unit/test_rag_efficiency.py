@@ -236,6 +236,59 @@ def test_rule_pruning_ineffective_silent_when_metric_missing() -> None:
     assert all(f.code != "pruning_ineffective" for f in findings)
 
 
+# --- Phase E: adaptive thresholds -----------------------------------------
+
+
+def test_adaptive_threshold_overrides_default_baseline_recall() -> None:
+    # Default threshold 0.80 — baseline 0.75 fires. With adaptive
+    # threshold 0.60 supplied, the same baseline is now "above the
+    # corpus" and does NOT fire.
+    partial = _partial(baseline=0.75)
+    partial["thresholds"] = {"baseline_recall_low": 0.60}
+    findings = _evaluate_rules(partial)
+    assert all(f.code != "baseline_recall_low" for f in findings)
+
+
+def test_adaptive_threshold_can_tighten_baseline_recall() -> None:
+    # Tighter adaptive threshold makes more baselines fire — recall
+    # 0.85 passes the default 0.80 but fails an adaptive 0.90.
+    partial = _partial(baseline=0.85)
+    partial["thresholds"] = {"baseline_recall_low": 0.90}
+    findings = _evaluate_rules(partial)
+    assert any(f.code == "baseline_recall_low" for f in findings)
+
+
+def test_adaptive_threshold_partial_override_falls_back_to_defaults() -> None:
+    # Only baseline_recall_low overridden; the other rules continue
+    # to consult their hardcoded defaults. ranking_degraded should
+    # still fire on recall=0.95 + spearman=0.3 vs default 0.50.
+    partial = _partial(baseline=0.95, spearman=0.3)
+    partial["thresholds"] = {"baseline_recall_low": 0.50}
+    findings = _evaluate_rules(partial)
+    by_code = {f.code: f for f in findings}
+    assert "baseline_recall_low" not in by_code  # overridden away
+    assert "ranking_degraded" in by_code  # still fires on default
+
+
+def test_adaptive_threshold_pruning_ineffective_uses_corpus_value() -> None:
+    # Default 0.10 — pages_pruned=0.15 silent. With corpus-derived
+    # 0.20, the same value is now flagged.
+    partial = _partial(backend="turboquant", pages_pruned=0.15)
+    partial["thresholds"] = {"pruning_ineffective": 0.20}
+    findings = _evaluate_rules(partial)
+    assert any(f.code == "pruning_ineffective" for f in findings)
+
+
+def test_adaptive_threshold_non_numeric_value_falls_back_to_default() -> None:
+    # Defensive: a bad threshold (str, None, bool) silently falls
+    # back to default rather than crashing the rule loop.
+    partial = _partial(baseline=0.5)
+    partial["thresholds"] = {"baseline_recall_low": "not-a-number"}
+    findings = _evaluate_rules(partial)
+    # Default 0.80 still applies; recall=0.5 below → fires.
+    assert any(f.code == "baseline_recall_low" for f in findings)
+
+
 # --- analyze_vector_search_efficiency: input validation -------------------
 
 

@@ -295,16 +295,34 @@ class VectorEfficiencyReport:
 # trivial to unit-test in isolation.
 
 
+def _threshold(report_partial: dict[str, Any], key: str, default: float) -> float:
+    """Pull an adaptive threshold off the report-partial, falling back to default.
+
+    Phase E (adaptive thresholds) packs a ``thresholds`` dict onto
+    the report-partial when the caller supplied corpus-derived
+    values; the rules look here so the lookup happens in one place
+    and the default constants stay as the source of truth when no
+    override is in play.
+    """
+    thresholds = report_partial.get("thresholds")
+    if isinstance(thresholds, dict) and key in thresholds:
+        value = thresholds[key]
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return default
+
+
 def _finding_baseline_recall_low(report_partial: dict[str, Any]) -> VectorEfficiencyFinding | None:
-    if report_partial["recall_at_k_baseline"] >= _THRESHOLD_RECALL_LOW:
+    threshold = _threshold(report_partial, "baseline_recall_low", _THRESHOLD_RECALL_LOW)
+    if report_partial["recall_at_k_baseline"] >= threshold:
         return None
     return VectorEfficiencyFinding(
         code="baseline_recall_low",
         severity="CRITICAL",
         evidence=(
             f"recall@{report_partial['k']} at the default knob value is "
-            f"{report_partial['recall_at_k_baseline']:.3f} — below the "
-            f"{_THRESHOLD_RECALL_LOW} threshold. The index is returning the wrong neighbours too often."
+            f"{report_partial['recall_at_k_baseline']:.3f} - below the "
+            f"{threshold:.3f} threshold. The index is returning the wrong neighbours too often."
         ),
         suggested_action=(
             f"Raise the per-query knob ({report_partial['knob_name']}); inspect the lift curve "
@@ -321,7 +339,7 @@ def _finding_rerank_lift_flat(report_partial: dict[str, Any]) -> VectorEfficienc
     top = curve[-1].recall_at_k
     if top - baseline > _THRESHOLD_RERANK_FLAT_DELTA:
         return None
-    if baseline < _THRESHOLD_RECALL_LOW:
+    if baseline < _threshold(report_partial, "baseline_recall_low", _THRESHOLD_RECALL_LOW):
         # Lift is flat but baseline is already bad — surface
         # baseline_recall_low instead, not lift_flat (which would
         # confusingly suggest "knob already saturated").
@@ -331,12 +349,12 @@ def _finding_rerank_lift_flat(report_partial: dict[str, Any]) -> VectorEfficienc
         severity="WARNING",
         evidence=(
             f"recall@{report_partial['k']} barely moves across the multiplier sweep "
-            f"(baseline {baseline:.3f} → top {top:.3f}, delta {top - baseline:.3f} ≤ "
+            f"(baseline {baseline:.3f} -> top {top:.3f}, delta {top - baseline:.3f} <= "
             f"{_THRESHOLD_RERANK_FLAT_DELTA}). The {report_partial['knob_name']} knob is over-provisioned."
         ),
         suggested_action=(
             f"Lower {report_partial['knob_name']} towards the smallest value that keeps recall "
-            f"≥ {_THRESHOLD_RECALL_LOW + 0.1:.2f}; the latency savings come for free."
+            f">= {_THRESHOLD_RECALL_LOW + 0.1:.2f}; the latency savings come for free."
         ),
     )
 
@@ -359,16 +377,17 @@ def _finding_rerank_lift_steep(report_partial: dict[str, Any]) -> VectorEfficien
             f"({report_partial['knob_name']}={high_point.knob_value}). The knob is set too tight."
         ),
         suggested_action=(
-            f"Raise the default {report_partial['knob_name']} to {high_point.knob_value} — "
+            f"Raise the default {report_partial['knob_name']} to {high_point.knob_value} - "
             "the recall gain is worth the latency cost."
         ),
     )
 
 
 def _finding_ranking_degraded(report_partial: dict[str, Any]) -> VectorEfficiencyFinding | None:
+    spearman_threshold = _threshold(report_partial, "ranking_degraded_spearman", _THRESHOLD_RANKING_DEGRADED_SPEARMAN)
     if (
         report_partial["recall_at_k_baseline"] < _THRESHOLD_RANKING_DEGRADED_RECALL
-        or report_partial["score_rank_correlation_spearman"] >= _THRESHOLD_RANKING_DEGRADED_SPEARMAN
+        or report_partial["score_rank_correlation_spearman"] >= spearman_threshold
     ):
         return None
     return VectorEfficiencyFinding(
@@ -377,12 +396,12 @@ def _finding_ranking_degraded(report_partial: dict[str, Any]) -> VectorEfficienc
         evidence=(
             f"recall@{report_partial['k']} is {report_partial['recall_at_k_baseline']:.3f} (good set overlap) "
             f"but Spearman rho between approximate and exact ranks is "
-            f"{report_partial['score_rank_correlation_spearman']:.3f} — the right rows are returned "
-            "but in the wrong order."
+            f"{report_partial['score_rank_correlation_spearman']:.3f} (threshold {spearman_threshold:.3f}) "
+            "- the right rows are returned but in the wrong order."
         ),
         suggested_action=(
             "Increase the quantization fidelity (more bits for turboquant; consider switching "
-            "halfvec → vector for pgvector) or pick a metric better suited to the embeddings' "
+            "halfvec -> vector for pgvector) or pick a metric better suited to the embeddings' "
             "magnitude distribution."
         ),
     )
@@ -392,14 +411,15 @@ def _finding_pruning_ineffective(report_partial: dict[str, Any]) -> VectorEffici
     if report_partial["backend"] != "turboquant":
         return None
     pruned = report_partial["pages_pruned_ratio_p50"]
-    if pruned is None or pruned >= _THRESHOLD_PRUNING_INEFFECTIVE:
+    threshold = _threshold(report_partial, "pruning_ineffective", _THRESHOLD_PRUNING_INEFFECTIVE)
+    if pruned is None or pruned >= threshold:
         return None
     return VectorEfficiencyFinding(
         code="pruning_ineffective",
         severity="WARNING",
         evidence=(
             f"turboquant pages_pruned ratio (median {pruned:.3f}) is below "
-            f"{_THRESHOLD_PRUNING_INEFFECTIVE} — the index is scanning most pages anyway, "
+            f"{threshold:.3f} - the index is scanning most pages anyway, "
             "negating turboquant's main optimisation."
         ),
         suggested_action=(
@@ -667,6 +687,7 @@ async def analyze_vector_search_efficiency(
     sample_size: int = 30,
     candidate_multipliers: tuple[int, ...] = (1, 2, 4, 10),
     metric: str = "cosine",
+    thresholds: dict[str, float] | None = None,
 ) -> VectorEfficiencyReport:
     """Sweep an ANN index's recall, rank-correlation, and (for turboquant) page-pruning.
 
@@ -798,6 +819,7 @@ async def analyze_vector_search_efficiency(
         "rerank_lift_curve": curve,
         "score_rank_correlation_spearman": spearman,
         "pages_pruned_ratio_p50": pages_pruned_ratio_p50,
+        "thresholds": thresholds,
     }
     findings = _evaluate_rules(report_partial)
 
