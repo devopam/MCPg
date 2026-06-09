@@ -319,6 +319,20 @@ reindex_turboquant_index(schema, index, concurrently=true)
                                                      # catalog-preflighted REINDEX [CONCURRENTLY]
 ```
 
+## "Capture RAG reranker events" (`unrestricted` + `MCPG_ALLOW_DDL=true` for setup)
+
+```
+setup_rag_telemetry()                                # creates mcpg_rag.rerank_events + 3 indexes; idempotent
+log_rerank_event(query_hash, retrieval_index,        # one row per (query, candidate) pair from a reranker step
+                 retrieval_backend, candidate_id,
+                 bi_encoder_score, bi_encoder_rank,
+                 cross_encoder_score, cross_encoder_rank,
+                 reranker_model,
+                 used_in_context=false,
+                 ground_truth_relevance=null,
+                 extra={})                            # query_hash keeps PII out of the table by default
+```
+
 ## "Schedule a job" (`unrestricted` + pg_cron installed)
 
 ```

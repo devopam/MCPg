@@ -50,6 +50,7 @@ from mcpg import (
     prisma,
     query,
     rag_efficiency,
+    rag_telemetry,
     rls,
     schema_diff,
     schema_docs,
@@ -2879,6 +2880,75 @@ def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="log_rerank_event",
+        description=(
+            "Insert one row into mcpg_rag.rerank_events — one (query, candidate) "
+            "pair from a RAG reranker step. ``query_hash`` is the caller-computed "
+            "join key (raw bytes; SHA-256 is conventional but not required). "
+            "``bi_encoder_score`` may be null (some retrieval paths don't expose "
+            "a score); ``cross_encoder_score`` is required. ``extra`` is a "
+            "free-form dict serialised as jsonb (caller-specific fields: "
+            "latency_ms, variant tag, user_id, etc). Available only in "
+            "unrestricted mode; the table must be created first via "
+            "``setup_rag_telemetry``."
+        ),
+    )
+    async def log_rerank_event(
+        ctx: _Ctx,
+        query_hash: bytes,
+        retrieval_index: str,
+        retrieval_backend: str,
+        candidate_id: int,
+        bi_encoder_score: float | None,
+        bi_encoder_rank: int,
+        cross_encoder_score: float,
+        cross_encoder_rank: int,
+        reranker_model: str,
+        used_in_context: bool = False,
+        ground_truth_relevance: int | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        result = await rag_telemetry.log_rerank_event(
+            _driver(ctx),
+            query_hash=query_hash,
+            retrieval_index=retrieval_index,
+            retrieval_backend=retrieval_backend,
+            candidate_id=candidate_id,
+            bi_encoder_score=bi_encoder_score,
+            bi_encoder_rank=bi_encoder_rank,
+            cross_encoder_score=cross_encoder_score,
+            cross_encoder_rank=cross_encoder_rank,
+            reranker_model=reranker_model,
+            used_in_context=used_in_context,
+            ground_truth_relevance=ground_truth_relevance,
+            extra=extra,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
+def _register_rag_telemetry_ddl(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="setup_rag_telemetry",
+        description=(
+            "Create the ``mcpg_rag`` schema, ``rerank_events`` table, and the "
+            "three supporting indexes (occurred_at, query_hash, "
+            "(reranker_model, occurred_at)). Idempotent — safe to re-run. "
+            "Returns ``{schema_created, table_created, indexes_created}`` so "
+            "the caller can tell first-run from no-op. Required before any "
+            "``log_rerank_event`` call or the Phase-D reranker analytics. "
+            "Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL."
+        ),
+    )
+    async def setup_rag_telemetry(ctx: _Ctx) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await rag_telemetry.setup_rag_telemetry(database)
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="create_turboquant_index",
@@ -3343,11 +3413,13 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_backend_control(server)
         _register_cron_write(server)
         _register_turboquant_writes(server)
+        _register_rag_telemetry_write(server)
         _register_data_movement_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)
         _register_turboquant_ddl(server)
+        _register_rag_telemetry_ddl(server)
         _register_timescaledb_writes(server)
         _register_graphs_writes(server)
     if is_permitted(settings.access_mode, Capability.MIGRATE) and settings.allow_ddl:

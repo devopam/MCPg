@@ -6,6 +6,34 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`mcpg_rag.rerank_events` schema + `setup_rag_telemetry` /
+  `log_rerank_event` tools (RAG-C).** Storage layer for the
+  forthcoming Phase D analytics (reranker lift, top-K stability,
+  score-distribution clustering, NDCG, the
+  `recommend_rerank_strategy` advisor, and the `audit_rag_pipeline`
+  category). One row per `(query, candidate)` pair from a RAG
+  reranker step. `query_hash` (`BYTEA`, caller-computed) is the
+  join key — MCPg never sees raw query text by default, so PII
+  stays out of the table; callers who want to retain it can stash
+  the text in the `extra` JSONB column under their own
+  responsibility. Three indexes (`occurred_at`, `query_hash`,
+  composite `(reranker_model, occurred_at)`) cover the analytics'
+  expected access patterns. `setup_rag_telemetry` is **idempotent**
+  — catalog probes before each `CREATE … IF NOT EXISTS` let the
+  result honestly report first-run vs no-op
+  (`{schema_created, table_created, indexes_created}`). DDL runs
+  through `Database.run_unmanaged` so each statement commits
+  independently. `log_rerank_event` carries 11 required typed
+  fields plus optional `used_in_context` (defaults `FALSE`),
+  `ground_truth_relevance` (nullable for online traffic), and
+  `extra` (free-form dict serialised as JSONB). Bool-as-int
+  subclass trap caught explicitly (same pattern as TQ-4's
+  `concurrently` validation). `setup` gated under unrestricted +
+  `MCPG_ALLOW_DDL`; `log` gated under unrestricted (WRITE). Lives
+  in `mcpg.rag_telemetry`.
+
 ### Docs
 
 - **Doc-sync after the turboquant + RAG-A/B PR wave.** Tool count in

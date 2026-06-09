@@ -436,12 +436,19 @@ instrumentation; rerank second because it needs a schema and adoption.
   sink the audit.
 - Branch: `claude/rag2-vector-audit`.
 
-### Phase C — Design 2 schema + logging (1 PR)
+### Phase C — Design 2 schema + logging ✅ shipped
 
 - `setup_rag_telemetry` (DDL-gated) + `log_rerank_event`
-  (write-gated) + the `mcpg_rag.rerank_events` schema.
-- Tests: setup is idempotent; event-logging round-trips; gating
-  rejects when modes are off.
+  (write-gated) + the `mcpg_rag.rerank_events` schema with three
+  indexes (`occurred_at`, `query_hash`, composite
+  `(reranker_model, occurred_at)`).
+- Idempotency: catalog probes before each `CREATE … IF NOT EXISTS`
+  let the setup result report first-run vs no-op.
+- DDL runs through `Database.run_unmanaged` so each statement
+  commits independently (`CREATE SCHEMA` can't be re-issued
+  inside a failed transaction).
+- Bool-as-int subclass trap caught explicitly on the rank
+  validators — same pattern as TQ-4's `concurrently`.
 - Branch: `claude/rag3-rerank-schema`.
 
 ### Phase D — Design 2 analytics + advisor + audit hook (1 PR)
