@@ -1141,7 +1141,7 @@ async def _check_custom_logs(driver: SqlDriver, log_table: str | None) -> list[T
 
 async def audit_database(driver: SqlDriver, schema: str, log_table: str | None = None) -> AuditReport:
     """Execute comprehensive performance checks, compile scores, recommendations, and issues."""
-    from mcpg.rag_efficiency import audit_vector_indexes
+    from mcpg.rag_efficiency import audit_rag_pipeline, audit_vector_indexes
     from mcpg.turboquant import audit_turboquant_indexes
 
     ver, dbname = await _get_version_and_db(driver)
@@ -1158,12 +1158,15 @@ async def audit_database(driver: SqlDriver, schema: str, log_table: str | None =
     # empty sections and the overall score isn't diluted.
     cat_turboquant = await audit_turboquant_indexes(driver)
     cat_vector = await audit_vector_indexes(driver)
+    cat_rag_pipeline = await audit_rag_pipeline(driver)
 
     categories = [cat_mem, cat_tx, cat_lock, cat_bloat, cat_slow]
     if cat_turboquant is not None:
         categories.append(cat_turboquant)
     if cat_vector is not None:
         categories.append(cat_vector)
+    if cat_rag_pipeline is not None:
+        categories.append(cat_rag_pipeline)
 
     # 2. Dynamic scoring
     overall_score = round(sum(cat.score for cat in categories) / len(categories))

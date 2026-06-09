@@ -319,6 +319,24 @@ reindex_turboquant_index(schema, index, concurrently=true)
                                                      # catalog-preflighted REINDEX [CONCURRENTLY]
 ```
 
+## "Is my RAG reranker earning its latency budget?"
+
+```
+analyze_reranker_lift(days=7, model=null, retrieval_index=null)
+                                                     # mean Spearman/Kendall between bi-encoder and cross-encoder
+                                                     # ranks per query; reranker_idle fires when reranker mostly confirms
+analyze_topk_stability(days=7, k=10, model=null, retrieval_index=null)
+                                                     # mean Jaccard of top-K membership; topk_stable fires when high
+analyze_rerank_score_distribution(days=7, model=null, n_buckets=20)
+                                                     # histogram + top-decile share; score_clustering fires when
+                                                     # >50% of scores land in the top decile
+analyze_rerank_ndcg(days=7, k=10, model=null, retrieval_index=null)
+                                                     # NDCG@k under bi vs cross order; gated on labeled rows;
+                                                     # rerank_hurts_ndcg (CRITICAL) / rerank_lifts_ndcg (GOOD)
+recommend_rerank_strategy(days=7, retrieval_index=null)
+                                                     # roll-up advisor — single headline + all findings
+```
+
 ## "Capture RAG reranker events" (`unrestricted` + `MCPG_ALLOW_DDL=true` for setup)
 
 ```

@@ -780,6 +780,123 @@ def _register_rag_efficiency(server: FastMCP[AppContext]) -> None:
         return asdict(report)
 
 
+def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="analyze_reranker_lift",
+        description=(
+            "Per-query Spearman + Kendall correlation between bi-encoder "
+            "and cross-encoder ranks, aggregated across queries in the "
+            "window. Low correlation = the reranker is actively reordering "
+            "(doing real work); high correlation = the reranker mostly "
+            "confirms the bi-encoder order. Optional ``model`` / "
+            "``retrieval_index`` filters. Surfaces ``reranker_idle`` "
+            "(WARNING) when the reranker rarely changes ordering. Reads "
+            "from mcpg_rag.rerank_events; returns empty when the table "
+            "doesn't exist."
+        ),
+    )
+    async def analyze_reranker_lift(
+        ctx: _Ctx,
+        days: int = 7,
+        model: str | None = None,
+        retrieval_index: str | None = None,
+    ) -> dict[str, Any]:
+        report = await rag_efficiency.analyze_reranker_lift(
+            _driver(ctx), days=days, model=model, retrieval_index=retrieval_index
+        )
+        return asdict(report)
+
+    @server.tool(
+        name="analyze_topk_stability",
+        description=(
+            "Jaccard overlap between top-K-by-bi-rank and top-K-by-cross-rank "
+            "per query, aggregated. High mean Jaccard means the reranker "
+            "isn't actually changing the top-K membership. Surfaces "
+            "``topk_stable`` (WARNING) when the rerank is barely earning "
+            "its place at this K. Reads from mcpg_rag.rerank_events."
+        ),
+    )
+    async def analyze_topk_stability(
+        ctx: _Ctx,
+        days: int = 7,
+        k: int = 10,
+        model: str | None = None,
+        retrieval_index: str | None = None,
+    ) -> dict[str, Any]:
+        report = await rag_efficiency.analyze_topk_stability(
+            _driver(ctx), days=days, k=k, model=model, retrieval_index=retrieval_index
+        )
+        return asdict(report)
+
+    @server.tool(
+        name="analyze_rerank_score_distribution",
+        description=(
+            "Equal-width histogram of cross_encoder_score values over the "
+            "window plus the top-decile share. Surfaces ``score_clustering`` "
+            "(WARNING) when the reranker isn't discriminating (more than "
+            "half of scores land in the top decile of the range). Reads "
+            "from mcpg_rag.rerank_events."
+        ),
+    )
+    async def analyze_rerank_score_distribution(
+        ctx: _Ctx,
+        days: int = 7,
+        model: str | None = None,
+        n_buckets: int = 20,
+    ) -> dict[str, Any]:
+        report = await rag_efficiency.analyze_rerank_score_distribution(
+            _driver(ctx), days=days, model=model, n_buckets=n_buckets
+        )
+        return asdict(report)
+
+    @server.tool(
+        name="analyze_rerank_ndcg",
+        description=(
+            "NDCG@k under bi-encoder ordering vs cross-encoder ordering, "
+            "averaged across labeled queries (``ground_truth_relevance IS "
+            "NOT NULL``). Reports the delta (cross - bi) — positive = the "
+            "rerank is adding real ranking quality, negative = it's hurting. "
+            "Surfaces ``rerank_hurts_ndcg`` (CRITICAL) or "
+            "``rerank_lifts_ndcg`` (GOOD evidence). Reads from "
+            "mcpg_rag.rerank_events; returns zero counts when no labeled "
+            "rows exist in the window."
+        ),
+    )
+    async def analyze_rerank_ndcg(
+        ctx: _Ctx,
+        days: int = 7,
+        k: int = 10,
+        model: str | None = None,
+        retrieval_index: str | None = None,
+    ) -> dict[str, Any]:
+        report = await rag_efficiency.analyze_rerank_ndcg(
+            _driver(ctx), days=days, k=k, model=model, retrieval_index=retrieval_index
+        )
+        return asdict(report)
+
+    @server.tool(
+        name="recommend_rerank_strategy",
+        description=(
+            "Roll-up advisor over the four analytics for one window. "
+            "Returns a single headline ``summary`` + the full list of "
+            "findings. Built from whichever combination of "
+            "``reranker_idle`` / ``topk_stable`` / ``score_clustering`` / "
+            "``rerank_hurts_ndcg`` / ``rerank_lifts_ndcg`` fires. Also "
+            "feeds the ``RAG Reranker Pipeline`` category in audit_database. "
+            "Reads from mcpg_rag.rerank_events."
+        ),
+    )
+    async def recommend_rerank_strategy(
+        ctx: _Ctx,
+        days: int = 7,
+        retrieval_index: str | None = None,
+    ) -> dict[str, Any]:
+        report = await rag_efficiency.recommend_rerank_strategy(
+            _driver(ctx), days=days, retrieval_index=retrieval_index
+        )
+        return asdict(report)
+
+
 def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="tune_vector_index",
@@ -3396,6 +3513,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_schema_diff(server)
         _register_vector_tuning(server)
         _register_rag_efficiency(server)
+        _register_rag_analytics(server)
         _register_prisma(server)
         _register_advisors(server)
         _register_composite(server)

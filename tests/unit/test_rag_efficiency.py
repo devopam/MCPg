@@ -503,3 +503,334 @@ async def test_analyze_vector_search_efficiency_tool_registered() -> None:
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "analyze_vector_search_efficiency" in listed
+
+
+# --- RAG-D: stat helpers ---------------------------------------------------
+
+
+def test_jaccard_identical_sets() -> None:
+    from mcpg.rag_efficiency import _jaccard
+
+    assert _jaccard([1, 2, 3], [1, 2, 3]) == 1.0
+
+
+def test_jaccard_disjoint_sets() -> None:
+    from mcpg.rag_efficiency import _jaccard
+
+    assert _jaccard([1, 2, 3], [4, 5, 6]) == 0.0
+
+
+def test_jaccard_partial_overlap() -> None:
+    from mcpg.rag_efficiency import _jaccard
+
+    # |{1,2}| / |{1,2,3,4}| = 2/4
+    assert _jaccard([1, 2, 3], [1, 2, 4]) == pytest.approx(2 / 4)
+
+
+def test_jaccard_empty_inputs_returns_zero() -> None:
+    from mcpg.rag_efficiency import _jaccard
+
+    assert _jaccard([], []) == 0.0
+
+
+def test_ndcg_perfect_order_is_one() -> None:
+    from mcpg.rag_efficiency import _ndcg_at_k
+
+    # Already in descending grade order → NDCG = 1.0.
+    assert _ndcg_at_k([3.0, 2.0, 1.0, 0.0], 4) == pytest.approx(1.0)
+
+
+def test_ndcg_reversed_order_is_below_perfect() -> None:
+    from mcpg.rag_efficiency import _ndcg_at_k
+
+    # Worst possible non-zero ordering.
+    val = _ndcg_at_k([0.0, 1.0, 2.0, 3.0], 4)
+    assert 0.0 < val < 1.0
+
+
+def test_ndcg_all_zero_grades_returns_zero() -> None:
+    from mcpg.rag_efficiency import _ndcg_at_k
+
+    assert _ndcg_at_k([0.0, 0.0, 0.0], 3) == 0.0
+
+
+def test_ndcg_respects_k() -> None:
+    from mcpg.rag_efficiency import _ndcg_at_k
+
+    # k=1 only looks at the first item; if it's the highest grade,
+    # NDCG@1 = 1.0 regardless of what follows.
+    assert _ndcg_at_k([3.0, 0.0, 0.0], 1) == pytest.approx(1.0)
+
+
+def test_histogram_uniform_distribution() -> None:
+    from mcpg.rag_efficiency import _histogram
+
+    # Values 0..9 in 5 buckets → 2 per bucket.
+    counts = _histogram([float(v) for v in range(10)], n_buckets=5)
+    assert counts == [2, 2, 2, 2, 2]
+
+
+def test_histogram_all_identical_lands_in_last_bucket() -> None:
+    from mcpg.rag_efficiency import _histogram
+
+    counts = _histogram([0.5, 0.5, 0.5], n_buckets=4)
+    assert counts == [0, 0, 0, 3]
+
+
+def test_histogram_empty_returns_zeroed_buckets() -> None:
+    from mcpg.rag_efficiency import _histogram
+
+    assert _histogram([], n_buckets=5) == [0, 0, 0, 0, 0]
+
+
+# --- RAG-D: analytics functions -------------------------------------------
+
+
+_NO_EVENTS_TABLE = "pg_class c JOIN pg_namespace n"  # the existence probe substring
+
+
+async def test_analyze_reranker_lift_returns_no_events_when_table_missing() -> None:
+    from mcpg.rag_efficiency import analyze_reranker_lift
+
+    driver = FakeRoutingDriver({})  # no events table
+    report = await analyze_reranker_lift(driver)  # type: ignore[arg-type]
+    assert report.query_count == 0
+    assert report.interpretation == "no events table"
+
+
+async def test_analyze_reranker_lift_validates_window() -> None:
+    from mcpg.rag_efficiency import VectorEfficiencyError, analyze_reranker_lift
+
+    driver = FakeRoutingDriver({})
+    with pytest.raises(VectorEfficiencyError, match="window days"):
+        await analyze_reranker_lift(driver, days=0)  # type: ignore[arg-type]
+
+
+async def test_analyze_reranker_lift_fires_reranker_idle_on_high_kendall() -> None:
+    # Build per-query events where bi_rank == cross_rank (perfect
+    # agreement → Kendall = 1.0) across 5 queries to clear the idle
+    # threshold.
+    from mcpg.rag_efficiency import analyze_reranker_lift
+
+    rows = []
+    for q in range(5):
+        for r in range(1, 6):
+            rows.append(
+                {
+                    "query_hash": bytes([q]),
+                    "bi_encoder_rank": r,
+                    "cross_encoder_rank": r,
+                }
+            )
+    driver = FakeRoutingDriver(
+        {
+            _NO_EVENTS_TABLE: [{"present": 1}],
+            "FROM mcpg_rag.rerank_events": rows,
+        }
+    )
+    report = await analyze_reranker_lift(driver)  # type: ignore[arg-type]
+    assert report.query_count == 5
+    assert report.mean_kendall == pytest.approx(1.0)
+    assert any(f.code == "reranker_idle" for f in report.findings)
+    assert report.interpretation == "reranker mostly confirms"
+
+
+async def test_analyze_reranker_lift_silent_when_reranker_actively_reorders() -> None:
+    # bi_rank and cross_rank reversed → Kendall tau = -1 per query.
+    from mcpg.rag_efficiency import analyze_reranker_lift
+
+    rows = []
+    for q in range(3):
+        for r in range(1, 6):
+            rows.append(
+                {
+                    "query_hash": bytes([q]),
+                    "bi_encoder_rank": r,
+                    "cross_encoder_rank": 6 - r,
+                }
+            )
+    driver = FakeRoutingDriver(
+        {
+            _NO_EVENTS_TABLE: [{"present": 1}],
+            "FROM mcpg_rag.rerank_events": rows,
+        }
+    )
+    report = await analyze_reranker_lift(driver)  # type: ignore[arg-type]
+    assert report.mean_kendall == pytest.approx(-1.0)
+    assert report.findings == []
+    assert report.interpretation == "reranker actively reorders"
+
+
+async def test_analyze_topk_stability_fires_topk_stable_when_top_k_is_identical() -> None:
+    from mcpg.rag_efficiency import analyze_topk_stability
+
+    # Same candidates in top-3 by both orderings across 5 queries.
+    rows = []
+    for q in range(5):
+        for c in (10, 20, 30):
+            rows.append(
+                {
+                    "query_hash": bytes([q]),
+                    "candidate_id": c,
+                    "bi_encoder_rank": c // 10,
+                    "cross_encoder_rank": c // 10,
+                }
+            )
+    driver = FakeRoutingDriver(
+        {
+            _NO_EVENTS_TABLE: [{"present": 1}],
+            "FROM mcpg_rag.rerank_events": rows,
+        }
+    )
+    report = await analyze_topk_stability(driver, k=3)  # type: ignore[arg-type]
+    assert report.query_count == 5
+    assert report.mean_jaccard == pytest.approx(1.0)
+    assert any(f.code == "topk_stable" for f in report.findings)
+
+
+async def test_analyze_rerank_score_distribution_fires_on_top_decile_clustering() -> None:
+    from mcpg.rag_efficiency import analyze_rerank_score_distribution
+
+    # 100 scores, 80 of them at 0.98 (top decile of [0, 1]) → >50%
+    # clustering, fires score_clustering.
+    rows = [{"score": 0.1} for _ in range(10)]
+    rows += [{"score": 0.5} for _ in range(10)]
+    rows += [{"score": 0.98} for _ in range(80)]
+    driver = FakeRoutingDriver(
+        {
+            _NO_EVENTS_TABLE: [{"present": 1}],
+            "FROM mcpg_rag.rerank_events": rows,
+        }
+    )
+    report = await analyze_rerank_score_distribution(driver, n_buckets=10)  # type: ignore[arg-type]
+    assert report.event_count == 100
+    assert report.top_decile_share >= 0.50
+    assert any(f.code == "score_clustering" for f in report.findings)
+
+
+async def test_analyze_rerank_ndcg_fires_hurts_when_cross_order_is_worse() -> None:
+    from mcpg.rag_efficiency import analyze_rerank_ndcg
+
+    # bi-rank order: high-relevance items first (ideal). Cross-rank
+    # order: reverse → NDCG drops dramatically.
+    rows = []
+    for q in range(5):
+        for r in range(1, 6):
+            grade = 5 - (r - 1)  # 5, 4, 3, 2, 1 by bi_rank
+            rows.append(
+                {
+                    "query_hash": bytes([q]),
+                    "bi_encoder_rank": r,
+                    "cross_encoder_rank": 6 - r,
+                    "ground_truth_relevance": grade,
+                }
+            )
+    driver = FakeRoutingDriver(
+        {
+            _NO_EVENTS_TABLE: [{"present": 1}],
+            "FROM mcpg_rag.rerank_events": rows,
+        }
+    )
+    report = await analyze_rerank_ndcg(driver, k=5)  # type: ignore[arg-type]
+    assert report.labeled_query_count == 5
+    assert report.delta < 0
+    assert any(f.code == "rerank_hurts_ndcg" for f in report.findings)
+
+
+async def test_analyze_rerank_ndcg_fires_lifts_when_cross_improves_ordering() -> None:
+    from mcpg.rag_efficiency import analyze_rerank_ndcg
+
+    # bi-rank order: ascending grades (worst NDCG). Cross-rank
+    # order: descending grades (best NDCG). Cross_rank is the
+    # reverse of bi_rank, so grades follow accordingly.
+    rows = []
+    for q in range(5):
+        for r in range(1, 6):
+            rows.append(
+                {
+                    "query_hash": bytes([q]),
+                    "bi_encoder_rank": r,
+                    "cross_encoder_rank": 6 - r,
+                    # Grade aligned with bi_rank → by bi_rank: 1,2,3,4,5
+                    # (worst order); by cross_rank: 5,4,3,2,1 (best).
+                    "ground_truth_relevance": r,
+                }
+            )
+    driver = FakeRoutingDriver(
+        {
+            _NO_EVENTS_TABLE: [{"present": 1}],
+            "FROM mcpg_rag.rerank_events": rows,
+        }
+    )
+    report = await analyze_rerank_ndcg(driver, k=5)  # type: ignore[arg-type]
+    assert report.delta > 0
+    assert any(f.code == "rerank_lifts_ndcg" for f in report.findings)
+
+
+async def test_recommend_rerank_strategy_summarises_no_findings_state() -> None:
+    from mcpg.rag_efficiency import recommend_rerank_strategy
+
+    # Reranker actively reorders (varied ranks per query) but no
+    # labeled rows → none of the rules fire → "healthy" summary.
+    rows = []
+    for q in range(3):
+        for r in range(1, 4):
+            rows.append(
+                {
+                    "query_hash": bytes([q]),
+                    "candidate_id": r,
+                    "bi_encoder_rank": r,
+                    "cross_encoder_rank": 4 - r,
+                    "score": 0.5 + 0.1 * r,
+                    "ground_truth_relevance": None,
+                }
+            )
+    driver = FakeRoutingDriver(
+        {
+            _NO_EVENTS_TABLE: [{"present": 1}],
+            "FROM mcpg_rag.rerank_events": rows,
+        }
+    )
+    rec = await recommend_rerank_strategy(driver)  # type: ignore[arg-type]
+    assert "healthy" in rec.summary or "Mixed" in rec.summary
+
+
+# --- audit_rag_pipeline (Phase B-style category) --------------------------
+
+
+async def test_audit_rag_pipeline_returns_none_when_table_missing() -> None:
+    from mcpg.rag_efficiency import audit_rag_pipeline
+
+    driver = FakeRoutingDriver({})  # no events table
+    assert await audit_rag_pipeline(driver) is None  # type: ignore[arg-type]
+
+
+async def test_audit_rag_pipeline_emits_good_baseline_when_no_findings() -> None:
+    from mcpg.rag_efficiency import audit_rag_pipeline
+
+    driver = FakeRoutingDriver(
+        {
+            _NO_EVENTS_TABLE: [{"present": 1}],
+            "FROM mcpg_rag.rerank_events": [],  # window empty
+        }
+    )
+    category = await audit_rag_pipeline(driver)  # type: ignore[arg-type]
+    assert category is not None
+    assert category.score == 100
+    assert category.status == "GOOD"
+
+
+# --- MCP layer wiring ------------------------------------------------------
+
+
+async def test_rag_analytics_tools_registered_in_read_only_mode() -> None:
+    server = create_server(_READ_ONLY, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert {
+        "analyze_reranker_lift",
+        "analyze_topk_stability",
+        "analyze_rerank_score_distribution",
+        "analyze_rerank_ndcg",
+        "recommend_rerank_strategy",
+    } <= listed
