@@ -415,7 +415,7 @@ async def test_list_pending_migrations_dedup_identifiers_in_report(
 async def test_list_pending_migrations_records_size_bytes(tmp_path: Path) -> None:
     d = _migrations_dir(tmp_path)
     contents = "-- hello\nCREATE TABLE t (id int);\n"
-    (d / "V1__init.sql").write_text(contents)
+    (d / "V1__init.sql").write_text(contents, newline="\n")
     driver = FakeRoutingDriver({"information_schema.tables": []})
 
     report = await list_pending_migrations(
