@@ -3017,6 +3017,105 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         info = await pg_search.get_pg_search_index_metadata(_driver(ctx), schema, index)
         return asdict(info)
 
+    @server.tool(
+        name="pg_search_run",
+        description=(
+            "Run a BM25 keyword search against a pg_search-indexed table. "
+            "Returns hits as {id, score, snippets} where ``id`` is the value "
+            "of the caller-supplied ``key_field`` and ``score`` is "
+            "``pdb.score(t)``. ``columns=None`` searches the whole index; "
+            '``columns=["col"]`` restricts to a single text field. '
+            "Multi-column search needs the pdb.parse per-field config JSON "
+            "and is deferred to a follow-up phase. ``return_snippets=True`` "
+            "requires ``snippet_field`` and projects ``pdb.snippets`` over "
+            "that column. Requires the pg_search extension."
+        ),
+    )
+    async def pg_search_run(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        query: str,
+        key_field: str,
+        limit: int,
+        columns: list[str] | None = None,
+        return_snippets: bool = False,
+        snippet_field: str | None = None,
+        snippet_start_tag: str = "<b>",
+        snippet_end_tag: str = "</b>",
+        snippet_max_num_chars: int = 150,
+    ) -> list[dict[str, Any]]:
+        hits = await pg_search.pg_search_run(
+            _driver(ctx),
+            schema,
+            table,
+            query,
+            key_field,
+            columns=columns,
+            limit=limit,
+            return_snippets=return_snippets,
+            snippet_field=snippet_field,
+            snippet_start_tag=snippet_start_tag,
+            snippet_end_tag=snippet_end_tag,
+            snippet_max_num_chars=snippet_max_num_chars,
+        )
+        return [asdict(hit) for hit in hits]
+
+    @server.tool(
+        name="pg_search_more_like_this",
+        description=(
+            "Find rows similar to a seed document via ``pdb.more_like_this`` "
+            "+ ``@@@``. ``document_id`` is the value of ``key_field`` for the "
+            "seed row. The eight pdb.more_like_this tuning args (min/max "
+            "doc-frequency, term-frequency, query-terms, word-length, boost, "
+            "stopwords) stay at upstream defaults — exposing them is a "
+            "future phase. Returns the same {id, score} hit shape as "
+            "``pg_search_run``. Requires the pg_search extension."
+        ),
+    )
+    async def pg_search_more_like_this(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        document_id: Any,
+        key_field: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        hits = await pg_search.pg_search_more_like_this(
+            _driver(ctx),
+            schema,
+            table,
+            document_id,
+            key_field,
+            limit=limit,
+        )
+        return [asdict(hit) for hit in hits]
+
+    @server.tool(
+        name="pg_search_parse_query",
+        description=(
+            "Parse a query string through ``pdb.parse`` and return its "
+            "canonical text form for debugging — useful for confirming the "
+            "parser interpreted a phrase as expected. ``lenient=True`` "
+            "relaxes syntax checking; ``conjunction_mode=True`` treats "
+            "space-separated terms as AND-joined rather than OR-joined. "
+            "Requires the pg_search extension."
+        ),
+    )
+    async def pg_search_parse_query(
+        ctx: _Ctx,
+        query_string: str,
+        lenient: bool = False,
+        conjunction_mode: bool = False,
+    ) -> dict[str, Any]:
+        parsed = await pg_search.pg_search_parse_query(
+            _driver(ctx),
+            query_string,
+            lenient=lenient,
+            conjunction_mode=conjunction_mode,
+        )
+        return asdict(parsed)
+
 
 def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
     @server.tool(

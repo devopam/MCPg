@@ -1,4 +1,4 @@
-"""Tests for the pg_search BM-1 observability surface."""
+"""Tests for the pg_search BM-1 observability + BM-2 search surfaces."""
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
@@ -8,9 +8,14 @@ from mcpg.config import load_settings
 from mcpg.extensions import ENABLEABLE_EXTENSIONS
 from mcpg.pg_search import (
     PgSearchError,
+    PgSearchHit,
     PgSearchIndexInfo,
+    PgSearchParsedQuery,
     get_pg_search_index_metadata,
     list_pg_search_indexes,
+    pg_search_more_like_this,
+    pg_search_parse_query,
+    pg_search_run,
 )
 from mcpg.server import create_server
 
@@ -282,9 +287,305 @@ def test_pg_search_on_enableable_extensions_allowlist() -> None:
 
 
 async def test_pg_search_tools_registered_for_read_access() -> None:
-    """Both BM-1 tools should be visible via list_tools when running with
-    default (READ-capable) access."""
+    """BM-1 and BM-2 tools should be visible via list_tools when running
+    with default (READ-capable) access."""
     server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
-    assert {"list_pg_search_indexes", "get_pg_search_index_metadata"} <= listed
+    assert {
+        "list_pg_search_indexes",
+        "get_pg_search_index_metadata",
+        "pg_search_run",
+        "pg_search_more_like_this",
+        "pg_search_parse_query",
+    } <= listed
+
+
+# --- BM-2: pg_search_run ----------------------------------------------------
+
+
+async def test_pg_search_run_raises_when_extension_absent() -> None:
+    driver = FakeRoutingDriver({"pg_extension": []})
+
+    with pytest.raises(PgSearchError, match="not installed"):
+        await pg_search_run(driver, "public", "docs", "rust", "id", limit=10)  # type: ignore[arg-type]
+
+
+async def test_pg_search_run_whole_index_search_returns_hits() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "@@@": [
+                {"id": 1, "score": 9.5, "snippets": None},
+                {"id": 2, "score": 7.1, "snippets": None},
+            ],
+        }
+    )
+
+    hits = await pg_search_run(driver, "public", "docs", "rust", "id", limit=10)  # type: ignore[arg-type]
+
+    assert hits == [
+        PgSearchHit(id=1, score=9.5, snippets=[]),
+        PgSearchHit(id=2, score=7.1, snippets=[]),
+    ]
+    # SQL inspection: whole-index form omits the column qualifier on
+    # the @@@ predicate.
+    sql, params, force_readonly = driver.calls[-1]
+    assert force_readonly is True
+    assert " t @@@ %s " in sql
+    assert "ORDER BY pdb.score(t) DESC" in sql
+    assert params == ["rust", 10]
+
+
+async def test_pg_search_run_single_column_search_emits_column_qualifier() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "@@@": [{"id": 1, "score": 5.0, "snippets": None}],
+        }
+    )
+
+    await pg_search_run(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "docs",
+        "rust",
+        "id",
+        columns=["body"],
+        limit=5,
+    )
+
+    sql, params, _ = driver.calls[-1]
+    assert ' t."body" @@@ %s ' in sql
+    assert params == ["rust", 5]
+
+
+async def test_pg_search_run_with_snippets_projects_pdb_snippets() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "@@@": [
+                {"id": 1, "score": 9.5, "snippets": ["<b>rust</b> programming", "<b>rust</b>aceans"]},
+            ],
+        }
+    )
+
+    hits = await pg_search_run(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "docs",
+        "rust",
+        "id",
+        limit=5,
+        return_snippets=True,
+        snippet_field="body",
+    )
+
+    assert hits[0].snippets == ["<b>rust</b> programming", "<b>rust</b>aceans"]
+    sql, params, _ = driver.calls[-1]
+    assert 'pdb.snippets(t."body", %s, %s, %s, NULL, NULL, ' in sql
+    assert params == ["rust", "<b>", "</b>", 150, 5]
+
+
+async def test_pg_search_run_return_snippets_without_field_raises() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="snippet_field"):
+        await pg_search_run(
+            driver,  # type: ignore[arg-type]
+            "public",
+            "docs",
+            "rust",
+            "id",
+            limit=5,
+            return_snippets=True,
+        )
+
+
+async def test_pg_search_run_snippet_field_without_return_snippets_raises() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="snippet_field is only valid"):
+        await pg_search_run(
+            driver,  # type: ignore[arg-type]
+            "public",
+            "docs",
+            "rust",
+            "id",
+            limit=5,
+            return_snippets=False,
+            snippet_field="body",
+        )
+
+
+async def test_pg_search_run_multi_column_search_raises() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="multi-column"):
+        await pg_search_run(
+            driver,  # type: ignore[arg-type]
+            "public",
+            "docs",
+            "rust",
+            "id",
+            columns=["body", "title"],
+            limit=5,
+        )
+
+
+async def test_pg_search_run_empty_columns_raises() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="non-empty list"):
+        await pg_search_run(
+            driver,  # type: ignore[arg-type]
+            "public",
+            "docs",
+            "rust",
+            "id",
+            columns=[],
+            limit=5,
+        )
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, 10_001, True, "10", 1.5])
+async def test_pg_search_run_limit_validation(bad_limit: object) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="limit"):
+        await pg_search_run(driver, "public", "docs", "rust", "id", limit=bad_limit)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("schema", "table", "key_field"),
+    [
+        ("public; DROP TABLE x", "docs", "id"),
+        ("public", "docs; --", "id"),
+        ("public", "docs", "id'; DROP"),
+        ("", "docs", "id"),
+        ("public", "", "id"),
+        ("public", "docs", ""),
+    ],
+)
+async def test_pg_search_run_identifier_validation(schema: str, table: str, key_field: str) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="invalid"):
+        await pg_search_run(driver, schema, table, "rust", key_field, limit=5)  # type: ignore[arg-type]
+
+
+async def test_pg_search_run_query_must_be_str() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="query must be str"):
+        await pg_search_run(driver, "public", "docs", 42, "id", limit=5)  # type: ignore[arg-type]
+
+
+# --- BM-2: pg_search_more_like_this ----------------------------------------
+
+
+async def test_pg_search_more_like_this_raises_when_extension_absent() -> None:
+    driver = FakeRoutingDriver({"pg_extension": []})
+
+    with pytest.raises(PgSearchError, match="not installed"):
+        await pg_search_more_like_this(  # type: ignore[arg-type]
+            driver, "public", "docs", 42, "id", limit=10
+        )
+
+
+async def test_pg_search_more_like_this_returns_hits_with_correlated_seed() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pdb.more_like_this(seed)": [
+                {"id": 2, "score": 8.0},
+                {"id": 3, "score": 6.5},
+            ],
+        }
+    )
+
+    hits = await pg_search_more_like_this(  # type: ignore[arg-type]
+        driver, "public", "docs", 42, "id", limit=10
+    )
+
+    assert hits == [PgSearchHit(id=2, score=8.0), PgSearchHit(id=3, score=6.5)]
+    sql, params, force_readonly = driver.calls[-1]
+    assert force_readonly is True
+    # Seed sub-SELECT references the same table as the outer scan,
+    # joined by key_field.
+    assert 'WHERE seed."id" = %s' in sql
+    assert "pdb.more_like_this(seed)" in sql
+    assert params == [42, 10]
+
+
+async def test_pg_search_more_like_this_rejects_bad_limit() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="limit"):
+        await pg_search_more_like_this(  # type: ignore[arg-type]
+            driver, "public", "docs", 42, "id", limit=0
+        )
+
+
+async def test_pg_search_more_like_this_validates_identifiers() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="invalid"):
+        await pg_search_more_like_this(  # type: ignore[arg-type]
+            driver, "bad; schema", "docs", 42, "id", limit=10
+        )
+
+
+# --- BM-2: pg_search_parse_query -------------------------------------------
+
+
+async def test_pg_search_parse_query_raises_when_extension_absent() -> None:
+    driver = FakeRoutingDriver({"pg_extension": []})
+
+    with pytest.raises(PgSearchError, match="not installed"):
+        await pg_search_parse_query(driver, "rust AND programming")  # type: ignore[arg-type]
+
+
+async def test_pg_search_parse_query_returns_parsed_text() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pdb.parse(%s, %s, %s)": [{"parsed": "(+rust +programming)"}],
+        }
+    )
+
+    parsed = await pg_search_parse_query(  # type: ignore[arg-type]
+        driver, "rust AND programming", lenient=True, conjunction_mode=True
+    )
+
+    assert parsed == PgSearchParsedQuery(parsed="(+rust +programming)")
+    sql, params, _ = driver.calls[-1]
+    assert params == ["rust AND programming", True, True]
+    assert "pdb.parse(%s, %s, %s)::text" in sql
+
+
+async def test_pg_search_parse_query_empty_result_yields_empty_string() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pdb.parse": [],  # defensive — upstream always returns a row
+        }
+    )
+
+    parsed = await pg_search_parse_query(driver, "rust")  # type: ignore[arg-type]
+    assert parsed.parsed == ""
+
+
+@pytest.mark.parametrize("bad_query", [None, 42, ["rust"], b"rust"])
+async def test_pg_search_parse_query_rejects_non_string(bad_query: object) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="query_string must be str"):
+        await pg_search_parse_query(driver, bad_query)  # type: ignore[arg-type]
+
+
+async def test_pg_search_parse_query_rejects_non_bool_flags() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="lenient must be a bool"):
+        await pg_search_parse_query(driver, "rust", lenient="yes")  # type: ignore[arg-type]
