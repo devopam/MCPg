@@ -129,7 +129,7 @@ SELECT
     t.relname AS table,
     (
         SELECT array_agg(a.attname ORDER BY k.ord)
-        FROM unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord)
+        FROM unnest(ix.indkey::int[]) WITH ORDINALITY AS k(attnum, ord)
         JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
     ) AS columns,
     i.reloptions AS reloptions
@@ -149,7 +149,7 @@ SELECT
     t.relname AS table,
     (
         SELECT array_agg(a.attname ORDER BY k.ord)
-        FROM unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord)
+        FROM unnest(ix.indkey::int[]) WITH ORDINALITY AS k(attnum, ord)
         JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
     ) AS columns,
     i.reloptions AS reloptions
