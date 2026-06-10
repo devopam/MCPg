@@ -47,6 +47,7 @@ from mcpg import (
     naming,
     nl2sql,
     partman,
+    pg_search,
     prisma,
     query,
     rag_efficiency,
@@ -2982,6 +2983,41 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
         return asdict(knobs)
 
 
+def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="list_pg_search_indexes",
+        description=(
+            "List every pg_search BM25 index in the database along with "
+            "the parsed reloptions (the ``WITH (...)`` config) for each. "
+            "Surfaces the 13 documented bm25 options (key_field, the six "
+            "*_fields jsonb configs, layer_sizes, background_layer_sizes, "
+            "target_segment_count, mutable_segment_rows, sort_by, "
+            "search_tokenizer). The full parsed dict is preserved in "
+            "``index_options`` so unsurfaced or future options stay "
+            "reachable. Returns an empty list when the pg_search extension "
+            "is not installed."
+        ),
+    )
+    async def list_pg_search_indexes(ctx: _Ctx) -> list[dict[str, Any]]:
+        infos = await pg_search.list_pg_search_indexes(_driver(ctx))
+        return [asdict(info) for info in infos]
+
+    @server.tool(
+        name="get_pg_search_index_metadata",
+        description=(
+            "Fetch the parsed reloptions for a single BM25 index "
+            "(schema.index). Same shape as one entry of "
+            "``list_pg_search_indexes`` — typed accessors for the 13 "
+            "documented options plus the raw ``index_options`` dict. "
+            "Raises when the extension is not installed or no BM25 "
+            "index by that name exists."
+        ),
+    )
+    async def get_pg_search_index_metadata(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
+        info = await pg_search.get_pg_search_index_metadata(_driver(ctx), schema, index)
+        return asdict(info)
+
+
 def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="maintain_turboquant_index",
@@ -3641,6 +3677,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_health(server)
         _register_liveops(server)
         _register_turboquant_reads(server)
+        _register_pg_search_reads(server)
         _register_timescaledb_reads(server)
         _register_graphs_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
