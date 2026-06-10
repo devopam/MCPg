@@ -7,11 +7,13 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcpg.config import load_settings
 from mcpg.extensions import ENABLEABLE_EXTENSIONS
 from mcpg.pg_search import (
+    HybridHit,
     PgSearchError,
     PgSearchHit,
     PgSearchIndexInfo,
     PgSearchParsedQuery,
     get_pg_search_index_metadata,
+    hybrid_bm25_vector_search,
     list_pg_search_indexes,
     pg_search_more_like_this,
     pg_search_parse_query,
@@ -628,3 +630,402 @@ async def test_pg_search_parse_query_rejects_non_bool_flags() -> None:
 
     with pytest.raises(PgSearchError, match="lenient must be a bool"):
         await pg_search_parse_query(driver, "rust", lenient="yes")  # type: ignore[arg-type]
+
+
+# --- BM-3: hybrid_bm25_vector_search ---------------------------------------
+
+
+_HYBRID_FUSED_RESULT = [
+    {"id": 1, "score": 0.0328, "bm25_rank": 1, "vector_rank": 2},
+    {"id": 7, "score": 0.0247, "bm25_rank": None, "vector_rank": 1},
+    {"id": 3, "score": 0.0163, "bm25_rank": 2, "vector_rank": None},
+]
+
+
+async def test_hybrid_bm25_vector_search_raises_when_extension_absent() -> None:
+    driver = FakeRoutingDriver({"pg_extension": []})
+
+    with pytest.raises(PgSearchError, match="not installed"):
+        await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+            driver,
+            "public",
+            "docs",
+            query_text="rust",
+            query_vector=[1.0, 2.0, 3.0],
+            key_field="id",
+            vector_column="embedding",
+            final_limit=5,
+        )
+
+
+async def test_hybrid_bm25_vector_search_returns_fused_hits() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WITH bm25_leg": _HYBRID_FUSED_RESULT,
+        }
+    )
+
+    hits = await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        query_text="rust",
+        query_vector=[1.0, 2.0, 3.0],
+        key_field="id",
+        vector_column="embedding",
+        final_limit=5,
+    )
+
+    assert hits == [
+        HybridHit(id=1, score=0.0328, bm25_rank=1, vector_rank=2),
+        HybridHit(id=7, score=0.0247, bm25_rank=None, vector_rank=1),
+        HybridHit(id=3, score=0.0163, bm25_rank=2, vector_rank=None),
+    ]
+
+
+async def test_hybrid_bm25_vector_search_renders_canonical_rrf_sql() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WITH bm25_leg": [],
+        }
+    )
+
+    await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        query_text="rust",
+        query_vector=[1.0, 2.0, 3.0],
+        key_field="id",
+        vector_column="embedding",
+        final_limit=5,
+    )
+
+    sql, params, force_readonly = driver.calls[-1]
+    assert force_readonly is True
+    # CTE shape per the 2025-10-22 blog + tests/tests/documentation.rs.
+    assert "WITH bm25_leg AS" in sql
+    assert "ROW_NUMBER() OVER (ORDER BY pdb.score(t) DESC)" in sql
+    assert " vector_leg AS" in sql
+    assert ' t."embedding" <=> %s::vector' in sql
+    assert " fused AS" in sql
+    assert " UNION ALL" in sql
+    # Defaults render as literals: k=60, equal 1.0 weights, per-leg
+    # LIMIT 20.
+    assert "1.0 / (60 + rank)" in sql
+    assert "1.0 * 1.0 / (60 + rank)" in sql
+    assert "LIMIT 20" in sql
+    # Bound params: query_text, vector (x2), final_limit.
+    assert params == ["rust", "[1.0,2.0,3.0]", "[1.0,2.0,3.0]", 5]
+    # Top-level GROUP BY + SUM is what makes this RRF (not a join).
+    assert "GROUP BY id" in sql
+    assert "SUM(score)" in sql
+
+
+async def test_hybrid_bm25_vector_search_weights_and_k_render_as_literals() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WITH bm25_leg": [],
+        }
+    )
+
+    await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        query_text="rust",
+        query_vector=[1.0],
+        key_field="id",
+        vector_column="embedding",
+        k=42,
+        bm25_weight=0.7,
+        vector_weight=0.3,
+        per_leg_limit=15,
+        final_limit=5,
+    )
+
+    sql, _, _ = driver.calls[-1]
+    assert "0.7 * 1.0 / (42 + rank)" in sql
+    assert "0.3 * 1.0 / (42 + rank)" in sql
+    assert "LIMIT 15" in sql
+
+
+async def test_hybrid_bm25_vector_search_single_column_bm25_target() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WITH bm25_leg": [],
+        }
+    )
+
+    await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        query_text="rust",
+        query_vector=[1.0],
+        key_field="id",
+        vector_column="embedding",
+        bm25_columns=["body"],
+        final_limit=5,
+    )
+
+    sql, _, _ = driver.calls[-1]
+    assert ' t."body" @@@ %s' in sql
+
+
+async def test_hybrid_bm25_vector_search_multi_column_bm25_raises() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="multi-column"):
+        await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+            driver,
+            "public",
+            "docs",
+            query_text="rust",
+            query_vector=[1.0],
+            key_field="id",
+            vector_column="embedding",
+            bm25_columns=["body", "title"],
+            final_limit=5,
+        )
+
+
+@pytest.mark.parametrize("op", ["<=>", "<->", "<#>"])
+async def test_hybrid_bm25_vector_search_accepts_each_distance_op(op: str) -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WITH bm25_leg": [],
+        }
+    )
+
+    await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        query_text="rust",
+        query_vector=[1.0],
+        key_field="id",
+        vector_column="embedding",
+        distance_op=op,
+        final_limit=5,
+    )
+
+    sql, _, _ = driver.calls[-1]
+    assert f' t."embedding" {op} %s::vector' in sql
+
+
+@pytest.mark.parametrize("op", ["<>", "@@", "drop", ""])
+async def test_hybrid_bm25_vector_search_rejects_unknown_distance_op(op: str) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="distance_op"):
+        await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+            driver,
+            "public",
+            "docs",
+            query_text="rust",
+            query_vector=[1.0],
+            key_field="id",
+            vector_column="embedding",
+            distance_op=op,
+            final_limit=5,
+        )
+
+
+@pytest.mark.parametrize(
+    ("bm25_weight", "vector_weight"),
+    [
+        (-1.0, 1.0),
+        (1.0, -0.1),
+        (float("nan"), 1.0),
+        (1.0, float("inf")),
+        (True, 1.0),  # bool-as-int trap
+        ("0.5", 1.0),
+    ],
+)
+async def test_hybrid_bm25_vector_search_rejects_bad_weights(bm25_weight: object, vector_weight: object) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="weight"):
+        await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+            driver,
+            "public",
+            "docs",
+            query_text="rust",
+            query_vector=[1.0],
+            key_field="id",
+            vector_column="embedding",
+            bm25_weight=bm25_weight,
+            vector_weight=vector_weight,
+            final_limit=5,
+        )
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, 10_001, True, "10"])
+@pytest.mark.parametrize("which", ["final_limit", "per_leg_limit"])
+async def test_hybrid_bm25_vector_search_rejects_bad_limits(bad_limit: object, which: str) -> None:
+    """Both limit kwargs go through _validate_limit; the parametrize
+    sweep covers each so neither path can regress unnoticed."""
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    kwargs: dict[str, object] = {
+        "schema": "public",
+        "table": "docs",
+        "query_text": "rust",
+        "query_vector": [1.0],
+        "key_field": "id",
+        "vector_column": "embedding",
+        # Defaults; the parametrize swaps one of these out below.
+        "final_limit": 5,
+        "per_leg_limit": 20,
+    }
+    kwargs[which] = bad_limit
+    with pytest.raises(PgSearchError, match="limit"):
+        await hybrid_bm25_vector_search(driver, **kwargs)  # type: ignore[arg-type]
+
+
+async def test_hybrid_bm25_vector_search_raises_when_pgvector_absent() -> None:
+    """pg_search is installed but pgvector is not — the vector leg
+    needs %s::vector to resolve, so the wrapper must fail fast with
+    a clear message rather than letting PostgreSQL raise 'type
+    vector does not exist'."""
+    # FakeRoutingDriver matches the first substring whose key appears
+    # in the query. Both extension presence checks use the same
+    # `pg_extension` query, so we need to discriminate by params.
+    from _fakes import FakeParamRoutingDriver
+
+    driver = FakeParamRoutingDriver(
+        {
+            ("pg_extension", ("pg_search",)): [{"present": 1}],
+            ("pg_extension", ("vector",)): [],
+        }
+    )
+
+    with pytest.raises(PgSearchError, match="pgvector"):
+        await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+            driver,
+            "public",
+            "docs",
+            query_text="rust",
+            query_vector=[1.0],
+            key_field="id",
+            vector_column="embedding",
+            final_limit=5,
+        )
+
+
+@pytest.mark.parametrize("bad_k", [0, -1, True])
+async def test_hybrid_bm25_vector_search_rejects_bad_k(bad_k: object) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="k"):
+        await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+            driver,
+            "public",
+            "docs",
+            query_text="rust",
+            query_vector=[1.0],
+            key_field="id",
+            vector_column="embedding",
+            k=bad_k,
+            final_limit=5,
+        )
+
+
+@pytest.mark.parametrize(
+    ("schema", "table", "key_field", "vector_column"),
+    [
+        ("public; --", "docs", "id", "embedding"),
+        ("public", "docs; DROP", "id", "embedding"),
+        ("public", "docs", "id'or'1", "embedding"),
+        ("public", "docs", "id", "embedding); --"),
+    ],
+)
+async def test_hybrid_bm25_vector_search_identifier_validation(
+    schema: str, table: str, key_field: str, vector_column: str
+) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="invalid"):
+        await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+            driver,
+            schema,
+            table,
+            query_text="rust",
+            query_vector=[1.0],
+            key_field=key_field,
+            vector_column=vector_column,
+            final_limit=5,
+        )
+
+
+async def test_hybrid_bm25_vector_search_query_text_must_be_str() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="query_text must be str"):
+        await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+            driver,
+            "public",
+            "docs",
+            query_text=42,
+            query_vector=[1.0],
+            key_field="id",
+            vector_column="embedding",
+            final_limit=5,
+        )
+
+
+async def test_hybrid_bm25_vector_search_accepts_preformatted_vector_string() -> None:
+    """Pre-formatted ``[1,2,3]`` strings pass through unchanged — mirrors
+    the turboquant query wrappers' behavior."""
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WITH bm25_leg": [],
+        }
+    )
+
+    await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        query_text="rust",
+        query_vector="[0.1,0.2,0.3]",
+        key_field="id",
+        vector_column="embedding",
+        final_limit=5,
+    )
+
+    _, params, _ = driver.calls[-1]
+    assert params == ["rust", "[0.1,0.2,0.3]", "[0.1,0.2,0.3]", 5]
+
+
+async def test_hybrid_bm25_vector_search_rejects_bad_vector_type() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(PgSearchError, match="query_vector"):
+        await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+            driver,
+            "public",
+            "docs",
+            query_text="rust",
+            query_vector=42,
+            key_field="id",
+            vector_column="embedding",
+            final_limit=5,
+        )
+
+
+# --- Tool registration for BM-3 --------------------------------------------
+
+
+async def test_hybrid_bm25_vector_search_tool_registered() -> None:
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "hybrid_bm25_vector_search" in listed

@@ -3121,6 +3121,59 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         )
         return asdict(parsed)
 
+    @server.tool(
+        name="hybrid_bm25_vector_search",
+        description=(
+            "Combine a BM25 search and a pgvector search via Reciprocal "
+            "Rank Fusion — the canonical v2 pattern ParadeDB documents in "
+            "the 2025-10-22 'Hybrid Search Missing Manual' blog post. "
+            "Returns hits as {id, score, bm25_rank, vector_rank}. ``score`` "
+            "is the summed ``sum(weight * 1.0 / (k + rank))`` across both "
+            "legs; per-leg ranks are surfaced for transparency (either can "
+            "be NULL if a row only appeared in one leg's top-K). "
+            "``distance_op`` is the pgvector operator ('<=>'/'<->'/'<#>' "
+            "— RRF is operator-agnostic). ``bm25_columns=None`` searches "
+            'the whole BM25 index; ``bm25_columns=["col"]`` restricts '
+            "the BM25 leg to a single field. Defaults mirror upstream's "
+            "demonstrated form (cosine, k=60, equal weights, "
+            "per_leg_limit=20). Requires the pg_search and pgvector "
+            "extensions."
+        ),
+    )
+    async def hybrid_bm25_vector_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        query_text: str,
+        query_vector: list[float] | str,
+        key_field: str,
+        vector_column: str,
+        final_limit: int,
+        bm25_columns: list[str] | None = None,
+        distance_op: str = pg_search.HYBRID_DEFAULT_DISTANCE_OP,
+        k: int = pg_search.RRF_DEFAULT_K,
+        bm25_weight: float = pg_search.HYBRID_DEFAULT_WEIGHT,
+        vector_weight: float = pg_search.HYBRID_DEFAULT_WEIGHT,
+        per_leg_limit: int = pg_search.HYBRID_DEFAULT_PER_LEG_LIMIT,
+    ) -> list[dict[str, Any]]:
+        hits = await pg_search.hybrid_bm25_vector_search(
+            _driver(ctx),
+            schema,
+            table,
+            query_text=query_text,
+            query_vector=query_vector,
+            key_field=key_field,
+            vector_column=vector_column,
+            bm25_columns=bm25_columns,
+            distance_op=distance_op,
+            k=k,
+            bm25_weight=bm25_weight,
+            vector_weight=vector_weight,
+            per_leg_limit=per_leg_limit,
+            final_limit=final_limit,
+        )
+        return [asdict(hit) for hit in hits]
+
 
 def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
     @server.tool(

@@ -1,18 +1,19 @@
-"""pg_search integration: observability + search execution (phases BM-1, BM-2).
+"""pg_search integration: observability + search + hybrid (phases BM-1, BM-2, BM-3).
 
 `pg_search <https://github.com/paradedb/paradedb>`_ is a PostgreSQL
 extension by ParadeDB that ships a Tantivy-backed BM25 index access
 method (``USING bm25``) + a `pdb.*` schema of query-building and
-projection helpers. This module covers the *observability* and
-*search-execution* slices — catalog enumeration, metadata fetch,
-keyword search, more-like-this, and query-string parsing. Subsequent
-phases will add hybrid composition (BM-3), DDL (BM-4), and advisor +
-audit (BM-5).
+projection helpers. This module covers the *observability*,
+*search-execution*, and *hybrid-composition* slices — catalog
+enumeration, metadata fetch, keyword search, more-like-this,
+query-string parsing, and BM25+pgvector hybrid retrieval.
+Subsequent phases will add DDL (BM-4) and advisor + audit (BM-5).
 
 * :func:`list_pg_search_indexes`,
   :func:`get_pg_search_index_metadata` — observability.
 * :func:`pg_search_run`, :func:`pg_search_more_like_this`,
   :func:`pg_search_parse_query` — search execution.
+* :func:`hybrid_bm25_vector_search` — BM25 + pgvector RRF fusion.
 
 Reads return cleanly (empty list / raise) when the extension is not
 installed, so callers can treat absence as "no BM25 in use" rather
@@ -54,6 +55,7 @@ them up.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -709,3 +711,268 @@ async def pg_search_parse_query(
         return PgSearchParsedQuery(parsed="")
     parsed = rows[0].cells.get("parsed")
     return PgSearchParsedQuery(parsed=str(parsed) if parsed is not None else "")
+
+
+# --- BM-3: hybrid BM25 + pgvector search -----------------------------------
+#
+# Arithmetic grounded in two upstream sources (BM-0 §2.5 follow-up,
+# 2026-06-10):
+#
+# * Blog: "Hybrid Search in PostgreSQL: The Missing Manual"
+#   (2025-10-22, paradedb.com) — canonical narrative.
+# * `tests/tests/documentation.rs::hybrid_search` — source-of-truth
+#   test that the deprecated docs page used to embed.
+#
+# Both agree on Reciprocal Rank Fusion (RRF) — `sum(1.0 / (k + rank))`
+# over per-source ranks, no min/max normalization of raw scores. There
+# is **no** `paradedb.score_hybrid` / `paradedb.rank_hybrid` helper in
+# v2; operators write the CTE inline. The blog form (UNION ALL +
+# GROUP BY SUM) is simpler than the test's FULL OUTER JOIN form; the
+# arithmetic is identical. MCPg ships the UNION ALL form.
+
+
+# pgvector distance-operator allowlist. RRF arithmetic operates on
+# ranks (not raw scores), so all three operators yield well-formed
+# hybrid scores without any per-operator normalization. The choice
+# only changes which vectors come back as the top-K from the vector
+# leg; the fusion math is operator-agnostic.
+_PGVECTOR_DISTANCE_OPS: frozenset[str] = frozenset({"<=>", "<->", "<#>"})
+
+
+@dataclass(frozen=True, slots=True)
+class HybridHit:
+    """A single row returned by :func:`hybrid_bm25_vector_search`.
+
+    :attr:`id` is the caller-supplied ``key_field`` value. :attr:`score`
+    is the summed RRF score across both legs. :attr:`bm25_rank` and
+    :attr:`vector_rank` carry the row's per-leg ranks for transparency
+    — either can be ``None`` if the row only appeared in one leg's
+    top-K (RRF naturally extends partial-coverage rows by treating
+    the absent leg's contribution as zero).
+    """
+
+    id: Any
+    score: float
+    bm25_rank: int | None = None
+    vector_rank: int | None = None
+
+
+# RRF defaults — both upstream sources (blog + documentation.rs)
+# converge on these literals. Exposed publicly so the FastMCP tool
+# wrapper can keep its signature in sync with the API without
+# re-typing the literals.
+RRF_DEFAULT_K = 60
+HYBRID_DEFAULT_WEIGHT = 1.0
+HYBRID_DEFAULT_PER_LEG_LIMIT = 20
+HYBRID_DEFAULT_DISTANCE_OP = "<=>"
+
+
+def _validate_weight(name: str, value: float) -> None:
+    """Weights must be finite non-negative reals.
+
+    Allowing negative weights would invert one leg's ranking — almost
+    certainly a caller bug. NaN / inf would corrupt the SUM aggregation
+    silently. The bool-as-int / bool-as-float trap is caught by
+    explicitly rejecting bools before the numeric check.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise PgSearchError(f"{name} must be a non-negative finite number; got {value!r}")
+    fval = float(value)
+    if math.isnan(fval) or math.isinf(fval) or fval < 0:
+        raise PgSearchError(f"{name} must be a non-negative finite number; got {value!r}")
+
+
+def _validate_distance_op(op: str) -> None:
+    if op not in _PGVECTOR_DISTANCE_OPS:
+        expected = ", ".join(sorted(_PGVECTOR_DISTANCE_OPS))
+        raise PgSearchError(f"distance_op must be one of {{{expected}}}; got {op!r}")
+
+
+def _format_vector_literal(query_vector: list[float] | str) -> str:
+    """Serialize a Python list to pgvector text format ``[v1,v2,...]``.
+
+    Pre-formatted strings pass through. Mirrors the same shape the
+    turboquant query wrappers accept.
+    """
+    if isinstance(query_vector, str):
+        return query_vector
+    if not isinstance(query_vector, list):
+        raise PgSearchError(f"query_vector must be list[float] or str; got {type(query_vector).__name__}")
+    return "[" + ",".join(str(float(v)) for v in query_vector) + "]"
+
+
+async def hybrid_bm25_vector_search(
+    driver: SqlDriver,
+    schema: str,
+    table: str,
+    *,
+    query_text: str,
+    query_vector: list[float] | str,
+    key_field: str,
+    vector_column: str,
+    bm25_columns: list[str] | None = None,
+    distance_op: str = HYBRID_DEFAULT_DISTANCE_OP,
+    k: int = RRF_DEFAULT_K,
+    bm25_weight: float = HYBRID_DEFAULT_WEIGHT,
+    vector_weight: float = HYBRID_DEFAULT_WEIGHT,
+    per_leg_limit: int = HYBRID_DEFAULT_PER_LEG_LIMIT,
+    final_limit: int,
+) -> list[HybridHit]:
+    """Combine a BM25 search and a pgvector search via Reciprocal Rank Fusion.
+
+    Builds and executes the canonical v2 hybrid pattern documented
+    by ParadeDB in the 2025-10-22 "Hybrid Search Missing Manual"
+    blog post and pinned in
+    ``tests/tests/documentation.rs::hybrid_search``::
+
+        WITH
+        bm25_leg AS (
+            SELECT t."<key>",
+                   ROW_NUMBER() OVER (ORDER BY pdb.score(t) DESC) AS rank
+            FROM "<schema>"."<table>" AS t
+            WHERE <search_target> @@@ %s
+            ORDER BY pdb.score(t) DESC
+            LIMIT %s
+        ),
+        vector_leg AS (
+            SELECT t."<key>",
+                   ROW_NUMBER() OVER (ORDER BY t."<vec>" <op> %s::vector) AS rank
+            FROM "<schema>"."<table>" AS t
+            ORDER BY t."<vec>" <op> %s::vector
+            LIMIT %s
+        ),
+        fused AS (
+            SELECT id,
+                   <bm25_weight> * 1.0 / (<k> + rank) AS score,
+                   rank AS bm25_rank,
+                   NULL::int AS vector_rank
+            FROM bm25_leg
+            UNION ALL
+            SELECT id,
+                   <vector_weight> * 1.0 / (<k> + rank) AS score,
+                   NULL::int AS bm25_rank,
+                   rank AS vector_rank
+            FROM vector_leg
+        )
+        SELECT id,
+               SUM(score) AS score,
+               MAX(bm25_rank) AS bm25_rank,
+               MAX(vector_rank) AS vector_rank
+        FROM fused
+        GROUP BY id
+        ORDER BY score DESC
+        LIMIT %s
+
+    RRF is operator-agnostic: ``distance_op`` (``<=>`` cosine,
+    ``<->`` L2, ``<#>`` negative inner product) only affects which
+    vectors land in the vector leg's top-K, not the fusion arithmetic.
+    Defaults match upstream's demonstrated form (cosine,
+    ``k = 60``, equal weights, ``per_leg_limit = 20``).
+
+    :data:`bm25_columns` mirrors :func:`pg_search_run`'s
+    ``columns`` semantics: ``None`` searches the whole BM25 index;
+    ``[one_col]`` restricts the BM25 leg to a single field;
+    multi-column raises. The vector leg always uses the
+    caller-supplied ``vector_column``.
+
+    Composes naturally with the RAG efficiency suite — once the
+    operator picks knobs for the vector leg via
+    ``analyze_vector_search_efficiency``, the same knobs feed this
+    wrapper's :data:`distance_op` and :data:`per_leg_limit`.
+
+    Raises:
+        PgSearchError: extension missing, identifier validation
+            fails, multi-column BM25 search requested, invalid
+            distance_op, non-finite weight, or any limit/k out of
+            bounds.
+
+    References:
+        * https://www.paradedb.com/blog/hybrid-search-in-postgresql-the-missing-manual
+          (retrieved 2026-06-10)
+        * paradedb/paradedb@main ``tests/tests/documentation.rs``
+          function ``hybrid_search``.
+    """
+    _validate_identifier(schema, "schema")
+    _validate_identifier(table, "table")
+    _validate_identifier(key_field, "key_field")
+    _validate_identifier(vector_column, "vector_column")
+    _validate_distance_op(distance_op)
+    if not isinstance(query_text, str):
+        raise PgSearchError(f"query_text must be str; got {type(query_text).__name__}")
+    bm25_column = _validate_columns_arg(bm25_columns)
+    _validate_positive_int("k", k)
+    _validate_weight("bm25_weight", bm25_weight)
+    _validate_weight("vector_weight", vector_weight)
+    _validate_limit(per_leg_limit)
+    _validate_limit(final_limit)
+    vector_literal = _format_vector_literal(query_vector)
+
+    if not await extension_installed(driver, "pg_search"):
+        raise PgSearchError("pg_search extension is not installed in this database")
+    # The vector leg renders `<op> %s::vector`, which only resolves
+    # when pgvector is installed. Fail fast with a clear message so
+    # callers don't see a confusing PostgreSQL "type 'vector' does
+    # not exist" error.
+    if not await extension_installed(driver, "vector"):
+        raise PgSearchError(
+            "pgvector extension is not installed in this database — "
+            "hybrid_bm25_vector_search needs both pg_search and pgvector"
+        )
+
+    qualified_table = f"{_pg_quote_ident(schema)}.{_pg_quote_ident(table)}"
+    quoted_key = _pg_quote_ident(key_field)
+    quoted_vec = _pg_quote_ident(vector_column)
+    bm25_target = f"{_TABLE_ALIAS}.{_pg_quote_ident(bm25_column)}" if bm25_column else _TABLE_ALIAS
+
+    # k, weights, and per-leg limits are validated numerics, so
+    # rendering them as literals is safe and keeps the bind list to
+    # just the per-call values (query_text, vector x 2, final_limit).
+    sql = (
+        f"WITH "
+        f"bm25_leg AS ("
+        f" SELECT {_TABLE_ALIAS}.{quoted_key} AS id,"
+        f" ROW_NUMBER() OVER (ORDER BY pdb.score({_TABLE_ALIAS}) DESC) AS rank"
+        f" FROM {qualified_table} AS {_TABLE_ALIAS}"
+        f" WHERE {bm25_target} @@@ %s"
+        f" ORDER BY pdb.score({_TABLE_ALIAS}) DESC"
+        f" LIMIT {per_leg_limit}"
+        f"),"
+        f" vector_leg AS ("
+        f" SELECT {_TABLE_ALIAS}.{quoted_key} AS id,"
+        f" ROW_NUMBER() OVER (ORDER BY {_TABLE_ALIAS}.{quoted_vec} {distance_op} %s::vector) AS rank"
+        f" FROM {qualified_table} AS {_TABLE_ALIAS}"
+        f" ORDER BY {_TABLE_ALIAS}.{quoted_vec} {distance_op} %s::vector"
+        f" LIMIT {per_leg_limit}"
+        f"),"
+        f" fused AS ("
+        f" SELECT id,"
+        f" {bm25_weight} * 1.0 / ({k} + rank) AS score,"
+        f" rank AS bm25_rank,"
+        f" NULL::int AS vector_rank"
+        f" FROM bm25_leg"
+        f" UNION ALL"
+        f" SELECT id,"
+        f" {vector_weight} * 1.0 / ({k} + rank) AS score,"
+        f" NULL::int AS bm25_rank,"
+        f" rank AS vector_rank"
+        f" FROM vector_leg"
+        f") "
+        f"SELECT id, SUM(score) AS score,"
+        f" MAX(bm25_rank) AS bm25_rank,"
+        f" MAX(vector_rank) AS vector_rank "
+        f"FROM fused "
+        f"GROUP BY id "
+        f"ORDER BY score DESC "
+        f"LIMIT %s"
+    )
+    params: list[Any] = [query_text, vector_literal, vector_literal, final_limit]
+    rows = await driver.execute_query(sql, params=params, force_readonly=True)
+    return [
+        HybridHit(
+            id=row.cells["id"],
+            score=float(row.cells["score"]),
+            bm25_rank=_maybe_int(row.cells.get("bm25_rank")),
+            vector_rank=_maybe_int(row.cells.get("vector_rank")),
+        )
+        for row in rows or []
+    ]
