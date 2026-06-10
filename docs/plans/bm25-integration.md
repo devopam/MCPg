@@ -80,14 +80,42 @@ Verbatim from `pg_search/src/bootstrap/` Rust declarations
   §6 "out of scope (until needed)" — usable surface, but BM-2's
   `pg_search_parse_query` covers the common path.
 
-**Honest gap.** The investigation agent could not locate the
-`pdb.snippet` / `pdb.snippets` definition in source — the v2 blog
-documents them, but `grep` over the source tree did not return a
-`CREATE FUNCTION` or pgrx declaration. **Action before BM-2:**
-confirm the source location (likely a Rust macro-generated
-declaration the simple grep missed) and pin the return type
-verbatim. If the source can't be located, BM-2 ships without
-snippet support and revisits when ParadeDB documents it.
+**Snippet source — resolved (post-BM-0 follow-up investigation).**
+The first sweep missed `pdb.snippet` / `pdb.snippets` because they
+do not live in `pg_search/src/bootstrap/`. A targeted follow-up
+agent located them in
+`pg_search/src/postgres/customscan/basescan/projections/snippet.rs`
+(paradedb/paradedb@`8bb9a64`). Verbatim signatures:
+
+- `pdb.snippet(field anyelement, start_tag text DEFAULT '<b>',
+  end_tag text DEFAULT '</b>', max_num_chars int4 DEFAULT 150,
+  "limit" int4 DEFAULT NULL, "offset" int4 DEFAULT NULL) → text`
+- `pdb.snippets(field anyelement, start_tag text DEFAULT '<b>',
+  end_tag text DEFAULT '</b>', max_num_chars int4 DEFAULT 150,
+  "limit" int4 DEFAULT NULL, "offset" int4 DEFAULT NULL,
+  sort_by text DEFAULT 'score') → text[]`
+
+Both are `#[pg_extern(stable, parallel_safe)]` Rust functions; the
+pgrx-generated SQL declarations register them under schema `pdb`.
+Two independent functions, not wrappers of each other —
+`pdb.snippets` adds `sort_by` and returns the multi-snippet array.
+
+**Caveat.** These are pgrx stubs marked
+`#[allow(unused_variables)]`; the actual highlight generation
+happens during custom-scan projection rewriting (see
+`pg_search/src/postgres/customscan/projections.rs` →
+`tantivy::snippet::SnippetGenerator`). Calling `pdb.snippet(...)`
+outside a `pg_search`-driven SELECT executes the stub, not real
+highlight code. BM-2's `pg_search_run` wires the snippet
+projection together with the `@@@` predicate so this is
+transparent for callers; bare-call wrappers (if ever needed) must
+document the constraint.
+
+`pdb.snippet_positions(field anyelement, "limit" int4, "offset"
+int4) → int[][]` also lives in the same file via an explicit
+`sql = r#"..."#` override. Deferred — the `int[][]` return shape
+needs extra marshaling and there's no current MCPg consumer for
+character positions.
 
 ### 2.2 `bm25` index `WITH (...)` options — resolved
 
