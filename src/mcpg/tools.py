@@ -3028,7 +3028,12 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
             "Multi-column search needs the pdb.parse per-field config JSON "
             "and is deferred to a follow-up phase. ``return_snippets=True`` "
             "requires ``snippet_field`` and projects ``pdb.snippets`` over "
-            "that column. Requires the pg_search extension."
+            "that column. Requires the pg_search extension. SECURITY: "
+            "``snippet_start_tag`` / ``snippet_end_tag`` are not sanitized "
+            "(they pass through to upstream as-is). The defaults match "
+            "pg_search's HTML defaults; if callers forward untrusted values "
+            "and a downstream consumer renders snippets as HTML, that's an "
+            "XSS vector — output escaping is the renderer's responsibility."
         ),
     )
     async def pg_search_run(

@@ -510,6 +510,21 @@ async def pg_search_run(
             fails, limit out of bounds, multi-column search
             requested, or ``return_snippets=True`` without a
             ``snippet_field``.
+
+    Security:
+        ``snippet_start_tag`` / ``snippet_end_tag`` are bound as
+        PostgreSQL string literals via ``%s`` parameters — there is
+        no SQL-injection surface. The defaults match upstream's
+        (``<b>`` / ``</b>``) for HTML rendering, and most callers
+        will leave them at the defaults or set them to other
+        rendering-context tags. If a caller forwards
+        attacker-controlled values and a downstream consumer
+        renders the returned :attr:`PgSearchHit.snippets` as HTML
+        without escaping the surrounding match text, those tags
+        become a cross-site scripting (XSS) vector. **MCPg returns
+        the raw ``text[]`` from PostgreSQL; output escaping is the
+        renderer's responsibility.** Treat the snippet strings as
+        untrusted at the rendering layer.
     """
     _validate_identifier(schema, "schema")
     _validate_identifier(table, "table")
