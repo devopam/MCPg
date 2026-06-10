@@ -180,19 +180,44 @@ Rationale and scope:
   incompatible with AGPL pick a different BM25 implementation
   (this doc's §1 lists alternatives).
 
-### 2.5 v2 hybrid-search arithmetic — still pending (BM-3 only)
+### 2.5 v2 hybrid-search arithmetic — resolved
 
-This unknown only gates **BM-3** (hybrid composition). BM-1 / BM-2
-/ BM-4 / BM-5 can proceed without it.
+A focused follow-up agent (2026-06-10) pinned the canonical v2
+arithmetic from two living upstream sources:
 
-ParadeDB's "Hybrid Search Missing Manual" documents the combination
-pattern (`pdb.score(key)` weighted against a pgvector distance
-expression), but the v2-exact arithmetic (linear blend with
-normalization, RRF, tunable weight knob, …) is not yet pinned to a
-verbatim source citation. **Action before BM-3:** read the v2 blog
-post + sample queries in `pg_search/tests/` to pin the arithmetic,
-or fall back to a documented linear blend with a clear "operator
-chooses the weights" interface.
+- **Blog post** (2025-10-22): "Hybrid Search in PostgreSQL: The
+  Missing Manual" — the canonical narrative since the dedicated
+  docs page was removed.
+- **`tests/tests/documentation.rs::hybrid_search`** — the
+  source-of-truth test that the removed docs page used to embed.
+
+Both agree on **Reciprocal Rank Fusion (RRF)** with the formula
+`sum(1.0 / (k + rank))` per source, summed via UNION ALL + GROUP
+BY. The literal `k = 60` constant matches both sources. Equal
+weights are the default; the blog's weighted variant uses literal
+float multipliers (`bm25_weight * 1.0/(k+rank)` + `vector_weight *
+1.0/(k+rank)`). There is **no** `paradedb.score_hybrid` /
+`paradedb.rank_hybrid` helper function in v2 (GitHub code search
+returned zero hits on `main`) — operators write the CTE inline.
+
+**MCPg's BM-3 wrapper ships RRF** as the documented default. The
+UNION ALL + GROUP BY SUM form is simpler than the test's FULL OUTER
+JOIN + COALESCE form; the arithmetic is identical. The wrapper
+exposes `k`, `bm25_weight`, `vector_weight`, `per_leg_limit`,
+`distance_op` (allowlist `<=>` / `<->` / `<#>`), and `final_limit`
+as kwargs. Linear blend is **not** offered because there is no
+upstream v2 source for min/max normalized linear blend — shipping
+it would be speculation.
+
+**Caveat — docs page removed.** The hybrid guide on
+`docs.paradedb.com` returns HTTP 404 as of 2026-06-10 (the
+`.prettierignore` still lists `docs/documentation/guides/hybrid.mdx`
+but the file is gone). The blog post is the current canonical
+reference; future ParadeDB versions may ship a more formal
+hybrid-search API (the docs-page removal suggests the public
+surface is in flux). MCPg's wrapper docstring cites both the
+blog URL with retrieval date and the test path so future
+maintainers can re-verify when upstream stabilizes.
 
 ## 3. Guardrails (apply to every phase)
 
