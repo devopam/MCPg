@@ -223,12 +223,12 @@ def _parse_reloptions(raw: Any) -> dict[str, Any]:
 def _columns_from_cell(cell: Any) -> list[str]:
     """Normalize the ``columns`` cell into a list of attribute names.
 
-    psycopg returns PG ``text[]`` as a Python list, but defensive
-    handling keeps the mapper from blowing up if the driver returns
-    ``None`` (no rows in the subquery) or a stringified array.
+    psycopg returns PG ``text[]`` as a Python list. ``None`` (no rows
+    matched in the indkey subquery, e.g. an expression-only index) is
+    normalized to ``[]``. Anything else also falls back to ``[]``
+    rather than raising — the upstream column list is informational,
+    not a contract.
     """
-    if cell is None:
-        return []
     if isinstance(cell, list):
         return [str(c) for c in cell if c is not None]
     return []
