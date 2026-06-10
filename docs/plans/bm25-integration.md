@@ -22,10 +22,9 @@ documented return conditions.
    Missing Manual" documents the v2 pattern — `pdb.score(key)` from
    the BM25 side, weighted-summed against a pgvector distance
    expression. The exact arithmetic (linear blend, RRF, or a
-   tunable weight knob) is one of the four §2 unknowns the
-   pre-implementation read needs to pin down — the agent's research
-   captured the *existence* of the pattern, not its v2-exact
-   form. MCPg's RAG efficiency suite
+   tunable weight knob) is the remaining open question after the
+   §2 investigation — see §2.5; gates BM-3 only, not BM-1/BM-2.
+   MCPg's RAG efficiency suite
    (`analyze_vector_search_efficiency`) composes naturally with
    either shape.
 4. **Compositional richness.** `pdb.score`, `pdb.snippet`,
@@ -50,47 +49,122 @@ trainer with trigger), but: split-extension install surface
 pgvector, ~370 stars. Returns when CJK / multilingual becomes a
 top-line MCPg goal.
 
-## 2. Unknowns to resolve before phase 1 starts
+## 2. Pre-implementation investigation — results
 
-A focused investigation (one agent run, same shape as the
-pg_turboquant pre-implementation read) needs to confirm:
+The focused investigation agent (one run, same shape as the
+pg_turboquant pre-implementation read) has completed. Items 1-4
+below are **resolved** with verbatim upstream-source citations;
+item 5 is deferred to BM-3 (does not block BM-1/BM-2/BM-4).
 
-1. **`pdb.*` function return types verbatim** from
-   `pg_search/sql/` source files. The current research run pulled
-   operator names and argument signatures from the v2 API blog post
-   — not from `CREATE FUNCTION` declarations. Examples needing
-   pinning:
-   - `pdb.score(key_field) → ?` (float4? float8?)
-   - `pdb.snippet(field) → ?`
-   - `pdb.snippets(field, start_tag text, end_tag text, max_num_chars int) → ?`
-   - `pdb.agg(json_spec)` — exact input/output JSONB shape.
-   - `pdb.more_like_this(doc_id)` — argument type, return shape.
-   - The non-standard operators (`|||`, `&&&`, `###`, `===`,
-     `##`, `##>`) — operator-class registrations.
-2. **The `bm25` index access method's `WITH (...)` options** —
-   schema-config JSON, tokenizer selection, field-config. Verbatim
-   `CREATE INDEX … USING bm25 (…) WITH (…)` examples from the
-   integration tests are the source of truth.
-3. **Pre-built binary distribution coverage.** Which PG distros
-   are covered out-of-box (Tiger Data / Timescale images, Neon,
-   RDS, self-managed). Bare-source installs need Rust + pgrx.
-4. **AGPL-3.0 redistribution implications** for MCPg's
-   downstream consumers. The `pg_search` extension is AGPL; MCPg's
-   wrapper does not statically link against it (PG extensions run
-   in-process but the license boundary is at the PG dynamic-load
-   layer). This needs an explicit decision from the project owner
-   before wide adoption.
-5. **The v2 hybrid-search arithmetic.** ParadeDB's "Hybrid Search
-   Missing Manual" documents a pattern combining `pdb.score(key)`
-   with a pgvector distance expression. The agent's research
-   captured the *existence* of the pattern, not its v2-exact form
-   (linear weighted sum, RRF, normalized combinations, …). Read
-   the v2 blog post + any sample queries in `pg_search/tests/`
-   before settling the BM-3 implementation.
+### 2.1 `pdb.*` function signatures — resolved
 
-These unknowns map 1-to-1 to a TQ-style "post-investigation"
-agent run. Same discipline: read the upstream SQL definitions
-verbatim, don't infer shapes from prose.
+Verbatim from `pg_search/src/bootstrap/` Rust declarations
+(pgrx generates the `CREATE FUNCTION` SQL from these):
+
+- `pdb.score(anyelement) → float4` — scores the matching row.
+- `pdb.parse(query_string text, lenient bool, conjunction_mode bool) → pdb.query`
+  — third arg `conjunction_mode` was not surfaced in the v2 blog.
+- `pdb.regex(pattern text) → pdb.query`.
+- `pdb.more_like_this(anyelement, fields jsonb DEFAULT NULL, min_doc_frequency int4 DEFAULT NULL, max_doc_frequency int4 DEFAULT NULL, min_term_frequency int4 DEFAULT NULL, max_query_terms int4 DEFAULT NULL, min_word_length int4 DEFAULT NULL, max_word_length int4 DEFAULT NULL, boost_factor float4 DEFAULT NULL, stop_words text[] DEFAULT NULL) → pdb.query`
+  — eight tuning args, all defaulted. BM-2's wrapper exposes the
+  document-identifier arg and `limit`; the eight tuning knobs are
+  out-of-scope for the first wrapper pass and deferred to a future
+  phase.
+- `pdb.agg(aggregation_spec jsonb, solve_mvcc bool DEFAULT true) → jsonb`
+  — input is the Tantivy aggregation JSON, output is the result
+  JSON.
+- **Bonus query-builder helpers** discovered during the read
+  (not in the original §2 list but useful for richer wrappers
+  later): `pdb.all()`, `pdb.boolean(...)`, `pdb.boost(query, factor)`,
+  `pdb.const_score(query, score)`, `pdb.term_set(...)`. Listed in
+  §6 "out of scope (until needed)" — usable surface, but BM-2's
+  `pg_search_parse_query` covers the common path.
+
+**Honest gap.** The investigation agent could not locate the
+`pdb.snippet` / `pdb.snippets` definition in source — the v2 blog
+documents them, but `grep` over the source tree did not return a
+`CREATE FUNCTION` or pgrx declaration. **Action before BM-2:**
+confirm the source location (likely a Rust macro-generated
+declaration the simple grep missed) and pin the return type
+verbatim. If the source can't be located, BM-2 ships without
+snippet support and revisits when ParadeDB documents it.
+
+### 2.2 `bm25` index `WITH (...)` options — resolved
+
+Verbatim from `pg_search/src/api/index.rs` `IndexOptions` struct.
+Thirteen documented options:
+
+1. `key_field` (required) — primary-key column.
+2. `text_fields` (jsonb) — per-text-field tokenizer/analyzer config.
+3. `numeric_fields` (jsonb).
+4. `boolean_fields` (jsonb).
+5. `json_fields` (jsonb).
+6. `range_fields` (jsonb).
+7. `datetime_fields` (jsonb).
+8. `layer_sizes` (text) — segment-merge tier sizes.
+9. `background_layer_sizes` (text) — async-merge tier sizes.
+10. `target_segment_count` (int).
+11. `mutable_segment_rows` (int).
+12. `sort_by` (text) — pre-sorted segment hint.
+13. `search_tokenizer` (jsonb) — index-wide default tokenizer.
+
+BM-4's `create_pg_search_index` exposes the small subset MCPg
+operators are likely to want (per-column text config, k1/b
+analogue via `text_fields`); the rest are reachable via a generic
+`WITH (…)` passthrough or deferred to a tuning-helper tool.
+
+### 2.3 Pre-built binary distribution coverage — resolved
+
+ParadeDB ships pre-built `pg_search` binaries for:
+
+- **Debian/Ubuntu** (.deb), **RHEL/CentOS/Rocky/Alma** (.rpm),
+  **Arch** (.pkg), **macOS** (homebrew tap).
+- **Docker** — `paradedb/paradedb` image.
+- **Neon** (AWS-region only, via Neon's extension marketplace).
+
+**Not** available out-of-the-box on **AWS RDS**, **Google Cloud
+SQL**, **Azure Database for PostgreSQL**, or **Tiger Data /
+Timescale Cloud**. Self-managed PG and Docker are the broad
+deployment story; managed-PG operators need to either run
+ParadeDB's image or compile from source (Rust + pgrx).
+
+MCPg's wrappers are unaffected — `enable_extension` falls through
+to a clear "not available on this server" error when the binary
+isn't installed.
+
+### 2.4 AGPL-3.0 redistribution implications — resolved
+
+**Decision (project owner, 2026-06):** ship the wrappers; document
+the operator-side AGPL obligations clearly in `README.md`.
+
+Rationale and scope:
+
+- MCPg's source remains MIT. Wrappers are arm's-length: SQL-level
+  calls from a Python process to a PG-loaded extension, no static
+  or dynamic linking into MCPg itself.
+- MCPg-the-project is therefore not a derivative work of
+  `pg_search`. Operators who deploy `MCPg + pg_search` over a
+  network are subject to AGPL-3.0's network clause (typically:
+  offer source of `pg_search` and any modifications to users).
+- README §License now carries an explicit "Wrapped extensions —
+  licenses you should know about" matrix with the AGPL-3.0
+  callout for `pg_search`. Operators with redistribution models
+  incompatible with AGPL pick a different BM25 implementation
+  (this doc's §1 lists alternatives).
+
+### 2.5 v2 hybrid-search arithmetic — still pending (BM-3 only)
+
+This unknown only gates **BM-3** (hybrid composition). BM-1 / BM-2
+/ BM-4 / BM-5 can proceed without it.
+
+ParadeDB's "Hybrid Search Missing Manual" documents the combination
+pattern (`pdb.score(key)` weighted against a pgvector distance
+expression), but the v2-exact arithmetic (linear blend with
+normalization, RRF, tunable weight knob, …) is not yet pinned to a
+verbatim source citation. **Action before BM-3:** read the v2 blog
+post + sample queries in `pg_search/tests/` to pin the arithmetic,
+or fall back to a documented linear blend with a clear "operator
+chooses the weights" interface.
 
 ## 3. Guardrails (apply to every phase)
 
@@ -211,13 +285,16 @@ metadata `pg_search` exposes.
 
 ## 5. Sequencing
 
-1. **Investigation run** (read `pg_search/sql/` and resolve the four
-   unknowns in §2) — single focused agent invocation, no code.
-2. **BM-1** — observability. No dependencies.
+1. **Investigation run** — done (§2.1–§2.4 resolved; §2.5 deferred
+   to BM-3). Results landed in this doc as the BM-0 checkpoint PR.
+2. **BM-1** — observability. No dependencies. Next slice.
 3. **BM-2** — search execution. Depends on BM-1's
-   `PgSearchIndexInfo` dataclass.
+   `PgSearchIndexInfo` dataclass. Confirms `pdb.snippet` source
+   location before exposing `return_snippets=True`; otherwise ships
+   without snippet support.
 4. **BM-3** — hybrid search. Depends on BM-2 (uses
-   `pg_search_run` internally) and pgvector (already integrated).
+   `pg_search_run` internally), pgvector (already integrated), and
+   the §2.5 arithmetic decision.
 5. **BM-4** — DDL. Independent of BM-2/BM-3.
 6. **BM-5** — advisor + audit category. Depends on BM-1.
 
@@ -231,9 +308,15 @@ BM-2/BM-4 and BM-3/BM-4 could land in parallel.
   Revisit only if a use case surfaces.
 - **`pg_search` background-merge tuning.** Surfaced via GUCs;
   out-of-scope until performance reports motivate it.
-- **AGPL-3.0 license analysis.** Recommendation noted in §2 —
-  the project owner needs to decide explicitly before BM-1
-  starts. This doc doesn't attempt that analysis.
+- **Bonus `pdb.*` query-builder helpers.** `pdb.all`,
+  `pdb.boolean`, `pdb.boost`, `pdb.const_score`, `pdb.term_set`
+  (discovered during §2.1). Usable surface, but BM-2's
+  `pg_search_parse_query` covers the common path. Wrap when a
+  concrete use case appears.
+- **`pdb.more_like_this` tuning args.** Eight defaulted knobs
+  (min/max doc frequency, term frequency, query terms, word length,
+  boost, stopwords). BM-2 exposes only the document-identifier arg;
+  the tuning surface is deferred to a follow-up phase.
 - **`pg_textsearch` and `vchord_bm25` wrappers.** Deferred per
   §1. Documented return conditions: PG 14–16 support for
   `pg_textsearch`; 1.0 release + hybrid-pattern docs for
