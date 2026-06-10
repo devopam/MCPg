@@ -514,6 +514,32 @@ MIT — see [`LICENSE`](https://github.com/devopam/MCPg/blob/main/LICENSE). The 
 `src/mcpg/_vendor/sql/` is also MIT-licensed; see [`NOTICE`](https://github.com/devopam/MCPg/blob/main/NOTICE)
 for provenance.
 
+### Wrapped extensions — licenses you should know about
+
+MCPg's source is MIT, but the PostgreSQL extensions it wraps each carry
+their own license. The wrappers themselves are at arm's length (SQL-level
+calls, no static or dynamic linking into MCPg's Python process), so
+MCPg-the-project is not a derivative work of any of them. **Operators
+deploying a service built on MCPg + a given extension take on whatever
+obligations that extension's license imposes** — same as installing the
+extension directly. The matrix below names the license per wrapped
+extension so you can make an informed choice.
+
+| Extension | License | Notes for operators |
+|---|---|---|
+| pgvector | PostgreSQL License (BSD-style) | Permissive; no special obligations. |
+| pg_partman | PostgreSQL License | Permissive. |
+| pg_cron | PostgreSQL License | Permissive. |
+| pg_turboquant | MIT | Permissive. |
+| pg_buffercache / pg_walinspect / pgstattuple | PostgreSQL contrib | Permissive. |
+| TimescaleDB | Apache 2.0 (community) + Timescale License (TSL, source-available) for some features | Mixed — see Timescale's docs for which features are TSL-gated. |
+| Apache AGE | Apache 2.0 | Permissive. |
+| pg_search (ParadeDB, planned) | **AGPL-3.0** | **Operators running a network service that lets users interact with `pg_search` are subject to AGPL's network clause** — typically the obligation to offer the source of `pg_search` (and any modifications) to those users. MCPg's wrappers don't extend that obligation to MCPg itself; you take on the obligation when you deploy and "convey" the extension over a network. If your service redistribution model is incompatible with AGPL's network clause, pick a different BM25 implementation (the [BM25 plan](docs/plans/bm25-integration.md) lists alternatives). |
+
+This matrix is a starting point — for the binding answer on your specific
+deployment, consult the extension's upstream LICENSE file and (if it
+matters legally) your own counsel.
+
 > **Disclaimer.** Best efforts have been made to bring MCPg to
 > production grade, but it remains an actively developed project and
 > may contain issues. See the License terms for indemnity details.
