@@ -384,7 +384,46 @@ async def test_pg_search_run_with_snippets_projects_pdb_snippets() -> None:
     assert hits[0].snippets == ["<b>rust</b> programming", "<b>rust</b>aceans"]
     sql, params, _ = driver.calls[-1]
     assert 'pdb.snippets(t."body", %s, %s, %s, NULL, NULL, ' in sql
-    assert params == ["rust", "<b>", "</b>", 150, 5]
+    # Param order must match placeholder positions: snippet args appear
+    # in SELECT (first), then query (WHERE), then limit (LIMIT).
+    assert params == ["<b>", "</b>", 150, "rust", 5]
+
+
+async def test_pg_search_run_param_count_matches_placeholder_count() -> None:
+    """Regression: the snippet projection adds three %s placeholders in
+    SELECT that must appear in params before the WHERE/LIMIT binds.
+    Mismatched ordering would silently rotate the query arg into the
+    snippet slot, returning whatever rows happen to match the start_tag
+    literal."""
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "@@@": [{"id": 1, "score": 1.0, "snippets": []}],
+        }
+    )
+
+    # No-snippet case: 2 placeholders (query, limit).
+    await pg_search_run(driver, "public", "docs", "rust", "id", limit=5)  # type: ignore[arg-type]
+    sql, params, _ = driver.calls[-1]
+    assert sql.count("%s") == len(params)
+    assert params[-2:] == ["rust", 5]
+
+    # Snippet case: 5 placeholders (3 snippet, query, limit).
+    await pg_search_run(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        "rust",
+        "id",
+        limit=5,
+        return_snippets=True,
+        snippet_field="body",
+    )
+    sql, params, _ = driver.calls[-1]
+    assert sql.count("%s") == len(params) == 5
+    # Snippet args first (they appear in SELECT), then query (WHERE),
+    # then limit (LIMIT).
+    assert params == ["<b>", "</b>", 150, "rust", 5]
 
 
 async def test_pg_search_run_return_snippets_without_field_raises() -> None:

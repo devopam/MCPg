@@ -546,14 +546,17 @@ async def pg_search_run(
         f"{_TABLE_ALIAS}.{_pg_quote_ident(key_field)} AS id",
         f"pdb.score({_TABLE_ALIAS}) AS score",
     ]
-    params: list[Any] = [query]
+    # Build params in placeholder order. Snippet placeholders appear
+    # in the SELECT projection (rendered first), so their bind values
+    # must come before `query` (WHERE) and `limit` (LIMIT).
+    params: list[Any] = []
     if snippet_field_validated is not None:
         select_parts.append(
             f"pdb.snippets({_TABLE_ALIAS}.{_pg_quote_ident(snippet_field_validated)}, "
             f"%s, %s, %s, NULL, NULL, '{_SNIPPET_DEFAULT_SORT_BY}') AS snippets"
         )
         params.extend([snippet_start_tag, snippet_end_tag, snippet_max_num_chars])
-    params.append(limit)
+    params.extend([query, limit])
 
     sql = (
         f"SELECT {', '.join(select_parts)} "
