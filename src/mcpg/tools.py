@@ -3150,11 +3150,11 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         vector_column: str,
         final_limit: int,
         bm25_columns: list[str] | None = None,
-        distance_op: str = "<=>",
-        k: int = 60,
-        bm25_weight: float = 1.0,
-        vector_weight: float = 1.0,
-        per_leg_limit: int = 20,
+        distance_op: str = pg_search.HYBRID_DEFAULT_DISTANCE_OP,
+        k: int = pg_search.RRF_DEFAULT_K,
+        bm25_weight: float = pg_search.HYBRID_DEFAULT_WEIGHT,
+        vector_weight: float = pg_search.HYBRID_DEFAULT_WEIGHT,
+        per_leg_limit: int = pg_search.HYBRID_DEFAULT_PER_LEG_LIMIT,
     ) -> list[dict[str, Any]]:
         hits = await pg_search.hybrid_bm25_vector_search(
             _driver(ctx),

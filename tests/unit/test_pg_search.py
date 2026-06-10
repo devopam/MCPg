@@ -867,10 +867,46 @@ async def test_hybrid_bm25_vector_search_rejects_bad_weights(bm25_weight: object
 
 
 @pytest.mark.parametrize("bad_limit", [0, -1, 10_001, True, "10"])
-async def test_hybrid_bm25_vector_search_rejects_bad_limits(bad_limit: object) -> None:
+@pytest.mark.parametrize("which", ["final_limit", "per_leg_limit"])
+async def test_hybrid_bm25_vector_search_rejects_bad_limits(bad_limit: object, which: str) -> None:
+    """Both limit kwargs go through _validate_limit; the parametrize
+    sweep covers each so neither path can regress unnoticed."""
     driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
 
+    kwargs: dict[str, object] = {
+        "schema": "public",
+        "table": "docs",
+        "query_text": "rust",
+        "query_vector": [1.0],
+        "key_field": "id",
+        "vector_column": "embedding",
+        # Defaults; the parametrize swaps one of these out below.
+        "final_limit": 5,
+        "per_leg_limit": 20,
+    }
+    kwargs[which] = bad_limit
     with pytest.raises(PgSearchError, match="limit"):
+        await hybrid_bm25_vector_search(driver, **kwargs)  # type: ignore[arg-type]
+
+
+async def test_hybrid_bm25_vector_search_raises_when_pgvector_absent() -> None:
+    """pg_search is installed but pgvector is not — the vector leg
+    needs %s::vector to resolve, so the wrapper must fail fast with
+    a clear message rather than letting PostgreSQL raise 'type
+    vector does not exist'."""
+    # FakeRoutingDriver matches the first substring whose key appears
+    # in the query. Both extension presence checks use the same
+    # `pg_extension` query, so we need to discriminate by params.
+    from _fakes import FakeParamRoutingDriver
+
+    driver = FakeParamRoutingDriver(
+        {
+            ("pg_extension", ("pg_search",)): [{"present": 1}],
+            ("pg_extension", ("vector",)): [],
+        }
+    )
+
+    with pytest.raises(PgSearchError, match="pgvector"):
         await hybrid_bm25_vector_search(  # type: ignore[arg-type]
             driver,
             "public",
@@ -879,7 +915,7 @@ async def test_hybrid_bm25_vector_search_rejects_bad_limits(bad_limit: object) -
             query_vector=[1.0],
             key_field="id",
             vector_column="embedding",
-            final_limit=bad_limit,
+            final_limit=5,
         )
 
 

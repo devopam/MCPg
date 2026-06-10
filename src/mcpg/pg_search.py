@@ -55,6 +55,7 @@ them up.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -756,10 +757,14 @@ class HybridHit:
     vector_rank: int | None = None
 
 
-# RRF constant: matches the literal `60` both upstream sources use.
-# Exposed as a knob since the optimal k varies with corpus size and
-# leg overlap, but 60 is the canonical default.
-_RRF_DEFAULT_K = 60
+# RRF defaults — both upstream sources (blog + documentation.rs)
+# converge on these literals. Exposed publicly so the FastMCP tool
+# wrapper can keep its signature in sync with the API without
+# re-typing the literals.
+RRF_DEFAULT_K = 60
+HYBRID_DEFAULT_WEIGHT = 1.0
+HYBRID_DEFAULT_PER_LEG_LIMIT = 20
+HYBRID_DEFAULT_DISTANCE_OP = "<=>"
 
 
 def _validate_weight(name: str, value: float) -> None:
@@ -773,8 +778,6 @@ def _validate_weight(name: str, value: float) -> None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PgSearchError(f"{name} must be a non-negative finite number; got {value!r}")
     fval = float(value)
-    import math  # local — only this validator needs it
-
     if math.isnan(fval) or math.isinf(fval) or fval < 0:
         raise PgSearchError(f"{name} must be a non-negative finite number; got {value!r}")
 
@@ -808,11 +811,11 @@ async def hybrid_bm25_vector_search(
     key_field: str,
     vector_column: str,
     bm25_columns: list[str] | None = None,
-    distance_op: str = "<=>",
-    k: int = _RRF_DEFAULT_K,
-    bm25_weight: float = 1.0,
-    vector_weight: float = 1.0,
-    per_leg_limit: int = 20,
+    distance_op: str = HYBRID_DEFAULT_DISTANCE_OP,
+    k: int = RRF_DEFAULT_K,
+    bm25_weight: float = HYBRID_DEFAULT_WEIGHT,
+    vector_weight: float = HYBRID_DEFAULT_WEIGHT,
+    per_leg_limit: int = HYBRID_DEFAULT_PER_LEG_LIMIT,
     final_limit: int,
 ) -> list[HybridHit]:
     """Combine a BM25 search and a pgvector search via Reciprocal Rank Fusion.
@@ -906,6 +909,15 @@ async def hybrid_bm25_vector_search(
 
     if not await extension_installed(driver, "pg_search"):
         raise PgSearchError("pg_search extension is not installed in this database")
+    # The vector leg renders `<op> %s::vector`, which only resolves
+    # when pgvector is installed. Fail fast with a clear message so
+    # callers don't see a confusing PostgreSQL "type 'vector' does
+    # not exist" error.
+    if not await extension_installed(driver, "vector"):
+        raise PgSearchError(
+            "pgvector extension is not installed in this database — "
+            "hybrid_bm25_vector_search needs both pg_search and pgvector"
+        )
 
     qualified_table = f"{_pg_quote_ident(schema)}.{_pg_quote_ident(table)}"
     quoted_key = _pg_quote_ident(key_field)
