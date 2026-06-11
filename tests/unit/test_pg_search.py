@@ -1,5 +1,7 @@
 """Tests for the pg_search BM-1 observability + BM-2 search surfaces."""
 
+from typing import Any
+
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
@@ -9,11 +11,13 @@ from mcpg.extensions import ENABLEABLE_EXTENSIONS
 from mcpg.pg_search import (
     CreatePgSearchIndexResult,
     HybridHit,
+    PgSearchAdvisorFinding,
     PgSearchError,
     PgSearchHit,
     PgSearchIndexInfo,
     PgSearchParsedQuery,
     ReindexPgSearchResult,
+    audit_pg_search_indexes,
     create_pg_search_index,
     get_pg_search_index_metadata,
     hybrid_bm25_vector_search,
@@ -21,6 +25,7 @@ from mcpg.pg_search import (
     pg_search_more_like_this,
     pg_search_parse_query,
     pg_search_run,
+    recommend_pg_search_maintenance,
     reindex_pg_search_index,
 )
 from mcpg.server import create_server
@@ -1329,3 +1334,238 @@ async def test_pg_search_ddl_tools_register_only_with_ddl_opt_in() -> None:
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert {"create_pg_search_index", "reindex_pg_search_index"} <= listed
+
+
+# --- BM-5: recommend_pg_search_maintenance ---------------------------------
+
+
+def _index_row(
+    *,
+    schema: str = "public",
+    index: str = "docs_bm25_idx",
+    table: str = "docs",
+    columns: list[str] | None = None,
+    reloptions: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema": schema,
+        "index": index,
+        "table": table,
+        "columns": columns if columns is not None else ["id", "body"],
+        "reloptions": reloptions if reloptions is not None else ["key_field=id"],
+    }
+
+
+async def test_recommend_pg_search_maintenance_returns_empty_when_extension_absent() -> None:
+    driver = FakeRoutingDriver({"pg_extension": []})
+    assert await recommend_pg_search_maintenance(driver) == []  # type: ignore[arg-type]
+
+
+async def test_recommend_pg_search_maintenance_returns_empty_for_well_configured_index() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname = 'bm25'": [
+                _index_row(
+                    reloptions=[
+                        "key_field=id",
+                        'text_fields={"body": {"tokenizer": "default"}}',
+                    ]
+                )
+            ],
+        }
+    )
+    findings = await recommend_pg_search_maintenance(driver)  # type: ignore[arg-type]
+    assert findings == []
+
+
+async def test_recommend_pg_search_maintenance_flags_missing_key_field() -> None:
+    """key_field is required by upstream — a BM25 index without it
+    can't satisfy queries. CRITICAL."""
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname = 'bm25'": [_index_row(reloptions=["target_segment_count=8"])],
+        }
+    )
+    findings = await recommend_pg_search_maintenance(driver)  # type: ignore[arg-type]
+    assert len(findings) >= 1
+    finding = next(f for f in findings if f.code == "missing_key_field")
+    assert finding.severity == "CRITICAL"
+    assert finding.schema == "public"
+    assert finding.index == "docs_bm25_idx"
+    assert "key_field" in finding.evidence
+    assert "DROP INDEX" in finding.suggested_action
+
+
+async def test_recommend_pg_search_maintenance_flags_no_field_configs() -> None:
+    """Only key_field set, no *_fields configs — index relies on defaults."""
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname = 'bm25'": [_index_row(reloptions=["key_field=id"])],
+        }
+    )
+    findings = await recommend_pg_search_maintenance(driver)  # type: ignore[arg-type]
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.code == "no_field_configs"
+    assert finding.severity == "WARNING"
+    assert "default tokenization" in finding.evidence
+
+
+async def test_recommend_pg_search_maintenance_each_field_config_suppresses_rule() -> None:
+    """Any one of the six *_fields configs is enough to suppress the
+    no_field_configs WARNING."""
+    for field_name in (
+        "text_fields",
+        "numeric_fields",
+        "boolean_fields",
+        "json_fields",
+        "range_fields",
+        "datetime_fields",
+    ):
+        driver = FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                "WHERE am.amname = 'bm25'": [_index_row(reloptions=["key_field=id", f'{field_name}={{"col": {{}}}}'])],
+            }
+        )
+        findings = await recommend_pg_search_maintenance(driver)  # type: ignore[arg-type]
+        codes = {f.code for f in findings}
+        assert "no_field_configs" not in codes, f"{field_name} did not suppress the rule"
+
+
+async def test_recommend_pg_search_maintenance_multiple_indexes_each_evaluated() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname = 'bm25'": [
+                _index_row(index="good_idx", reloptions=["key_field=id", 'text_fields={"body": {}}']),
+                _index_row(index="bad_idx", reloptions=["key_field=id"]),
+                _index_row(index="broken_idx", reloptions=["target_segment_count=8"]),
+            ],
+        }
+    )
+    findings = await recommend_pg_search_maintenance(driver)  # type: ignore[arg-type]
+    by_index = {(f.index, f.code) for f in findings}
+    assert ("bad_idx", "no_field_configs") in by_index
+    assert ("broken_idx", "missing_key_field") in by_index
+    # broken_idx also has no field configs — both rules fire on it.
+    assert ("broken_idx", "no_field_configs") in by_index
+    # good_idx is clean.
+    assert not any(idx == "good_idx" for idx, _ in by_index)
+
+
+# --- BM-5: audit_pg_search_indexes (CategoryResult adapter) ----------------
+
+
+async def test_audit_pg_search_indexes_returns_none_when_extension_absent() -> None:
+    """The scorecard must omit the category cleanly so a stock cluster
+    isn't padded with empty sections and the overall score isn't diluted."""
+    driver = FakeRoutingDriver({"pg_extension": []})
+    assert await audit_pg_search_indexes(driver) is None  # type: ignore[arg-type]
+
+
+async def test_audit_pg_search_indexes_returns_good_when_no_findings() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname = 'bm25'": [_index_row(reloptions=["key_field=id", 'text_fields={"body": {}}'])],
+        }
+    )
+    result = await audit_pg_search_indexes(driver)  # type: ignore[arg-type]
+    assert result is not None
+    assert result.category == "pg_search BM25 Indexes"
+    assert result.status == "GOOD"
+    assert result.score == 100
+    assert len(result.metrics) == 1
+    assert result.metrics[0].status == "GOOD"
+
+
+async def test_audit_pg_search_indexes_deducts_15_per_warning() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname = 'bm25'": [_index_row(reloptions=["key_field=id"])],
+        }
+    )
+    result = await audit_pg_search_indexes(driver)  # type: ignore[arg-type]
+    assert result is not None
+    assert result.score == 85  # 100 - 15
+    assert result.status == "WARNING"  # 85 is < 90 → not GOOD
+
+
+async def test_audit_pg_search_indexes_deducts_30_per_critical_and_clamps_at_zero() -> None:
+    # Four broken indexes → 4 * (CRITICAL=30 + WARNING=15) = 180; clamps at 0.
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname = 'bm25'": [
+                _index_row(index=f"broken_{i}", reloptions=["target_segment_count=8"]) for i in range(4)
+            ],
+        }
+    )
+    result = await audit_pg_search_indexes(driver)  # type: ignore[arg-type]
+    assert result is not None
+    assert result.score == 0
+    assert result.status == "CRITICAL"
+
+
+# --- BM-5: tool registration -----------------------------------------------
+
+
+async def test_recommend_pg_search_maintenance_tool_registered() -> None:
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "recommend_pg_search_maintenance" in listed
+
+
+# --- BM-5: audit_database integration --------------------------------------
+
+
+async def test_audit_database_includes_pg_search_category_when_extension_present() -> None:
+    """The scorecard glue in audit.audit_database must call our adapter
+    and append the CategoryResult — otherwise the rule table is invisible."""
+    from mcpg.audit import audit_database
+
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "WHERE am.amname = 'bm25'": [_index_row(reloptions=["key_field=id"])],
+        }
+    )
+    report = await audit_database(driver, "public")  # type: ignore[arg-type]
+    cat_names = {c.category for c in report.categories}
+    assert "pg_search BM25 Indexes" in cat_names
+
+
+async def test_audit_database_omits_pg_search_category_when_extension_absent() -> None:
+    """Stock cluster (no pg_search installed) must not have the category."""
+    from mcpg.audit import audit_database
+
+    driver = FakeRoutingDriver({"pg_extension": []})
+    report = await audit_database(driver, "public")  # type: ignore[arg-type]
+    cat_names = {c.category for c in report.categories}
+    assert "pg_search BM25 Indexes" not in cat_names
+
+
+# --- BM-5: dataclass surface -----------------------------------------------
+
+
+def test_pg_search_advisor_finding_is_frozen() -> None:
+    """Stable contract — callers script against the dataclass shape, so
+    field mutation must raise rather than silently corrupt the rule table."""
+    from dataclasses import FrozenInstanceError
+
+    f = PgSearchAdvisorFinding(
+        code="missing_key_field",
+        severity="CRITICAL",
+        schema="public",
+        index="docs_bm25_idx",
+        evidence="...",
+        suggested_action="...",
+    )
+    with pytest.raises(FrozenInstanceError):
+        f.severity = "GOOD"  # type: ignore[misc]

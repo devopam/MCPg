@@ -1141,6 +1141,7 @@ async def _check_custom_logs(driver: SqlDriver, log_table: str | None) -> list[T
 
 async def audit_database(driver: SqlDriver, schema: str, log_table: str | None = None) -> AuditReport:
     """Execute comprehensive performance checks, compile scores, recommendations, and issues."""
+    from mcpg.pg_search import audit_pg_search_indexes
     from mcpg.rag_efficiency import audit_rag_pipeline, audit_vector_indexes
     from mcpg.turboquant import audit_turboquant_indexes
 
@@ -1157,12 +1158,15 @@ async def audit_database(driver: SqlDriver, schema: str, log_table: str | None =
     # is installed, so a stock cluster's scorecard isn't padded with
     # empty sections and the overall score isn't diluted.
     cat_turboquant = await audit_turboquant_indexes(driver)
+    cat_pg_search = await audit_pg_search_indexes(driver)
     cat_vector = await audit_vector_indexes(driver)
     cat_rag_pipeline = await audit_rag_pipeline(driver)
 
     categories = [cat_mem, cat_tx, cat_lock, cat_bloat, cat_slow]
     if cat_turboquant is not None:
         categories.append(cat_turboquant)
+    if cat_pg_search is not None:
+        categories.append(cat_pg_search)
     if cat_vector is not None:
         categories.append(cat_vector)
     if cat_rag_pipeline is not None:

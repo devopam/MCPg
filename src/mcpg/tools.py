@@ -3018,6 +3018,25 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         return asdict(info)
 
     @server.tool(
+        name="recommend_pg_search_maintenance",
+        description=(
+            "Walk every pg_search BM25 index and emit advisor findings. "
+            "Rules currently surfaced: ``missing_key_field`` (CRITICAL — "
+            "the key_field reloption is required by upstream; an index "
+            "without it can't satisfy queries) and ``no_field_configs`` "
+            "(WARNING — none of the six *_fields reloptions are set, so "
+            "the index falls back to default tokenization for every "
+            "indexed column). Each finding carries a ready-to-run "
+            "``suggested_action`` SQL statement. Returns an empty list "
+            "when the extension is not installed. Also feeds the "
+            "``pg_search BM25 Indexes`` category in audit_database."
+        ),
+    )
+    async def recommend_pg_search_maintenance(ctx: _Ctx) -> list[dict[str, Any]]:
+        findings = await pg_search.recommend_pg_search_maintenance(_driver(ctx))
+        return [asdict(f) for f in findings]
+
+    @server.tool(
         name="pg_search_run",
         description=(
             "Run a BM25 keyword search against a pg_search-indexed table. "
