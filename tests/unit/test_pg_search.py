@@ -1257,6 +1257,34 @@ async def test_reindex_pg_search_index_rejects_unsafe_identifiers() -> None:
         await reindex_pg_search_index(db, "public; DROP", "docs_bm25_idx")  # type: ignore[arg-type]
 
 
+async def test_create_pg_search_index_wraps_driver_failure_as_pg_search_error() -> None:
+    """Regression: the docstring promises PgSearchError on DDL failure.
+    Without the try/except wrap, a psycopg.Error would propagate
+    directly and break that contract."""
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver({"pg_extension": [{"present": 1}]}),
+        unmanaged_fail=True,
+    )
+    with pytest.raises(PgSearchError, match="CREATE INDEX failed"):
+        await create_pg_search_index(  # type: ignore[arg-type]
+            db, "public", "docs", ["id"], "docs_bm25_idx", "id"
+        )
+
+
+async def test_reindex_pg_search_index_wraps_driver_failure_as_pg_search_error() -> None:
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                "WHERE am.amname = 'bm25'": [{"present": 1}],
+            }
+        ),
+        unmanaged_fail=True,
+    )
+    with pytest.raises(PgSearchError, match="REINDEX INDEX failed"):
+        await reindex_pg_search_index(db, "public", "docs_bm25_idx")  # type: ignore[arg-type]
+
+
 # --- BM-4: tool registration -----------------------------------------------
 
 

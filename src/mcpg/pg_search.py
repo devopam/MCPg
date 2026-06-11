@@ -1257,7 +1257,10 @@ async def create_pg_search_index(
 
     started_at = _utc_iso_now()
     started_mono = _time.monotonic()
-    await database.run_unmanaged(sql)
+    try:
+        await database.run_unmanaged(sql)
+    except Exception as exc:
+        raise PgSearchError(f"CREATE INDEX failed: {exc}") from exc
     duration = _time.monotonic() - started_mono
     completed_at = _utc_iso_now()
 
@@ -1316,7 +1319,10 @@ async def reindex_pg_search_index(
 
     started_at = _utc_iso_now()
     started_mono = _time.monotonic()
-    await database.run_unmanaged(sql)
+    try:
+        await database.run_unmanaged(sql)
+    except Exception as exc:
+        raise PgSearchError(f"REINDEX INDEX failed: {exc}") from exc
     duration = _time.monotonic() - started_mono
     completed_at = _utc_iso_now()
 
