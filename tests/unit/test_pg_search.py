@@ -1296,10 +1296,29 @@ _DDL_SETTINGS = load_settings(
     }
 )
 
+_UNRESTRICTED_NO_DDL_SETTINGS = load_settings(
+    {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_ACCESS_MODE": "unrestricted",
+        "MCPG_ALLOW_DDL": "false",
+    }
+)
+
 
 async def test_pg_search_ddl_tools_register_only_with_ddl_opt_in() -> None:
     # READ-only mode: DDL tools must NOT be visible.
     server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "create_pg_search_index" not in listed
+    assert "reindex_pg_search_index" not in listed
+
+    # Unrestricted access but MCPG_ALLOW_DDL=false: DDL tools must still
+    # NOT be visible. Pins the AND condition explicitly so flipping
+    # either flag alone doesn't smuggle DDL tools through.
+    server = create_server(  # type: ignore[arg-type]
+        _UNRESTRICTED_NO_DDL_SETTINGS, database=FakeDatabase(FakeDriver())
+    )
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "create_pg_search_index" not in listed
