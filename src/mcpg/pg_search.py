@@ -1,19 +1,23 @@
-"""pg_search integration: observability + search + hybrid (phases BM-1, BM-2, BM-3).
+"""pg_search integration: full BM25 surface (phases BM-1 through BM-5).
 
 `pg_search <https://github.com/paradedb/paradedb>`_ is a PostgreSQL
 extension by ParadeDB that ships a Tantivy-backed BM25 index access
 method (``USING bm25``) + a `pdb.*` schema of query-building and
-projection helpers. This module covers the *observability*,
-*search-execution*, and *hybrid-composition* slices — catalog
-enumeration, metadata fetch, keyword search, more-like-this,
-query-string parsing, and BM25+pgvector hybrid retrieval.
-Subsequent phases will add DDL (BM-4) and advisor + audit (BM-5).
+projection helpers. This module covers the full extension surface —
+observability, search execution, hybrid composition, DDL, and the
+advisor + audit-scorecard category.
 
 * :func:`list_pg_search_indexes`,
-  :func:`get_pg_search_index_metadata` — observability.
+  :func:`get_pg_search_index_metadata` — observability (BM-1).
 * :func:`pg_search_run`, :func:`pg_search_more_like_this`,
-  :func:`pg_search_parse_query` — search execution.
-* :func:`hybrid_bm25_vector_search` — BM25 + pgvector RRF fusion.
+  :func:`pg_search_parse_query` — search execution (BM-2).
+* :func:`hybrid_bm25_vector_search` — BM25 + pgvector RRF fusion
+  (BM-3).
+* :func:`create_pg_search_index`, :func:`reindex_pg_search_index`
+  — DDL (BM-4).
+* :func:`recommend_pg_search_maintenance`,
+  :func:`audit_pg_search_indexes` — rule-table advisor + scorecard
+  category adapter (BM-5).
 
 Reads return cleanly (empty list / raise) when the extension is not
 installed, so callers can treat absence as "no BM25 in use" rather
@@ -1334,4 +1338,195 @@ async def reindex_pg_search_index(
         started_at=started_at,
         completed_at=completed_at,
         duration_seconds=round(duration, 6),
+    )
+
+
+# --- BM-5: advisor + audit category -----------------------------------------
+#
+# pg_search exposes a thinner "health" surface than turboquant: there's
+# no equivalent of ``tq_index_metadata`` / ``delta_health.merge_recommended``
+# that flags maintenance need from upstream itself. The advisor signals
+# below are sourced from the documented reloption inventory (BM-0 §2.2)
+# and the upstream contract that ``key_field`` is required at CREATE
+# INDEX time. As pg_search adds runtime telemetry the rule table grows
+# here.
+
+
+@dataclass(frozen=True, slots=True)
+class PgSearchAdvisorFinding:
+    """A single rule-table hit produced by :func:`recommend_pg_search_maintenance`.
+
+    ``code`` is the stable identifier — ``severity`` and the
+    human-readable ``evidence`` / ``suggested_action`` may evolve, but
+    ``code`` is the contract callers script against.
+    """
+
+    code: str
+    severity: str  # GOOD / WARNING / CRITICAL
+    schema: str
+    index: str
+    evidence: str
+    suggested_action: str
+
+
+# Rule codes — stable identifiers. Keep them documented + grep-able
+# from the docstrings above.
+_RULE_MISSING_KEY_FIELD = "missing_key_field"
+_RULE_NO_FIELD_CONFIGS = "no_field_configs"
+
+
+def _finding_missing_key_field(info: PgSearchIndexInfo) -> PgSearchAdvisorFinding | None:
+    # upstream enforces key_field at CREATE INDEX time, but the catalog
+    # might still drift (manual reloption edits, restore from a damaged
+    # backup, etc.). A BM25 index without key_field can't satisfy
+    # queries — surface it loudly.
+    if info.key_field is not None:
+        return None
+    qualified = f"{_pg_quote_ident(info.schema)}.{_pg_quote_ident(info.index)}"
+    return PgSearchAdvisorFinding(
+        code=_RULE_MISSING_KEY_FIELD,
+        severity="CRITICAL",
+        schema=info.schema,
+        index=info.index,
+        evidence=(
+            f"BM25 index {info.schema}.{info.index} has no key_field reloption. "
+            "key_field is required by upstream — this index will not function."
+        ),
+        suggested_action=(f"DROP INDEX {qualified}; -- and recreate via create_pg_search_index with key_field set"),
+    )
+
+
+def _finding_no_field_configs(info: PgSearchIndexInfo) -> PgSearchAdvisorFinding | None:
+    # All six *_fields reloptions empty → the index falls back to
+    # upstream's default tokenization and type-handling for every
+    # indexed column. That's legal but rarely intentional once an
+    # operator has more than one indexed column.
+    has_any_config = any(
+        (
+            info.text_fields,
+            info.numeric_fields,
+            info.boolean_fields,
+            info.json_fields,
+            info.range_fields,
+            info.datetime_fields,
+        )
+    )
+    if has_any_config:
+        return None
+    return PgSearchAdvisorFinding(
+        code=_RULE_NO_FIELD_CONFIGS,
+        severity="WARNING",
+        schema=info.schema,
+        index=info.index,
+        evidence=(
+            f"BM25 index {info.schema}.{info.index} has no field-type configs "
+            "(text_fields / numeric_fields / boolean_fields / json_fields / "
+            "range_fields / datetime_fields). pg_search will apply default "
+            "tokenization and type handling, which may not match indexed "
+            "columns' actual types."
+        ),
+        suggested_action=(
+            f"Recreate index {info.schema}.{info.index} via "
+            "create_pg_search_index with explicit *_fields reloptions matching "
+            "the indexed column types."
+        ),
+    )
+
+
+_PER_INDEX_RULES = (_finding_missing_key_field, _finding_no_field_configs)
+
+
+async def recommend_pg_search_maintenance(driver: SqlDriver) -> list[PgSearchAdvisorFinding]:
+    """Walk every BM25 index and emit advisor findings.
+
+    Returns an empty list when the extension is not installed (same
+    shape as :func:`list_pg_search_indexes`). Per-index rules are
+    sourced from documented signals — see the module-level comment
+    above the BM-5 section for the rule-table philosophy.
+    """
+    if not await extension_installed(driver, "pg_search"):
+        return []
+    findings: list[PgSearchAdvisorFinding] = []
+    for info in await list_pg_search_indexes(driver):
+        for rule in _PER_INDEX_RULES:
+            if (finding := rule(info)) is not None:
+                findings.append(finding)
+    return findings
+
+
+# Score deductions by severity — single source of truth for both the
+# adapter below and any external consumers. Mirrors the turboquant
+# audit category exactly so the two surfaces score consistently.
+_SEVERITY_DEDUCTION = {"CRITICAL": 30, "WARNING": 15, "GOOD": 0}
+
+
+def _adapt_finding_to_metric(finding: PgSearchAdvisorFinding) -> Any:
+    # Lazily-imported audit types kept out of the module-level imports
+    # to avoid a circular import (audit re-exports tools that may pull
+    # in this module). The adapter lives here so the rule-table
+    # contract stays in one file.
+    from mcpg.audit import MetricResult
+
+    target = finding.index or "(cluster)"
+    return MetricResult(
+        name=f"pg_search:{finding.code} on {finding.schema}.{target}" if finding.index else f"pg_search:{finding.code}",
+        value=finding.code,
+        unit="finding",
+        target="no findings",
+        status=finding.severity,
+        severity=3 if finding.severity == "CRITICAL" else 2 if finding.severity == "WARNING" else 0,
+        evidence=finding.evidence,
+        suggestion=finding.suggested_action,
+    )
+
+
+async def audit_pg_search_indexes(driver: SqlDriver) -> Any:
+    """Scorecard adapter — returns a ``CategoryResult`` or ``None``.
+
+    Returns ``None`` when pg_search is not installed so
+    :func:`audit.audit_database` cleanly omits the category for
+    deployments that don't use the extension. Otherwise produces a
+    CategoryResult whose metrics are the advisor findings, with the
+    standard 100-point-down scoring.
+    """
+    from mcpg.audit import CategoryResult
+
+    if not await extension_installed(driver, "pg_search"):
+        return None
+
+    findings = await recommend_pg_search_maintenance(driver)
+
+    score = 100
+    metrics = []
+    for finding in findings:
+        score -= _SEVERITY_DEDUCTION.get(finding.severity, 0)
+        metrics.append(_adapt_finding_to_metric(finding))
+
+    score = max(0, score)
+    status_label = "GOOD" if score >= 90 else ("WARNING" if score >= 70 else "CRITICAL")
+
+    if not metrics:
+        # No findings → emit a single GOOD baseline metric so the
+        # scorecard surfaces "category checked, all good" rather than
+        # an empty list that looks like the category didn't run.
+        from mcpg.audit import MetricResult
+
+        metrics.append(
+            MetricResult(
+                name="pg_search:no_findings",
+                value="ok",
+                unit="finding",
+                target="no findings",
+                status="GOOD",
+                severity=0,
+                evidence="All pg_search BM25 indexes pass the advisor rules.",
+                suggestion="",
+            )
+        )
+
+    return CategoryResult(
+        category="pg_search BM25 Indexes",
+        status=status_label,
+        score=score,
+        metrics=metrics,
     )
