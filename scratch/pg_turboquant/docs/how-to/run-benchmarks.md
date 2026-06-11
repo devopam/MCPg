@@ -1,0 +1,144 @@
+# Run the benchmark suite
+
+Use the benchmark suite to measure recall, latency, build cost, footprint, WAL, and concurrent-write behavior. Keep those metrics separate; the project does not treat one scalar score as a truthful summary.
+
+## 1. Start with a dry run
+
+This validates the scenario matrix and output schema without requiring a live PostgreSQL instance:
+
+```sh
+uv run python scripts/benchmark_suite.py \
+  --dry-run \
+  --profile tiny \
+  --corpus normalized_dense,clustered,hotpot_skewed \
+  --methods turboquant_flat,turboquant_ivf,turboquant_bitmap,pgvector_ivfflat,pgvector_hnsw \
+  --report \
+  --output benchmark-suite.json
+```
+
+## 2. Run against PostgreSQL
+
+With PostgreSQL running locally and both extensions installed:
+
+```sh
+uv run python scripts/benchmark_suite.py \
+  --host 127.0.0.1 \
+  --port 5432 \
+  --dbname postgres \
+  --profile medium \
+  --corpus normalized_dense,clustered,mixed_live_dead,hotpot_overlap \
+  --methods turboquant_flat,turboquant_ivf,turboquant_bitmap,pgvector_ivfflat,pgvector_hnsw \
+  --report \
+  --output benchmark-suite.json
+```
+
+## 3. Tune IVF probes explicitly
+
+```sh
+uv run python scripts/benchmark_suite.py \
+  --host 127.0.0.1 \
+  --port 5432 \
+  --dbname postgres \
+  --profile medium \
+  --corpus normalized_dense \
+  --methods turboquant_ivf \
+  --turboquant-probes 4 \
+  --output planner-high.json
+```
+
+The suite records `turboquant.probes`, `turboquant.oversample_factor`, and the derived `candidate_slots_bound` so probe experiments are reproducible.
+
+## 4. Attach the Qprod/QJL microbench regression view
+
+```sh
+uv run python scripts/benchmark_suite.py \
+  --dry-run \
+  --profile tiny \
+  --corpus normalized_dense \
+  --methods turboquant_flat \
+  --microbench \
+  --report \
+  --output qprod-qjl-microbench.json
+```
+
+This adds three machine-readable sections under `microbenchmarks`:
+
+- `results`: raw per-row timings and counters
+- `comparisons`: stable pairwise comparisons for kernel, LUT, and heap-selection changes
+- `regression_gates`: directional statuses with explicit checks, plus `interpretation_notes`
+
+## Output artifacts
+
+- main JSON output
+- `benchmark-report.json`
+- `benchmark-report.md`
+- `benchmark-report.html`
+
+```mermaid
+flowchart LR
+    A["scenario matrix"] --> B["build index"]
+    B --> C["run exact ground truth"]
+    B --> D["run approximate queries"]
+    D --> E["collect recall + latency"]
+    B --> F["collect footprint + WAL + concurrency"]
+    E --> G["benchmark-suite.json"]
+    F --> G
+    G --> H["benchmark-report.json"]
+    G --> I["benchmark-report.md"]
+    G --> J["benchmark-report.html"]
+```
+
+## What to look at first
+
+- `metrics.recall_at_10`
+- `metrics.p95_ms`
+- `metrics.index_size_bytes`
+- `scan_stats.visited_code_count`
+- `scan_stats.visited_page_count`
+- `scan_stats.selected_live_count`
+- `scan_stats.selected_page_count`
+- `scan_stats.score_kernel`
+- `metrics.build_wal_bytes`
+- `metrics.concurrent_insert_rows_per_second`
+- `index_metadata.capabilities`
+- `simd.selected_kernel`
+
+The generated report is descriptive rather than normative. It states what was measured for the selected corpus/profile/knob matrix and keeps latency, scan work, and footprint separate instead of asserting unmeasured expectations such as "should be no slower".
+
+For the microbenchmark regression section, start with:
+
+- `microbenchmarks.comparisons[*].metrics.codes_per_second_ratio`
+- `microbenchmarks.comparisons[*].metrics.visited_code_count_delta`
+- `microbenchmarks.comparisons[*].metrics.visited_page_count_delta`
+- `microbenchmarks.comparisons[*].metrics.candidate_heap_insert_delta`
+- `microbenchmarks.regression_gates[*].status`
+
+Interpret the gate rows together with their `checks` map. A `warn` row is not automatically a failure: for example, a heap-selection change can still preserve equal work and reduce global heap churn even if a small host-local timing wobble moves in the wrong direction.
+
+## RAG benchmarks
+
+The repository also carries a higher-level benchmark harness under `benchmarks/rag/`. That layer compares `pg_turboquant`, pgvector HNSW, and pgvector IVFFlat under retrieval-only and fixed-generator RAG scenarios.
+
+For a focused live rerun against an existing local PostgreSQL RAG corpus:
+
+```sh
+./benchmarks/rag/.venv/bin/python benchmarks/rag/run_live_campaign.py \
+  --output-dir benchmarks/rag/results/kilt-nq-rerun-q20-20260330 \
+  --datasets kilt_nq \
+  --dsn 'postgresql:///postgres?host=/tmp&port=5432' \
+  --table-name rag_passages \
+  --turboquant-index-name rag_passages_tq_idx \
+  --hnsw-index-name rag_passages_hnsw_idx \
+  --ivfflat-index-name rag_passages_ivf_idx \
+  --query-limit 20
+```
+
+To render a standalone HTML outcome page from the resulting campaign JSON:
+
+```sh
+./benchmarks/rag/.venv/bin/python benchmarks/rag/run_outcome_report.py \
+  --campaign-json benchmarks/rag/results/kilt-nq-rerun-q20-20260330/rag-campaign.json \
+  --output output.html
+```
+
+That flow writes the campaign-local report under `benchmarks/rag/results/.../outcome.html` and can also emit a top-level `output.html` for quick sharing or review.

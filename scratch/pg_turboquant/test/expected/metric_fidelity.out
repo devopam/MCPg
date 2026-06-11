@@ -1,0 +1,350 @@
+SET client_min_messages = warning;
+DROP EXTENSION IF EXISTS pg_turboquant CASCADE;
+DROP EXTENSION IF EXISTS vector CASCADE;
+CREATE EXTENSION vector;
+CREATE EXTENSION pg_turboquant;
+SET enable_bitmapscan = off;
+CREATE TABLE tq_metric_normalized_docs (
+	id int4 PRIMARY KEY,
+	embedding vector(2)
+);
+INSERT INTO tq_metric_normalized_docs (id, embedding) VALUES
+	(1, '[1,0]'),
+	(2, '[0.70710678,0.70710678]'),
+	(3, '[0,1]');
+CREATE INDEX tq_metric_normalized_cosine_idx
+	ON tq_metric_normalized_docs
+	USING turboquant (embedding tq_cosine_ops)
+	WITH (bits = 4, lists = 0, lanes = auto, transform = 'hadamard', normalized = true);
+CREATE INDEX tq_metric_normalized_ip_idx
+	ON tq_metric_normalized_docs
+	USING turboquant (embedding tq_ip_ops)
+	WITH (bits = 4, lists = 0, lanes = auto, transform = 'hadamard', normalized = true);
+CREATE INDEX tq_metric_normalized_l2_idx
+	ON tq_metric_normalized_docs
+	USING turboquant (embedding tq_l2_ops)
+	WITH (bits = 4, lists = 0, lanes = auto, transform = 'hadamard', normalized = true);
+SET enable_indexscan = off;
+SET enable_seqscan = on;
+SELECT array_agg(id) AS exact_normalized_cosine
+FROM (
+	SELECT id
+	FROM tq_metric_normalized_docs
+	ORDER BY embedding <=> '[1,0]'
+	LIMIT 3
+) ranked;
+ exact_normalized_cosine 
+-------------------------
+ {1,2,3}
+(1 row)
+
+SELECT array_agg(id) AS exact_normalized_ip
+FROM (
+	SELECT id
+	FROM tq_metric_normalized_docs
+	ORDER BY embedding <#> '[1,0]'
+	LIMIT 3
+) ranked;
+ exact_normalized_ip 
+---------------------
+ {1,2,3}
+(1 row)
+
+SELECT array_agg(id) AS exact_normalized_l2
+FROM (
+	SELECT id
+	FROM tq_metric_normalized_docs
+	ORDER BY embedding <-> '[1,0]'
+	LIMIT 3
+) ranked;
+ exact_normalized_l2 
+---------------------
+ {1,2,3}
+(1 row)
+
+SET enable_indexscan = on;
+SET enable_seqscan = off;
+SELECT array_agg(id) AS approx_normalized_cosine
+FROM (
+	SELECT id
+	FROM tq_metric_normalized_docs
+	ORDER BY embedding <=> '[1,0]'
+	LIMIT 3
+) ranked;
+ approx_normalized_cosine 
+--------------------------
+ {1,2,3}
+(1 row)
+
+SELECT
+	(tq_last_scan_stats()->>'score_mode') AS normalized_cosine_score_mode,
+	(tq_last_scan_stats()->>'visited_code_count')::int > 0 AS normalized_cosine_visited_codes,
+	(tq_last_scan_stats()->>'decoded_vector_count')::int > 0 AS normalized_cosine_decodes;
+ normalized_cosine_score_mode | normalized_cosine_visited_codes | normalized_cosine_decodes 
+------------------------------+---------------------------------+---------------------------
+ code_domain                  | t                               | t
+(1 row)
+
+SELECT array_agg(id) AS approx_normalized_ip
+FROM (
+	SELECT id
+	FROM tq_metric_normalized_docs
+	ORDER BY embedding <#> '[1,0]'
+	LIMIT 3
+) ranked;
+ approx_normalized_ip 
+----------------------
+ {1,2,3}
+(1 row)
+
+SELECT
+	(tq_last_scan_stats()->>'score_mode') AS normalized_ip_score_mode,
+	(tq_last_scan_stats()->>'visited_code_count')::int > 0 AS normalized_ip_visited_codes,
+	(tq_last_scan_stats()->>'decoded_vector_count')::int = 0 AS normalized_ip_no_decodes;
+ normalized_ip_score_mode | normalized_ip_visited_codes | normalized_ip_no_decodes 
+--------------------------+-----------------------------+--------------------------
+ code_domain              | t                           | t
+(1 row)
+
+SELECT
+	(
+		SELECT array_agg(id)
+		FROM (
+			SELECT id
+			FROM tq_metric_normalized_docs
+			ORDER BY embedding <=> '[1,0]'
+			LIMIT 3
+		) ranked
+	) <> (
+		SELECT array_agg(id)
+		FROM (
+			SELECT id
+			FROM tq_metric_normalized_docs
+			ORDER BY embedding <#> '[1,0]'
+			LIMIT 3
+		) ranked
+	) AS normalized_flat_cosine_ip_ranking_differs;
+ normalized_flat_cosine_ip_ranking_differs 
+-------------------------------------------
+ f
+(1 row)
+
+CREATE TABLE tq_metric_normalized_ivf_docs (
+	id int4 PRIMARY KEY,
+	embedding vector(2)
+);
+INSERT INTO tq_metric_normalized_ivf_docs (id, embedding) VALUES
+	(1, '[1.0,0.0]'),
+	(2, '[0.98,0.02]'),
+	(3, '[0.0,1.0]'),
+	(4, '[0.02,0.98]'),
+	(5, '[-1.0,0.0]'),
+	(6, '[-0.98,0.02]'),
+	(7, '[0.0,-1.0]'),
+	(8, '[0.02,-0.98]');
+CREATE INDEX tq_metric_normalized_ivf_cosine_idx
+	ON tq_metric_normalized_ivf_docs
+	USING turboquant (embedding tq_cosine_ops)
+	WITH (bits = 4, lists = 4, lanes = auto, transform = 'hadamard', normalized = true,
+		  router_samples = 8, router_iterations = 6, router_seed = 7);
+CREATE INDEX tq_metric_normalized_ivf_ip_idx
+	ON tq_metric_normalized_ivf_docs
+	USING turboquant (embedding tq_ip_ops)
+	WITH (bits = 4, lists = 4, lanes = auto, transform = 'hadamard', normalized = true,
+		  router_samples = 8, router_iterations = 6, router_seed = 7);
+SET turboquant.probes = 2;
+SELECT array_agg(id) AS approx_normalized_ivf_cosine
+FROM (
+	SELECT id
+	FROM tq_metric_normalized_ivf_docs
+	ORDER BY embedding <=> '[1,0]'
+	LIMIT 4
+) ranked;
+ approx_normalized_ivf_cosine 
+------------------------------
+ {1,2,8,7}
+(1 row)
+
+SELECT
+	(tq_last_scan_stats()->>'score_mode') AS normalized_ivf_cosine_score_mode,
+	(tq_last_scan_stats()->>'decoded_vector_count')::int > 0 AS normalized_ivf_cosine_decodes;
+ normalized_ivf_cosine_score_mode | normalized_ivf_cosine_decodes 
+----------------------------------+-------------------------------
+ code_domain                      | t
+(1 row)
+
+SELECT array_agg(id) AS approx_normalized_ivf_ip
+FROM (
+	SELECT id
+	FROM tq_metric_normalized_ivf_docs
+	ORDER BY embedding <#> '[1,0]'
+	LIMIT 4
+) ranked;
+ approx_normalized_ivf_ip 
+--------------------------
+ {2,1,8,7}
+(1 row)
+
+SELECT
+	(tq_last_scan_stats()->>'score_mode') AS normalized_ivf_ip_score_mode,
+	(tq_last_scan_stats()->>'decoded_vector_count')::int = 0 AS normalized_ivf_ip_no_decodes;
+ normalized_ivf_ip_score_mode | normalized_ivf_ip_no_decodes 
+------------------------------+------------------------------
+ code_domain                  | t
+(1 row)
+
+SELECT
+	(
+		SELECT array_agg(id)
+		FROM (
+			SELECT id
+			FROM tq_metric_normalized_ivf_docs
+			ORDER BY embedding <=> '[1,0]'
+			LIMIT 4
+		) ranked
+	) <> (
+		SELECT array_agg(id)
+		FROM (
+			SELECT id
+			FROM tq_metric_normalized_ivf_docs
+			ORDER BY embedding <#> '[1,0]'
+			LIMIT 4
+		) ranked
+	) AS normalized_ivf_cosine_ip_ranking_differs;
+ normalized_ivf_cosine_ip_ranking_differs 
+------------------------------------------
+ t
+(1 row)
+
+SELECT array_agg(id) AS approx_normalized_l2
+FROM (
+	SELECT id
+	FROM tq_metric_normalized_docs
+	ORDER BY embedding <-> '[1,0]'
+	LIMIT 3
+) ranked;
+ approx_normalized_l2 
+----------------------
+ {1,2,3}
+(1 row)
+
+CREATE TABLE tq_metric_cosine_docs (
+	id int4 PRIMARY KEY,
+	embedding vector(2)
+);
+INSERT INTO tq_metric_cosine_docs (id, embedding) VALUES
+	(1, '[0.8,0.6]'),
+	(2, '[3,4]'),
+	(3, '[0,1]');
+CREATE INDEX tq_metric_cosine_idx
+	ON tq_metric_cosine_docs
+	USING turboquant (embedding tq_cosine_ops)
+	WITH (bits = 4, lists = 0, lanes = auto, transform = 'hadamard', normalized = false);
+SET enable_indexscan = off;
+SET enable_seqscan = on;
+SELECT array_agg(id) AS exact_non_normalized_cosine
+FROM (
+	SELECT id
+	FROM tq_metric_cosine_docs
+	ORDER BY embedding <=> '[1,0]'
+	LIMIT 3
+) ranked;
+ exact_non_normalized_cosine 
+-----------------------------
+ {1,2,3}
+(1 row)
+
+SET enable_indexscan = on;
+SET enable_seqscan = off;
+SELECT array_agg(id) AS approx_non_normalized_cosine
+FROM (
+	SELECT id
+	FROM tq_metric_cosine_docs
+	ORDER BY embedding <=> '[1,0]'
+	LIMIT 3
+) ranked;
+ approx_non_normalized_cosine 
+------------------------------
+ {1,2,3}
+(1 row)
+
+CREATE TABLE tq_metric_ip_docs (
+	id int4 PRIMARY KEY,
+	embedding vector(2)
+);
+INSERT INTO tq_metric_ip_docs (id, embedding) VALUES
+	(1, '[0.8,0.6]'),
+	(2, '[3,4]'),
+	(3, '[0,1]');
+CREATE INDEX tq_metric_ip_idx
+	ON tq_metric_ip_docs
+	USING turboquant (embedding tq_ip_ops)
+	WITH (bits = 4, lists = 0, lanes = auto, transform = 'hadamard', normalized = false);
+SET enable_indexscan = off;
+SET enable_seqscan = on;
+SELECT array_agg(id) AS exact_non_normalized_ip
+FROM (
+	SELECT id
+	FROM tq_metric_ip_docs
+	ORDER BY embedding <#> '[1,0]'
+	LIMIT 3
+) ranked;
+ exact_non_normalized_ip 
+-------------------------
+ {2,1,3}
+(1 row)
+
+SET enable_indexscan = on;
+SET enable_seqscan = off;
+SELECT array_agg(id) AS approx_non_normalized_ip
+FROM (
+	SELECT id
+	FROM tq_metric_ip_docs
+	ORDER BY embedding <#> '[1,0]'
+	LIMIT 3
+) ranked;
+ approx_non_normalized_ip 
+--------------------------
+ {1,2,3}
+(1 row)
+
+CREATE TABLE tq_metric_l2_docs (
+	id int4 PRIMARY KEY,
+	embedding vector(2)
+);
+INSERT INTO tq_metric_l2_docs (id, embedding) VALUES
+	(1, '[1.1,0]'),
+	(2, '[3,0]'),
+	(3, '[0,2]');
+CREATE INDEX tq_metric_l2_idx
+	ON tq_metric_l2_docs
+	USING turboquant (embedding tq_l2_ops)
+	WITH (bits = 4, lists = 0, lanes = auto, transform = 'hadamard', normalized = false);
+SET enable_indexscan = off;
+SET enable_seqscan = on;
+SELECT array_agg(id) AS exact_non_normalized_l2
+FROM (
+	SELECT id
+	FROM tq_metric_l2_docs
+	ORDER BY embedding <-> '[1,0]'
+	LIMIT 3
+) ranked;
+ exact_non_normalized_l2 
+-------------------------
+ {1,2,3}
+(1 row)
+
+SET enable_indexscan = on;
+SET enable_seqscan = off;
+SELECT array_agg(id) AS approx_non_normalized_l2
+FROM (
+	SELECT id
+	FROM tq_metric_l2_docs
+	ORDER BY embedding <-> '[1,0]'
+	LIMIT 3
+) ranked;
+ approx_non_normalized_l2 
+--------------------------
+ {1,2,3}
+(1 row)
+
