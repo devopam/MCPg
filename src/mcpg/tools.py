@@ -3445,6 +3445,98 @@ def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_pg_search_ddl(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="create_pg_search_index",
+        description=(
+            "Build a CREATE INDEX … USING bm25 statement under tight "
+            "allowlists and run it on autocommit (CONCURRENTLY can't run "
+            "inside a transaction). ``columns`` is the list of attribute "
+            "names the index covers; ``key_field`` is the primary-key "
+            "column (required by upstream). All 13 documented bm25 "
+            "reloptions are exposed as kwargs — the 7 JSONB-shaped "
+            "options (``text_fields``, ``numeric_fields``, "
+            "``boolean_fields``, ``json_fields``, ``range_fields``, "
+            "``datetime_fields``, ``search_tokenizer``) accept Python "
+            "dicts and serialize via json.dumps; the 2 int options "
+            "(``target_segment_count``, ``mutable_segment_rows``) and "
+            "3 text options (``layer_sizes``, ``background_layer_sizes``, "
+            "``sort_by``) pass through type-aware validation. The "
+            "rendered CREATE INDEX SQL is returned in ``create_sql`` "
+            "for auditability. Performs DDL — requires unrestricted "
+            "mode + MCPG_ALLOW_DDL; pg_search installed."
+        ),
+    )
+    async def create_pg_search_index(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        columns: list[str],
+        index_name: str,
+        key_field: str,
+        text_fields: dict[str, Any] | None = None,
+        numeric_fields: dict[str, Any] | None = None,
+        boolean_fields: dict[str, Any] | None = None,
+        json_fields: dict[str, Any] | None = None,
+        range_fields: dict[str, Any] | None = None,
+        datetime_fields: dict[str, Any] | None = None,
+        layer_sizes: str | None = None,
+        background_layer_sizes: str | None = None,
+        target_segment_count: int | None = None,
+        mutable_segment_rows: int | None = None,
+        sort_by: str | None = None,
+        search_tokenizer: dict[str, Any] | None = None,
+        concurrently: bool = True,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await pg_search.create_pg_search_index(
+            database,
+            schema,
+            table,
+            columns,
+            index_name,
+            key_field,
+            text_fields=text_fields,
+            numeric_fields=numeric_fields,
+            boolean_fields=boolean_fields,
+            json_fields=json_fields,
+            range_fields=range_fields,
+            datetime_fields=datetime_fields,
+            layer_sizes=layer_sizes,
+            background_layer_sizes=background_layer_sizes,
+            target_segment_count=target_segment_count,
+            mutable_segment_rows=mutable_segment_rows,
+            sort_by=sort_by,
+            search_tokenizer=search_tokenizer,
+            concurrently=concurrently,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="reindex_pg_search_index",
+        description=(
+            "REINDEX a pg_search BM25 index. Pre-flight confirms the "
+            "named index actually uses the bm25 access method (catalog "
+            "lookup on pg_am) before running. ``concurrently=True`` is "
+            "the default and runs on autocommit since REINDEX "
+            "CONCURRENTLY can't run inside a transaction. Performs DDL "
+            "— requires unrestricted mode + MCPG_ALLOW_DDL; pg_search "
+            "installed."
+        ),
+    )
+    async def reindex_pg_search_index(
+        ctx: _Ctx,
+        schema: str,
+        index: str,
+        concurrently: bool = True,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await pg_search.reindex_pg_search_index(database, schema, index, concurrently=concurrently)
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_cron_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="schedule_cron_job",
@@ -3849,6 +3941,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_ddl(server)
         _register_partman(server)
         _register_turboquant_ddl(server)
+        _register_pg_search_ddl(server)
         _register_rag_telemetry_ddl(server)
         _register_timescaledb_writes(server)
         _register_graphs_writes(server)

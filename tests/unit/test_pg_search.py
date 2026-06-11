@@ -7,17 +7,21 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcpg.config import load_settings
 from mcpg.extensions import ENABLEABLE_EXTENSIONS
 from mcpg.pg_search import (
+    CreatePgSearchIndexResult,
     HybridHit,
     PgSearchError,
     PgSearchHit,
     PgSearchIndexInfo,
     PgSearchParsedQuery,
+    ReindexPgSearchResult,
+    create_pg_search_index,
     get_pg_search_index_metadata,
     hybrid_bm25_vector_search,
     list_pg_search_indexes,
     pg_search_more_like_this,
     pg_search_parse_query,
     pg_search_run,
+    reindex_pg_search_index,
 )
 from mcpg.server import create_server
 
@@ -1029,3 +1033,299 @@ async def test_hybrid_bm25_vector_search_tool_registered() -> None:
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "hybrid_bm25_vector_search" in listed
+
+
+# --- BM-4: create_pg_search_index ------------------------------------------
+
+
+def _ddl_db_with_extension_installed() -> FakeDatabase:
+    """A FakeDatabase whose driver reports pg_search as installed."""
+    return FakeDatabase(FakeRoutingDriver({"pg_extension": [{"present": 1}]}))  # type: ignore[arg-type]
+
+
+async def test_create_pg_search_index_raises_when_extension_absent() -> None:
+    db = FakeDatabase(FakeRoutingDriver({"pg_extension": []}))  # type: ignore[arg-type]
+    with pytest.raises(PgSearchError, match="not installed"):
+        await create_pg_search_index(  # type: ignore[arg-type]
+            db, "public", "docs", ["id", "body"], "docs_bm25_idx", "id"
+        )
+
+
+async def test_create_pg_search_index_renders_minimal_sql_when_no_options() -> None:
+    db = _ddl_db_with_extension_installed()
+
+    result = await create_pg_search_index(  # type: ignore[arg-type]
+        db, "public", "docs", ["id", "body"], "docs_bm25_idx", "id"
+    )
+
+    assert isinstance(result, CreatePgSearchIndexResult)
+    assert result.schema == "public"
+    assert result.columns == ["id", "body"]
+    assert result.options == {"key_field": "id"}
+    # Verify the rendered DDL.
+    assert result.create_sql == (
+        'CREATE INDEX CONCURRENTLY "docs_bm25_idx" '
+        'ON "public"."docs" '
+        'USING bm25 ("id", "body") '
+        "WITH (key_field = 'id')"
+    )
+    # The DDL ran on autocommit via Database.run_unmanaged.
+    assert db.unmanaged == [result.create_sql]
+
+
+async def test_create_pg_search_index_renders_jsonb_int_text_options() -> None:
+    db = _ddl_db_with_extension_installed()
+
+    result = await create_pg_search_index(  # type: ignore[arg-type]
+        db,
+        "public",
+        "docs",
+        ["id", "body"],
+        "docs_bm25_idx",
+        "id",
+        text_fields={"body": {"tokenizer": "default"}},
+        numeric_fields={"price": {"fast": True}},
+        layer_sizes="100,1000,10000",
+        target_segment_count=8,
+        mutable_segment_rows=10_000,
+        sort_by="id",
+        search_tokenizer={"type": "default"},
+        concurrently=False,
+    )
+
+    # CONCURRENTLY omitted when explicit False.
+    assert " CONCURRENTLY" not in result.create_sql
+    # Options block contains all seven, in declaration order.
+    assert "key_field = 'id'" in result.create_sql
+    assert 'text_fields = \'{"body": {"tokenizer": "default"}}\'' in result.create_sql
+    assert 'numeric_fields = \'{"price": {"fast": true}}\'' in result.create_sql
+    assert "layer_sizes = '100,1000,10000'" in result.create_sql
+    assert "target_segment_count = 8" in result.create_sql
+    assert "mutable_segment_rows = 10000" in result.create_sql
+    assert "sort_by = 'id'" in result.create_sql
+    assert 'search_tokenizer = \'{"type": "default"}\'' in result.create_sql
+
+
+async def test_create_pg_search_index_escapes_single_quotes_in_text_options() -> None:
+    """Per the established pattern in turboquant DDL: PG single-quote
+    literals must double internal quotes."""
+    db = _ddl_db_with_extension_installed()
+
+    result = await create_pg_search_index(  # type: ignore[arg-type]
+        db,
+        "public",
+        "docs",
+        ["id"],
+        "docs_bm25_idx",
+        "id",
+        sort_by="O'Reilly",  # the canonical apostrophe-injection probe
+    )
+
+    assert "sort_by = 'O''Reilly'" in result.create_sql
+
+
+@pytest.mark.parametrize(
+    ("kwarg", "value", "match"),
+    [
+        ("target_segment_count", 0, "target_segment_count"),
+        ("target_segment_count", 100_001, "target_segment_count"),
+        ("target_segment_count", True, "target_segment_count"),
+        ("mutable_segment_rows", -1, "mutable_segment_rows"),
+        ("mutable_segment_rows", 100_000_001, "mutable_segment_rows"),
+        ("layer_sizes", "", "layer_sizes"),
+        ("layer_sizes", 42, "layer_sizes"),
+        ("text_fields", "not a dict", "text_fields"),
+        ("text_fields", [1, 2, 3], "text_fields"),
+    ],
+)
+async def test_create_pg_search_index_option_validation(kwarg: str, value: object, match: str) -> None:
+    db = _ddl_db_with_extension_installed()
+
+    kwargs: dict[str, object] = {kwarg: value}
+    with pytest.raises(PgSearchError, match=match):
+        await create_pg_search_index(  # type: ignore[arg-type]
+            db,
+            "public",
+            "docs",
+            ["id"],
+            "docs_bm25_idx",
+            "id",
+            **kwargs,
+        )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"schema": "public; DROP"},
+        {"table": "docs'; --"},
+        {"index_name": ""},
+        {"key_field": "id'or'1"},
+        {"columns": []},
+        {"columns": ["good", "bad; --"]},
+        {"columns": "id"},  # not a list
+    ],
+)
+async def test_create_pg_search_index_rejects_unsafe_identifiers(
+    kwargs: dict[str, object],
+) -> None:
+    db = _ddl_db_with_extension_installed()
+
+    base: dict[str, object] = {
+        "schema": "public",
+        "table": "docs",
+        "columns": ["id"],
+        "index_name": "docs_bm25_idx",
+        "key_field": "id",
+    }
+    base.update(kwargs)
+    with pytest.raises(PgSearchError):
+        await create_pg_search_index(  # type: ignore[arg-type]
+            db, **base
+        )
+
+
+async def test_create_pg_search_index_rejects_non_bool_concurrently() -> None:
+    db = _ddl_db_with_extension_installed()
+    with pytest.raises(PgSearchError, match="concurrently"):
+        await create_pg_search_index(  # type: ignore[arg-type]
+            db, "public", "docs", ["id"], "docs_bm25_idx", "id", concurrently="yes"
+        )
+
+
+# --- BM-4: reindex_pg_search_index -----------------------------------------
+
+
+async def test_reindex_pg_search_index_raises_when_extension_absent() -> None:
+    db = FakeDatabase(FakeRoutingDriver({"pg_extension": []}))  # type: ignore[arg-type]
+    with pytest.raises(PgSearchError, match="not installed"):
+        await reindex_pg_search_index(db, "public", "docs_bm25_idx")  # type: ignore[arg-type]
+
+
+async def test_reindex_pg_search_index_raises_when_index_is_not_bm25() -> None:
+    """Pre-flight catalog lookup confirms am.amname='bm25' before REINDEX
+    so the call can't probe arbitrary indexes via PG error messages."""
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                "WHERE am.amname = 'bm25'": [],  # pre-flight finds nothing
+            }
+        )
+    )
+    with pytest.raises(PgSearchError, match="not a BM25 index"):
+        await reindex_pg_search_index(db, "public", "other_idx")  # type: ignore[arg-type]
+
+
+async def test_reindex_pg_search_index_renders_sql_and_runs_unmanaged() -> None:
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                "WHERE am.amname = 'bm25'": [{"present": 1}],  # pre-flight passes
+            }
+        )
+    )
+
+    result = await reindex_pg_search_index(db, "public", "docs_bm25_idx")  # type: ignore[arg-type]
+
+    assert isinstance(result, ReindexPgSearchResult)
+    assert result.reindex_sql == 'REINDEX INDEX CONCURRENTLY "public"."docs_bm25_idx"'
+    assert db.unmanaged == [result.reindex_sql]
+
+
+async def test_reindex_pg_search_index_omits_concurrently_when_disabled() -> None:
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                "WHERE am.amname = 'bm25'": [{"present": 1}],
+            }
+        )
+    )
+
+    result = await reindex_pg_search_index(  # type: ignore[arg-type]
+        db, "public", "docs_bm25_idx", concurrently=False
+    )
+
+    assert " CONCURRENTLY" not in result.reindex_sql
+
+
+async def test_reindex_pg_search_index_rejects_unsafe_identifiers() -> None:
+    db = FakeDatabase(FakeRoutingDriver({"pg_extension": [{"present": 1}]}))  # type: ignore[arg-type]
+    with pytest.raises(PgSearchError, match="invalid"):
+        await reindex_pg_search_index(db, "public; DROP", "docs_bm25_idx")  # type: ignore[arg-type]
+
+
+async def test_create_pg_search_index_wraps_driver_failure_as_pg_search_error() -> None:
+    """Regression: the docstring promises PgSearchError on DDL failure.
+    Without the try/except wrap, a psycopg.Error would propagate
+    directly and break that contract."""
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver({"pg_extension": [{"present": 1}]}),
+        unmanaged_fail=True,
+    )
+    with pytest.raises(PgSearchError, match="CREATE INDEX failed"):
+        await create_pg_search_index(  # type: ignore[arg-type]
+            db, "public", "docs", ["id"], "docs_bm25_idx", "id"
+        )
+
+
+async def test_reindex_pg_search_index_wraps_driver_failure_as_pg_search_error() -> None:
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                "WHERE am.amname = 'bm25'": [{"present": 1}],
+            }
+        ),
+        unmanaged_fail=True,
+    )
+    with pytest.raises(PgSearchError, match="REINDEX INDEX failed"):
+        await reindex_pg_search_index(db, "public", "docs_bm25_idx")  # type: ignore[arg-type]
+
+
+# --- BM-4: tool registration -----------------------------------------------
+
+
+_DDL_SETTINGS = load_settings(
+    {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_ACCESS_MODE": "unrestricted",
+        "MCPG_ALLOW_DDL": "true",
+    }
+)
+
+_UNRESTRICTED_NO_DDL_SETTINGS = load_settings(
+    {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_ACCESS_MODE": "unrestricted",
+        "MCPG_ALLOW_DDL": "false",
+    }
+)
+
+
+async def test_pg_search_ddl_tools_register_only_with_ddl_opt_in() -> None:
+    # READ-only mode: DDL tools must NOT be visible.
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "create_pg_search_index" not in listed
+    assert "reindex_pg_search_index" not in listed
+
+    # Unrestricted access but MCPG_ALLOW_DDL=false: DDL tools must still
+    # NOT be visible. Pins the AND condition explicitly so flipping
+    # either flag alone doesn't smuggle DDL tools through.
+    server = create_server(  # type: ignore[arg-type]
+        _UNRESTRICTED_NO_DDL_SETTINGS, database=FakeDatabase(FakeDriver())
+    )
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "create_pg_search_index" not in listed
+    assert "reindex_pg_search_index" not in listed
+
+    # DDL opt-in: both tools should appear.
+    server = create_server(_DDL_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert {"create_pg_search_index", "reindex_pg_search_index"} <= listed

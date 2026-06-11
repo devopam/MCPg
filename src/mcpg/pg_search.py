@@ -54,13 +54,16 @@ them up.
 
 from __future__ import annotations
 
+import datetime as _datetime
 import json
 import math
 import re
+import time as _time
 from dataclasses import dataclass, field
 from typing import Any
 
 from mcpg._vendor.sql import SqlDriver
+from mcpg.database import Database
 from mcpg.extensions import extension_installed
 
 # Plain unquoted PostgreSQL identifier — same rule as turboquant /
@@ -976,3 +979,359 @@ async def hybrid_bm25_vector_search(
         )
         for row in rows or []
     ]
+
+
+# --- BM-4: DDL --------------------------------------------------------------
+#
+# All 13 reloptions surfaced on PgSearchIndexInfo are settable here. The
+# 7 JSONB-shaped options (text_fields, numeric_fields, boolean_fields,
+# json_fields, range_fields, datetime_fields, search_tokenizer) accept
+# Python dicts and serialize via json.dumps. The 2 int options
+# (target_segment_count, mutable_segment_rows) and 3 text options
+# (layer_sizes, background_layer_sizes, sort_by) pass through with type
+# validation. key_field is required.
+
+# Option-type routing for the WITH clause builder. Aligned with the BM-1
+# parser's groupings so a future addition only touches one place.
+_BM25_TEXT_OPTIONS: tuple[str, ...] = (
+    "key_field",
+    "layer_sizes",
+    "background_layer_sizes",
+    "sort_by",
+)
+_BM25_INT_OPTIONS_DDL: tuple[str, ...] = (
+    "target_segment_count",
+    "mutable_segment_rows",
+)
+_BM25_JSONB_OPTIONS_DDL: tuple[str, ...] = (
+    "text_fields",
+    "numeric_fields",
+    "boolean_fields",
+    "json_fields",
+    "range_fields",
+    "datetime_fields",
+    "search_tokenizer",
+)
+
+# Safety bounds — guards, not claims about what upstream accepts.
+# Mirror turboquant's stance: bound the surface so a single typo
+# doesn't push a billion-row int into PG without warning.
+_TARGET_SEGMENT_COUNT_MIN, _TARGET_SEGMENT_COUNT_MAX = 1, 100_000
+_MUTABLE_SEGMENT_ROWS_MIN, _MUTABLE_SEGMENT_ROWS_MAX = 1, 100_000_000
+
+
+@dataclass(frozen=True, slots=True)
+class CreatePgSearchIndexResult:
+    """Outcome of a :func:`create_pg_search_index` call.
+
+    The rendered ``create_sql`` is preserved verbatim for auditability
+    — every identifier in it has already passed through
+    :func:`_pg_quote_ident`, every JSONB value through
+    :func:`json.dumps` + PG literal escaping, and every int / text
+    value through its own bounds or type check.
+    """
+
+    schema: str
+    table: str
+    columns: list[str]
+    index_name: str
+    key_field: str
+    options: dict[str, Any]
+    concurrently: bool
+    create_sql: str
+    started_at: str
+    completed_at: str
+    duration_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class ReindexPgSearchResult:
+    """Outcome of a :func:`reindex_pg_search_index` call."""
+
+    schema: str
+    index: str
+    concurrently: bool
+    reindex_sql: str
+    started_at: str
+    completed_at: str
+    duration_seconds: float
+
+
+def _validate_int_option_bounded(name: str, value: int, lo: int, hi: int) -> None:
+    """Validate a bounded int reloption. Bool-as-int rejected explicitly."""
+    if not isinstance(value, int) or isinstance(value, bool) or not lo <= value <= hi:
+        raise PgSearchError(f"{name} must be an int in [{lo}..{hi}]; got {value!r}")
+
+
+def _validate_text_option(name: str, value: str) -> None:
+    """Validate a text reloption is a non-empty string.
+
+    Layer-size strings (``layer_sizes`` / ``background_layer_sizes``)
+    expect comma-separated ints per upstream's grammar, but we let
+    upstream reject malformed shapes with its own (informative)
+    error message. We only enforce ``str`` here.
+    """
+    if not isinstance(value, str) or not value:
+        raise PgSearchError(f"{name} must be a non-empty str; got {value!r}")
+
+
+def _validate_jsonb_option(name: str, value: dict[str, Any]) -> None:
+    """JSONB reloption must be a dict; the contents are upstream's contract."""
+    if not isinstance(value, dict):
+        raise PgSearchError(f"{name} must be a dict (serialized to JSONB); got {type(value).__name__}")
+
+
+def _pg_quote_literal(text: str) -> str:
+    """Quote a PostgreSQL string literal the way ``format('%L')`` would."""
+    return "'" + text.replace("'", "''") + "'"
+
+
+def _render_option(name: str, value: Any) -> str:
+    """Render a single ``key = value`` pair for the WITH clause.
+
+    * Text options → PG single-quote-escaped literal.
+    * Int options → bare digit literal (already type-checked, can't
+      escape SQL).
+    * JSONB options → ``json.dumps`` + single-quote-escaped literal.
+    """
+    if name in _BM25_TEXT_OPTIONS:
+        return f"{name} = {_pg_quote_literal(value)}"
+    if name in _BM25_INT_OPTIONS_DDL:
+        return f"{name} = {int(value)}"
+    if name in _BM25_JSONB_OPTIONS_DDL:
+        return f"{name} = {_pg_quote_literal(json.dumps(value, sort_keys=True))}"
+    raise PgSearchError(f"unknown reloption {name!r} reached the renderer")  # pragma: no cover
+
+
+def _utc_iso_now() -> str:
+    return _datetime.datetime.now(_datetime.UTC).isoformat().replace("+00:00", "Z")
+
+
+# Pre-flight: confirm the named index actually uses the bm25 access
+# method before issuing REINDEX. Without this check, the call could
+# probe arbitrary catalogs via PostgreSQL's error messages.
+_ASSERT_IS_BM25_SQL = """
+SELECT 1
+FROM pg_index ix
+JOIN pg_class i  ON i.oid = ix.indexrelid
+JOIN pg_namespace n ON n.oid = i.relnamespace
+JOIN pg_am am ON am.oid = i.relam
+WHERE am.amname = 'bm25' AND n.nspname = %s AND i.relname = %s
+"""
+
+
+async def create_pg_search_index(
+    database: Database,
+    schema: str,
+    table: str,
+    columns: list[str],
+    index_name: str,
+    key_field: str,
+    *,
+    text_fields: dict[str, Any] | None = None,
+    numeric_fields: dict[str, Any] | None = None,
+    boolean_fields: dict[str, Any] | None = None,
+    json_fields: dict[str, Any] | None = None,
+    range_fields: dict[str, Any] | None = None,
+    datetime_fields: dict[str, Any] | None = None,
+    layer_sizes: str | None = None,
+    background_layer_sizes: str | None = None,
+    target_segment_count: int | None = None,
+    mutable_segment_rows: int | None = None,
+    sort_by: str | None = None,
+    search_tokenizer: dict[str, Any] | None = None,
+    concurrently: bool = True,
+) -> CreatePgSearchIndexResult:
+    """Build and execute ``CREATE INDEX … USING bm25``.
+
+    All 13 documented bm25 reloptions are exposed as kwargs (see
+    BM-0 §2.2). The 7 JSONB-shaped options accept Python dicts and
+    are serialized via :func:`json.dumps`; the 2 int options and 3
+    text options pass through type-aware validation.
+    ``key_field`` is required by upstream.
+
+    Identifier safety: every schema / table / column / index-name /
+    key-field string goes through :func:`_validate_identifier` +
+    :func:`_pg_quote_ident`. The full rendered statement is
+    preserved in :attr:`CreatePgSearchIndexResult.create_sql` for
+    auditability.
+
+    The statement runs on an autocommit connection via
+    :meth:`Database.run_unmanaged` because ``CREATE INDEX
+    CONCURRENTLY`` cannot run inside a transaction block.
+
+    Raises:
+        PgSearchError: extension not installed, any identifier fails
+            validation, any option fails its bounds / type check, or
+            the underlying DDL fails.
+    """
+    _validate_identifier(schema, "schema")
+    _validate_identifier(table, "table")
+    _validate_identifier(index_name, "index_name")
+    _validate_identifier(key_field, "key_field")
+    if not isinstance(columns, list) or not columns:
+        raise PgSearchError("columns must be a non-empty list of identifiers")
+    for col in columns:
+        if not isinstance(col, str):
+            raise PgSearchError(f"every column must be str; got {type(col).__name__}")
+        _validate_identifier(col, "column")
+    if not isinstance(concurrently, bool):
+        raise PgSearchError(f"concurrently must be a bool; got {concurrently!r}")
+
+    if target_segment_count is not None:
+        _validate_int_option_bounded(
+            "target_segment_count",
+            target_segment_count,
+            _TARGET_SEGMENT_COUNT_MIN,
+            _TARGET_SEGMENT_COUNT_MAX,
+        )
+    if mutable_segment_rows is not None:
+        _validate_int_option_bounded(
+            "mutable_segment_rows",
+            mutable_segment_rows,
+            _MUTABLE_SEGMENT_ROWS_MIN,
+            _MUTABLE_SEGMENT_ROWS_MAX,
+        )
+    for text_name, text_value in (
+        ("layer_sizes", layer_sizes),
+        ("background_layer_sizes", background_layer_sizes),
+        ("sort_by", sort_by),
+    ):
+        if text_value is not None:
+            _validate_text_option(text_name, text_value)
+    for jsonb_name, jsonb_value in (
+        ("text_fields", text_fields),
+        ("numeric_fields", numeric_fields),
+        ("boolean_fields", boolean_fields),
+        ("json_fields", json_fields),
+        ("range_fields", range_fields),
+        ("datetime_fields", datetime_fields),
+        ("search_tokenizer", search_tokenizer),
+    ):
+        if jsonb_value is not None:
+            _validate_jsonb_option(jsonb_name, jsonb_value)
+
+    if not await extension_installed(database.driver(), "pg_search"):
+        raise PgSearchError("pg_search extension is not installed in this database")
+
+    # Build the WITH clause. ``key_field`` always first for readability;
+    # the rest in their declaration order so the rendered SQL is
+    # deterministic and audit logs are diffable across runs.
+    options: dict[str, Any] = {"key_field": key_field}
+    if text_fields is not None:
+        options["text_fields"] = text_fields
+    if numeric_fields is not None:
+        options["numeric_fields"] = numeric_fields
+    if boolean_fields is not None:
+        options["boolean_fields"] = boolean_fields
+    if json_fields is not None:
+        options["json_fields"] = json_fields
+    if range_fields is not None:
+        options["range_fields"] = range_fields
+    if datetime_fields is not None:
+        options["datetime_fields"] = datetime_fields
+    if layer_sizes is not None:
+        options["layer_sizes"] = layer_sizes
+    if background_layer_sizes is not None:
+        options["background_layer_sizes"] = background_layer_sizes
+    if target_segment_count is not None:
+        options["target_segment_count"] = target_segment_count
+    if mutable_segment_rows is not None:
+        options["mutable_segment_rows"] = mutable_segment_rows
+    if sort_by is not None:
+        options["sort_by"] = sort_by
+    if search_tokenizer is not None:
+        options["search_tokenizer"] = search_tokenizer
+
+    with_clause = ", ".join(_render_option(n, v) for n, v in options.items())
+    concurrently_clause = " CONCURRENTLY" if concurrently else ""
+    qualified_table = f"{_pg_quote_ident(schema)}.{_pg_quote_ident(table)}"
+    quoted_columns = ", ".join(_pg_quote_ident(c) for c in columns)
+
+    sql = (
+        f"CREATE INDEX{concurrently_clause} {_pg_quote_ident(index_name)} "
+        f"ON {qualified_table} "
+        f"USING bm25 ({quoted_columns}) "
+        f"WITH ({with_clause})"
+    )
+
+    started_at = _utc_iso_now()
+    started_mono = _time.monotonic()
+    try:
+        await database.run_unmanaged(sql)
+    except Exception as exc:
+        raise PgSearchError(f"CREATE INDEX failed: {exc}") from exc
+    duration = _time.monotonic() - started_mono
+    completed_at = _utc_iso_now()
+
+    return CreatePgSearchIndexResult(
+        schema=schema,
+        table=table,
+        columns=list(columns),
+        index_name=index_name,
+        key_field=key_field,
+        options=options,
+        concurrently=concurrently,
+        create_sql=sql,
+        started_at=started_at,
+        completed_at=completed_at,
+        duration_seconds=round(duration, 6),
+    )
+
+
+async def reindex_pg_search_index(
+    database: Database,
+    schema: str,
+    index: str,
+    *,
+    concurrently: bool = True,
+) -> ReindexPgSearchResult:
+    """Run ``REINDEX INDEX [CONCURRENTLY] schema.index``.
+
+    Same pre-flight pattern as :func:`turboquant.reindex_turboquant_index`:
+    confirm the named index actually uses the ``bm25`` access method
+    before running, so the call can't be turned into a way to probe
+    arbitrary catalogs via PostgreSQL's error messages.
+
+    Runs on an autocommit connection because ``REINDEX CONCURRENTLY``
+    cannot run inside a transaction block.
+
+    Raises:
+        PgSearchError: extension not installed, identifier fails
+            validation, or the named index is not a BM25 index.
+    """
+    _validate_identifier(schema, "schema")
+    _validate_identifier(index, "index")
+    if not isinstance(concurrently, bool):
+        raise PgSearchError(f"concurrently must be a bool; got {concurrently!r}")
+
+    driver = database.driver()
+    if not await extension_installed(driver, "pg_search"):
+        raise PgSearchError("pg_search extension is not installed in this database")
+
+    preflight = await driver.execute_query(_ASSERT_IS_BM25_SQL, params=[schema, index], force_readonly=True)
+    if not preflight:
+        raise PgSearchError(f"index {schema}.{index} is not a BM25 index (or does not exist); refusing to REINDEX")
+
+    concurrently_clause = " CONCURRENTLY" if concurrently else ""
+    qualified = f"{_pg_quote_ident(schema)}.{_pg_quote_ident(index)}"
+    sql = f"REINDEX INDEX{concurrently_clause} {qualified}"
+
+    started_at = _utc_iso_now()
+    started_mono = _time.monotonic()
+    try:
+        await database.run_unmanaged(sql)
+    except Exception as exc:
+        raise PgSearchError(f"REINDEX INDEX failed: {exc}") from exc
+    duration = _time.monotonic() - started_mono
+    completed_at = _utc_iso_now()
+
+    return ReindexPgSearchResult(
+        schema=schema,
+        index=index,
+        concurrently=concurrently,
+        reindex_sql=sql,
+        started_at=started_at,
+        completed_at=completed_at,
+        duration_seconds=round(duration, 6),
+    )
