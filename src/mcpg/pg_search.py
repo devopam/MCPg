@@ -613,6 +613,58 @@ def _normalize_snippets(value: Any) -> list[str]:
     return []
 
 
+# Bounds for pdb.more_like_this int4 tuning args. int4 ranges are
+# [0, 2^31-1] but realistic doc/term frequency thresholds and word
+# lengths sit well below that — keeping the cap at 1_000_000_000
+# matches the spirit of pg_search_run's _LIMIT_MAX, just bumped to
+# accommodate corpus-scale int signals.
+_MLT_INT_MIN, _MLT_INT_MAX = 0, 1_000_000_000
+
+
+def _validate_mlt_int(name: str, value: int) -> None:
+    """``min/max_doc_frequency``, ``min/max_term_frequency``,
+    ``max_query_terms``, ``min/max_word_length`` validation.
+
+    Bool-as-int rejected explicitly (a stray True would coerce to 1
+    silently and skew the upstream MLT computation)."""
+    if not isinstance(value, int) or isinstance(value, bool) or not _MLT_INT_MIN <= value <= _MLT_INT_MAX:
+        raise PgSearchError(f"{name} must be an int in [{_MLT_INT_MIN}..{_MLT_INT_MAX}]; got {value!r}")
+
+
+def _validate_mlt_boost(value: float) -> None:
+    """``boost_factor`` is float4 — accept any finite number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise PgSearchError(f"boost_factor must be a finite number; got {value!r}")
+    fval = float(value)
+    if math.isnan(fval) or math.isinf(fval):
+        raise PgSearchError(f"boost_factor must be finite; got {value!r}")
+
+
+def _validate_mlt_stop_words(value: list[str]) -> None:
+    """``stop_words`` is text[] — list[str] mapped to PG ``text[]``."""
+    if not isinstance(value, list) or not all(isinstance(w, str) for w in value):
+        raise PgSearchError(f"stop_words must be list[str]; got {value!r}")
+
+
+def _validate_mlt_fields(value: dict[str, Any]) -> None:
+    """``fields`` is jsonb — dict serialized to JSON for binding.
+
+    Two-step validation: shape (must be a dict), then
+    JSON-serializability (try-encode it). The wrapper's contract is
+    "all validation failures surface as PgSearchError", so a bare
+    ``TypeError`` from a later ``json.dumps`` call on a dict
+    containing non-serializable values (datetimes, custom objects,
+    sets, etc.) would be a contract leak. Probing here keeps the
+    encode-for-bind site downstream simple.
+    """
+    if not isinstance(value, dict):
+        raise PgSearchError(f"fields must be a dict (serialized to JSONB); got {type(value).__name__}")
+    try:
+        json.dumps(value, sort_keys=True)
+    except TypeError as exc:
+        raise PgSearchError(f"fields must be JSON-serializable; got {value!r} ({exc})") from exc
+
+
 async def pg_search_more_like_this(
     driver: SqlDriver,
     schema: str,
@@ -621,19 +673,35 @@ async def pg_search_more_like_this(
     key_field: str,
     *,
     limit: int,
+    fields: dict[str, Any] | None = None,
+    min_doc_frequency: int | None = None,
+    max_doc_frequency: int | None = None,
+    min_term_frequency: int | None = None,
+    max_query_terms: int | None = None,
+    min_word_length: int | None = None,
+    max_word_length: int | None = None,
+    boost_factor: float | None = None,
+    stop_words: list[str] | None = None,
 ) -> list[PgSearchHit]:
     """Find rows similar to the row identified by ``document_id``.
 
-    Wraps ``pdb.more_like_this(anyelement, ...)`` with only the row
-    reference arg — the eight tuning knobs (min/max doc frequency,
-    term frequency, query terms, word length, boost factor,
-    stopwords) are documented as out-of-scope for BM-2 (see
-    `docs/plans/bm25-integration.md` §6) and stay at upstream's
-    defaults. The seed row is loaded from the same table via a
-    correlated subquery so the wrapper takes ``document_id`` as an
-    opaque key value rather than a row tuple.
+    Wraps ``pdb.more_like_this(anyelement, fields jsonb,
+    min_doc_frequency int4, max_doc_frequency int4,
+    min_term_frequency int4, max_query_terms int4,
+    min_word_length int4, max_word_length int4, boost_factor float4,
+    stop_words text[]) → pdb.query`` (verbatim signature from
+    `docs/plans/bm25-integration.md` §2.1). The seed row is loaded
+    from the same table via a correlated subquery so the wrapper
+    takes ``document_id`` as an opaque key value rather than a row
+    tuple.
 
-    Built SQL::
+    Every tuning arg is optional. When omitted, the wrapper does not
+    mention it in the SQL — upstream's defaults apply. Args that
+    *are* supplied use named-arg syntax (``name => %s``) so the bind
+    list stays minimal and each value goes through a parameter
+    rather than getting spliced into SQL.
+
+    Built SQL (no tuning args)::
 
         SELECT t."<key>", pdb.score(t) AS score
         FROM "<schema>"."<table>" AS t
@@ -645,14 +713,43 @@ async def pg_search_more_like_this(
         ORDER BY pdb.score(t) DESC
         LIMIT <limit>
 
+    With tuning args, the inner ``pdb.more_like_this(seed)`` call
+    grows extra ``, name => %s`` pairs in caller order.
+
     Raises:
         PgSearchError: extension missing, identifier validation
-            fails, or limit out of bounds.
+            fails, limit out of bounds, or any tuning-arg type /
+            bounds check fails.
     """
     _validate_identifier(schema, "schema")
     _validate_identifier(table, "table")
     _validate_identifier(key_field, "key_field")
     _validate_limit(limit)
+
+    # Build the tuning-arg pieces. Order matters for the final params
+    # list: we append (name, bound_value) tuples to mlt_args so the
+    # SQL fragment renders in the same order as the bind list.
+    mlt_args: list[tuple[str, Any, str]] = []  # (name, value, type_cast_suffix)
+    if fields is not None:
+        _validate_mlt_fields(fields)
+        mlt_args.append(("fields", json.dumps(fields, sort_keys=True), "::jsonb"))
+    for arg_name, arg_value in (
+        ("min_doc_frequency", min_doc_frequency),
+        ("max_doc_frequency", max_doc_frequency),
+        ("min_term_frequency", min_term_frequency),
+        ("max_query_terms", max_query_terms),
+        ("min_word_length", min_word_length),
+        ("max_word_length", max_word_length),
+    ):
+        if arg_value is not None:
+            _validate_mlt_int(arg_name, arg_value)
+            mlt_args.append((arg_name, arg_value, ""))
+    if boost_factor is not None:
+        _validate_mlt_boost(boost_factor)
+        mlt_args.append(("boost_factor", float(boost_factor), "::real"))
+    if stop_words is not None:
+        _validate_mlt_stop_words(stop_words)
+        mlt_args.append(("stop_words", stop_words, "::text[]"))
 
     if not await extension_installed(driver, "pg_search"):
         raise PgSearchError("pg_search extension is not installed in this database")
@@ -660,18 +757,25 @@ async def pg_search_more_like_this(
     qualified_table = f"{_pg_quote_ident(schema)}.{_pg_quote_ident(table)}"
     quoted_key = _pg_quote_ident(key_field)
 
+    mlt_named_args = "".join(f", {name} => %s{cast}" for name, _, cast in mlt_args)
+    mlt_param_values = [value for _, value, _ in mlt_args]
+
     sql = (
         f"SELECT {_TABLE_ALIAS}.{quoted_key} AS id, pdb.score({_TABLE_ALIAS}) AS score "
         f"FROM {qualified_table} AS {_TABLE_ALIAS} "
         f"WHERE {_TABLE_ALIAS} @@@ ("
-        f"SELECT pdb.more_like_this(seed) "
+        f"SELECT pdb.more_like_this(seed{mlt_named_args}) "
         f"FROM {qualified_table} AS seed "
         f"WHERE seed.{quoted_key} = %s"
         f") "
         f"ORDER BY pdb.score({_TABLE_ALIAS}) DESC "
         f"LIMIT %s"
     )
-    rows = await driver.execute_query(sql, params=[document_id, limit], force_readonly=True)
+    # Bind order matches placeholder order: tuning args appear inside
+    # the inner SELECT (rendered first), then the seed key in the
+    # inner WHERE, then the outer LIMIT.
+    params: list[Any] = [*mlt_param_values, document_id, limit]
+    rows = await driver.execute_query(sql, params=params, force_readonly=True)
     return [PgSearchHit(id=row.cells["id"], score=float(row.cells["score"])) for row in rows or []]
 
 

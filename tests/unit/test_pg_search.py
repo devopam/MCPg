@@ -586,6 +586,194 @@ async def test_pg_search_more_like_this_validates_identifiers() -> None:
         )
 
 
+# --- pdb.more_like_this tuning args (backlog follow-up) --------------------
+
+
+async def test_pg_search_more_like_this_no_tuning_args_omits_them_from_sql() -> None:
+    """Sanity check: the wrapper's default behavior renders exactly the
+    minimal pdb.more_like_this(seed) call, no named args, so upstream's
+    defaults apply unchanged."""
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pdb.more_like_this(seed)": [{"id": 2, "score": 8.0}],
+        }
+    )
+
+    await pg_search_more_like_this(driver, "public", "docs", 42, "id", limit=10)  # type: ignore[arg-type]
+
+    sql, params, _ = driver.calls[-1]
+    assert "pdb.more_like_this(seed)" in sql
+    # No named-arg syntax should appear when no tuning kwargs are set.
+    assert " => " not in sql
+    assert params == [42, 10]
+
+
+async def test_pg_search_more_like_this_int_tuning_args_render_as_named() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pdb.more_like_this(seed,": [],
+        }
+    )
+
+    await pg_search_more_like_this(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        42,
+        "id",
+        limit=10,
+        min_doc_frequency=2,
+        max_doc_frequency=1000,
+        min_term_frequency=1,
+        max_query_terms=25,
+        min_word_length=2,
+        max_word_length=20,
+    )
+
+    sql, params, _ = driver.calls[-1]
+    # Each int tuning arg uses named-arg syntax against a bind param.
+    assert "min_doc_frequency => %s" in sql
+    assert "max_doc_frequency => %s" in sql
+    assert "min_term_frequency => %s" in sql
+    assert "max_query_terms => %s" in sql
+    assert "min_word_length => %s" in sql
+    assert "max_word_length => %s" in sql
+    # Bind order: tuning args (in caller order), then document_id, then limit.
+    assert params == [2, 1000, 1, 25, 2, 20, 42, 10]
+
+
+async def test_pg_search_more_like_this_fields_jsonb_serialized_and_cast() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pdb.more_like_this(seed,": [],
+        }
+    )
+
+    await pg_search_more_like_this(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        42,
+        "id",
+        limit=10,
+        fields={"body": {"boost": 2.0}},
+    )
+
+    sql, params, _ = driver.calls[-1]
+    assert "fields => %s::jsonb" in sql
+    # JSON-serialized with sort_keys for deterministic SQL.
+    assert params[0] == '{"body": {"boost": 2.0}}'
+
+
+async def test_pg_search_more_like_this_boost_factor_and_stop_words_render() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pdb.more_like_this(seed,": [],
+        }
+    )
+
+    await pg_search_more_like_this(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        42,
+        "id",
+        limit=10,
+        boost_factor=1.5,
+        stop_words=["the", "a", "an"],
+    )
+
+    sql, params, _ = driver.calls[-1]
+    assert "boost_factor => %s::real" in sql
+    assert "stop_words => %s::text[]" in sql
+    # boost_factor coerced to float; stop_words passed through as list.
+    assert 1.5 in params
+    assert ["the", "a", "an"] in params
+
+
+async def test_pg_search_more_like_this_param_count_matches_placeholders() -> None:
+    """Regression: bind list must align with placeholder positions across
+    every combination of tuning args. Same trap that bit pg_search_run
+    earlier in BM-2."""
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pdb.more_like_this(seed,": [],
+        }
+    )
+
+    await pg_search_more_like_this(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        42,
+        "id",
+        limit=10,
+        fields={"body": {}},
+        min_doc_frequency=2,
+        boost_factor=1.0,
+        stop_words=["the"],
+    )
+
+    sql, params, _ = driver.calls[-1]
+    assert sql.count("%s") == len(params)
+    # Order: tuning args in their caller order, then document_id, then limit.
+    assert params == ['{"body": {}}', 2, 1.0, ["the"], 42, 10]
+
+
+@pytest.mark.parametrize(
+    ("kwarg", "value", "match"),
+    [
+        ("min_doc_frequency", -1, "min_doc_frequency"),
+        ("min_doc_frequency", True, "min_doc_frequency"),  # bool-as-int
+        ("max_doc_frequency", 1_000_000_001, "max_doc_frequency"),
+        ("max_query_terms", "25", "max_query_terms"),  # string, not int
+        ("boost_factor", float("nan"), "boost_factor"),
+        ("boost_factor", float("inf"), "boost_factor"),
+        ("boost_factor", True, "boost_factor"),  # bool-as-number
+        ("boost_factor", "1.5", "boost_factor"),
+        ("stop_words", "the", "stop_words"),  # str, not list
+        ("stop_words", [1, 2, 3], "stop_words"),  # list of non-str
+        ("fields", [1, 2], "fields"),  # not a dict
+        ("fields", "{}", "fields"),  # str, not dict
+    ],
+)
+async def test_pg_search_more_like_this_tuning_arg_validation(kwarg: str, value: object, match: str) -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    kwargs = {kwarg: value}
+    with pytest.raises(PgSearchError, match=match):
+        await pg_search_more_like_this(  # type: ignore[arg-type]
+            driver, "public", "docs", 42, "id", limit=10, **kwargs
+        )
+
+
+async def test_pg_search_more_like_this_fields_non_json_serializable_value_raises() -> None:
+    """Regression: a dict whose *shape* passes ``isinstance(..., dict)``
+    but contains a value json.dumps can't encode (sets, datetimes,
+    custom objects) used to escape validation and surface as a bare
+    TypeError from the JSON-encode step. The wrapper's contract is
+    "all validation failures surface as PgSearchError", so the
+    validator probes encodability up front."""
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    # `set` is the simplest non-JSON-serializable built-in.
+    with pytest.raises(PgSearchError, match="JSON-serializable"):
+        await pg_search_more_like_this(  # type: ignore[arg-type]
+            driver,
+            "public",
+            "docs",
+            42,
+            "id",
+            limit=10,
+            fields={"body": {"boost", "factor"}},
+        )
+
+
 # --- BM-2: pg_search_parse_query -------------------------------------------
 
 
