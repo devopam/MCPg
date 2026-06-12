@@ -82,6 +82,7 @@ read-only / picks a pool / sets the tenant role.
 | `mcpg.policy` | Access-mode → capability permission table. |
 | `mcpg.audit` | Tool-call audit logger + configurable secret-name regex redactor + the comprehensive `audit_database` DBA report. |
 | `mcpg.audit_trail` | Optional `mcpg_audit.events` table persistence for `run_write` / `run_ddl` records. |
+| `mcpg.audit_integrity` | HMAC integrity chain over `mcpg_audit.events` (`MCPG_AUDIT_INTEGRITY` + `MCPG_AUDIT_HMAC_KEY`); powers `verify_audit_chain`. |
 | `mcpg.tools` | Thin MCP tool wrappers + `register_tools` (consults `mcpg.policy` for capability gating). |
 | `mcpg.introspection` | Schema / catalog inspection queries (parameterised). |
 | `mcpg.query` | Safe read-only query execution + plan analysis. |
@@ -91,11 +92,18 @@ read-only / picks a pool / sets the tenant role.
 | `mcpg.indexing` | Index recommendations. |
 | `mcpg.textsearch` | Search: trigram fuzzy, full-text, pgvector, PostGIS k-NN, hybrid (vector + FTS via RRF). |
 | `mcpg.vector_tuning` | pgvector advisors (HNSW vs IVFFlat, quantization, recall/speed). |
+| `mcpg.vector_ops` | pgvector analytics (added v0.6.0): `cluster_vectors`, `detect_vector_outliers`, `monitor_embedding_drift`, `cross_table_similarity`, `analyze_distance_metric`, `import_vectors`, `mmr_search`, `migrate_vector_to_halfvec`. Separate namespace from search (`mcpg.textsearch`) and storage tuning (`mcpg.vector_tuning`). |
+| `mcpg.pg_search` | ParadeDB `pg_search` BM25 integration (BM-1..BM-5): observability (`list_pg_search_indexes`, `get_pg_search_index_metadata`), advisor (`recommend_pg_search_maintenance`, `audit_pg_search_indexes`), search (`pg_search_run`, `pg_search_more_like_this`, `pg_search_parse_query`, `hybrid_bm25_vector_search`), and DDL (`create_pg_search_index`, `reindex_pg_search_index`). Multi-column OR-of-predicates and the full `pdb.more_like_this` tuning surface landed as follow-ups. |
+| `mcpg.turboquant` | `pg_turboquant` ANN index integration (TQ-1..TQ-5): observability, advisor + scorecard adapter, write (`maintain_turboquant_index`), DDL (`create_turboquant_index`, `reindex_turboquant_index`), and query execution (`turboquant_approx_candidates`, `turboquant_rerank_candidates`, `recommend_turboquant_query_knobs`). DDL paths wrap `run_unmanaged` failures into `TurboQuantError`. |
+| `mcpg.rag_telemetry` / `mcpg.rag_efficiency` | RAG observability suite — reranker analytics, embedding-pipeline telemetry, adaptive efficiency thresholds. |
 | `mcpg.composite` | One-call aggregates: `summarize_table`, `why_is_this_slow`, `audit_database`. |
 | `mcpg.advisors` | Schema-quality advisors (PK, FK index, dup index, RLS, graph index, …). |
 | `mcpg.cursors` | Server-side cursor manager (one dedicated connection per cursor; 5-minute idle TTL). |
 | `mcpg.cypher` / `mcpg.graph` / `mcpg.graph_diagram` / `mcpg.graph_mgmt` | Apache AGE property graph + Cypher integration. |
 | `mcpg.migrations` | Staged migration workflow — shadow schema, structural diff, transient validation. |
+| `mcpg.migration_history` / `mcpg.migration_ingestion` | Read-only inspection of framework history tables (Alembic / Flyway / Diesel / Django / Prisma / Goose / Sequelize) and the filesystem-vs-history delta surfaced by `list_unapplied_migration_scripts`. |
+| `mcpg.schema_docs` | `generate_schema_docs` — comprehensive Markdown catalog reference for tables / views / enums / constraints / indexes, with optional sample values. |
+| `mcpg.liveops` | Live-ops surface: `list_active_queries`, `monitor_index_build`, `list_replicas`, `verify_connection_encryption`. |
 | `mcpg.nl2sql` | Natural-language → SQL via pluggable providers (Anthropic / OpenAI / Gemini). |
 | `mcpg.data_movement` | Export (`export_query` / `export_table`) and bulk-load (`import_csv` / `import_json` via COPY FROM STDIN). |
 | `mcpg.shell` | Subprocess wrappers (`dump_database` / `restore_database` / `copy_table_between_databases` / `run_pg_binary`). |

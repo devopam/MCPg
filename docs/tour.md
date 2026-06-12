@@ -319,6 +319,40 @@ reindex_turboquant_index(schema, index, concurrently=true)
                                                      # catalog-preflighted REINDEX [CONCURRENTLY]
 ```
 
+## "BM25 keyword search (ParadeDB pg_search)" (pg_search installed)
+
+```
+# Read-side observability
+list_pg_search_indexes()                             # every BM25 index in the cluster + parsed reloptions
+get_pg_search_index_metadata(schema, index)          # full IndexOptions for one index
+recommend_pg_search_maintenance(schema, index)       # advisor: REINDEX / segment-count / mutable-rows nudges
+
+# Search
+pg_search_run(schema, table, query, key_field,
+              columns=null, limit=10, return_snippets=false,
+              snippet_field=null)                    # whole-index, single-column, or multi-column OR
+                                                     # (e.g. columns=["body","title"] → t.body@@@q OR t.title@@@q)
+pg_search_more_like_this(schema, table, document_id, key_field,
+                         limit=10, fields=null, ...) # nine optional tuning kwargs (#91); omitted ones use upstream defaults
+pg_search_parse_query(query_string, lenient=false,
+                      conjunction_mode=false)        # surfaces the parsed pdb.query for debugging
+hybrid_bm25_vector_search(schema, table, query_text, query_vector,
+                          key_field, vector_column,
+                          bm25_columns=null, distance_op="<=>",
+                          k=60, per_leg_limit=20, final_limit=10)
+                                                     # RRF fusion over BM25 leg + pgvector leg
+```
+
+## "Create or rebuild a pg_search BM25 index" (`unrestricted` + `MCPG_ALLOW_DDL=true` + pg_search installed)
+
+```
+create_pg_search_index(schema, table, columns, index_name, key_field,
+                       text_fields=null, numeric_fields=null, ...)
+                                                     # 13 documented bm25 reloptions; CONCURRENTLY autocommit
+reindex_pg_search_index(schema, index, concurrently=true)
+                                                     # catalog-preflighted REINDEX [CONCURRENTLY]
+```
+
 ## "Is my RAG reranker earning its latency budget?"
 
 ```
