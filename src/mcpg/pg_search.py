@@ -647,9 +647,22 @@ def _validate_mlt_stop_words(value: list[str]) -> None:
 
 
 def _validate_mlt_fields(value: dict[str, Any]) -> None:
-    """``fields`` is jsonb — dict serialized to JSON for binding."""
+    """``fields`` is jsonb — dict serialized to JSON for binding.
+
+    Two-step validation: shape (must be a dict), then
+    JSON-serializability (try-encode it). The wrapper's contract is
+    "all validation failures surface as PgSearchError", so a bare
+    ``TypeError`` from a later ``json.dumps`` call on a dict
+    containing non-serializable values (datetimes, custom objects,
+    sets, etc.) would be a contract leak. Probing here keeps the
+    encode-for-bind site downstream simple.
+    """
     if not isinstance(value, dict):
         raise PgSearchError(f"fields must be a dict (serialized to JSONB); got {type(value).__name__}")
+    try:
+        json.dumps(value, sort_keys=True)
+    except TypeError as exc:
+        raise PgSearchError(f"fields must be JSON-serializable; got {value!r} ({exc})") from exc
 
 
 async def pg_search_more_like_this(

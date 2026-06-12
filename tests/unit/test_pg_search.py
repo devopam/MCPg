@@ -752,6 +752,28 @@ async def test_pg_search_more_like_this_tuning_arg_validation(kwarg: str, value:
         )
 
 
+async def test_pg_search_more_like_this_fields_non_json_serializable_value_raises() -> None:
+    """Regression: a dict whose *shape* passes ``isinstance(..., dict)``
+    but contains a value json.dumps can't encode (sets, datetimes,
+    custom objects) used to escape validation and surface as a bare
+    TypeError from the JSON-encode step. The wrapper's contract is
+    "all validation failures surface as PgSearchError", so the
+    validator probes encodability up front."""
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    # `set` is the simplest non-JSON-serializable built-in.
+    with pytest.raises(PgSearchError, match="JSON-serializable"):
+        await pg_search_more_like_this(  # type: ignore[arg-type]
+            driver,
+            "public",
+            "docs",
+            42,
+            "id",
+            limit=10,
+            fields={"body": {"boost", "factor"}},
+        )
+
+
 # --- BM-2: pg_search_parse_query -------------------------------------------
 
 
