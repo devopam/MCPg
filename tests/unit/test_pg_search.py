@@ -468,19 +468,105 @@ async def test_pg_search_run_snippet_field_without_return_snippets_raises() -> N
         )
 
 
-async def test_pg_search_run_multi_column_search_raises() -> None:
+async def test_pg_search_run_multi_column_search_ors_per_column_predicates() -> None:
+    """Multi-column search renders an OR of per-column @@@ predicates,
+    binding the same query string once per column. pdb.score(t) on
+    the alias-level aggregates contributions naturally so callers
+    don't have to combine per-column scores."""
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            ' t."body" @@@ %s OR t."title" @@@ %s': [{"id": 7, "score": 4.2}],
+        }
+    )
+
+    await pg_search_run(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "docs",
+        "rust",
+        "id",
+        columns=["body", "title"],
+        limit=5,
+    )
+
+    sql, params, _ = driver.calls[-1]
+    assert '(t."body" @@@ %s OR t."title" @@@ %s)' in sql
+    # Query string bound once per column, then limit.
+    assert params == ["rust", "rust", 5]
+    # Placeholder / bind alignment is the trap we ship regression
+    # coverage for; pin it explicitly.
+    assert sql.count("%s") == len(params)
+
+
+async def test_pg_search_run_three_column_search_ors_all_three() -> None:
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            " OR ": [],
+        }
+    )
+
+    await pg_search_run(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "docs",
+        "rust",
+        "id",
+        columns=["body", "title", "notes"],
+        limit=5,
+    )
+
+    sql, params, _ = driver.calls[-1]
+    assert '(t."body" @@@ %s OR t."title" @@@ %s OR t."notes" @@@ %s)' in sql
+    assert params == ["rust", "rust", "rust", 5]
+
+
+async def test_pg_search_run_multi_column_validates_each_identifier() -> None:
+    """A bad identifier anywhere in the list should fail before SQL
+    is built — no partial query execution against a malformed name."""
     driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
 
-    with pytest.raises(PgSearchError, match="multi-column"):
+    with pytest.raises(PgSearchError, match="invalid column"):
         await pg_search_run(
             driver,  # type: ignore[arg-type]
             "public",
             "docs",
             "rust",
             "id",
-            columns=["body", "title"],
+            columns=["body", "bad; name"],
             limit=5,
         )
+
+
+async def test_pg_search_run_multi_column_with_snippets_binds_in_order() -> None:
+    """Regression: snippet placeholders come before the WHERE
+    placeholders, and both must align with bind values. The N
+    query-binds for the OR clause sit between snippet args and
+    LIMIT."""
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}],
+            "pdb.snippets(": [{"id": 1, "score": 1.0, "snippets": ["<b>rust</b>"]}],
+        }
+    )
+
+    await pg_search_run(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "docs",
+        "rust",
+        "id",
+        columns=["body", "title"],
+        limit=5,
+        return_snippets=True,
+        snippet_field="body",
+    )
+
+    sql, params, _ = driver.calls[-1]
+    assert sql.count("%s") == len(params)
+    # Order: snippet args (3), query x 2 columns, limit.
+    assert params == ["<b>", "</b>", 150, "rust", "rust", 5]
 
 
 async def test_pg_search_run_empty_columns_raises() -> None:
@@ -786,21 +872,34 @@ async def test_hybrid_bm25_vector_search_single_column_bm25_target() -> None:
     assert ' t."body" @@@ %s' in sql
 
 
-async def test_hybrid_bm25_vector_search_multi_column_bm25_raises() -> None:
-    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+async def test_hybrid_bm25_vector_search_multi_column_bm25_ors_predicates() -> None:
+    """Hybrid search mirrors pg_search_run's multi-column shape in
+    the BM25 leg: each column gets its own ``@@@ %s`` slot inside
+    the bm25_leg CTE, all OR-joined. The vector leg is unchanged."""
+    driver = FakeRoutingDriver(
+        {
+            "pg_extension": [{"present": 1}, {"present": 1}],
+            ' OR t."title" @@@ %s': [{"id": 1, "score": 0.5, "bm25_rank": 1, "vector_rank": 1}],
+        }
+    )
 
-    with pytest.raises(PgSearchError, match="multi-column"):
-        await hybrid_bm25_vector_search(  # type: ignore[arg-type]
-            driver,
-            "public",
-            "docs",
-            query_text="rust",
-            query_vector=[1.0],
-            key_field="id",
-            vector_column="embedding",
-            bm25_columns=["body", "title"],
-            final_limit=5,
-        )
+    await hybrid_bm25_vector_search(  # type: ignore[arg-type]
+        driver,
+        "public",
+        "docs",
+        query_text="rust",
+        query_vector=[1.0],
+        key_field="id",
+        vector_column="embedding",
+        bm25_columns=["body", "title"],
+        final_limit=5,
+    )
+
+    sql, params, _ = driver.calls[-1]
+    assert '(t."body" @@@ %s OR t."title" @@@ %s)' in sql
+    assert sql.count("%s") == len(params)
+    # Order: query_text x 2 columns, vector x 2, final_limit.
+    assert params == ["rust", "rust", "[1.0]", "[1.0]", 5]
 
 
 @pytest.mark.parametrize("op", ["<=>", "<->", "<#>"])
