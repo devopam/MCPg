@@ -867,6 +867,37 @@ async def test_create_turboquant_index_quotes_mixed_case_identifiers() -> None:
     assert result.create_sql == expected
 
 
+async def test_create_turboquant_index_wraps_driver_failure_as_turboquant_error() -> None:
+    """Regression: a raw psycopg / RuntimeError from run_unmanaged
+    must surface as TurboQuantError so callers always see a typed
+    error class for DDL failures. Mirrors the equivalent pg_search
+    regression test (test_pg_search.py)."""
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver({"pg_extension": [{"present": 1}]}),
+        unmanaged_fail=True,
+    )
+    with pytest.raises(TurboQuantError, match="CREATE INDEX failed"):
+        await create_turboquant_index(  # type: ignore[arg-type]
+            db, "public", "embeddings", "embedding", "idx", "cosine"
+        )
+
+
+async def test_create_turboquant_index_preserves_cause_chain() -> None:
+    """``raise … from exc`` must keep the original exception accessible
+    on ``__cause__`` so debugging tools (and pytest's ``-tb``) see the
+    real psycopg error rather than only the wrapper message."""
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver({"pg_extension": [{"present": 1}]}),
+        unmanaged_fail=True,
+    )
+    with pytest.raises(TurboQuantError) as excinfo:
+        await create_turboquant_index(  # type: ignore[arg-type]
+            db, "public", "embeddings", "embedding", "idx", "cosine"
+        )
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    assert "maintenance failed" in str(excinfo.value.__cause__)
+
+
 # --- reindex_turboquant_index ----------------------------------------------
 
 
@@ -924,6 +955,42 @@ async def test_reindex_turboquant_index_rejects_non_bool_concurrently(bad: Any) 
     db = _ddl_db_with_extension_installed()
     with pytest.raises(TurboQuantError, match="concurrently must be a bool"):
         await reindex_turboquant_index(db, "public", "idx", concurrently=bad)  # type: ignore[arg-type]
+
+
+async def test_reindex_turboquant_index_wraps_driver_failure_as_turboquant_error() -> None:
+    """Regression: raw driver failures during REINDEX (e.g. lock
+    contention from a concurrent index build, disk full) must surface
+    as TurboQuantError. Mirrors the create_turboquant_index wrap and
+    the pg_search equivalent."""
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                # _ASSERT_IS_TURBOQUANT_SQL pre-flight must succeed so we
+                # reach the run_unmanaged call and exercise the wrap.
+                _PREFLIGHT_SUBSTR: [{"present": 1}],
+            }
+        ),
+        unmanaged_fail=True,
+    )
+    with pytest.raises(TurboQuantError, match="REINDEX failed"):
+        await reindex_turboquant_index(db, "public", "embeddings_tq_idx")  # type: ignore[arg-type]
+
+
+async def test_reindex_turboquant_index_preserves_cause_chain() -> None:
+    db = FakeDatabase(  # type: ignore[arg-type]
+        FakeRoutingDriver(
+            {
+                "pg_extension": [{"present": 1}],
+                _PREFLIGHT_SUBSTR: [{"present": 1}],
+            }
+        ),
+        unmanaged_fail=True,
+    )
+    with pytest.raises(TurboQuantError) as excinfo:
+        await reindex_turboquant_index(db, "public", "embeddings_tq_idx")  # type: ignore[arg-type]
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    assert "maintenance failed" in str(excinfo.value.__cause__)
 
 
 # --- TQ-5: query execution + per-query knobs --------------------------------
