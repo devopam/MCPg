@@ -66,10 +66,14 @@ Verbatim from `pg_search/src/bootstrap/` Rust declarations
   — third arg `conjunction_mode` was not surfaced in the v2 blog.
 - `pdb.regex(pattern text) → pdb.query`.
 - `pdb.more_like_this(anyelement, fields jsonb DEFAULT NULL, min_doc_frequency int4 DEFAULT NULL, max_doc_frequency int4 DEFAULT NULL, min_term_frequency int4 DEFAULT NULL, max_query_terms int4 DEFAULT NULL, min_word_length int4 DEFAULT NULL, max_word_length int4 DEFAULT NULL, boost_factor float4 DEFAULT NULL, stop_words text[] DEFAULT NULL) → pdb.query`
-  — eight tuning args, all defaulted. BM-2's wrapper exposes the
-  document-identifier arg and `limit`; the eight tuning knobs are
-  out-of-scope for the first wrapper pass and deferred to a future
-  phase.
+  — nine optional args (one `fields` jsonb + eight tuning knobs),
+  all defaulted. ~~BM-2's wrapper exposes the document-identifier
+  arg and `limit`; the eight tuning knobs are out-of-scope for the
+  first wrapper pass and deferred to a future phase.~~ **Landed in
+  full via #91 (post-BM-2 follow-up):** every kwarg is now exposed
+  as an optional Python kwarg on `pg_search_more_like_this`. Omitted
+  kwargs are not mentioned in the rendered SQL, so upstream's
+  defaults apply unchanged for callers who don't tune.
 - `pdb.agg(aggregation_spec jsonb, solve_mvcc bool DEFAULT true) → jsonb`
   — input is the Tantivy aggregation JSON, output is the result
   JSON.
@@ -278,8 +282,9 @@ The single-column case is just `columns=["body"]`.
 
 - `pg_search_run(driver, schema, table, query, *, columns=None, limit, return_snippets=False)`
   → `list[PgSearchHit]` with id, score, optional snippet.
-- `pg_search_more_like_this(driver, schema, table, document_id, *, columns=None, limit)`
-  → `list[PgSearchHit]`.
+- `pg_search_more_like_this(driver, schema, table, document_id, key_field, *, limit, fields=None, min_doc_frequency=None, max_doc_frequency=None, min_term_frequency=None, max_query_terms=None, min_word_length=None, max_word_length=None, boost_factor=None, stop_words=None)`
+  → `list[PgSearchHit]`. Tuning kwargs landed via #91; when
+  omitted, upstream's defaults apply.
 - `pg_search_parse_query(driver, query_string, *, lenient=False)`
   — surfaces the parsed query structure for debugging.
 

@@ -53,6 +53,9 @@ plumbing:
 | **pg_turboquant — observability + query** | `list_turboquant_indexes`, `get_turboquant_index_metadata`, `get_turboquant_heap_stats`, `get_turboquant_last_scan_stats`, `recommend_turboquant_maintenance`, `turboquant_approx_candidates`, `turboquant_rerank_candidates`, `recommend_turboquant_query_knobs` |
 | **pg_turboquant — write (gated)** | `maintain_turboquant_index` |
 | **pg_turboquant — DDL (gated)** | `create_turboquant_index`, `reindex_turboquant_index` |
+| **pg_search (ParadeDB BM25) — observability** | `list_pg_search_indexes`, `get_pg_search_index_metadata`, `recommend_pg_search_maintenance` |
+| **pg_search — search** | `pg_search_run`, `pg_search_more_like_this`, `pg_search_parse_query`, `hybrid_bm25_vector_search` |
+| **pg_search — DDL (gated)** | `create_pg_search_index`, `reindex_pg_search_index` |
 | **Apache AGE graph + Cypher** | `list_graphs`, `describe_graph`, `run_cypher`, `create_graph` (gated), `drop_graph` (gated) |
 | **Live ops** | `list_active_queries`, `list_replicas`, `monitor_index_build`, `verify_connection_encryption` |
 | **Audit trail** | `list_audit_events`, `verify_audit_chain`, `prune_audit_events` |
