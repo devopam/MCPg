@@ -42,10 +42,11 @@ them" — pick the section that matches what you're trying to do.
 - [**Feature shortlist**](feature-shortlist.md) — what's planned.
 - [**Progress log**](PROGRESS.md) — chronological build log.
 - Release notes:
+  [v0.6.0](release-notes-0.6.0.md) ·
   [v0.5.0](release-notes-0.5.0.md) ·
   [v0.4.0](release-notes-0.4.0.md) ·
   [v0.3.0](release-notes-0.3.0.md) ·
-  see [CHANGELOG](../CHANGELOG.md) for v0.5.1 and beyond.
+  see [CHANGELOG](../CHANGELOG.md) for patch releases and unreleased work.
 - [**Architecture Decision Records**](adr/) — the durable design
   decisions, one ADR per choice.
 

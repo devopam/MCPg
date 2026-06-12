@@ -161,6 +161,15 @@ k-NN, choose `<->` / `<#>` / `<=>` operator), `vector_range_search`
 reciprocal-rank fusion), `geo_search` (PostGIS k-NN over a
 geography column).
 
+When the ParadeDB `pg_search` extension is installed,
+`pg_search_run` adds BM25 keyword search (single or multi-column
+OR), `pg_search_more_like_this` does similar-document recall with
+nine optional `pdb.more_like_this` tuning knobs, and
+`hybrid_bm25_vector_search` fuses a BM25 leg with a pgvector leg
+via reciprocal-rank fusion. See [`tools.md`](tools.md) for the
+full pg_search row and the BM-25 [integration plan](plans/bm25-integration.md)
+for design context.
+
 For vector index sizing: `recommend_vector_index` (HNSW vs IVFFlat)
 and `recommend_vector_quantization` (vector → halfvec / bit
 storage advisor).
