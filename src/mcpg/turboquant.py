@@ -916,7 +916,15 @@ async def create_turboquant_index(
 
     started_at = _utc_iso_now()
     started_mono = time.monotonic()
-    await database.run_unmanaged(sql)
+    try:
+        await database.run_unmanaged(sql)
+    except Exception as exc:
+        # Mirrors the pg_search pattern (pg_search.py:1265): catch the
+        # raw driver / DatabaseError and re-raise as TurboQuantError so
+        # callers always see a typed error class for DDL failures
+        # (duplicate name, locked relation, missing table, etc.) rather
+        # than a psycopg traceback leaking out of the wrapper.
+        raise TurboQuantError(f"CREATE INDEX failed: {exc}") from exc
     duration = time.monotonic() - started_mono
     completed_at = _utc_iso_now()
 
@@ -976,7 +984,14 @@ async def reindex_turboquant_index(
 
     started_at = _utc_iso_now()
     started_mono = time.monotonic()
-    await database.run_unmanaged(sql)
+    try:
+        await database.run_unmanaged(sql)
+    except Exception as exc:
+        # Same pattern as create_turboquant_index above: convert raw
+        # driver errors (lock contention, missing index, etc.) into a
+        # typed TurboQuantError so callers don't get a psycopg
+        # traceback bleeding out of the wrapper.
+        raise TurboQuantError(f"REINDEX failed: {exc}") from exc
     duration = time.monotonic() - started_mono
     completed_at = _utc_iso_now()
 
