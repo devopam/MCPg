@@ -366,10 +366,14 @@ BM-2/BM-4 and BM-3/BM-4 could land in parallel.
   (discovered during §2.1). Usable surface, but BM-2's
   `pg_search_parse_query` covers the common path. Wrap when a
   concrete use case appears.
-- **`pdb.more_like_this` tuning args.** Eight defaulted knobs
-  (min/max doc frequency, term frequency, query terms, word length,
-  boost, stopwords). BM-2 exposes only the document-identifier arg;
-  the tuning surface is deferred to a follow-up phase.
+- **`pdb.more_like_this` tuning args.** ~~Eight defaulted knobs~~
+  **Landed in #91 (post-BM-2 follow-up).** All nine documented
+  upstream args (`fields` jsonb, `min_doc_frequency`,
+  `max_doc_frequency`, `min_term_frequency`, `max_query_terms`,
+  `min_word_length`, `max_word_length`, `boost_factor`,
+  `stop_words`) are now optional kwargs on
+  `pg_search_more_like_this`. Omitted kwargs are not mentioned in
+  the SQL so upstream's defaults apply unchanged.
 - **`pg_textsearch` and `vchord_bm25` wrappers.** Deferred per
   §1. Documented return conditions: PG 14–16 support for
   `pg_textsearch`; 1.0 release + hybrid-pattern docs for
