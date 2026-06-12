@@ -425,26 +425,31 @@ def _validate_limit(value: int) -> None:
         raise PgSearchError(f"limit must be an int in [{_LIMIT_MIN}..{_LIMIT_MAX}]; got {value!r}")
 
 
-def _validate_columns_arg(columns: list[str] | None) -> str | None:
-    """Validate the ``columns`` arg and pick the single search target.
+def _validate_columns_arg(columns: list[str] | None) -> list[str] | None:
+    """Validate the ``columns`` arg and return the validated column list.
 
-    BM-2 supports two search shapes:
+    pg_search_run / hybrid_bm25_vector_search support three search shapes:
 
     * ``columns=None`` → search the whole BM25 index
-      (``WHERE alias @@@ query``). This is the default; the index can
-      cover one or many columns.
-    * ``columns=[one_col]`` → restrict the search to a single field
-      (``WHERE alias.col @@@ query``).
+      (``WHERE alias @@@ query``). This is the default; the index
+      can cover one or many columns and Tantivy ranks across all
+      of them.
+    * ``columns=[one_col]`` → restrict the search to a single
+      indexed field (``WHERE alias."one_col" @@@ query``).
+    * ``columns=[a, b, ...]`` → multi-column search rendered as
+      ``WHERE (alias."a" @@@ query OR alias."b" @@@ query OR ...)``.
+      Each per-column ``@@@`` runs against the same parsed query
+      string. ``pdb.score(alias)`` (used downstream for ranking)
+      naturally aggregates across whichever per-column predicates
+      matched, so callers don't have to combine per-column scores
+      manually.
 
-    Multi-column search requires the ``pdb.parse`` per-field config
-    JSON which is deferred to a follow-up phase (the eight
-    ``pdb.more_like_this`` tuning args are deferred for the same
-    reason — see ``docs/plans/bm25-integration.md`` §6). Passing
-    more than one column raises rather than silently picking the
-    first.
-
-    Returns the chosen single-column identifier (already validated),
-    or ``None`` for the whole-table form.
+    Returns the validated column list, or ``None`` for the
+    whole-index form. Each name is passed through
+    :func:`_validate_identifier` so SQL injection via a column name
+    is impossible. Duplicates are kept verbatim (we don't second-
+    guess the caller — if they want ``["body", "body"]`` for some
+    diagnostic reason that is harmless to PostgreSQL).
     """
     if columns is None:
         return None
@@ -452,14 +457,9 @@ def _validate_columns_arg(columns: list[str] | None) -> str | None:
         raise PgSearchError(f"columns must be list[str] or None; got {columns!r}")
     if len(columns) == 0:
         raise PgSearchError("columns must be None or a non-empty list; pass None to search the whole index")
-    if len(columns) > 1:
-        raise PgSearchError(
-            "multi-column search is not yet supported in BM-2 — needs the pdb.parse per-field "
-            "config JSON, deferred to a follow-up phase. Pass a single column or None."
-        )
-    column = columns[0]
-    _validate_identifier(column, "column")
-    return column
+    for c in columns:
+        _validate_identifier(c, "column")
+    return list(columns)
 
 
 # Table alias used in every BM-2 SQL builder. Pulled out so the
@@ -468,9 +468,32 @@ def _validate_columns_arg(columns: list[str] | None) -> str | None:
 _TABLE_ALIAS = "t"
 
 
-def _bm25_predicate(column: str | None) -> str:
-    """Render the search-target side of the ``@@@`` predicate."""
-    return f"{_TABLE_ALIAS}.{_pg_quote_ident(column)}" if column else _TABLE_ALIAS
+def _bm25_search_predicate(columns: list[str] | None) -> tuple[str, int]:
+    """Render the full ``WHERE`` predicate (target + ``@@@`` + placeholders).
+
+    Returns ``(sql_fragment, n_query_binds)``. The caller must bind
+    the query string ``n_query_binds`` times, in the position the
+    fragment occupies in the final SQL string. Three shapes:
+
+    * ``columns is None`` →
+      ``("t @@@ %s", 1)`` (whole-index form).
+    * ``len(columns) == 1`` →
+      ``('t."col" @@@ %s', 1)`` (single-column restriction).
+    * ``len(columns) >= 2`` →
+      ``('(t."a" @@@ %s OR t."b" @@@ %s ...)', len(columns))``
+      (multi-column OR — each placeholder receives the same query
+      string at bind time).
+
+    Returning the bind count alongside the fragment lets call sites
+    extend their params lists explicitly (``params.extend([q] * n)``)
+    rather than threading two SQL builders.
+    """
+    if not columns:
+        return f"{_TABLE_ALIAS} @@@ %s", 1
+    if len(columns) == 1:
+        return f"{_TABLE_ALIAS}.{_pg_quote_ident(columns[0])} @@@ %s", 1
+    parts = [f"{_TABLE_ALIAS}.{_pg_quote_ident(c)} @@@ %s" for c in columns]
+    return "(" + " OR ".join(parts) + ")", len(columns)
 
 
 async def pg_search_run(
@@ -498,9 +521,14 @@ async def pg_search_run(
         ORDER BY pdb.score(t) DESC
         LIMIT <limit>
 
-    where ``<search_target>`` is ``t`` (whole index) or
-    ``t."<col>"`` (single-column form), per the ``columns`` arg's
-    validation in :func:`_validate_columns_arg`.
+    where ``<search_target>`` depends on ``columns``: ``t`` (whole
+    index), ``t."<col>"`` (single-column restriction), or
+    ``(t."<col1>" @@@ <query> OR t."<col2>" @@@ <query> ...)``
+    (multi-column OR), per :func:`_validate_columns_arg` /
+    :func:`_bm25_search_predicate`. In the multi-column form the
+    same parsed query string is bound once per column, and
+    ``pdb.score(t)`` aggregates contributions naturally across the
+    matching predicates.
 
     The ``key_field`` arg is the caller's primary-key column (matches
     the ``key_field`` reloption set on the BM25 index — discoverable
@@ -516,9 +544,9 @@ async def pg_search_run(
 
     Raises:
         PgSearchError: extension missing, identifier validation
-            fails, limit out of bounds, multi-column search
-            requested, or ``return_snippets=True`` without a
-            ``snippet_field``.
+            fails (including any per-column identifier in the
+            multi-column form), limit out of bounds, or
+            ``return_snippets=True`` without a ``snippet_field``.
 
     Security:
         ``snippet_start_tag`` / ``snippet_end_tag`` are bound as
@@ -542,7 +570,7 @@ async def pg_search_run(
     _validate_limit(limit)
     if not isinstance(query, str):
         raise PgSearchError(f"query must be str; got {type(query).__name__}")
-    column = _validate_columns_arg(columns)
+    validated_columns = _validate_columns_arg(columns)
 
     snippet_field_validated: str | None = None
     if return_snippets:
@@ -560,19 +588,17 @@ async def pg_search_run(
         raise PgSearchError("pg_search extension is not installed in this database")
 
     qualified_table = f"{_pg_quote_ident(schema)}.{_pg_quote_ident(table)}"
-    search_target = _bm25_predicate(column)
+    where_predicate, n_query_binds = _bm25_search_predicate(validated_columns)
 
-    # Bind params: query, [snippet args if any], limit. Snippet bind
-    # order follows pdb.snippets' positional arg list (start_tag,
-    # end_tag, max_num_chars). The NULL/NULL/sort_by tail uses
-    # literals — no caller input flows there.
+    # Bind params: [snippet args if any], query x n_query_binds, limit.
+    # Snippet placeholders appear in the SELECT projection (rendered
+    # first), so their bind values come first; the WHERE predicate's
+    # one-or-more `%s` slots take the query string (same value bound
+    # once per column for the multi-column OR form); LIMIT comes last.
     select_parts = [
         f"{_TABLE_ALIAS}.{_pg_quote_ident(key_field)} AS id",
         f"pdb.score({_TABLE_ALIAS}) AS score",
     ]
-    # Build params in placeholder order. Snippet placeholders appear
-    # in the SELECT projection (rendered first), so their bind values
-    # must come before `query` (WHERE) and `limit` (LIMIT).
     params: list[Any] = []
     if snippet_field_validated is not None:
         select_parts.append(
@@ -580,12 +606,13 @@ async def pg_search_run(
             f"%s, %s, %s, NULL, NULL, '{_SNIPPET_DEFAULT_SORT_BY}') AS snippets"
         )
         params.extend([snippet_start_tag, snippet_end_tag, snippet_max_num_chars])
-    params.extend([query, limit])
+    params.extend([query] * n_query_binds)
+    params.append(limit)
 
     sql = (
         f"SELECT {', '.join(select_parts)} "
         f"FROM {qualified_table} AS {_TABLE_ALIAS} "
-        f"WHERE {search_target} @@@ %s "
+        f"WHERE {where_predicate} "
         f"ORDER BY pdb.score({_TABLE_ALIAS}) DESC "
         f"LIMIT %s"
     )
@@ -983,8 +1010,10 @@ async def hybrid_bm25_vector_search(
     :data:`bm25_columns` mirrors :func:`pg_search_run`'s
     ``columns`` semantics: ``None`` searches the whole BM25 index;
     ``[one_col]`` restricts the BM25 leg to a single field;
-    multi-column raises. The vector leg always uses the
-    caller-supplied ``vector_column``.
+    ``[a, b, ...]`` ORs the BM25 leg across the listed columns
+    (each placeholder receives the same ``query_text`` at bind
+    time). The vector leg always uses the caller-supplied
+    ``vector_column``.
 
     Composes naturally with the RAG efficiency suite — once the
     operator picks knobs for the vector leg via
@@ -993,9 +1022,9 @@ async def hybrid_bm25_vector_search(
 
     Raises:
         PgSearchError: extension missing, identifier validation
-            fails, multi-column BM25 search requested, invalid
-            distance_op, non-finite weight, or any limit/k out of
-            bounds.
+            fails (including any per-column identifier in the
+            multi-column form), invalid distance_op, non-finite
+            weight, or any limit/k out of bounds.
 
     References:
         * https://www.paradedb.com/blog/hybrid-search-in-postgresql-the-missing-manual
@@ -1010,7 +1039,7 @@ async def hybrid_bm25_vector_search(
     _validate_distance_op(distance_op)
     if not isinstance(query_text, str):
         raise PgSearchError(f"query_text must be str; got {type(query_text).__name__}")
-    bm25_column = _validate_columns_arg(bm25_columns)
+    validated_bm25_columns = _validate_columns_arg(bm25_columns)
     _validate_positive_int("k", k)
     _validate_weight("bm25_weight", bm25_weight)
     _validate_weight("vector_weight", vector_weight)
@@ -1033,18 +1062,19 @@ async def hybrid_bm25_vector_search(
     qualified_table = f"{_pg_quote_ident(schema)}.{_pg_quote_ident(table)}"
     quoted_key = _pg_quote_ident(key_field)
     quoted_vec = _pg_quote_ident(vector_column)
-    bm25_target = f"{_TABLE_ALIAS}.{_pg_quote_ident(bm25_column)}" if bm25_column else _TABLE_ALIAS
+    bm25_where, n_bm25_query_binds = _bm25_search_predicate(validated_bm25_columns)
 
     # k, weights, and per-leg limits are validated numerics, so
     # rendering them as literals is safe and keeps the bind list to
-    # just the per-call values (query_text, vector x 2, final_limit).
+    # just the per-call values (query_text x n_bm25_query_binds for
+    # the multi-column OR form, vector x 2, final_limit).
     sql = (
         f"WITH "
         f"bm25_leg AS ("
         f" SELECT {_TABLE_ALIAS}.{quoted_key} AS id,"
         f" ROW_NUMBER() OVER (ORDER BY pdb.score({_TABLE_ALIAS}) DESC) AS rank"
         f" FROM {qualified_table} AS {_TABLE_ALIAS}"
-        f" WHERE {bm25_target} @@@ %s"
+        f" WHERE {bm25_where}"
         f" ORDER BY pdb.score({_TABLE_ALIAS}) DESC"
         f" LIMIT {per_leg_limit}"
         f"),"
@@ -1076,7 +1106,12 @@ async def hybrid_bm25_vector_search(
         f"ORDER BY score DESC "
         f"LIMIT %s"
     )
-    params: list[Any] = [query_text, vector_literal, vector_literal, final_limit]
+    params: list[Any] = [
+        *([query_text] * n_bm25_query_binds),
+        vector_literal,
+        vector_literal,
+        final_limit,
+    ]
     rows = await driver.execute_query(sql, params=params, force_readonly=True)
     return [
         HybridHit(
