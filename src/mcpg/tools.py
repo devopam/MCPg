@@ -3090,11 +3090,14 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         description=(
             "Find rows similar to a seed document via ``pdb.more_like_this`` "
             "+ ``@@@``. ``document_id`` is the value of ``key_field`` for the "
-            "seed row. The eight pdb.more_like_this tuning args (min/max "
-            "doc-frequency, term-frequency, query-terms, word-length, boost, "
-            "stopwords) stay at upstream defaults — exposing them is a "
-            "future phase. Returns the same {id, score} hit shape as "
-            "``pg_search_run``. Requires the pg_search extension."
+            "seed row. All nine documented pdb.more_like_this tuning args "
+            "(``fields`` jsonb, ``min_doc_frequency``, ``max_doc_frequency``, "
+            "``min_term_frequency``, ``max_query_terms``, ``min_word_length``, "
+            "``max_word_length``, ``boost_factor``, ``stop_words``) are "
+            "optional kwargs — when omitted the wrapper does not mention them "
+            "in the SQL so upstream's defaults apply. Returns the same "
+            "{id, score} hit shape as ``pg_search_run``. Requires the "
+            "pg_search extension."
         ),
     )
     async def pg_search_more_like_this(
@@ -3104,6 +3107,15 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         document_id: Any,
         key_field: str,
         limit: int,
+        fields: dict[str, Any] | None = None,
+        min_doc_frequency: int | None = None,
+        max_doc_frequency: int | None = None,
+        min_term_frequency: int | None = None,
+        max_query_terms: int | None = None,
+        min_word_length: int | None = None,
+        max_word_length: int | None = None,
+        boost_factor: float | None = None,
+        stop_words: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         hits = await pg_search.pg_search_more_like_this(
             _driver(ctx),
@@ -3112,6 +3124,15 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
             document_id,
             key_field,
             limit=limit,
+            fields=fields,
+            min_doc_frequency=min_doc_frequency,
+            max_doc_frequency=max_doc_frequency,
+            min_term_frequency=min_term_frequency,
+            max_query_terms=max_query_terms,
+            min_word_length=min_word_length,
+            max_word_length=max_word_length,
+            boost_factor=boost_factor,
+            stop_words=stop_words,
         )
         return [asdict(hit) for hit in hits]
 
