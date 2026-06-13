@@ -36,6 +36,8 @@ import os
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
+from mcpg._vendor.sql import obfuscate_password
+
 if TYPE_CHECKING:
     from mcpg.config import Settings
 
@@ -92,7 +94,20 @@ class TracerHandle:
             try:
                 yield span
             except Exception as exc:
-                message = str(exc)[:_ERROR_MESSAGE_CAP]
+                # psycopg / libpq error messages routinely contain DSN
+                # fragments (host=… password=… in invalid-connection
+                # errors) or table-literal values from a failing
+                # statement. The span attribute is shipped verbatim to
+                # the OTel collector and on to whichever backend the
+                # operator points at, which bypasses the mcpg.audit
+                # redaction pipeline entirely. Pipe the raw message
+                # through obfuscate_password (the same helper the audit
+                # surface uses) BEFORE the cap so a truncated tail
+                # can't expose a secret the head would have scrubbed.
+                # obfuscate_password returns ``str | None``; ``str(exc)``
+                # is always str so the result is too — the ``or ""`` is
+                # belt-and-braces for the type checker.
+                message = (obfuscate_password(str(exc)) or "")[:_ERROR_MESSAGE_CAP]
                 span.set_attribute("mcp.tool.status", "error")
                 span.set_attribute("error.type", type(exc).__name__)
                 span.set_attribute("error.message", message)

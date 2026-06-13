@@ -64,7 +64,11 @@ class SecretsProvider(Protocol):
 class EnvSecretsProvider:
     """Reads secrets from a mapping (the process environment by default)."""
 
-    env: Mapping[str, str]
+    # repr=False on env so a stray ``logging.exception(provider)`` or
+    # pytest assert can't spill the entire process environment (every
+    # API key the operator has set lives in there). The mapping is
+    # still accessible via ``.env`` for code that needs it.
+    env: Mapping[str, str] = field(repr=False)
 
     def get(self, name: str) -> str | None:
         return self.env.get(name)
@@ -79,8 +83,11 @@ class FileSecretsProvider:
     to ``env`` so non-secret config and unlisted vendor keys still work.
     """
 
-    overlay: Mapping[str, str]
-    env: Mapping[str, str]
+    # Both the file overlay (literal secret material on disk) and the
+    # env mapping are kept out of repr; same reasoning as
+    # EnvSecretsProvider.
+    overlay: Mapping[str, str] = field(repr=False)
+    env: Mapping[str, str] = field(repr=False)
 
     def get(self, name: str) -> str | None:
         if name in self.overlay:
@@ -165,8 +172,15 @@ class VaultSecretsProvider:
     """
 
     addr: str
-    token: str
-    env: Mapping[str, str]
+    # The Vault token IS the credential — keeping it in the default
+    # repr would let any ``logging.exception(provider)``,
+    # ``logger.debug(f"provider={provider}")``, pytest assertion, or
+    # ``Settings.model_dump()`` (when this provider is reachable from
+    # Settings) write the root token into a log or a CI artefact.
+    # repr=False is the surgical fix; the field stays accessible as
+    # ``provider.token`` for code that legitimately needs it.
+    token: str = field(repr=False)
+    env: Mapping[str, str] = field(repr=False)
     namespace: str | None = None
     path_prefix: str = "secret/mcpg"
     _client: Any = field(default=None, init=False, repr=False, compare=False)
@@ -259,7 +273,11 @@ class AWSSecretsProvider:
     """
 
     region: str | None
-    env: Mapping[str, str]
+    # No long-lived credential lives on the AWS provider (auth is via
+    # the IAM env / role chain inside boto3), but the env mapping
+    # itself can hold AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN — same
+    # repr=False rationale as the other providers.
+    env: Mapping[str, str] = field(repr=False)
     prefix: str = ""
     _client: Any = field(default=None, init=False, repr=False, compare=False)
     _cache: dict[str, str | None] = field(default_factory=dict, init=False, repr=False, compare=False)
@@ -348,7 +366,7 @@ class GCPSecretsProvider:
     """
 
     project_id: str
-    env: Mapping[str, str]
+    env: Mapping[str, str] = field(repr=False)
     prefix: str = ""
     _client: Any = field(default=None, init=False, repr=False, compare=False)
     _cache: dict[str, str | None] = field(default_factory=dict, init=False, repr=False, compare=False)

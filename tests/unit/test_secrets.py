@@ -6,9 +6,12 @@ import pytest
 
 from mcpg.config import ConfigError, load_settings
 from mcpg.secrets import (
+    AWSSecretsProvider,
     EnvSecretsProvider,
     FileSecretsProvider,
+    GCPSecretsProvider,
     SecretsError,
+    VaultSecretsProvider,
     build_secrets_provider,
 )
 
@@ -209,6 +212,65 @@ def test_secrets_backend_does_not_leak_secret_values_in_repr(tmp_path) -> None: 
     rendered = repr(settings)
     assert "super-secret-token" not in rendered
     assert "secrets_backend='file'" in rendered
+
+
+def test_vault_provider_repr_does_not_leak_token() -> None:
+    """Regression for the deep-review P1 #8: VaultSecretsProvider was
+    a plain @dataclass, so the default __repr__ rendered
+    ``VaultSecretsProvider(addr='...', token='hvs....', env={...},
+    ...)``. Any ``logging.exception(provider)``, pytest assert, or
+    pydantic model_dump that touched a provider instance leaked the
+    Vault root token. The fix sets repr=False on the token field
+    (and on the env mapping, which itself can hold sibling secrets)."""
+    provider = VaultSecretsProvider(
+        addr="https://vault.example.com:8200",
+        token="hvs.this_is_a_root_token_value",
+        env={"VAULT_TOKEN": "another_secret"},
+    )
+    rendered = repr(provider)
+    assert "hvs.this_is_a_root_token_value" not in rendered
+    assert "another_secret" not in rendered
+    # The non-secret fields stay visible so debug output is still useful.
+    assert "vault.example.com" in rendered
+
+    # ``provider.token`` must still be accessible for code that needs it.
+    assert provider.token == "hvs.this_is_a_root_token_value"
+
+
+def test_env_provider_repr_does_not_leak_env_mapping() -> None:
+    """EnvSecretsProvider holds a reference to the entire env (or a
+    chained mapping that may include MCPG_HTTP_AUTH_TOKEN /
+    MCPG_AUDIT_HMAC_KEY / API keys). A bare repr of the provider would
+    dump every variable. Defence-in-depth: env field is repr=False."""
+    provider = EnvSecretsProvider(env={"MCPG_AUDIT_HMAC_KEY": "super-secret-hmac"})
+    rendered = repr(provider)
+    assert "super-secret-hmac" not in rendered
+
+
+def test_file_provider_repr_does_not_leak_overlay_or_env() -> None:
+    provider = FileSecretsProvider(
+        overlay={"MCPG_HTTP_AUTH_TOKEN": "file-token"},
+        env={"ANTHROPIC_API_KEY": "sk-ant-xxx"},
+    )
+    rendered = repr(provider)
+    assert "file-token" not in rendered
+    assert "sk-ant-xxx" not in rendered
+
+
+def test_aws_provider_repr_does_not_leak_env_mapping() -> None:
+    provider = AWSSecretsProvider(region="us-east-1", env={"AWS_SECRET_ACCESS_KEY": "aws-secret-xxx"})
+    rendered = repr(provider)
+    assert "aws-secret-xxx" not in rendered
+    # Non-secret fields stay visible.
+    assert "us-east-1" in rendered
+
+
+def test_gcp_provider_repr_does_not_leak_env_mapping() -> None:
+    provider = GCPSecretsProvider(project_id="my-project", env={"GOOGLE_APPLICATION_CREDENTIALS_JSON": "{...}"})
+    rendered = repr(provider)
+    assert "GOOGLE_APPLICATION_CREDENTIALS_JSON" not in rendered or "{...}" not in rendered
+    # Non-secret fields stay visible.
+    assert "my-project" in rendered
 
 
 # --- cloud backends --------------------------------------------------------

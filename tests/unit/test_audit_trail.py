@@ -188,6 +188,77 @@ async def test_record_audit_persists_a_null_result_when_caller_supplies_none() -
     assert params[4] is None  # result column is NULL
 
 
+async def test_record_audit_redacts_dsn_credentials_in_error_field() -> None:
+    """Regression for the deep-review P1 #5: the ``error`` column got
+    persisted verbatim. ``write._persist_audit`` fills it with
+    ``str(exc)``, and psycopg / libpq error messages routinely embed
+    DSN fragments (``host=… password=…``) or DSN URIs. The same
+    obfuscate_password sweep that the arguments / result paths run
+    must apply here too."""
+    _reset_audit_init_cache()
+    driver = FakeDriver()
+
+    await record_audit(  # type: ignore[arg-type]
+        driver,
+        tool="run_write",
+        arguments={"sql": "SELECT 1"},
+        status="error",
+        error=("connection failed: postgresql://alice:hunter2@db.example.com:5432/app"),
+    )
+
+    insert_calls = [call for call in driver.calls if "INSERT INTO mcpg_audit.events" in call[0]]
+    params = insert_calls[0][1]
+    assert params is not None
+    persisted_error = params[3]
+    assert isinstance(persisted_error, str)
+    # The plaintext password must be scrubbed; the rest of the message
+    # is preserved so operators still see WHY the call failed.
+    assert "hunter2" not in persisted_error
+    assert "connection failed" in persisted_error
+
+
+async def test_record_audit_hmac_signs_the_redacted_error_form(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The HMAC payload must sign exactly what gets persisted —
+    otherwise the redaction-and-sign races would either break
+    verify_audit_chain or sign plaintext that's about to be redacted.
+    This test pins the invariant by recomputing the expected hmac
+    against the redacted error form and asserting it matches the
+    value the writer attached."""
+    _reset_audit_init_cache()
+    monkeypatch.setenv("MCPG_AUDIT_INTEGRITY", "true")
+    monkeypatch.setenv("MCPG_AUDIT_HMAC_KEY", "test_hmac_key_32bytes_minimum_abc!")
+    driver = FakeDriver()
+
+    raw_error = "psycopg.OperationalError: connection failed: postgresql://u:p4ss@db/app"
+
+    await record_audit(  # type: ignore[arg-type]
+        driver,
+        tool="run_ddl",
+        arguments={"sql": "DROP TABLE x"},
+        status="error",
+        error=raw_error,
+    )
+
+    insert_calls = [call for call in driver.calls if "INSERT INTO mcpg_audit.events" in call[0]]
+    persisted_error = insert_calls[0][1][3]
+    event_hmac = insert_calls[0][1][7]
+    occurred_at = insert_calls[0][1][5]
+
+    # The redacted form is signed; the raw form is NOT.
+    assert "p4ss" not in persisted_error
+    expected = _expected_event_hmac(
+        key="test_hmac_key_32bytes_minimum_abc!",
+        prev_hmac="",
+        occurred_at_str=occurred_at.isoformat(),
+        tool="run_ddl",
+        arguments={"sql": "DROP TABLE x"},
+        status="error",
+        error=persisted_error,
+        result=None,
+    )
+    assert event_hmac == expected
+
+
 # --- record_audit HMAC integrity chain -------------------------------------
 
 
