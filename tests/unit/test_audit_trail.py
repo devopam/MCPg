@@ -359,6 +359,51 @@ async def test_record_audit_leaves_hmac_columns_null_when_integrity_disabled(mon
     assert params is not None
     assert params[6] is None  # prev_hmac
     assert params[7] is None  # event_hmac
+    # Integrity OFF must not write to chain_tip — no INSERT into it.
+    # The CREATE TABLE chain_tip (from ensure_audit_table) is allowed:
+    # the table is provisioned up-front so the first integrity-enabled
+    # call doesn't have to migrate it. What matters is that the data
+    # path stays out of it when integrity is off.
+    assert not any("INSERT INTO mcpg_audit.chain_tip" in call[0] for call in driver.calls)
+
+
+async def test_record_audit_upserts_chain_tip_atomically_when_integrity_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for the deep-review P1 #6 truncation anchor: when
+    integrity is on, the event INSERT and the chain_tip UPSERT must
+    happen in a single PostgreSQL statement (writable CTE) so an
+    attacker can't race between them. The fake driver records the
+    raw SQL; assert it matches that shape."""
+    monkeypatch.setenv("MCPG_AUDIT_INTEGRITY", "true")
+    monkeypatch.setenv("MCPG_AUDIT_HMAC_KEY", "test_hmac_key_32bytes_minimum_abc!")
+    _reset_audit_init_cache()
+    driver = FakeDriver()
+
+    await record_audit(  # type: ignore[arg-type]
+        driver,
+        tool="run_write",
+        arguments={"sql": "SELECT 1"},
+        status="ok",
+    )
+
+    # ensure_audit_table issues CREATE TABLE chain_tip up-front; the
+    # data-path call is the writable-CTE one that *INSERTs into both*
+    # tables. Pick the latter to inspect its shape.
+    write_call = next(
+        call for call in driver.calls if "INSERT INTO mcpg_audit.chain_tip" in call[0] and "WITH new_event" in call[0]
+    )
+    sql = write_call[0]
+    # Shape pins: CTE first, then chain_tip UPSERT, then ON CONFLICT.
+    assert "WITH new_event" in sql
+    assert "INSERT INTO mcpg_audit.events" in sql
+    assert "RETURNING id, event_hmac" in sql
+    assert "ON CONFLICT (id) DO UPDATE" in sql
+    # Single writable-CTE statement → exactly one data-path call.
+    data_path_calls = [
+        call for call in driver.calls if "INSERT INTO mcpg_audit.chain_tip" in call[0] and "WITH new_event" in call[0]
+    ]
+    assert len(data_path_calls) == 1
 
 
 # --- list_audit_events ----------------------------------------------------
