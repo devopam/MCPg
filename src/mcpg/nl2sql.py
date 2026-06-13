@@ -314,7 +314,15 @@ def resolve_provider_call_params(settings: Settings, requested_provider: str | N
     base_url override.
     """
     api_keys = dict(settings.nl2sql_api_keys)
-    chosen = (requested_provider or settings.nl2sql_provider or "").strip().lower() or None
+    # Normalize each candidate *individually* and only then pick the
+    # first non-empty one. A bare ``(a or b or "").strip().lower()``
+    # would let a whitespace-only ``requested_provider`` short-circuit
+    # the chain (``"   "`` is truthy) and bury a perfectly-valid
+    # operator default behind a misleading "no provider configured"
+    # error (gemini review on #102).
+    requested_norm = (requested_provider or "").strip().lower() or None
+    default_norm = (settings.nl2sql_provider or "").strip().lower() or None
+    chosen = requested_norm or default_norm
     if chosen is None:
         # No provider arg AND no default configured AND no vendor keys
         # in the env — provider= alone can't fix this, the operator
@@ -339,7 +347,16 @@ def resolve_provider_call_params(settings: Settings, requested_provider: str | N
             "provider= argument."
         )
 
-    is_default = chosen == settings.nl2sql_provider
+    # Compare against the normalized form of the configured default —
+    # ``chosen`` is already strip()ped + lower()ed and
+    # ``settings.nl2sql_provider`` can carry mixed casing or stray
+    # whitespace from the env. Without normalization here, a default
+    # like ``"Anthropic\n"`` would silently disable the operator's
+    # ``MCPG_NL2SQL_MODEL`` / ``MCPG_NL2SQL_BASE_URL`` overrides and
+    # route traffic at the public endpoint — gemini review on #102
+    # called this out as security-critical (the base_url path is
+    # often a private proxy / regional gateway).
+    is_default = chosen == default_norm
     model = settings.nl2sql_model if (is_default and settings.nl2sql_model) else DEFAULT_MODELS[chosen]
     base_url = settings.nl2sql_base_url if is_default else None
     return ProviderCallParams(

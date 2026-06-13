@@ -369,3 +369,42 @@ def test_resolve_provider_call_params_errors_when_caller_picks_unconfigured() ->
     settings = _settings(ANTHROPIC_API_KEY="ant-1", MCPG_NL2SQL_PROVIDER="anthropic")
     with pytest.raises(NL2SQLError, match="provider 'openai' is not configured"):
         resolve_provider_call_params(settings, "openai")
+
+
+def test_resolve_falls_back_to_default_when_request_arg_is_whitespace_only() -> None:
+    """Regression for gemini review on #102: ``(req or default or "")``
+    short-circuits on a truthy whitespace string, which then strips
+    to empty, which then ``or None``s back to nothing — burying a
+    perfectly-valid operator default behind a misleading "no provider
+    configured" error. Each candidate is now normalized individually."""
+    settings = _settings(ANTHROPIC_API_KEY="ant-1", MCPG_NL2SQL_PROVIDER="anthropic")
+    params = resolve_provider_call_params(settings, "   ")
+    assert params.provider_name == "anthropic"
+    assert params.api_key == "ant-1"
+
+
+def test_resolve_compares_against_normalized_default_for_override_decision() -> None:
+    """Defence-in-depth check raised on the gemini review on #102.
+
+    ``load_settings`` already strips + lowercases ``MCPG_NL2SQL_PROVIDER``
+    (config.py:544), so the env path can't carry stray casing into
+    ``settings.nl2sql_provider`` — meaning the agent's "private-proxy
+    traffic leaks to a public endpoint" scenario doesn't fire through
+    the documented config path. But code that constructs ``Settings``
+    directly (test fixtures, Python-only bootstraps) can. Normalizing
+    the default before the equality check in
+    ``resolve_provider_call_params`` keeps the override logic robust
+    regardless of how ``Settings`` got built.
+
+    Asserted via the load_settings path: when the operator's default
+    matches the chosen call, both overrides must apply."""
+    settings = _settings(
+        ANTHROPIC_API_KEY="ant-1",
+        MCPG_NL2SQL_PROVIDER="anthropic",
+        MCPG_NL2SQL_MODEL="claude-sonnet-X",
+        MCPG_NL2SQL_BASE_URL="https://proxy.example",
+    )
+    params = resolve_provider_call_params(settings, None)
+    assert params.provider_name == "anthropic"
+    assert params.model == "claude-sonnet-X"
+    assert params.base_url == "https://proxy.example"
