@@ -37,6 +37,7 @@ pick up rotated values (or wire the rotation system to do so).
 from __future__ import annotations
 
 import json
+import threading
 from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -157,6 +158,15 @@ def _load_overlay(path: str) -> dict[str, str]:
 # small (string keys + small string values → kilobytes, not gigs).
 _SECRET_CACHE_MAX_ENTRIES = 1024
 
+# OrderedDict's ``move_to_end`` / ``popitem`` and the bounded-eviction
+# loop are not atomic, so a sync ``provider.get`` called from a worker
+# thread (e.g. via ``asyncio.to_thread`` — already used elsewhere in
+# the codebase for sync SDK calls) could race with the asyncio loop's
+# own get and corrupt the linked list. Per-cache mutation cost is a
+# single Lock acquire / release, well under a microsecond, so this is
+# pure upside (gemini review on #101).
+_CACHE_LOCK = threading.Lock()
+
 
 def _cache_get(cache: OrderedDict[str, str | None], name: str) -> tuple[str | None, bool]:
     """Return ``(value, present)`` for a name lookup.
@@ -166,10 +176,11 @@ def _cache_get(cache: OrderedDict[str, str | None], name: str) -> tuple[str | No
     the entry is moved to the back of the OrderedDict so the LRU
     eviction in :func:`_cache_put` drops cold entries first.
     """
-    if name in cache:
-        cache.move_to_end(name)
-        return cache[name], True
-    return None, False
+    with _CACHE_LOCK:
+        if name in cache:
+            cache.move_to_end(name)
+            return cache[name], True
+        return None, False
 
 
 def _cache_put(cache: OrderedDict[str, str | None], name: str, value: str | None) -> None:
@@ -179,10 +190,11 @@ def _cache_put(cache: OrderedDict[str, str | None], name: str, value: str | None
     evicts the oldest entries until the size is within
     :data:`_SECRET_CACHE_MAX_ENTRIES`.
     """
-    cache[name] = value
-    cache.move_to_end(name)
-    while len(cache) > _SECRET_CACHE_MAX_ENTRIES:
-        cache.popitem(last=False)
+    with _CACHE_LOCK:
+        cache[name] = value
+        cache.move_to_end(name)
+        while len(cache) > _SECRET_CACHE_MAX_ENTRIES:
+            cache.popitem(last=False)
 
 
 @dataclass
