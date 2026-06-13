@@ -18,8 +18,16 @@ async def test_run_maintenance_issues_vacuum_for_a_table() -> None:
 
     result = await run_maintenance(database, "vacuum", "app", "widget")
 
-    assert result == MaintenanceResult(operation="vacuum", target="app.widget")
+    assert result == MaintenanceResult(
+        operation="vacuum",
+        target="app.widget",
+        maintenance_sql='VACUUM "app"."widget"',
+    )
     assert database.unmanaged == ['VACUUM "app"."widget"']
+    # The recorded SQL matches what actually ran — same record-the-SQL
+    # invariant create_pg_search_index / create_turboquant_index already
+    # hold for their CreateIndexResult / ReindexResult dataclasses.
+    assert result.maintenance_sql == database.unmanaged[0]
 
 
 async def test_run_maintenance_issues_analyze() -> None:
