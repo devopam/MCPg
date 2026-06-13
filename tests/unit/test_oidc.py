@@ -170,6 +170,42 @@ def test_verifier_passes_lifespan_and_cache_cap_to_pyjwkclient() -> None:
     assert kwargs["max_cached_keys"] == 16
 
 
+def test_verifier_init_rejects_plaintext_http_issuer() -> None:
+    """Regression for deep-review P1 #7: discovery joins issuer +
+    /.well-known/openid-configuration. An http:// issuer downloads
+    the JWKS over plaintext, so a path attacker can swap keys and
+    forge tokens MCPg will then accept. Refuse at the boundary."""
+    with pytest.raises(OIDCError, match="https"):
+        OIDCVerifier(issuer="http://issuer.example", audience="mcpg")
+
+
+def test_verifier_init_rejects_plaintext_http_jwks_url() -> None:
+    """Same threat model as the issuer case, for the explicit
+    jwks_url override path that _resolve_jwks_url returns verbatim."""
+    with pytest.raises(OIDCError, match="https"):
+        OIDCVerifier(
+            issuer="https://issuer.example",
+            audience="mcpg",
+            jwks_url="http://issuer.example/jwks.json",
+        )
+
+
+def test_verifier_init_allows_http_localhost_for_dev() -> None:
+    """Carve-out: http://localhost (and 127.0.0.1, ::1) stays
+    accepted so Keycloak-in-Docker / stub-IdP smoke tests keep
+    working without weakening the prod posture."""
+    # Issuer side.
+    OIDCVerifier(issuer="http://localhost:8080/auth/realms/test", audience="mcpg")
+    OIDCVerifier(issuer="http://127.0.0.1:8080", audience="mcpg")
+    OIDCVerifier(issuer="http://[::1]:8080", audience="mcpg")
+    # Explicit jwks_url side.
+    OIDCVerifier(
+        issuer="https://issuer.example",
+        audience="mcpg",
+        jwks_url="http://localhost:8080/jwks.json",
+    )
+
+
 async def test_verifier_verifies_a_valid_jwt_against_the_jwks() -> None:
     private_key, kid, jwk = _build_rsa_key()
     issuer = "https://issuer.example"
