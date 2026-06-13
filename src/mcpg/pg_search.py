@@ -1064,10 +1064,15 @@ async def hybrid_bm25_vector_search(
     quoted_vec = _pg_quote_ident(vector_column)
     bm25_where, n_bm25_query_binds = _bm25_search_predicate(validated_bm25_columns)
 
-    # k, weights, and per-leg limits are validated numerics, so
-    # rendering them as literals is safe and keeps the bind list to
-    # just the per-call values (query_text x n_bm25_query_binds for
-    # the multi-column OR form, vector x 2, final_limit).
+    # Per-call numerics that vary across requests (the two RRF weights
+    # and the limits) bind as %s parameters so PG's prepared-statement
+    # cache treats them as one query template. Inlining ``repr(float)``
+    # produced a distinct SQL string per weight value, which meant
+    # every (bm25_weight, vector_weight) tuple cost a re-plan. ``k``
+    # stays inlined: it's a tuning knob with a small enumerable set
+    # (60 is the documented default, 30/60/120 the practical
+    # alternatives) and binding it would mask integer-arithmetic
+    # optimizations PG can do on a known constant.
     sql = (
         f"WITH "
         f"bm25_leg AS ("
@@ -1076,24 +1081,24 @@ async def hybrid_bm25_vector_search(
         f" FROM {qualified_table} AS {_TABLE_ALIAS}"
         f" WHERE {bm25_where}"
         f" ORDER BY pdb.score({_TABLE_ALIAS}) DESC"
-        f" LIMIT {per_leg_limit}"
+        f" LIMIT %s"
         f"),"
         f" vector_leg AS ("
         f" SELECT {_TABLE_ALIAS}.{quoted_key} AS id,"
         f" ROW_NUMBER() OVER (ORDER BY {_TABLE_ALIAS}.{quoted_vec} {distance_op} %s::vector) AS rank"
         f" FROM {qualified_table} AS {_TABLE_ALIAS}"
         f" ORDER BY {_TABLE_ALIAS}.{quoted_vec} {distance_op} %s::vector"
-        f" LIMIT {per_leg_limit}"
+        f" LIMIT %s"
         f"),"
         f" fused AS ("
         f" SELECT id,"
-        f" {bm25_weight} * 1.0 / ({k} + rank) AS score,"
+        f" %s::float8 * 1.0 / ({k} + rank) AS score,"
         f" rank AS bm25_rank,"
         f" NULL::int AS vector_rank"
         f" FROM bm25_leg"
         f" UNION ALL"
         f" SELECT id,"
-        f" {vector_weight} * 1.0 / ({k} + rank) AS score,"
+        f" %s::float8 * 1.0 / ({k} + rank) AS score,"
         f" NULL::int AS bm25_rank,"
         f" rank AS vector_rank"
         f" FROM vector_leg"
@@ -1106,10 +1111,17 @@ async def hybrid_bm25_vector_search(
         f"ORDER BY score DESC "
         f"LIMIT %s"
     )
+    # Bind order matches placeholder order in the rendered SQL: bm25
+    # query string(s), bm25 leg LIMIT, vector literal x2, vector leg
+    # LIMIT, bm25 weight, vector weight, final LIMIT.
     params: list[Any] = [
         *([query_text] * n_bm25_query_binds),
+        per_leg_limit,
         vector_literal,
         vector_literal,
+        per_leg_limit,
+        bm25_weight,
+        vector_weight,
         final_limit,
     ]
     rows = await driver.execute_query(sql, params=params, force_readonly=True)

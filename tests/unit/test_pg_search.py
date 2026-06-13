@@ -995,19 +995,31 @@ async def test_hybrid_bm25_vector_search_renders_canonical_rrf_sql() -> None:
     assert ' t."embedding" <=> %s::vector' in sql
     assert " fused AS" in sql
     assert " UNION ALL" in sql
-    # Defaults render as literals: k=60, equal 1.0 weights, per-leg
-    # LIMIT 20.
-    assert "1.0 / (60 + rank)" in sql
-    assert "1.0 * 1.0 / (60 + rank)" in sql
-    assert "LIMIT 20" in sql
-    # Bound params: query_text, vector (x2), final_limit.
-    assert params == ["rust", "[1.0,2.0,3.0]", "[1.0,2.0,3.0]", 5]
+    # k stays inlined as a literal (small enumerable tuning knob;
+    # binding it would mask integer-arithmetic optimizations).
+    assert "/ (60 + rank)" in sql
+    # Weights and limits are %s-bound (plan-cache stability — see
+    # deep-review P1 #9: literal float interpolation was causing one
+    # cached plan per (bm25_weight, vector_weight) tuple).
+    assert "%s::float8 * 1.0 / (60 + rank)" in sql
+    # Bind order pinned: bm25 query, bm25 leg LIMIT, vector x2,
+    # vector leg LIMIT, bm25 weight, vector weight, final LIMIT.
+    assert params == ["rust", 20, "[1.0,2.0,3.0]", "[1.0,2.0,3.0]", 20, 1.0, 1.0, 5]
     # Top-level GROUP BY + SUM is what makes this RRF (not a join).
     assert "GROUP BY id" in sql
     assert "SUM(score)" in sql
 
 
-async def test_hybrid_bm25_vector_search_weights_and_k_render_as_literals() -> None:
+async def test_hybrid_bm25_vector_search_weights_per_leg_limit_render_as_bound_params() -> None:
+    """Regression for deep-review scalability P1 #9: bm25_weight,
+    vector_weight, and per_leg_limit used to be spliced into the SQL
+    as Python ``repr(float|int)`` literals. Different weight tuples
+    produced different SQL strings → distinct plan-cache entries.
+    Binding via %s collapses every caller into one cached plan.
+
+    k stays inlined intentionally — it's a small-enumerable RRF
+    constant where the gain from binding is dwarfed by the loss of
+    integer-arithmetic optimization on a known constant denominator."""
     driver = FakeRoutingDriver(
         {
             "pg_extension": [{"present": 1}],
@@ -1030,10 +1042,17 @@ async def test_hybrid_bm25_vector_search_weights_and_k_render_as_literals() -> N
         final_limit=5,
     )
 
-    sql, _, _ = driver.calls[-1]
-    assert "0.7 * 1.0 / (42 + rank)" in sql
-    assert "0.3 * 1.0 / (42 + rank)" in sql
-    assert "LIMIT 15" in sql
+    sql, params, _ = driver.calls[-1]
+    # k inlined; weights and limit bound.
+    assert "%s::float8 * 1.0 / (42 + rank)" in sql
+    assert "LIMIT %s" in sql
+    assert "0.7" not in sql and "0.3" not in sql
+    assert sql.count("%s") == len(params)
+    # Weights flow through the bind list as floats; per_leg_limit
+    # appears twice (one for each leg).
+    assert 0.7 in params and 0.3 in params
+    assert params.count(15) == 2
+    assert params[-1] == 5  # final_limit
 
 
 async def test_hybrid_bm25_vector_search_single_column_bm25_target() -> None:
@@ -1086,8 +1105,9 @@ async def test_hybrid_bm25_vector_search_multi_column_bm25_ors_predicates() -> N
     sql, params, _ = driver.calls[-1]
     assert '(t."body" @@@ %s OR t."title" @@@ %s)' in sql
     assert sql.count("%s") == len(params)
-    # Order: query_text x 2 columns, vector x 2, final_limit.
-    assert params == ["rust", "rust", "[1.0]", "[1.0]", 5]
+    # Order: query_text x2 cols, bm25 leg LIMIT, vector x2, vector
+    # leg LIMIT, bm25 weight, vector weight, final LIMIT.
+    assert params == ["rust", "rust", 20, "[1.0]", "[1.0]", 20, 1.0, 1.0, 5]
 
 
 @pytest.mark.parametrize("op", ["<=>", "<->", "<#>"])
@@ -1298,7 +1318,9 @@ async def test_hybrid_bm25_vector_search_accepts_preformatted_vector_string() ->
     )
 
     _, params, _ = driver.calls[-1]
-    assert params == ["rust", "[0.1,0.2,0.3]", "[0.1,0.2,0.3]", 5]
+    # Bind order: bm25 query, bm25 leg LIMIT, vector x2, vector
+    # leg LIMIT, bm25 weight, vector weight, final LIMIT.
+    assert params == ["rust", 20, "[0.1,0.2,0.3]", "[0.1,0.2,0.3]", 20, 1.0, 1.0, 5]
 
 
 async def test_hybrid_bm25_vector_search_rejects_bad_vector_type() -> None:

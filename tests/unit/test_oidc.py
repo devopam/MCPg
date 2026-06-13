@@ -130,6 +130,46 @@ def test_verifier_init_rejects_blank_issuer_or_audience() -> None:
         OIDCVerifier(issuer="https://issuer.example", audience="")
 
 
+def test_verifier_passes_lifespan_and_cache_cap_to_pyjwkclient() -> None:
+    """Regression for deep-review scalability P1 #8: PyJWKClient was
+    constructed with ``cache_keys=True`` and no other knobs, so the
+    in-process key cache had no TTL — an upstream key-rotation event
+    required a server restart to pick up. The fix pins
+    ``lifespan=jwks_cache_seconds`` (project's 1h default) and
+    ``max_cached_keys=16`` so a PyJWKClient default change can't
+    quietly grow the in-process set."""
+    from unittest.mock import patch
+
+    constructed: list[dict[str, Any]] = []
+
+    class _FakeClient:
+        def __init__(self, url: str, **kwargs: Any) -> None:
+            constructed.append({"url": url, **kwargs})
+            self.uri = url
+
+    async def _trigger_construction() -> None:
+        verifier = OIDCVerifier(
+            issuer="https://issuer.example",
+            audience="mcpg",
+            jwks_url="https://issuer.example/jwks.json",
+            jwks_cache_seconds=900.0,
+        )
+        # _ensure_jwks_client is the construction point; calling it
+        # directly avoids the discovery + token-verify network paths.
+        with patch("mcpg.oidc.PyJWKClient", _FakeClient):
+            await verifier._ensure_jwks_client()
+
+    import asyncio
+
+    asyncio.run(_trigger_construction())
+
+    assert constructed, "expected PyJWKClient to be constructed"
+    kwargs = constructed[0]
+    assert kwargs["cache_keys"] is True
+    assert kwargs["lifespan"] == 900  # int-coerced from float setting
+    assert kwargs["max_cached_keys"] == 16
+
+
 async def test_verifier_verifies_a_valid_jwt_against_the_jwks() -> None:
     private_key, kid, jwk = _build_rsa_key()
     issuer = "https://issuer.example"

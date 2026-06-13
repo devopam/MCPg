@@ -556,3 +556,76 @@ def test_gcp_provider_raises_secrets_error_on_permission_denied(monkeypatch: pyt
     provider = GCPSecretsProvider(project_id="p", env={"FALLBACK": "from-env"})
     with pytest.raises(SecretsError, match="GCP Secret Manager denied"):
         provider.get("ANY")
+
+
+# --- bounded-LRU cache (scalability P1) ------------------------------------
+
+
+def test_cloud_secret_caches_evict_oldest_when_capacity_exceeded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for deep-review scalability P1 #6: the three cloud
+    providers held an unbounded ``dict[str, str | None]`` cache. A
+    caller hitting ``provider.get(unique_name)`` in a loop would grow
+    it until OOM. The fix is a bounded LRU keyed by name.
+
+    Asserted directly against the OrderedDict + the shared
+    ``_SECRET_CACHE_MAX_ENTRIES`` constant: cap the constant down
+    via monkeypatch, fill past the cap, and prove the oldest entry
+    fell out while a recent one survived."""
+    from mcpg import secrets as secrets_mod
+    from mcpg.secrets import VaultSecretsProvider, _cache_put
+
+    # Bound to 3 so the test is deterministic without a 1024-entry loop.
+    monkeypatch.setattr(secrets_mod, "_SECRET_CACHE_MAX_ENTRIES", 3)
+
+    provider = VaultSecretsProvider(addr="http://vault:8200", token="x", env={})
+    for n, v in [("A", "a"), ("B", "b"), ("C", "c"), ("D", "d")]:
+        _cache_put(provider._cache, n, v)
+
+    assert list(provider._cache) == ["B", "C", "D"]
+    assert "A" not in provider._cache
+
+
+def test_cloud_secret_cache_moves_entry_to_end_on_get_hit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LRU semantics: a name that was recently *read* survives an
+    eviction round that drops a colder name. Tested via the shared
+    helpers so the assertion holds for every provider."""
+    from mcpg import secrets as secrets_mod
+    from mcpg.secrets import _cache_get, _cache_put
+
+    monkeypatch.setattr(secrets_mod, "_SECRET_CACHE_MAX_ENTRIES", 3)
+
+    from collections import OrderedDict
+
+    cache: OrderedDict[str, str | None] = OrderedDict()
+    for n, v in [("A", "a"), ("B", "b"), ("C", "c")]:
+        _cache_put(cache, n, v)
+    # Touch A so it becomes most-recent. B is now the oldest.
+    val, present = _cache_get(cache, "A")
+    assert present and val == "a"
+    # Insert D → B falls out (was oldest), A survives.
+    _cache_put(cache, "D", "d")
+    assert list(cache) == ["C", "A", "D"]
+
+
+def test_cloud_secret_cache_preserves_none_entries() -> None:
+    """A name explicitly cached as ``None`` (meaning "not in the
+    backend") must survive eviction the same as a real value, and
+    ``_cache_get`` must distinguish "cached as None" from "not
+    cached" via the ``present`` flag — otherwise the env-fallback
+    path would re-fetch on every call."""
+    from collections import OrderedDict
+
+    from mcpg.secrets import _cache_get, _cache_put
+
+    cache: OrderedDict[str, str | None] = OrderedDict()
+    _cache_put(cache, "ABSENT_IN_VAULT", None)
+    val, present = _cache_get(cache, "ABSENT_IN_VAULT")
+    assert present is True
+    assert val is None
+    val, present = _cache_get(cache, "NEVER_LOOKED_UP")
+    assert present is False
+    assert val is None
