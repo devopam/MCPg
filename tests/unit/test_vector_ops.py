@@ -1209,7 +1209,7 @@ async def test_detect_vector_outliers_raises_when_column_is_not_pgvector() -> No
     ("kwargs", "match"),
     [
         ({"k": 1}, "k must be at least 2"),
-        ({"sample_size": 0}, "sample_size must be at least 1"),
+        ({"sample_size": 0}, "must be at least 1"),
         ({"max_iterations": 0}, "max_iterations must be at least 1"),
         ({"metric": "manhattan"}, "unknown metric"),
         ({"zscore_threshold": 0.0}, "zscore_threshold must be > 0"),
@@ -1520,7 +1520,7 @@ async def test_monitor_embedding_drift_raises_when_column_is_not_pgvector() -> N
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
-        ({"sample_size": 0}, "sample_size must be at least 1"),
+        ({"sample_size": 0}, "must be at least 1"),
         ({"drift_threshold": -0.1}, "drift_threshold must be >= 0"),
         ({"baseline_end": "2026-01-01"}, "baseline window end must be after start"),
         ({"current_end": "2026-02-01"}, "current window end must be after start"),

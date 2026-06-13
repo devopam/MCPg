@@ -45,12 +45,18 @@ _MAX_SAMPLE_SIZE = 50_000
 
 
 def _validate_sample_size(value: int) -> None:
-    """Shared sample_size validator used by every vector-ops tool."""
+    """Shared sample_size validator used by every vector-ops tool.
+
+    Echoes the offending value in the error message so a caller
+    debugging a stack trace can spot which tool was misconfigured
+    without having to also log the call's arguments (sourcery review
+    on #99).
+    """
     if value < 1:
-        raise VectorOpsError("sample_size must be at least 1")
+        raise VectorOpsError(f"sample_size={value!r} must be at least 1")
     if value > _MAX_SAMPLE_SIZE:
         raise VectorOpsError(
-            f"sample_size must be ≤ {_MAX_SAMPLE_SIZE} "
+            f"sample_size={value!r} must be ≤ {_MAX_SAMPLE_SIZE} "
             f"(rows are pulled into the process and the per-row work runs in "
             f"pure Python). Reach for a vector-DB ANN library instead of "
             f"raising this cap."

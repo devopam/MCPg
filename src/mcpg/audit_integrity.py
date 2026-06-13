@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from datetime import UTC
 from os import environ
 from typing import Any
 
@@ -88,8 +89,9 @@ async def verify_audit_chain(driver: SqlDriver) -> dict[str, Any]:
             row_id = row.cells["id"]
             occurred_at = row.cells["occurred_at"]
             if hasattr(occurred_at, "astimezone"):
-                from datetime import UTC
-
+                # ``UTC`` imported at module scope — keeping it out of
+                # the inner row loop saves the import-lookup cost on
+                # large audit tables (sourcery review on #99).
                 occurred_at_str = occurred_at.astimezone(UTC).isoformat()
             elif hasattr(occurred_at, "isoformat"):
                 occurred_at_str = occurred_at.isoformat()
@@ -109,7 +111,12 @@ async def verify_audit_chain(driver: SqlDriver) -> dict[str, Any]:
 
             # Verify prev_hmac
             current_prev_hmac = row.cells.get("prev_hmac") or ""
-            if current_prev_hmac != expected_prev_hmac:
+            # constant-time HMAC compare — verification-side timing
+            # isn't a sensitive oracle here (verify is operator-
+            # initiated, not a per-request hot path), but inconsistency
+            # with the rest of the codebase's hmac.compare_digest usage
+            # was flagged in deep-review P2 #7 and gemini review on #99.
+            if not hmac.compare_digest(current_prev_hmac, expected_prev_hmac):
                 return {
                     "status": "tampered",
                     "broken_at_id": row_id,
@@ -129,7 +136,8 @@ async def verify_audit_chain(driver: SqlDriver) -> dict[str, Any]:
             data_to_sign = current_prev_hmac.encode("utf-8") + payload_bytes
             computed_hmac = hmac.new(key_bytes, data_to_sign, hashlib.sha256).hexdigest()
 
-            if current_event_hmac != computed_hmac:
+            # constant-time HMAC compare — see comment above.
+            if not hmac.compare_digest(current_event_hmac, computed_hmac):
                 return {
                     "status": "tampered",
                     "broken_at_id": row_id,
