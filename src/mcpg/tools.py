@@ -2299,46 +2299,17 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         table_filter: list[str] | None = None,
         max_rows: int = query.DEFAULT_MAX_ROWS,
     ) -> dict[str, Any]:
+        # All NL→SQL business logic — provider selection from request
+        # arg / env default / configured keys, model + base_url override
+        # rules, error shaping for misconfig — lives in mcpg.nl2sql so
+        # this wrapper can stay a thin driver + asdict pass-through.
         settings = ctx.request_context.lifespan_context.settings
-        api_keys = dict(settings.nl2sql_api_keys)
-
-        chosen = (provider or settings.nl2sql_provider or "").strip().lower() or None
-        if chosen is None:
-            # No provider arg AND no default configured AND no vendor keys
-            # in the env — provider= alone can't fix this, the operator
-            # needs to set at least one vendor API key.
-            raise nl2sql.NL2SQLError(
-                "translate_nl_to_sql has no provider configured. Set at "
-                "least one of ANTHROPIC_API_KEY / OPENAI_API_KEY / "
-                "GEMINI_API_KEY (or GOOGLE_API_KEY) in the server's "
-                "environment. The tool's provider= argument selects "
-                "between providers that are already configured — it can't "
-                "supply credentials on its own."
-            )
-        if not nl2sql.is_valid_provider(chosen):
-            raise nl2sql.NL2SQLError(f"unknown NL→SQL provider {chosen!r}; supported: anthropic, openai, gemini")
-        api_key = api_keys.get(chosen)
-        if api_key is None:
-            configured = sorted(api_keys) or ["(none)"]
-            raise nl2sql.NL2SQLError(
-                f"provider {chosen!r} is not configured (currently configured: "
-                f"{', '.join(configured)}). Set {nl2sql.VENDOR_ENV_VAR_HINT[chosen]} "
-                "in the environment, or pick a configured provider via the "
-                "provider= argument."
-            )
-
-        # The operator's MCPG_NL2SQL_MODEL / MCPG_NL2SQL_BASE_URL overrides
-        # only apply when this call uses the default provider — overriding
-        # an Anthropic-shaped model id on an OpenAI call would just break.
-        is_default = chosen == settings.nl2sql_provider
-        model = settings.nl2sql_model if (is_default and settings.nl2sql_model) else nl2sql.DEFAULT_MODELS[chosen]
-        base_url = settings.nl2sql_base_url if is_default else None
-
-        llm = nl2sql.build_provider(chosen, api_key, base_url=base_url)
+        params = nl2sql.resolve_provider_call_params(settings, provider)
+        llm = nl2sql.build_provider(params.provider_name, params.api_key, base_url=params.base_url)
         result = await nl2sql.translate_nl_to_sql(
             _driver(ctx),
             provider=llm,
-            model=model,
+            model=params.model,
             question=question,
             schema=schema,
             execute=execute,

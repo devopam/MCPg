@@ -12,6 +12,7 @@ from typing import Any, TypedDict
 
 from mcpg.context import AppContext
 from mcpg.database import DatabaseError
+from mcpg.graph import GraphError
 from mcpg.policy import Capability, check_permission
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ async def generate_graph_diagram(
     """
     # 1. Validate name
     if not graph_name.replace("_", "").isalnum() or graph_name[0].isdigit():
-        raise ValueError(f"invalid graph name: {graph_name!r}")
+        raise GraphError(f"invalid graph name: {graph_name!r}")
 
     # 2. Check read permission
     check_permission(Capability.READ, context.settings.access_mode)
@@ -54,7 +55,7 @@ async def generate_graph_diagram(
         raise DatabaseError("could not query graph metadata") from exc
 
     if not graph_rows:
-        raise ValueError(f"graph {graph_name!r} does not exist")
+        raise GraphError(f"graph {graph_name!r} does not exist")
 
     await driver.execute_query("LOAD 'age';")
     await driver.execute_query(f"SET search_path = {graph_name}, ag_catalog, public;")

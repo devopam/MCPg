@@ -8,6 +8,7 @@ from _fakes import FakeDatabase, FakeRoutingDriver
 from mcpg.config import AccessMode, Settings
 from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
+from mcpg.graph import GraphError
 from mcpg.graph_mgmt import create_graph, drop_graph
 from mcpg.listen import ListenManager
 from mcpg.policy import PermissionError
@@ -25,7 +26,7 @@ async def test_create_graph_validates_inputs() -> None:
         cursor_manager=CursorManager(url),
     )
 
-    with pytest.raises(ValueError, match="invalid graph name"):
+    with pytest.raises(GraphError, match="invalid graph name"):
         await create_graph(context, "my-graph-with-dashes")
 
 

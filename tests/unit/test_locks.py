@@ -10,6 +10,7 @@ from mcpg.locks import (
     BlockingGraphReport,
     BlockingPair,
     LockInfo,
+    LocksError,
     find_blocking_chains,
     list_locks,
     walk_blocking_chains,
@@ -69,7 +70,7 @@ async def test_list_locks_returns_empty_list_when_no_locks_held() -> None:
 
 
 async def test_list_locks_rejects_zero_limit() -> None:
-    with pytest.raises(ValueError, match="limit"):
+    with pytest.raises(LocksError, match="limit"):
         await list_locks(FakeRoutingDriver({}), limit=0)  # type: ignore[arg-type]
 
 
@@ -108,7 +109,7 @@ async def test_find_blocking_chains_returns_empty_list_when_nothing_blocked() ->
 
 
 async def test_find_blocking_chains_rejects_zero_limit() -> None:
-    with pytest.raises(ValueError, match="limit"):
+    with pytest.raises(LocksError, match="limit"):
         await find_blocking_chains(FakeRoutingDriver({}), limit=0)  # type: ignore[arg-type]
 
 
@@ -223,5 +224,5 @@ async def test_walk_blocking_chains_deadlock_cycle() -> None:
 
 
 async def test_walk_blocking_chains_rejects_zero_limit() -> None:
-    with pytest.raises(ValueError, match="limit"):
+    with pytest.raises(LocksError, match="limit"):
         await walk_blocking_chains(FakeRoutingDriver({}), limit=0)  # type: ignore[arg-type]

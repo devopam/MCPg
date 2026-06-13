@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 from _fakes import FakeRoutingDriver
 
+from mcpg.config import load_settings
 from mcpg.nl2sql import (
     DEFAULT_MODELS,
     HARD_MAX_TOKENS,
@@ -15,9 +16,11 @@ from mcpg.nl2sql import (
     LLMProvider,
     NL2SQLError,
     OpenAIProvider,
+    ProviderCallParams,
     _parse_response,
     build_provider,
     is_valid_provider,
+    resolve_provider_call_params,
     translate_nl_to_sql,
 )
 
@@ -296,3 +299,73 @@ async def test_translate_nl_to_sql_handles_curly_braces_in_the_question() -> Non
     assert result.sql == "SELECT 1"
     assert '{"k": 1}' in provider.captured_user
     assert "{empty: braces}" in provider.captured_user
+
+
+# --- resolve_provider_call_params (PR-G: business logic relocated
+# from the tools.py wrapper). The tool wrapper now just calls this
+# helper, builds the provider, and forwards to translate_nl_to_sql,
+# so the resolution rules need direct test coverage here. -----------
+
+_DB_URL = "postgresql://u:p@localhost/db"
+
+
+def _settings(**extra: str):
+    env = {"MCPG_DATABASE_URL": _DB_URL}
+    env.update(extra)
+    return load_settings(env)
+
+
+def test_resolve_provider_call_params_uses_explicit_request_arg_over_default() -> None:
+    settings = _settings(
+        ANTHROPIC_API_KEY="ant-1",
+        OPENAI_API_KEY="oai-1",
+        MCPG_NL2SQL_PROVIDER="anthropic",
+    )
+    params = resolve_provider_call_params(settings, "openai")
+    assert isinstance(params, ProviderCallParams)
+    assert params.provider_name == "openai"
+    assert params.api_key == "oai-1"
+    # ``model`` falls back to the upstream default when this call
+    # ISN'T using the configured default provider — operator's
+    # MCPG_NL2SQL_MODEL would be Anthropic-shaped here.
+    assert params.model == DEFAULT_MODELS["openai"]
+    assert params.base_url is None
+
+
+def test_resolve_provider_call_params_applies_overrides_only_on_default_call() -> None:
+    settings = _settings(
+        ANTHROPIC_API_KEY="ant-1",
+        MCPG_NL2SQL_PROVIDER="anthropic",
+        MCPG_NL2SQL_MODEL="claude-sonnet-X",
+        MCPG_NL2SQL_BASE_URL="https://proxy.example",
+    )
+    # No explicit provider arg → uses the configured default → the
+    # operator's model + base_url overrides ALSO apply.
+    params = resolve_provider_call_params(settings, None)
+    assert params.provider_name == "anthropic"
+    assert params.model == "claude-sonnet-X"
+    assert params.base_url == "https://proxy.example"
+
+
+def test_resolve_provider_call_params_normalises_case_and_whitespace() -> None:
+    settings = _settings(ANTHROPIC_API_KEY="ant-1", MCPG_NL2SQL_PROVIDER="anthropic")
+    params = resolve_provider_call_params(settings, "  ANTHROPIC  ")
+    assert params.provider_name == "anthropic"
+
+
+def test_resolve_provider_call_params_errors_when_nothing_configured() -> None:
+    settings = _settings()  # no vendor keys, no MCPG_NL2SQL_PROVIDER
+    with pytest.raises(NL2SQLError, match="has no provider configured"):
+        resolve_provider_call_params(settings, None)
+
+
+def test_resolve_provider_call_params_errors_on_unknown_provider() -> None:
+    settings = _settings(ANTHROPIC_API_KEY="ant-1", MCPG_NL2SQL_PROVIDER="anthropic")
+    with pytest.raises(NL2SQLError, match="unknown NL"):
+        resolve_provider_call_params(settings, "azure")
+
+
+def test_resolve_provider_call_params_errors_when_caller_picks_unconfigured() -> None:
+    settings = _settings(ANTHROPIC_API_KEY="ant-1", MCPG_NL2SQL_PROVIDER="anthropic")
+    with pytest.raises(NL2SQLError, match="provider 'openai' is not configured"):
+        resolve_provider_call_params(settings, "openai")

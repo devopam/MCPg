@@ -9,7 +9,7 @@ from mcpg.config import Settings
 from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
 from mcpg.database import DatabaseError
-from mcpg.graph import describe_graph, list_graphs, parse_agtype
+from mcpg.graph import GraphError, describe_graph, list_graphs, parse_agtype
 from mcpg.listen import ListenManager
 
 
@@ -107,10 +107,10 @@ async def test_describe_graph_validates_inputs() -> None:
         cursor_manager=CursorManager(url),
     )
 
-    with pytest.raises(ValueError, match="invalid graph name"):
+    with pytest.raises(GraphError, match="invalid graph name"):
         await describe_graph(context, "my-graph-with-dashes")
 
-    with pytest.raises(ValueError, match="invalid graph name"):
+    with pytest.raises(GraphError, match="invalid graph name"):
         await describe_graph(context, "1startwithdigit")
 
 
@@ -127,7 +127,7 @@ async def test_describe_graph_raises_error_if_not_exists() -> None:
         cursor_manager=CursorManager(url),
     )
 
-    with pytest.raises(ValueError, match="graph 'my_graph' does not exist"):
+    with pytest.raises(GraphError, match="graph 'my_graph' does not exist"):
         await describe_graph(context, "my_graph")
 
 
