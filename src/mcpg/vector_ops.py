@@ -33,6 +33,29 @@ _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 # the magnitude-distribution heuristic a stable signal.
 DEFAULT_SAMPLE_SIZE = 1000
 
+# Upper bound on every sample_size argument across this module. The
+# tools all pull `sample_size` rows into the Python process and run
+# in-process algorithms (k-means, MMR's diversity pass, centroid
+# computation, per-row z-scores) — without a ceiling, a request for
+# 10M rows is a process killer. 50k matches the ceiling used by the
+# rag_efficiency module's _MAX_SAMPLE_SIZE so the two co-located
+# vector-analytics surfaces share one mental model. Above this you
+# want a vector-DB ANN library, not an in-process Python loop.
+_MAX_SAMPLE_SIZE = 50_000
+
+
+def _validate_sample_size(value: int) -> None:
+    """Shared sample_size validator used by every vector-ops tool."""
+    if value < 1:
+        raise VectorOpsError("sample_size must be at least 1")
+    if value > _MAX_SAMPLE_SIZE:
+        raise VectorOpsError(
+            f"sample_size must be ≤ {_MAX_SAMPLE_SIZE} "
+            f"(rows are pulled into the process and the per-row work runs in "
+            f"pure Python). Reach for a vector-DB ANN library instead of "
+            f"raising this cap."
+        )
+
 
 # Below this coefficient of variation we treat the magnitudes as
 # "essentially constant" — in that regime cosine / L2 / inner-product
@@ -226,8 +249,7 @@ async def analyze_distance_metric(
         VectorOpsError: On an invalid identifier or a non-positive
             ``sample_size``.
     """
-    if sample_size < 1:
-        raise VectorOpsError("sample_size must be at least 1")
+    _validate_sample_size(sample_size)
     if not await extension_installed(driver, "vector"):
         return DistanceMetricRecommendation(
             available=False,
@@ -722,8 +744,7 @@ async def cluster_vectors(
     """
     if metric not in {"l2", "cosine"}:
         raise VectorOpsError(f"unknown metric for clustering: {metric!r}; expected 'l2' or 'cosine'")
-    if sample_size < 1:
-        raise VectorOpsError("sample_size must be at least 1")
+    _validate_sample_size(sample_size)
     if max_iterations < 1:
         raise VectorOpsError("max_iterations must be at least 1")
     if k < 2:
@@ -924,8 +945,7 @@ async def detect_vector_outliers(
     """
     if metric not in {"l2", "cosine"}:
         raise VectorOpsError(f"unknown metric for clustering: {metric!r}; expected 'l2' or 'cosine'")
-    if sample_size < 1:
-        raise VectorOpsError("sample_size must be at least 1")
+    _validate_sample_size(sample_size)
     if max_iterations < 1:
         raise VectorOpsError("max_iterations must be at least 1")
     if k < 2:
@@ -1270,8 +1290,7 @@ async def monitor_embedding_drift(
             pgvector, ``sample_size <= 0``, ``drift_threshold < 0``,
             or a window whose ``end <= start``.
     """
-    if sample_size < 1:
-        raise VectorOpsError("sample_size must be at least 1")
+    _validate_sample_size(sample_size)
     if drift_threshold < 0:
         raise VectorOpsError("drift_threshold must be >= 0")
     if baseline_end <= baseline_start:
