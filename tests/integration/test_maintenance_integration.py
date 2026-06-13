@@ -29,7 +29,11 @@ async def test_run_maintenance_vacuum_against_real_postgres(
     # autocommit path end to end.
     result = await run_maintenance(connected_database, "vacuum", "public", maintenance_table)
 
-    assert result == MaintenanceResult(operation="vacuum", target=f"public.{maintenance_table}")
+    assert result == MaintenanceResult(
+        operation="vacuum",
+        target=f"public.{maintenance_table}",
+        maintenance_sql=f'VACUUM "public"."{maintenance_table}"',
+    )
 
 
 async def test_run_maintenance_analyze_against_real_postgres(
