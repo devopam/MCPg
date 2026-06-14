@@ -50,7 +50,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   carve-out for `http://localhost` (and `127.0.0.1`, `::1`) so
   Keycloak-in-Docker / stub-IdP setups keep working.
 
-- **Audit HMAC chain anchored against tail-truncation attack** (#98).
+- **Audit HMAC chain anchored against tail-truncation attack** (#105;
+  re-applies the closed #98 onto the current main, which had moved
+  with #99's keyset pagination + #96's `safe_error` redaction).
   `verify_audit_chain` walked `mcpg_audit.events` in id-ASC and
   stopped at the last row found, so an operator with table-write
   access could `DELETE FROM mcpg_audit.events WHERE id > N` and
