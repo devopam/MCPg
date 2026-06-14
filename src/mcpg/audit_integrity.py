@@ -17,7 +17,9 @@ from mcpg._vendor.sql import SqlDriver
 
 AUDIT_SCHEMA = "mcpg_audit"
 AUDIT_TABLE = "events"
+CHAIN_TIP_TABLE = "chain_tip"
 _QUALIFIED = f"{AUDIT_SCHEMA}.{AUDIT_TABLE}"
+_QUALIFIED_CHAIN_TIP = f"{AUDIT_SCHEMA}.{CHAIN_TIP_TABLE}"
 
 # Batch size for the keyset-paginated walk in :func:`verify_audit_chain`.
 # Each batch carries one (id, arguments jsonb, result jsonb) round-trip;
@@ -62,6 +64,15 @@ async def verify_audit_chain(driver: SqlDriver) -> dict[str, Any]:
             "status": "ok",
             "reason": "No audit events recorded (audit table does not exist).",
         }
+
+    # The chain_tip row anchors the highest (id, event_hmac) the writer
+    # has signed. Reading it BEFORE the walk lets us detect tail-
+    # truncation: an attacker with table-write access DELETEs the most
+    # recent rows; the per-row chain still verifies for whatever
+    # remains, but the highest id we walk no longer matches what the
+    # writer recorded. Tolerate a pre-anchor DB (no chain_tip table)
+    # by returning a warning instead of false-positive tampered.
+    tip_present, tip_event_id, tip_event_hmac = await _read_chain_tip(driver)
 
     # Walk events in keyset-paginated batches. The previous shape pulled
     # every row into the process in one SELECT — fine for the toy case,
@@ -153,8 +164,71 @@ async def verify_audit_chain(driver: SqlDriver) -> dict[str, Any]:
             break
 
     if not walked_anything:
+        # Empty events but a populated chain_tip → every signed row was
+        # DELETEd. That's exactly the truncation attack the tip exists
+        # to catch.
+        if tip_present and tip_event_id is not None:
+            return {
+                "status": "tampered",
+                "broken_at_id": tip_event_id,
+                "reason": (
+                    f"truncation_detected: chain_tip records last_event_id={tip_event_id!r} "
+                    f"but the events table is empty"
+                ),
+            }
         return {
             "status": "ok",
             "reason": "No audit events recorded (table is empty).",
         }
-    return {"status": "ok"}
+    # Truncation cross-check: when the writer recorded a chain_tip, the
+    # highest row we walked MUST match it. Per-row HMAC is fine for
+    # whatever survived but can't see what the attacker deleted past it.
+    if tip_present and tip_event_id is not None:
+        if last_seen_id != tip_event_id or not hmac.compare_digest(expected_prev_hmac, tip_event_hmac or ""):
+            return {
+                "status": "tampered",
+                "broken_at_id": last_seen_id,
+                "reason": (
+                    f"truncation_detected: chain_tip records last_event_id={tip_event_id!r} "
+                    f"with hmac matching writer state, but the highest event walked is id={last_seen_id!r}"
+                ),
+            }
+        return {"status": "ok"}
+    # Pre-anchor DB: per-row chain verified but truncation can't be
+    # detected on this database. Operator-visible warning so they know
+    # the upgrade gap without a false-positive alarm.
+    return {
+        "status": "ok",
+        "warning": (
+            "no_chain_tip: mcpg_audit.chain_tip is missing or empty. "
+            "Per-row HMAC chain verified, but tail-truncation cannot be "
+            "detected on this database. Run any audited write to populate."
+        ),
+    }
+
+
+async def _read_chain_tip(driver: SqlDriver) -> tuple[bool, int | None, str | None]:
+    """Read the chain_tip row, tolerating a pre-anchor DB.
+
+    Returns ``(present, last_event_id, last_event_hmac)``:
+    ``present=False`` when the table doesn't exist or holds no row,
+    in which case :func:`verify_audit_chain` falls back to the
+    pre-anchor contract (per-row chain only, with a warning).
+    """
+    tip_table_exists = await driver.execute_query(
+        "SELECT 1 AS present FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relname = %s",
+        params=[AUDIT_SCHEMA, CHAIN_TIP_TABLE],
+        force_readonly=True,
+    )
+    if not tip_table_exists:
+        return False, None, None
+    rows = await driver.execute_query(
+        f"SELECT last_event_id, last_event_hmac FROM {_QUALIFIED_CHAIN_TIP} WHERE id = 1",
+        force_readonly=True,
+    )
+    if not rows:
+        return False, None, None
+    cells = rows[0].cells
+    return True, cells.get("last_event_id"), cells.get("last_event_hmac")

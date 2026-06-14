@@ -209,6 +209,145 @@ async def test_verify_audit_chain_flags_row_with_blank_event_hmac(monkeypatch: p
     assert "Missing event_hmac" in res["reason"]
 
 
+async def test_verify_audit_chain_detects_tail_truncation_via_chain_tip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for deep-review P1 #6 truncation attack: an
+    operator with write access to mcpg_audit.events DELETEs the most
+    recent rows. The per-row HMAC chain still verifies for whatever
+    remains, but the chain_tip anchor records the highest signed id —
+    cross-checking it at the end catches truncation."""
+    monkeypatch.setenv("MCPG_AUDIT_HMAC_KEY", "secret_key")
+    monkeypatch.setenv("MCPG_AUDIT_INTEGRITY", "true")
+
+    key = "secret_key"
+    now_dt = datetime.datetime.now(datetime.UTC)
+    occurred_at_str = now_dt.isoformat()
+
+    p1 = {
+        "occurred_at": occurred_at_str,
+        "tool": "run_write",
+        "arguments": {"sql": "SELECT 1"},
+        "status": "ok",
+        "error": None,
+        "result": None,
+    }
+    pb1 = json.dumps(p1, sort_keys=True, default=str).encode("utf-8")
+    h1 = hmac.new(key.encode("utf-8"), b"" + pb1, hashlib.sha256).hexdigest()
+
+    p2 = {
+        "occurred_at": occurred_at_str,
+        "tool": "run_write",
+        "arguments": {"sql": "SELECT 2"},
+        "status": "ok",
+        "error": None,
+        "result": None,
+    }
+    pb2 = json.dumps(p2, sort_keys=True, default=str).encode("utf-8")
+    h2 = hmac.new(key.encode("utf-8"), h1.encode("utf-8") + pb2, hashlib.sha256).hexdigest()
+
+    driver = FakeRoutingDriver(
+        {
+            # Both table-exists probes match this substring; fake says
+            # "present" for both events and chain_tip.
+            "FROM pg_class c": [{"present": 1}],
+            # chain_tip says id=2 was the last signed event.
+            "FROM mcpg_audit.chain_tip": [{"last_event_id": 2, "last_event_hmac": h2}],
+            # ...but only id=1 remains.
+            "FROM mcpg_audit.events": [
+                {
+                    "id": 1,
+                    "occurred_at": now_dt,
+                    "tool": "run_write",
+                    "arguments": {"sql": "SELECT 1"},
+                    "status": "ok",
+                    "error": None,
+                    "result": None,
+                    "prev_hmac": "",
+                    "event_hmac": h1,
+                },
+            ],
+        }
+    )
+
+    res = await verify_audit_chain(driver)  # type: ignore[arg-type]
+    assert res["status"] == "tampered"
+    assert "truncation_detected" in res["reason"]
+    assert "2" in res["reason"]
+
+
+async def test_verify_audit_chain_detects_full_table_deletion_via_chain_tip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Extreme case: every signed row gets DELETEd. The legacy
+    verifier said "empty table → ok"; chain_tip pinning id=5 catches
+    it."""
+    monkeypatch.setenv("MCPG_AUDIT_HMAC_KEY", "secret_key")
+    monkeypatch.setenv("MCPG_AUDIT_INTEGRITY", "true")
+
+    driver = FakeRoutingDriver(
+        {
+            "FROM pg_class c": [{"present": 1}],
+            "FROM mcpg_audit.chain_tip": [{"last_event_id": 5, "last_event_hmac": "deadbeef"}],
+            "FROM mcpg_audit.events": [],
+        }
+    )
+
+    res = await verify_audit_chain(driver)  # type: ignore[arg-type]
+    assert res["status"] == "tampered"
+    assert "truncation_detected" in res["reason"]
+    assert res["broken_at_id"] == 5
+
+
+async def test_verify_audit_chain_warns_when_chain_tip_table_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backward compat: a pre-anchor DB has no chain_tip table. Per-
+    row chain still verifies → ok with a ``no_chain_tip`` warning so
+    operators see the upgrade gap without a false-positive alarm."""
+    monkeypatch.setenv("MCPG_AUDIT_HMAC_KEY", "secret_key")
+    monkeypatch.setenv("MCPG_AUDIT_INTEGRITY", "true")
+
+    key = "secret_key"
+    now_dt = datetime.datetime.now(datetime.UTC)
+    occurred_at_str = now_dt.isoformat()
+    payload = {
+        "occurred_at": occurred_at_str,
+        "tool": "run_write",
+        "arguments": {"sql": "SELECT 1"},
+        "status": "ok",
+        "error": None,
+        "result": None,
+    }
+    pb = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    h = hmac.new(key.encode("utf-8"), b"" + pb, hashlib.sha256).hexdigest()
+
+    # No chain_tip route → fake returns [] for the chain_tip data
+    # query, which the helper interprets as "table missing or empty".
+    driver = FakeRoutingDriver(
+        {
+            "FROM pg_class c": [{"present": 1}],
+            "FROM mcpg_audit.events": [
+                {
+                    "id": 1,
+                    "occurred_at": now_dt,
+                    "tool": "run_write",
+                    "arguments": {"sql": "SELECT 1"},
+                    "status": "ok",
+                    "error": None,
+                    "result": None,
+                    "prev_hmac": "",
+                    "event_hmac": h,
+                },
+            ],
+        }
+    )
+
+    res = await verify_audit_chain(driver)  # type: ignore[arg-type]
+    assert res["status"] == "ok"
+    assert "no_chain_tip" in res.get("warning", "")
+
+
 async def test_verify_audit_chain_uses_keyset_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
     """Regression for deep-review scalability P0 #2: the old verify
     issued one ``SELECT … FROM events ORDER BY id ASC`` with no LIMIT,
