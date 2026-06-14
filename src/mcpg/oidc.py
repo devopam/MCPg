@@ -129,8 +129,23 @@ class OIDCVerifier:
         # PyJWKClient caches keys in-process; reuse the same client
         # for the JWKS-URL lifetime. Recreate when the URL changes
         # (e.g. discovery doc rotated).
+        #
+        # ``lifespan`` is the cache TTL in seconds for PyJWKClient's
+        # signing-key cache. We pass our project-configured value
+        # (``DEFAULT_JWKS_CACHE_SECONDS`` = 1h) so an upstream
+        # key-rotation event is picked up at most one TTL after it
+        # publishes — operators don't need a server restart any more.
+        # ``max_cached_keys`` defaults to 16 inside PyJWKClient, which
+        # is generous for a single-issuer setup; we pin it explicitly
+        # so a future PyJWKClient default change can't quietly grow
+        # the in-process key set.
         if self._jwks_client is None or getattr(self._jwks_client, "uri", None) != url:
-            self._jwks_client = PyJWKClient(url, cache_keys=True)
+            self._jwks_client = PyJWKClient(
+                url,
+                cache_keys=True,
+                max_cached_keys=16,
+                lifespan=int(self._jwks_cache_seconds),
+            )
         return self._jwks_client
 
     async def verify(self, token: str) -> VerifiedToken:

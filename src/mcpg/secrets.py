@@ -37,6 +37,8 @@ pick up rotated values (or wire the rotation system to do so).
 from __future__ import annotations
 
 import json
+import threading
+from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -147,6 +149,54 @@ def _load_overlay(path: str) -> dict[str, str]:
     return overlay
 
 
+# Per-provider cache cap. The cloud-secrets caches were unbounded
+# ``dict[str, str | None]`` instances; an attacker (or buggy caller)
+# hitting ``provider.get(unique_name_each_call)`` in a loop would
+# grow them until OOM. Bounding at 1024 covers any reasonable
+# deployment's working set (MCPG_* + vendor env vars + a few hundred
+# tenanted lookups) while keeping the worst-case memory footprint
+# small (string keys + small string values → kilobytes, not gigs).
+_SECRET_CACHE_MAX_ENTRIES = 1024
+
+# OrderedDict's ``move_to_end`` / ``popitem`` and the bounded-eviction
+# loop are not atomic, so a sync ``provider.get`` called from a worker
+# thread (e.g. via ``asyncio.to_thread`` — already used elsewhere in
+# the codebase for sync SDK calls) could race with the asyncio loop's
+# own get and corrupt the linked list. Per-cache mutation cost is a
+# single Lock acquire / release, well under a microsecond, so this is
+# pure upside (gemini review on #101).
+_CACHE_LOCK = threading.Lock()
+
+
+def _cache_get(cache: OrderedDict[str, str | None], name: str) -> tuple[str | None, bool]:
+    """Return ``(value, present)`` for a name lookup.
+
+    ``present=False`` distinguishes "name never cached" from "cached
+    as None" (a name explicitly absent from the backend). On a hit
+    the entry is moved to the back of the OrderedDict so the LRU
+    eviction in :func:`_cache_put` drops cold entries first.
+    """
+    with _CACHE_LOCK:
+        if name in cache:
+            cache.move_to_end(name)
+            return cache[name], True
+        return None, False
+
+
+def _cache_put(cache: OrderedDict[str, str | None], name: str, value: str | None) -> None:
+    """Insert ``(name, value)`` with bounded-LRU semantics.
+
+    Replaces any existing entry, marks it most-recently-used, then
+    evicts the oldest entries until the size is within
+    :data:`_SECRET_CACHE_MAX_ENTRIES`.
+    """
+    with _CACHE_LOCK:
+        cache[name] = value
+        cache.move_to_end(name)
+        while len(cache) > _SECRET_CACHE_MAX_ENTRIES:
+            cache.popitem(last=False)
+
+
 @dataclass
 class VaultSecretsProvider:
     """Reads secrets from HashiCorp Vault's KV v2 backend.
@@ -170,18 +220,17 @@ class VaultSecretsProvider:
     namespace: str | None = None
     path_prefix: str = "secret/mcpg"
     _client: Any = field(default=None, init=False, repr=False, compare=False)
-    _cache: dict[str, str | None] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _cache: OrderedDict[str, str | None] = field(default_factory=OrderedDict, init=False, repr=False, compare=False)
 
     def get(self, name: str) -> str | None:
-        if name in self._cache:
-            cached = self._cache[name]
-            if cached is not None:
-                return cached
-            # ``None`` cache = "not in Vault" — fall through to env.
-            return self.env.get(name)
+        cached, present = _cache_get(self._cache, name)
+        if present:
+            # Stored ``None`` = "name is not in Vault"; fall through
+            # to env so vendor-conventional env vars still resolve.
+            return cached if cached is not None else self.env.get(name)
 
         value = self._fetch(name)
-        self._cache[name] = value
+        _cache_put(self._cache, name, value)
         if value is not None:
             return value
         return self.env.get(name)
@@ -262,14 +311,14 @@ class AWSSecretsProvider:
     env: Mapping[str, str]
     prefix: str = ""
     _client: Any = field(default=None, init=False, repr=False, compare=False)
-    _cache: dict[str, str | None] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _cache: OrderedDict[str, str | None] = field(default_factory=OrderedDict, init=False, repr=False, compare=False)
 
     def get(self, name: str) -> str | None:
-        if name in self._cache:
-            cached = self._cache[name]
+        cached, present = _cache_get(self._cache, name)
+        if present:
             return cached if cached is not None else self.env.get(name)
         value = self._fetch(name)
-        self._cache[name] = value
+        _cache_put(self._cache, name, value)
         if value is not None:
             return value
         return self.env.get(name)
@@ -351,14 +400,14 @@ class GCPSecretsProvider:
     env: Mapping[str, str]
     prefix: str = ""
     _client: Any = field(default=None, init=False, repr=False, compare=False)
-    _cache: dict[str, str | None] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _cache: OrderedDict[str, str | None] = field(default_factory=OrderedDict, init=False, repr=False, compare=False)
 
     def get(self, name: str) -> str | None:
-        if name in self._cache:
-            cached = self._cache[name]
+        cached, present = _cache_get(self._cache, name)
+        if present:
             return cached if cached is not None else self.env.get(name)
         value = self._fetch(name)
-        self._cache[name] = value
+        _cache_put(self._cache, name, value)
         if value is not None:
             return value
         return self.env.get(name)
