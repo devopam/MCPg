@@ -1310,13 +1310,26 @@ def _drift_routes(
     Routes by (query-substring, params-tuple) so the baseline and
     current window calls can return different sample sets even
     though their SQL is identical.
+
+    PR (scalability P0 #4 follow-up) added a COUNT round-trip before
+    the sample fetch so the function can choose between the
+    bare-LIMIT (small-window) and probability-filter (large-window)
+    paths. Test fixtures stub the COUNT result to equal the number
+    of supplied rows so the small-window path runs (no random()
+    filter, params shape stays `[start, end, sample_size]`).
     """
     dim_rows: list[dict[str, object]] = [{"type_name": "vector", "type_mod": dim}] if dim is not None else []
+    baseline_count = len(baseline_rows or [])
+    current_count = len(current_rows or [])
+    baseline_count_key = ("SELECT count(*)", ("2026-01-01", "2026-02-01"))
+    current_count_key = ("SELECT count(*)", ("2026-02-01", "2026-03-01"))
     baseline_key = ('AND "embedding" IS NOT NULL', ("2026-01-01", "2026-02-01", 5000))
     current_key = ('AND "embedding" IS NOT NULL', ("2026-02-01", "2026-03-01", 5000))
     return {
         ("pg_extension", None): [{"present": 1}],
         ("FROM pg_attribute a", None): dim_rows,
+        baseline_count_key: [{"n": baseline_count}],
+        current_count_key: [{"n": current_count}],
         baseline_key: baseline_rows or [],
         current_key: current_rows or [],
     }
@@ -1596,3 +1609,179 @@ async def test_monitor_embedding_drift_tool_is_callable_from_a_client() -> None:
     assert result.structuredContent is not None
     assert result.structuredContent["available"] is True
     assert result.structuredContent["drift_detected"] is True
+
+
+# Regression coverage for the probability-based sampling path (deep-
+# review scalability P0 #4, follow-up to PR #99). The tests assert SQL
+# shape directly because verifying statistical behaviour against a
+# fake driver would just re-state the calling convention.
+
+
+async def test_monitor_embedding_drift_small_window_skips_random_filter() -> None:
+    """When the COUNT round-trip reports the window is at or below
+    ``sample_size``, _fetch_window_vectors must skip both the random
+    filter and the sort — a bare LIMIT is strictly cheaper. Tested
+    via SQL shape because counting calls is the only way to confirm
+    no ``random()`` slipped in."""
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, list[object]]] = []
+
+        async def execute_query(
+            self,
+            sql: str,
+            params: list[object] | None = None,
+            force_readonly: bool = False,
+        ) -> list[object]:
+            from mcpg._vendor.sql import SqlDriver
+
+            self.calls.append((sql, list(params or [])))
+            if "pg_extension" in sql:
+                return [SqlDriver.RowResult(cells={"present": 1})]
+            if "FROM pg_attribute a" in sql:
+                return [SqlDriver.RowResult(cells={"type_name": "vector", "type_mod": 2})]
+            if "SELECT count(*)" in sql:
+                # Both windows look "small" so the small-window path runs.
+                return [SqlDriver.RowResult(cells={"n": 3})]
+            # Sample fetch — return three usable rows.
+            return [SqlDriver.RowResult(cells={"embedding": [1.0, 0.0]}) for _ in range(3)]
+
+    recorder = _Recorder()
+    await monitor_embedding_drift(
+        recorder,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        "created_at",
+        baseline_start="2026-01-01",
+        baseline_end="2026-02-01",
+        current_start="2026-02-01",
+        current_end="2026-03-01",
+    )
+
+    sample_calls = [
+        sql for sql, _params in recorder.calls if 'AND "embedding" IS NOT NULL' in sql and "SELECT count(*)" not in sql
+    ]
+    assert len(sample_calls) == 2, sample_calls
+    for sql in sample_calls:
+        # Small-window path: no random filter, no ORDER BY RANDOM, just LIMIT.
+        assert "random()" not in sql
+        assert "ORDER BY" not in sql or "ORDER BY id" not in sql  # incidental id order is fine, RANDOM is not
+        assert "RANDOM()" not in sql
+        assert "LIMIT %s" in sql
+
+
+async def test_monitor_embedding_drift_large_window_applies_probability_filter() -> None:
+    """When the COUNT reports the window is much larger than
+    ``sample_size``, the sample query must add ``WHERE random() < %s``
+    with a computed probability and the params list grows to 4
+    entries: [start, end, p, sample_size]."""
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, list[object]]] = []
+
+        async def execute_query(
+            self,
+            sql: str,
+            params: list[object] | None = None,
+            force_readonly: bool = False,
+        ) -> list[object]:
+            from mcpg._vendor.sql import SqlDriver
+
+            self.calls.append((sql, list(params or [])))
+            if "pg_extension" in sql:
+                return [SqlDriver.RowResult(cells={"present": 1})]
+            if "FROM pg_attribute a" in sql:
+                return [SqlDriver.RowResult(cells={"type_name": "vector", "type_mod": 2})]
+            if "SELECT count(*)" in sql:
+                # 1 million rows in each window — well above the default 5000 sample_size.
+                return [SqlDriver.RowResult(cells={"n": 1_000_000})]
+            # Sample query result — three rows is fine for the test;
+            # we're asserting on SQL shape, not row count.
+            return [SqlDriver.RowResult(cells={"embedding": [1.0, 0.0]}) for _ in range(3)]
+
+    recorder = _Recorder()
+    await monitor_embedding_drift(
+        recorder,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        "created_at",
+        baseline_start="2026-01-01",
+        baseline_end="2026-02-01",
+        current_start="2026-02-01",
+        current_end="2026-03-01",
+    )
+
+    sample_calls = [
+        (sql, params)
+        for sql, params in recorder.calls
+        if 'AND "embedding" IS NOT NULL' in sql and "SELECT count(*)" not in sql
+    ]
+    assert len(sample_calls) == 2, sample_calls
+    for sql, params in sample_calls:
+        assert "random()" in sql
+        assert "LIMIT %s" in sql
+        # No global sort — the random() filter is per-row independent.
+        assert "RANDOM()" not in sql
+        # Param order: window_start, window_end, p (float), sample_size (int).
+        assert len(params) == 4
+        assert isinstance(params[2], float) and 0.0 < params[2] <= 1.0
+        assert isinstance(params[3], int) and params[3] == 5000
+        # Probability targets ``sample_size * over_fetch / window_size`` =
+        # ``5000 * 1.5 / 1_000_000`` = 0.0075.
+        assert params[2] == pytest.approx(0.0075, rel=1e-9)
+
+
+async def test_monitor_embedding_drift_caps_probability_at_one() -> None:
+    """When ``sample_size · over_fetch`` would exceed the window size
+    (e.g. window has only slightly more rows than the sample target),
+    the probability MUST clamp to 1.0 so PG doesn't try to evaluate
+    ``random() < 1.5``. The bare LIMIT then handles the over-select."""
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, list[object]]] = []
+
+        async def execute_query(
+            self,
+            sql: str,
+            params: list[object] | None = None,
+            force_readonly: bool = False,
+        ) -> list[object]:
+            from mcpg._vendor.sql import SqlDriver
+
+            self.calls.append((sql, list(params or [])))
+            if "pg_extension" in sql:
+                return [SqlDriver.RowResult(cells={"present": 1})]
+            if "FROM pg_attribute a" in sql:
+                return [SqlDriver.RowResult(cells={"type_name": "vector", "type_mod": 2})]
+            if "SELECT count(*)" in sql:
+                # 5001 = just-above-sample_size triggers the large-window
+                # path (window_size > sample_size), but p would be
+                # 5000*1.5/5001 ≈ 1.4996 → must clamp to 1.0.
+                return [SqlDriver.RowResult(cells={"n": 5001})]
+            return [SqlDriver.RowResult(cells={"embedding": [1.0, 0.0]}) for _ in range(3)]
+
+    recorder = _Recorder()
+    await monitor_embedding_drift(
+        recorder,  # type: ignore[arg-type]
+        "app",
+        "docs",
+        "embedding",
+        "created_at",
+        baseline_start="2026-01-01",
+        baseline_end="2026-02-01",
+        current_start="2026-02-01",
+        current_end="2026-03-01",
+    )
+
+    sample_calls = [
+        params
+        for sql, params in recorder.calls
+        if 'AND "embedding" IS NOT NULL' in sql and "SELECT count(*)" not in sql
+    ]
+    for params in sample_calls:
+        assert params[2] == 1.0  # p clamped
