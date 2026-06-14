@@ -6,54 +6,207 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Audit error field is now redacted** (#96). `mcpg_audit.events.error`
+  used to persist the raw `str(exc)` written by `write._persist_audit`;
+  psycopg / libpq error messages routinely embed DSN fragments or
+  password-bearing connection strings, so a write that failed because
+  of a connection-pool error would write a plaintext credential into
+  the audit table. `record_audit` now routes the error through the same
+  `obfuscate_password` sweep as `arguments` / `result`, and the HMAC
+  payload signs the redacted form so `verify_audit_chain` still
+  matches.
+
+- **OpenTelemetry spans redact `error.message`** (#96). `tool_span`
+  shipped `str(exc)[:200]` straight to the OTel collector, bypassing
+  every other redaction surface. Now `obfuscate_password` runs
+  **before** the 200-char cap (order is load-bearing — capping first
+  could truncate a recognizable DSN prefix past the obfuscate match
+  window).
+
+- **`VaultSecretsProvider.__repr__` no longer leaks the token** (#96).
+  The class was a plain `@dataclass` with `token: str` — default
+  `repr()` rendered `token='hvs.…'`. Any `logging.exception(provider)`,
+  pytest assert, or `Settings.model_dump()` that touched a provider
+  instance leaked the Vault root token. Set `repr=False` on the token
+  field plus the `env` / `overlay` mappings on every provider as
+  defense-in-depth (those mappings can hold sibling secrets).
+
+- **TLS minimum + cipher allowlist pinned on the HTTP transport** (#97).
+  `_uvicorn_tls_kwargs` previously set only certfile / keyfile /
+  ca_certs / cert_reqs, leaving the underlying SSLContext at uvicorn's
+  default — on a host with old OpenSSL a TLS 1.0/1.1 handshake could
+  be negotiated. Now pins `ssl_version=ssl.PROTOCOL_TLS_SERVER` and
+  `ssl_ciphers=_MOZILLA_INTERMEDIATE_CIPHERS` (AEAD-only ECDHE/DHE
+  suites; no RC4, 3DES, CBC, NULL, or anonymous).
+
+- **OIDC verifier rejects plaintext `http://` issuer / `jwks_url`** (#97).
+  Discovery joined the issuer with `/.well-known/openid-configuration`
+  and the explicit `jwks_url` was returned verbatim — either over
+  plaintext let a path attacker swap the JWKS for keys they control
+  and forge any JWT MCPg would then accept. `OIDCVerifier.__init__`
+  now refuses non-`https://` URLs at construction time, with a single
+  carve-out for `http://localhost` (and `127.0.0.1`, `::1`) so
+  Keycloak-in-Docker / stub-IdP setups keep working.
+
+- **Audit HMAC chain anchored against tail-truncation attack** (#105;
+  re-applies the closed #98 onto the current main, which had moved
+  with #99's keyset pagination + #96's `safe_error` redaction).
+  `verify_audit_chain` walked `mcpg_audit.events` in id-ASC and
+  stopped at the last row found, so an operator with table-write
+  access could `DELETE FROM mcpg_audit.events WHERE id > N` and
+  `verify` still returned `status=ok`. New single-row
+  `mcpg_audit.chain_tip` table records the highest
+  `(last_event_id, last_event_hmac)` the writer has signed; `record_audit`
+  upserts it in **one writable-CTE statement** with the event INSERT
+  so an attacker can't race between them. `verify_audit_chain`
+  cross-checks the highest event walked against the anchor — match →
+  `status=ok`, mismatch → `status=tampered, reason="truncation_detected"`.
+  Backward compat: a pre-anchor DB returns `status=ok` with a
+  `no_chain_tip` warning so operators see the upgrade gap without a
+  false-positive alarm.
+
+- **Audit HMAC compare via `hmac.compare_digest`** (#99). The two
+  `!=` comparisons inside `verify_audit_chain` now use
+  `hmac.compare_digest`. Verification-side timing isn't a sensitive
+  oracle (operator-initiated, not per-request) but the inconsistency
+  with the rest of the codebase's `hmac.compare_digest` usage was
+  worth fixing.
+
+- **Bounded LRU cache on cloud secret providers** (#101). Vault / AWS /
+  GCP held unbounded `dict[str, str | None]` caches; a loop hitting
+  `provider.get(unique_name)` would grow them until OOM. Shared
+  `_cache_get` / `_cache_put` helpers enforce `_SECRET_CACHE_MAX_ENTRIES = 1024`
+  with proper LRU eviction, and both are guarded by a
+  module-level `threading.Lock` against the `asyncio.to_thread` paths
+  already in use (PyJWKClient, boto3).
+
+- **OIDC JWKS cache TTL pinned** (#101). `PyJWKClient` was constructed
+  with `cache_keys=True` and no other knobs, so an upstream key-
+  rotation event required a server restart to pick up. Now pins
+  `lifespan=int(jwks_cache_seconds)` (1h default) and
+  `max_cached_keys=16` so a PyJWKClient default change can't quietly
+  grow the cap.
+
 ### Added
 
-- **Adaptive thresholds framework (RAG-E).** Optional self-learning
-  layer over `analyze_vector_search_efficiency` (RAG-A): record
-  observations into a new `mcpg_rag.efficiency_observations` table,
-  then let `recommend_efficiency_thresholds` compute corpus-percentile
-  thresholds that replace the hardcoded defaults for callers that opt
-  in. "You're in the bottom decile of recall@10 for HNSW+cosine+k=10
-  in this deployment" is more actionable than "you're below 0.80".
+- **`pdb.more_like_this` tuning args** (#91). Every documented
+  upstream arg on `pdb.more_like_this(anyelement, fields jsonb, …)`
+  is now an optional Python kwarg on `pg_search_more_like_this`:
+  `fields` (jsonb), `min_doc_frequency`, `max_doc_frequency`,
+  `min_term_frequency`, `max_query_terms`, `min_word_length`,
+  `max_word_length`, `boost_factor`, `stop_words`. Omitted kwargs are
+  not mentioned in the rendered SQL so upstream's defaults apply.
+  Supplied args use PG named-arg syntax (`name => %s`) with explicit
+  type casts (`::jsonb`, `::real`, `::text[]`).
 
-  New tools:
-  - `setup_efficiency_observations` (DDL-gated, idempotent — same
-    probe-then-DDL pattern as `setup_rag_telemetry`; reports
-    `{schema_created, table_created, indexes_created}`).
-  - `record_efficiency_observation` (WRITE-gated) — fields mirror
-    `VectorEfficiencyReport` one-to-one. Inputs validated via the
-    existing `_validate_int` / `_validate_numeric` helpers from
-    RAG-C (bool-as-int rejected; `extra` JSON-serialised with the
-    same `TypeError`-wrap pattern).
-  - `recommend_efficiency_thresholds` (READ) — returns
-    `EfficiencyThresholds` with the seven values + `corpus_size` +
-    `derived_from_corpus` flag. Filters: `days` (default 30),
-    `backend`, `metric`, `k` — callers ask "what's normal across
-    this configuration".
+- **Multi-column BM-25 search** (#93). `pg_search_run` and
+  `hybrid_bm25_vector_search` accept multiple columns via
+  `columns=["body", "title", ...]`, rendered as an OR of per-column
+  `@@@` predicates against the same parsed query string. The
+  whole-index (`columns=None`) and single-column shapes are
+  unchanged. New `_bm25_search_predicate(columns)` returns the SQL
+  fragment + bind count so callers thread the right number of
+  placeholders.
 
-  Phase E adapts three of the seven vector-efficiency thresholds
-  (the ones with the highest signal):
-  - `baseline_recall_low` ← p10 of `recall_baseline` corpus.
-  - `ranking_degraded_spearman` ← p10 of `spearman` corpus.
-  - `pruning_ineffective` ← p10 of `pages_pruned_ratio_p50` corpus.
+- **`docs/release-notes-0.6.0.md`** (#95). Mirrors the v0.5.0 release
+  notes style; sourced from CHANGELOG `[0.6.0]` + the release commit's
+  pre-flight numbers (1354 tests passing on PG 14-18). Highlights:
+  TLS / mTLS, IP allowlist, cloud secrets backends, OpenTelemetry,
+  structured JSON logging, pgvector analytics suite,
+  `recommend_index_drops`, migration ergonomics, multi-provider
+  NL→SQL routing.
 
-  The other four (`rerank_lift_flat_delta`, `rerank_lift_steep_low`,
-  `rerank_lift_steep_high`, `ranking_degraded_recall`) keep their
-  module-level defaults and are re-exported on the same dataclass so
-  callers see one unified surface. When the matching corpus is smaller
-  than `_MIN_CORPUS_FOR_ADAPT = 30`, all three adapted thresholds
-  silently fall back to defaults (with `derived_from_corpus=False`).
+### Changed
 
-  Integration: `analyze_vector_search_efficiency` gains an optional
-  `thresholds: dict[str, float] | None` keyword. When supplied, the
-  rule evaluator picks adapted values per rule via a new `_threshold`
-  helper; otherwise the module-level `_THRESHOLD_*` constants apply.
-  Non-numeric or missing dict entries silently fall back to defaults
-  so a partial corpus doesn't crash the rule loop.
+- **`pg_search_more_like_this` validates a JSON-serializable `fields`
+  dict** (#91 follow-up). `_validate_mlt_fields` only checked the
+  outer type; a dict containing non-encodable values (sets, datetimes,
+  custom objects) leaked a bare `TypeError` from the downstream
+  `json.dumps` rather than the documented `PgSearchError`. The helper
+  now probes encodability up front.
 
-  RAG analytics over `mcpg_rag.rerank_events` (RAG-D) are out of
-  scope for Phase E — their thresholds live on a different events
-  table and can be added in a follow-up if needed.
+- **`create_turboquant_index` / `reindex_turboquant_index` wrap
+  driver errors as `TurboQuantError`** (#92). The two `run_unmanaged`
+  call sites are now in `try / except Exception as exc:` blocks that
+  re-raise as `TurboQuantError`, matching the equivalent pattern in
+  `create_pg_search_index` / `reindex_pg_search_index`. The `from
+  exc` chain preserves the original cause on `__cause__`.
+
+- **`mcpg_rag.rerank_events` / `mcpg_rag.efficiency_observations`
+  setup paths wrap DDL as `RagTelemetryError` and record the
+  executed SQL** (#100). `setup_rag_telemetry` and
+  `setup_efficiency_observations` previously called
+  `database.run_unmanaged` eight times total without a try/except
+  wrap. New `_run_setup_ddl` helper catches `Exception` and re-raises
+  as `RagTelemetryError`, then appends each successfully-executed
+  statement to `result.setup_sql` — same record-the-SQL invariant
+  the pg_search / turboquant DDL surfaces hold.
+
+- **`MaintenanceResult.maintenance_sql`** (#100). `run_maintenance`
+  threads the rendered SQL through both `run_unmanaged` and the
+  result so audit / change-review callers don't have to reach into a
+  side-channel database double.
+
+- **`verify_audit_chain` keyset-paginates the walk** (#99). Previously
+  ran `SELECT … FROM events ORDER BY id ASC` with no LIMIT — on a
+  million-row audit table that's gigabytes of jsonb loaded before the
+  chain check even starts. Now walks in `_VERIFY_BATCH_SIZE = 1_000`
+  batches via `WHERE id > %s ORDER BY id ASC LIMIT %s`.
+
+- **Bounded sample sizes across `vector_ops` + `mmr_search`** (#99).
+  New `_MAX_SAMPLE_SIZE = 50_000` (matching `rag_efficiency`'s
+  ceiling) applied via `_validate_sample_size` to `cluster_vectors`,
+  `detect_vector_outliers`, `monitor_embedding_drift`, and
+  `analyze_distance_metric`. `mmr_search` gains
+  `_MAX_MMR_FETCH_K = 10_000` and `_MAX_MMR_K = 1_000` since its
+  diversity pass is `O(pool · k)` in pure Python.
+
+- **Hybrid BM25 + pgvector weights bound as `%s` params** (#101).
+  `hybrid_bm25_vector_search` previously spliced `bm25_weight`,
+  `vector_weight`, and `per_leg_limit` into the SQL as Python
+  literals — every distinct tuple produced a fresh plan-cache entry.
+  All three now bind via `%s` placeholders (weights cast `::float8`);
+  `k` stays inlined intentionally since it's a small enumerable RRF
+  constant where binding masks integer-arithmetic optimization.
+
+- **Typed errors across the AGE-graph + locks surfaces** (#102).
+  `graph.py`, `cypher.py`, `graph_mgmt.py`, `graph_diagram.py`, and
+  `locks.py` previously raised bare `ValueError` for boundary
+  validation. New `GraphError` (shared across the four graph modules
+  via a single import from `mcpg.graph`) and `LocksError` match the
+  `*Error`-per-module convention every other surface uses.
+
+- **`translate_nl_to_sql` wrapper business logic relocated to
+  `mcpg.nl2sql`** (#102). The tool wrapper carried ~45 lines of
+  provider selection / model override / API-key dispatch. Moved to a
+  new `resolve_provider_call_params(settings, requested_provider) →
+  ProviderCallParams` helper; wrapper shrinks to ~5 lines. The two
+  normalisation bugs called out in review are fixed: whitespace-only
+  `requested_provider` no longer buries a valid configured default
+  behind a "no provider configured" error, and the `is_default`
+  comparison normalizes both sides defensively.
+
+### Docs
+
+- **Multi-column BM-25 search + tuning-args coverage in tour, plan,
+  and tools surfaces** (#94, #95). `docs/plans/bm25-integration.md`
+  updates §2.1 (BM-0 spec) to mark the `pdb.more_like_this` tuning
+  args as landed, Phase BM-2 to reflect the full
+  `pg_search_more_like_this` signature, and §6 to drop the now-
+  obsolete deferral bullet. `docs/tools.md` gains pg_search
+  observability / search / DDL rows; `docs/tour.md` and
+  `docs/user-guide.md` describe the multi-column OR shape; the
+  README's licensing-matrix row drops the "planned" qualifier on
+  pg_search.
+
+- **`docs/release-notes-0.6.0.md` linked from index.md** (#95).
+  Release-notes nav now points at v0.6.0 directly rather than the
+  "see CHANGELOG.md for v0.5.1 and beyond" workaround.
+
+- **Stale `mcpg --version` output bumped 0.5.1 → 0.6.1 in
+  `docs/installation.md`** (#95).
 
 ## [0.6.1] - 2026-06-09
 
