@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -82,6 +84,41 @@ _SUPPORTED_PROVIDERS = frozenset({"anthropic", "openai", "gemini"})
 # ``table_filter`` to focus on a subset.
 DEFAULT_MAX_TABLES_IN_BRIEF = 30
 DEFAULT_COLUMNS_PER_TABLE = 60
+
+# Plain unquoted PostgreSQL identifier — matches the rule every other
+# surface in the codebase uses (pg_search, turboquant, rag_efficiency,
+# locks, …). Anything that would require delimited quoting is refused
+# here rather than parsed out of an LLM-facing string.
+_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
+
+# Default deny-list of schemas that NL→SQL must never touch — operator
+# internals and PG system schemas. The LLM can be tricked into emitting
+# queries against these; a strict default keeps the blast radius
+# bounded even when the prompt-injection guard fails. Operators add to
+# this via MCPG_NL2SQL_SCHEMA_DENYLIST; a non-empty
+# MCPG_NL2SQL_SCHEMA_ALLOWLIST flips the policy to allowlist-only.
+DEFAULT_SCHEMA_DENYLIST: frozenset[str] = frozenset(
+    {
+        "pg_catalog",
+        "pg_toast",
+        "information_schema",
+        "mcpg_audit",
+        "mcpg_rag",
+        "mcpg_migrations",
+    }
+)
+
+# Cap on the rendered ``DEFAULT <expr>`` text per column in the schema
+# brief. Long defaults are usually generated SQL expressions
+# (``COALESCE(... CASE WHEN ... THEN ... END)``) and are mostly noise
+# for the LLM; an attacker with prior CREATE TABLE access can plant a
+# multi-kilobyte default that overrides the system prompt for every
+# subsequent NL→SQL call (stored prompt injection — deep-review
+# nl2sql audit P0 #1). Bound at 80 chars and strip newlines so
+# legitimate defaults (``now()``, ``gen_random_uuid()``,
+# ``'pending'::text``) still inform the LLM without the injection
+# surface.
+_DEFAULT_EXPR_MAX_CHARS = 80
 
 
 class NL2SQLError(Exception):
@@ -418,6 +455,101 @@ User question:
 Return JSON with `sql` and `explanation`. Inline literals — do NOT use $1 / $2 placeholders."""
 
 
+def _sanitize_default_expr(value: str | None) -> str | None:
+    """Make a column-DEFAULT expression safe to interpolate into an LLM prompt.
+
+    The DDL value reaches us via ``pg_get_expr(adbin, adrelid)``, so an
+    attacker who can ``CREATE TABLE`` (or ``ALTER COLUMN … SET DEFAULT``)
+    in any schema reachable by NL→SQL can plant a default whose text
+    contains line breaks + adversarial instructions. The legacy brief
+    rendered that text verbatim — every subsequent ``translate_nl_to_sql``
+    call against the same schema would carry the injection in its
+    user prompt.
+
+    This helper strips control characters, collapses whitespace, and
+    caps the result so injected payloads can't override the rest of
+    the brief. Returns ``None`` when the input is empty after the
+    scrub so callers can omit the ``DEFAULT`` clause entirely on
+    empty / all-control-char inputs.
+    """
+    if value is None:
+        return None
+    # Strip ASCII control chars + collapse runs of whitespace into a
+    # single space. The control-char filter catches ``\n`` / ``\r`` /
+    # ``\t`` (the classic prompt-break payload) plus any other C0/C1
+    # bytes a creative attacker might try.
+    flattened = "".join(ch if ch.isprintable() else " " for ch in value)
+    collapsed = " ".join(flattened.split())
+    if not collapsed:
+        return None
+    if len(collapsed) <= _DEFAULT_EXPR_MAX_CHARS:
+        return collapsed
+    return collapsed[: _DEFAULT_EXPR_MAX_CHARS - 1] + "…"
+
+
+def _resolve_schema_policy(
+    env: Mapping[str, str] | None = None,
+) -> tuple[frozenset[str], frozenset[str] | None]:
+    """Build the (denylist, allowlist) tuple from settings/env.
+
+    Allowlist semantics — when set, only schemas in the allowlist are
+    reachable; the denylist is ignored. When the allowlist is unset
+    (the typical deployment), every schema is reachable except those
+    explicitly denied. Each value is whitespace-trimmed and lowered;
+    empty entries are dropped.
+    """
+    source = env if env is not None else os.environ
+    extra_deny = (source.get("MCPG_NL2SQL_SCHEMA_DENYLIST") or "").strip()
+    allow_raw = (source.get("MCPG_NL2SQL_SCHEMA_ALLOWLIST") or "").strip()
+
+    denylist = set(DEFAULT_SCHEMA_DENYLIST)
+    if extra_deny:
+        denylist.update(item.strip().lower() for item in extra_deny.split(",") if item.strip())
+    allowlist: frozenset[str] | None = None
+    if allow_raw:
+        allowlist = frozenset(item.strip().lower() for item in allow_raw.split(",") if item.strip())
+    return frozenset(denylist), allowlist
+
+
+def _validate_schema_name(schema: str, *, env: Mapping[str, str] | None = None) -> str:
+    """Validate ``schema`` as an identifier and enforce deny/allow policy.
+
+    Returns the validated (lowercased, normalised) schema name. Raises
+    :class:`NL2SQLError` on:
+
+    * a non-identifier value (e.g. ``"public; --"``) — the prompt-
+      injection vector flagged in the deep-review nl2sql audit P0 #2.
+    * a schema present in the deny-list (default catches PG system
+      schemas + MCPg-internal schemas).
+    * a non-allowlist schema when ``MCPG_NL2SQL_SCHEMA_ALLOWLIST`` is
+      set (strict-mode deployments).
+    """
+    if not isinstance(schema, str) or not schema.strip():
+        raise NL2SQLError("schema must be a non-empty identifier string")
+    candidate = schema.strip()
+    if not _IDENTIFIER.match(candidate):
+        raise NL2SQLError(
+            f"schema {schema!r} is not a valid SQL identifier — must match {_IDENTIFIER.pattern}. "
+            "NL→SQL refuses schemas that would require delimited quoting to keep prompt-injection "
+            "via the schema name out of scope."
+        )
+    normalised = candidate.lower()
+    denylist, allowlist = _resolve_schema_policy(env)
+    if allowlist is not None and normalised not in allowlist:
+        raise NL2SQLError(
+            f"schema {schema!r} is not in MCPG_NL2SQL_SCHEMA_ALLOWLIST "
+            f"({', '.join(sorted(allowlist))}); NL→SQL refuses to query it."
+        )
+    if normalised in denylist:
+        raise NL2SQLError(
+            f"schema {schema!r} is on the NL→SQL deny-list "
+            f"(default denies {', '.join(sorted(DEFAULT_SCHEMA_DENYLIST))} plus any value of "
+            "MCPG_NL2SQL_SCHEMA_DENYLIST); pick a non-system schema or amend the deny-list "
+            "if you really mean to expose this schema to NL→SQL."
+        )
+    return normalised
+
+
 async def _build_schema_brief(
     driver: SqlDriver,
     schema: str,
@@ -444,7 +576,13 @@ async def _build_schema_brief(
         columns = await describe_table(driver, schema, table.name)
         for col in columns[:columns_per_table]:
             nullable = "" if not col.nullable else " NULL"
-            default = f" DEFAULT {col.default}" if col.default else ""
+            # ``col.default`` reaches us via ``pg_get_expr(adbin, adrelid)``;
+            # _sanitize_default_expr strips control chars + caps length
+            # so an attacker-planted DEFAULT can't break out of the
+            # schema brief and override the system prompt (deep-review
+            # nl2sql audit P0 #1, "stored prompt injection via DEFAULT").
+            safe_default = _sanitize_default_expr(col.default)
+            default = f" DEFAULT {safe_default}" if safe_default else ""
             lines.append(f"    * {col.name}: {col.data_type}{nullable}{default}")
         if len(columns) > columns_per_table:
             lines.append(f"    * ... +{len(columns) - columns_per_table} more columns")
@@ -535,6 +673,14 @@ async def translate_nl_to_sql(
         raise NL2SQLError("question must not be empty")
     if max_tokens < 1 or max_tokens > HARD_MAX_TOKENS:
         raise NL2SQLError(f"max_tokens must be between 1 and {HARD_MAX_TOKENS}")
+    # _validate_schema_name does three things in one place:
+    #   1. Rejects non-identifier values (the schema name lands in the
+    #      LLM prompt verbatim — caller-side prompt injection vector).
+    #   2. Enforces MCPG_NL2SQL_SCHEMA_DENYLIST (operator-internals
+    #      and PG system schemas off by default).
+    #   3. Enforces MCPG_NL2SQL_SCHEMA_ALLOWLIST when set (strict
+    #      deployments lock NL→SQL to one or two schemas).
+    schema = _validate_schema_name(schema)
 
     schema_brief = await _build_schema_brief(
         driver,
