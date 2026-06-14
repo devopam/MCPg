@@ -266,6 +266,57 @@ def test_tool_span_truncates_long_error_messages() -> None:
         handle.shutdown()
 
 
+def test_tool_span_redacts_dsn_in_error_message() -> None:
+    """Regression for the deep-review P1 #9: ``str(exc)`` from a
+    psycopg / libpq error routinely embeds a DSN with the password
+    inline. The OTel span ships ``error.message`` straight to the
+    collector — that bypasses the mcpg.audit redaction pipeline. The
+    fix routes the message through obfuscate_password first."""
+    handle = setup_tracing(_settings(MCPG_OTEL_ENABLED="true"))
+    assert handle is not None
+    try:
+        exporter = _capture_spans(handle)
+        with pytest.raises(RuntimeError):
+            with tool_span(handle, "run_select", {}):
+                raise RuntimeError("connection failed: postgresql://alice:hunter2@db.example.com:5432/app")
+
+        spans = exporter.get_finished_spans()
+        attrs = spans[0].attributes
+        assert attrs is not None
+        message = attrs["error.message"]
+        # The plaintext password is scrubbed; the rest of the message
+        # is preserved so the operator still sees WHY the call failed.
+        assert "hunter2" not in message
+        assert "connection failed" in message
+    finally:
+        handle.shutdown()
+
+
+def test_tool_span_redacts_dsn_before_the_200_char_cap_applies() -> None:
+    """Subtle ordering bug to guard against: if we capped first then
+    redacted, a 199-char prefix containing a DSN could be truncated
+    such that the password was lost from view of obfuscate_password,
+    while leaving a recognisable fragment in the attribute. The fix
+    redacts BEFORE the cap; this test pins the order."""
+    handle = setup_tracing(_settings(MCPG_OTEL_ENABLED="true"))
+    assert handle is not None
+    try:
+        exporter = _capture_spans(handle)
+        # Place the DSN at position ~190 (just inside the 200-char cap)
+        # and make sure it gets redacted.
+        padding = "x" * 180
+        with pytest.raises(RuntimeError):
+            with tool_span(handle, "run_select", {}):
+                raise RuntimeError(f"{padding} postgresql://u:secret_pw@db/app rest")
+
+        spans = exporter.get_finished_spans()
+        attrs = spans[0].attributes
+        assert attrs is not None
+        assert "secret_pw" not in attrs["error.message"]
+    finally:
+        handle.shutdown()
+
+
 def test_tool_span_does_not_attach_raw_argument_values() -> None:
     # Tool arguments can contain SQL literals, embeddings, secrets —
     # the span should only ever carry the *count*. A regression here

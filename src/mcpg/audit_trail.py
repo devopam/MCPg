@@ -185,6 +185,15 @@ async def record_audit(
         await ensure_audit_table(driver)
         safe_args = _redact(arguments)
         safe_result = _redact(result) if result is not None else None
+        # The error field is filled with ``str(exc)`` from the calling
+        # write/DDL path (see write.py:_persist_audit), and psycopg /
+        # libpq routinely embed DSN fragments or table-literal values
+        # in their error messages — passing it raw to SQL would persist
+        # plaintext secrets into mcpg_audit.events.error. Pipe it
+        # through the same obfuscate_password sweep used by the
+        # arguments/result redaction so the column matches the
+        # documented "credentials never persisted unmasked" contract.
+        safe_error = obfuscate_password(error) if error is not None else None
 
         # Check if integrity signature chain is enabled
         settings = getattr(driver, "settings", None)
@@ -223,7 +232,11 @@ async def record_audit(
                 "tool": tool,
                 "arguments": safe_args,
                 "status": status,
-                "error": error,
+                # Must match what we persist in the INSERT below; using
+                # the raw ``error`` here would have a verifier signing
+                # plaintext while the table holds the redacted form and
+                # break verify_audit_chain.
+                "error": safe_error,
                 "result": safe_result,
             }
             payload_bytes = json.dumps(payload_data, sort_keys=True, default=str).encode("utf-8")
@@ -240,7 +253,7 @@ async def record_audit(
                 tool,
                 json.dumps(safe_args, default=str),
                 status,
-                error,
+                safe_error,
                 json.dumps(safe_result, default=str) if safe_result is not None else None,
                 now_dt,
                 prev_hmac,
