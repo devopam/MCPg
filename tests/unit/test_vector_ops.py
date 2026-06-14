@@ -41,6 +41,41 @@ from mcpg.vector_ops import (
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
 
+# --- shared sample_size cap (scalability P0) -------------------------------
+
+
+async def test_every_vector_ops_entry_point_rejects_oversized_sample_size() -> None:
+    """Regression for deep-review scalability P0 #3: cluster_vectors,
+    detect_vector_outliers, monitor_embedding_drift, and
+    analyze_distance_metric all pull ``sample_size`` rows into the
+    process for in-Python work (k-means, z-scores, centroid drift,
+    norm stats). Without a cap, ``sample_size=10_000_000`` is a
+    process killer. The shared ``_validate_sample_size`` helper now
+    enforces the same ceiling at every entry point; this test pins
+    that every tool actually wires it in."""
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    oversize = 10_000_000
+    with pytest.raises(VectorOpsError, match="must be ≤"):
+        await analyze_distance_metric(driver, "app", "docs", "embedding", sample_size=oversize)  # type: ignore[arg-type]
+    with pytest.raises(VectorOpsError, match="must be ≤"):
+        await cluster_vectors(driver, "app", "docs", "embedding", k=2, sample_size=oversize)  # type: ignore[arg-type]
+    with pytest.raises(VectorOpsError, match="must be ≤"):
+        await detect_vector_outliers(driver, "app", "docs", "embedding", sample_size=oversize)  # type: ignore[arg-type]
+    with pytest.raises(VectorOpsError, match="must be ≤"):
+        await monitor_embedding_drift(  # type: ignore[arg-type]
+            driver,
+            "app",
+            "docs",
+            "embedding",
+            timestamp_column="created_at",
+            baseline_start="2026-01-01",
+            baseline_end="2026-01-02",
+            current_start="2026-02-01",
+            current_end="2026-02-02",
+            sample_size=oversize,
+        )
+
+
 # --- _parse_embedding ------------------------------------------------------
 
 
@@ -243,6 +278,17 @@ async def test_analyze_distance_metric_rejects_non_positive_sample_size() -> Non
 
     with pytest.raises(VectorOpsError, match="sample_size"):
         await analyze_distance_metric(driver, "app", "docs", "embedding", sample_size=0)  # type: ignore[arg-type]
+
+
+async def test_analyze_distance_metric_rejects_oversized_sample_size() -> None:
+    """Regression for deep-review scalability P0 #3: an unbounded
+    sample_size pulls every requested row into the process for in-
+    process work. The shared cap caps the cliff at 50k regardless of
+    which entry point is called."""
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+
+    with pytest.raises(VectorOpsError, match="must be ≤"):
+        await analyze_distance_metric(driver, "app", "docs", "embedding", sample_size=10_000_000)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("bad", ['docs"; DROP TABLE x', "1bad", "a-b"])
@@ -1163,7 +1209,7 @@ async def test_detect_vector_outliers_raises_when_column_is_not_pgvector() -> No
     ("kwargs", "match"),
     [
         ({"k": 1}, "k must be at least 2"),
-        ({"sample_size": 0}, "sample_size must be at least 1"),
+        ({"sample_size": 0}, "must be at least 1"),
         ({"max_iterations": 0}, "max_iterations must be at least 1"),
         ({"metric": "manhattan"}, "unknown metric"),
         ({"zscore_threshold": 0.0}, "zscore_threshold must be > 0"),
@@ -1474,7 +1520,7 @@ async def test_monitor_embedding_drift_raises_when_column_is_not_pgvector() -> N
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
-        ({"sample_size": 0}, "sample_size must be at least 1"),
+        ({"sample_size": 0}, "must be at least 1"),
         ({"drift_threshold": -0.1}, "drift_threshold must be >= 0"),
         ({"baseline_end": "2026-01-01"}, "baseline window end must be after start"),
         ({"current_end": "2026-02-01"}, "current window end must be after start"),

@@ -344,6 +344,15 @@ async def vector_range_search(
 
 DEFAULT_MMR_LAMBDA = 0.5
 
+# MMR's diversity pass is O(pool · k) cosine similarities in pure
+# Python with every candidate's embedding in memory. The bounds keep
+# the worst-case sane: at k=1000 + pool=10000 = 10M similarities, the
+# loop is in seconds-not-minutes territory on a typical box. Callers
+# wanting more should reach for a vector-DB-side ANN library, not
+# crank these knobs.
+_MAX_MMR_K = 1_000
+_MAX_MMR_FETCH_K = 10_000
+
 
 def _parse_embedding(value: Any) -> list[float]:
     """Coerce a pgvector cell into a list of floats.
@@ -426,11 +435,24 @@ async def mmr_search(
         raise SearchError("query_vector must contain only finite numbers")
     if k < 1:
         raise SearchError("k must be at least 1")
+    if k > _MAX_MMR_K:
+        raise SearchError(f"k must be ≤ {_MAX_MMR_K} (MMR's selection step is O(k²) in pure Python)")
     if not 0.0 <= lambda_mult <= 1.0:
         raise SearchError("lambda_mult must be between 0 and 1")
     pool = fetch_k if fetch_k is not None else max(4 * k, 20)
     if pool < k:
         raise SearchError("fetch_k must be >= k")
+    # The recall pass returns ``pool`` rows that get pulled into the
+    # process (each carries the embedding for the diversity pass), and
+    # the inner MMR loop runs O(pool·k) cosine similarities in pure
+    # Python. Without a cap, ``fetch_k=100_000`` is a process killer.
+    if pool > _MAX_MMR_FETCH_K:
+        raise SearchError(
+            f"fetch_k must be ≤ {_MAX_MMR_FETCH_K} "
+            f"(MMR pulls every candidate's embedding into memory and runs "
+            f"O(pool·k) similarities in pure Python; raise the cap with a "
+            f"smaller k or split the query)"
+        )
 
     operator = _VECTOR_METRICS[metric]
     relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"

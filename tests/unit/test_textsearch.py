@@ -343,6 +343,14 @@ async def test_mmr_search_fetch_k_defaults_to_a_wider_pool() -> None:
         ({"k": 0}, "k must be"),
         ({"lambda_mult": 1.5}, "lambda_mult"),
         ({"k": 5, "fetch_k": 2}, "fetch_k"),
+        # Regression for deep-review scalability P0 #1: unbounded
+        # fetch_k pulls every candidate's embedding into memory and
+        # runs O(pool·k) similarities in pure Python. Cap kicks at
+        # 10_000.
+        ({"fetch_k": 100_000}, "fetch_k must be ≤"),
+        # k itself is also capped: MMR's selection loop is O(k²)
+        # because each pick compares against the already-picked set.
+        ({"k": 5000}, "k must be ≤"),
     ],
 )
 async def test_mmr_search_validates_arguments(kwargs: dict[str, object], match: str) -> None:
