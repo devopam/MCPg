@@ -653,6 +653,21 @@ def _uvicorn_tls_kwargs(settings: Settings, *, ssl_module: object) -> dict[str, 
     kwargs: dict[str, object] = {
         "ssl_certfile": settings.http_tls_certfile,
         "ssl_keyfile": settings.http_tls_keyfile,
+        # Pin to PROTOCOL_TLS_SERVER explicitly. On Python 3.10+ this
+        # carries SSLContext.minimum_version = TLSv1_2 by default, so
+        # an old system OpenSSL can't silently negotiate TLS 1.0/1.1
+        # even though uvicorn would otherwise accept whatever its own
+        # default SSLContext allows. Pinning this here makes the
+        # version-floor explicit at the call site so a uvicorn upgrade
+        # can't quietly loosen it.
+        "ssl_version": ssl_module.PROTOCOL_TLS_SERVER,  # type: ignore[attr-defined]
+        # AEAD-only cipher allowlist matching the Mozilla "intermediate"
+        # config (https://wiki.mozilla.org/Security/Server_Side_TLS).
+        # All entries are ECDHE / DHE with AES-GCM or ChaCha20-Poly1305
+        # — no RC4, no 3DES, no CBC modes, no NULL, no anonymous.
+        # TLS 1.3 suites are negotiated separately and aren't listed
+        # here (they're enabled unconditionally on a TLS 1.3 handshake).
+        "ssl_ciphers": _MOZILLA_INTERMEDIATE_CIPHERS,
     }
     if settings.http_tls_ca_certs is not None:
         kwargs["ssl_ca_certs"] = settings.http_tls_ca_certs
@@ -663,3 +678,20 @@ def _uvicorn_tls_kwargs(settings: Settings, *, ssl_module: object) -> dict[str, 
         # ``ca_certs`` invariant so this combination is always valid.
         kwargs["ssl_cert_reqs"] = ssl_module.CERT_REQUIRED  # type: ignore[attr-defined]
     return kwargs
+
+
+# Mozilla intermediate cipher suite list (last updated 2024-02 generator
+# output, AEAD-only). Pinned as a module-level constant so the value is
+# auditable at one site rather than hidden in the kwargs builder.
+_MOZILLA_INTERMEDIATE_CIPHERS = ":".join(
+    [
+        "ECDHE-ECDSA-AES128-GCM-SHA256",
+        "ECDHE-RSA-AES128-GCM-SHA256",
+        "ECDHE-ECDSA-AES256-GCM-SHA384",
+        "ECDHE-RSA-AES256-GCM-SHA384",
+        "ECDHE-ECDSA-CHACHA20-POLY1305",
+        "ECDHE-RSA-CHACHA20-POLY1305",
+        "DHE-RSA-AES128-GCM-SHA256",
+        "DHE-RSA-AES256-GCM-SHA384",
+    ]
+)

@@ -32,6 +32,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import jwt
@@ -47,6 +48,38 @@ DEFAULT_VERIFY_LEEWAY_SECONDS = 30.0
 
 class OIDCError(Exception):
     """Raised when OIDC configuration is wrong or a token fails to verify."""
+
+
+# Hostnames that are considered local-only and therefore acceptable
+# over plaintext http://. Anything else MUST be https:// — see
+# _enforce_https_or_localhost. IPv6 literals are written without
+# brackets here; urlsplit().hostname normalises ``[::1]`` to ``::1``.
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _enforce_https_or_localhost(url: str, kind: str) -> None:
+    """Refuse plaintext ``http://`` for a remote OIDC endpoint.
+
+    ``issuer`` and ``jwks_url`` both end up as URLs the verifier
+    fetches signing keys from; an attacker on the path can swap the
+    response and forge any token. The carve-out for localhost
+    matches industry practice (Keycloak's dev mode, the local
+    smoke-test stub at tests/integration/) so the boundary stays
+    strict without breaking developer ergonomics.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError as exc:
+        raise OIDCError(f"{kind} is not a valid URL: {url!r}") from exc
+    if parts.scheme == "https":
+        return
+    if parts.scheme == "http" and parts.hostname in _LOCAL_HOSTS:
+        return
+    raise OIDCError(
+        f"{kind} must use https:// (got scheme={parts.scheme!r}, host={parts.hostname!r}). "
+        f"Plaintext OIDC endpoints let a path attacker swap the signing-key set; "
+        f"http://localhost is the only exception."
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +125,17 @@ class OIDCVerifier:
             raise OIDCError("issuer must not be blank")
         if not audience:
             raise OIDCError("audience must not be blank")
+        # Discovery joins ``issuer + "/.well-known/openid-configuration"``
+        # and an explicit ``jwks_url`` is fetched verbatim. Either over
+        # plaintext silently downgrades signing-key trust — an attacker
+        # on the path can swap the JWKS for keys they control and forge
+        # tokens MCPg will then accept. Refuse non-https schemes at the
+        # boundary, with one carve-out for ``http://localhost``-shaped
+        # addresses so dev / test setups (Keycloak in-Docker, a stub
+        # IdP on a port) keep working without weakening prod.
+        _enforce_https_or_localhost(issuer, "issuer")
+        if jwks_url is not None:
+            _enforce_https_or_localhost(jwks_url, "jwks_url")
         self._issuer = issuer.rstrip("/")
         self._audience = audience
         self._explicit_jwks_url = jwks_url

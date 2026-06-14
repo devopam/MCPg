@@ -934,8 +934,18 @@ def test_uvicorn_tls_kwargs_empty_when_tls_disabled() -> None:
     assert _uvicorn_tls_kwargs(settings, ssl_module=None) == {}
 
 
+class _StubSSL:
+    """Stand-in for the ssl module — covers every attribute the
+    _uvicorn_tls_kwargs builder touches. Sentinel values let the
+    assertions confirm what got routed where without depending on
+    real ssl module enums."""
+
+    PROTOCOL_TLS_SERVER = "PROTOCOL_TLS_SERVER_SENTINEL"
+    CERT_REQUIRED = "CERT_REQUIRED_SENTINEL"
+
+
 def test_uvicorn_tls_kwargs_emits_cert_and_key_when_set(tmp_path: object) -> None:
-    from mcpg.http_runtime import _uvicorn_tls_kwargs
+    from mcpg.http_runtime import _MOZILLA_INTERMEDIATE_CIPHERS, _uvicorn_tls_kwargs
 
     cert = tmp_path / "server.crt"  # type: ignore[operator]
     key = tmp_path / "server.key"  # type: ignore[operator]
@@ -950,12 +960,20 @@ def test_uvicorn_tls_kwargs_emits_cert_and_key_when_set(tmp_path: object) -> Non
         }
     )
 
-    kwargs = _uvicorn_tls_kwargs(settings, ssl_module=None)
-    assert kwargs == {"ssl_certfile": str(cert), "ssl_keyfile": str(key)}
+    kwargs = _uvicorn_tls_kwargs(settings, ssl_module=_StubSSL())
+    # Cert + key are always present. ssl_version + ssl_ciphers are
+    # pinned in the builder regardless of mTLS, so an old system
+    # OpenSSL can't silently negotiate TLS 1.0/1.1 or a weak suite.
+    assert kwargs == {
+        "ssl_certfile": str(cert),
+        "ssl_keyfile": str(key),
+        "ssl_version": "PROTOCOL_TLS_SERVER_SENTINEL",
+        "ssl_ciphers": _MOZILLA_INTERMEDIATE_CIPHERS,
+    }
 
 
 def test_uvicorn_tls_kwargs_includes_ca_certs_when_set(tmp_path: object) -> None:
-    from mcpg.http_runtime import _uvicorn_tls_kwargs
+    from mcpg.http_runtime import _MOZILLA_INTERMEDIATE_CIPHERS, _uvicorn_tls_kwargs
 
     cert = tmp_path / "server.crt"  # type: ignore[operator]
     key = tmp_path / "server.key"  # type: ignore[operator]
@@ -972,12 +990,32 @@ def test_uvicorn_tls_kwargs_includes_ca_certs_when_set(tmp_path: object) -> None
         }
     )
 
-    kwargs = _uvicorn_tls_kwargs(settings, ssl_module=None)
+    kwargs = _uvicorn_tls_kwargs(settings, ssl_module=_StubSSL())
     assert kwargs == {
         "ssl_certfile": str(cert),
         "ssl_keyfile": str(key),
         "ssl_ca_certs": str(ca),
+        "ssl_version": "PROTOCOL_TLS_SERVER_SENTINEL",
+        "ssl_ciphers": _MOZILLA_INTERMEDIATE_CIPHERS,
     }
+
+
+def test_uvicorn_tls_kwargs_pins_mozilla_intermediate_cipher_list() -> None:
+    """Regression for deep-review P1 #10: TLS posture had no
+    explicit cipher floor, so an old system OpenSSL could negotiate
+    a non-AEAD suite. Pinning here makes the floor auditable and
+    survives uvicorn upgrades."""
+    from mcpg.http_runtime import _MOZILLA_INTERMEDIATE_CIPHERS
+
+    suites = _MOZILLA_INTERMEDIATE_CIPHERS.split(":")
+    # AEAD only — no CBC, no RC4, no 3DES, no NULL, no anonymous.
+    forbidden_substrings = ("RC4", "3DES", "DES-CBC", "NULL", "anon", "MD5", "EXPORT")
+    for suite in suites:
+        for forbidden in forbidden_substrings:
+            assert forbidden not in suite, f"forbidden suite component {forbidden!r} in {suite!r}"
+    # Every suite must use ECDHE or DHE for forward secrecy.
+    for suite in suites:
+        assert suite.startswith(("ECDHE-", "DHE-")), f"no forward-secrecy KEX in {suite!r}"
 
 
 def test_uvicorn_tls_kwargs_sets_cert_required_for_mtls(tmp_path: object) -> None:
@@ -999,14 +1037,11 @@ def test_uvicorn_tls_kwargs_sets_cert_required_for_mtls(tmp_path: object) -> Non
         }
     )
 
-    # Stand-in for the ssl module — the kwarg routing should pull
-    # CERT_REQUIRED off whatever ssl-shaped object we pass through.
-    class _StubSSL:
-        CERT_REQUIRED = "CERT_REQUIRED_SENTINEL"
-
     kwargs = _uvicorn_tls_kwargs(settings, ssl_module=_StubSSL())
     assert kwargs["ssl_cert_reqs"] == "CERT_REQUIRED_SENTINEL"
     assert kwargs["ssl_ca_certs"] == str(ca)
+    # Version pin + cipher list still apply on the mTLS path.
+    assert kwargs["ssl_version"] == "PROTOCOL_TLS_SERVER_SENTINEL"
 
 
 def test_settings_rejects_certfile_without_keyfile(tmp_path: object) -> None:
