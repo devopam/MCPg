@@ -42,8 +42,10 @@ def _get_audit_lock() -> asyncio.Lock:
 
 AUDIT_SCHEMA = "mcpg_audit"
 AUDIT_TABLE = "events"
+CHAIN_TIP_TABLE = "chain_tip"
 
 _QUALIFIED = f"{AUDIT_SCHEMA}.{AUDIT_TABLE}"
+_QUALIFIED_CHAIN_TIP = f"{AUDIT_SCHEMA}.{CHAIN_TIP_TABLE}"
 
 _MASK = "****"
 
@@ -162,6 +164,22 @@ async def ensure_audit_table(driver: SqlDriver) -> None:
         f"ALTER TABLE {_QUALIFIED} ADD COLUMN IF NOT EXISTS event_hmac text",
         force_readonly=False,
     )
+    # The chain_tip table anchors verify_audit_chain against the
+    # tail-truncation attack flagged in deep-review P1 #6. Single row
+    # by construction: id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1) so
+    # the ON CONFLICT (id) upsert in record_audit always lands on the
+    # same row. last_event_id / last_event_hmac are NULL-allowed so
+    # the row can be CREATEd up-front; the first integrity-enabled
+    # write populates them.
+    await driver.execute_query(
+        f"CREATE TABLE IF NOT EXISTS {_QUALIFIED_CHAIN_TIP} ("
+        "  id int PRIMARY KEY DEFAULT 1 CHECK (id = 1), "
+        "  last_event_id bigint, "
+        "  last_event_hmac text, "
+        "  updated_at timestamptz NOT NULL DEFAULT now()"
+        ")",
+        force_readonly=False,
+    )
     _ENSURED_DRIVER_IDS.add(id(driver))
 
 
@@ -246,21 +264,50 @@ async def record_audit(
             data_to_sign = prev_hmac.encode("utf-8") + payload_bytes
             event_hmac = hmac.new(key_bytes, data_to_sign, hashlib.sha256).hexdigest()
 
-        await driver.execute_query(
-            f"INSERT INTO {_QUALIFIED} (tool, arguments, status, error, result, occurred_at, prev_hmac, event_hmac) "
-            "VALUES (%s, %s::jsonb, %s, %s, %s::jsonb, %s, %s, %s)",
-            params=[
-                tool,
-                json.dumps(safe_args, default=str),
-                status,
-                safe_error,
-                json.dumps(safe_result, default=str) if safe_result is not None else None,
-                now_dt,
-                prev_hmac,
-                event_hmac,
-            ],
-            force_readonly=False,
-        )
+        # When the HMAC chain is enabled, the event INSERT and the
+        # chain_tip UPSERT must land atomically — otherwise an
+        # attacker who can race between the two could DELETE the just-
+        # inserted row and leave chain_tip pointing one step back.
+        # PostgreSQL gives us that atomicity for free via a writable-
+        # CTE single statement: events INSERT runs first, the
+        # chain_tip UPSERT consumes its RETURNING row in the same
+        # transaction, and the whole thing is one ON COMMIT step.
+        # Non-integrity writes use the plain INSERT — no chain_tip
+        # work, same cost as before.
+        event_columns = "tool, arguments, status, error, result, occurred_at, prev_hmac, event_hmac"
+        event_placeholders = "%s, %s::jsonb, %s, %s, %s::jsonb, %s, %s, %s"
+        event_params: list[Any] = [
+            tool,
+            json.dumps(safe_args, default=str),
+            status,
+            safe_error,
+            json.dumps(safe_result, default=str) if safe_result is not None else None,
+            now_dt,
+            prev_hmac,
+            event_hmac,
+        ]
+        if audit_integrity and audit_hmac_key is not None:
+            await driver.execute_query(
+                f"WITH new_event AS ("
+                f"  INSERT INTO {_QUALIFIED} ({event_columns}) "
+                f"  VALUES ({event_placeholders}) "
+                f"  RETURNING id, event_hmac"
+                f") "
+                f"INSERT INTO {_QUALIFIED_CHAIN_TIP} (id, last_event_id, last_event_hmac) "
+                f"SELECT 1, id, event_hmac FROM new_event "
+                f"ON CONFLICT (id) DO UPDATE "
+                f"SET last_event_id = EXCLUDED.last_event_id, "
+                f"    last_event_hmac = EXCLUDED.last_event_hmac, "
+                f"    updated_at = now()",
+                params=event_params,
+                force_readonly=False,
+            )
+        else:
+            await driver.execute_query(
+                f"INSERT INTO {_QUALIFIED} ({event_columns}) VALUES ({event_placeholders})",
+                params=event_params,
+                force_readonly=False,
+            )
 
 
 async def list_audit_events(driver: SqlDriver, *, limit: int = 100, tool: str | None = None) -> list[AuditTrailEntry]:
