@@ -112,12 +112,17 @@ class RagTelemetrySetupResult:
     The booleans/counts report what actually changed in the catalog
     on this call. All-``False`` / zero means everything was already
     in place — the call was a no-op (intended; the operation is
-    idempotent).
+    idempotent). :attr:`setup_sql` carries every DDL statement that
+    actually ran (in execution order) so audit / change-review
+    callers can record exactly what hit the database — same
+    invariant ``CreateIndexResult.create_sql`` enforces on the
+    pg_search / turboquant DDL surfaces.
     """
 
     schema_created: bool
     table_created: bool
     indexes_created: int
+    setup_sql: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +135,36 @@ class LogRerankEventResult:
 async def _exists(driver: SqlDriver, sql: str, params: list[Any]) -> bool:
     rows = await driver.execute_query(sql, params=params, force_readonly=True)
     return bool(rows)
+
+
+async def _run_setup_ddl(database: Database, sql: str, executed: list[str]) -> None:
+    """Run one setup-time DDL statement and record it for the result.
+
+    Mirrors the create_pg_search_index / create_turboquant_index
+    pattern: catch the raw driver exception (psycopg, DatabaseError,
+    or anything else that escapes ``run_unmanaged``) and re-raise as
+    the module's typed error so callers always see
+    :class:`RagTelemetryError` on a setup failure rather than a
+    psycopg traceback bleeding out of the wrapper. The successful
+    SQL is appended to ``executed`` so the caller can report the
+    full DDL sequence even if a later statement fails.
+    """
+    try:
+        await database.run_unmanaged(sql)
+    except Exception as exc:
+        raise RagTelemetryError(f"setup DDL failed ({_short_sql(sql)}): {exc}") from exc
+    executed.append(sql)
+
+
+def _short_sql(sql: str) -> str:
+    """A one-line preview of a DDL statement for error messages.
+
+    Collapses whitespace and caps at 80 chars — enough to identify
+    which statement failed without dumping the whole CREATE INDEX
+    body into the exception text.
+    """
+    flat = " ".join(sql.split())
+    return flat if len(flat) <= 80 else flat[:77] + "..."
 
 
 async def setup_rag_telemetry(database: Database) -> RagTelemetrySetupResult:
@@ -151,16 +186,17 @@ async def setup_rag_telemetry(database: Database) -> RagTelemetrySetupResult:
     for atomic ownership; treat it as advisory under concurrency.
     """
     driver = database.driver()
+    executed: list[str] = []
     had_schema = await _exists(driver, _PROBE_SCHEMA_SQL, [_SCHEMA_NAME])
-    await database.run_unmanaged(_SETUP_SQL_SCHEMA)
+    await _run_setup_ddl(database, _SETUP_SQL_SCHEMA, executed)
 
     had_table = await _exists(driver, _PROBE_TABLE_SQL, [_SCHEMA_NAME, _TABLE_NAME])
-    await database.run_unmanaged(_SETUP_SQL_TABLE)
+    await _run_setup_ddl(database, _SETUP_SQL_TABLE, executed)
 
     indexes_created = 0
     for index_name, sql in _SETUP_SQL_INDEXES:
         had_index = await _exists(driver, _PROBE_INDEX_SQL, [_SCHEMA_NAME, index_name])
-        await database.run_unmanaged(sql)
+        await _run_setup_ddl(database, sql, executed)
         if not had_index:
             indexes_created += 1
 
@@ -168,6 +204,7 @@ async def setup_rag_telemetry(database: Database) -> RagTelemetrySetupResult:
         schema_created=not had_schema,
         table_created=not had_table,
         indexes_created=indexes_created,
+        setup_sql=tuple(executed),
     )
 
 
@@ -381,11 +418,18 @@ _SETUP_SQL_EFFICIENCY_INDEXES: tuple[tuple[str, str], ...] = (
 
 @dataclass(frozen=True, slots=True)
 class EfficiencyObservationsSetupResult:
-    """Outcome of :func:`setup_efficiency_observations`."""
+    """Outcome of :func:`setup_efficiency_observations`.
+
+    :attr:`setup_sql` carries every DDL statement that actually ran
+    (in execution order) — same record-the-SQL invariant the
+    sibling :class:`RagTelemetrySetupResult` and the pg_search /
+    turboquant DDL surfaces hold.
+    """
 
     schema_created: bool
     table_created: bool
     indexes_created: int
+    setup_sql: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -444,16 +488,17 @@ async def setup_efficiency_observations(database: Database) -> EfficiencyObserva
     atomic).
     """
     driver = database.driver()
+    executed: list[str] = []
     had_schema = await _exists(driver, _PROBE_SCHEMA_SQL, [_SCHEMA_NAME])
-    await database.run_unmanaged(_SETUP_SQL_SCHEMA)
+    await _run_setup_ddl(database, _SETUP_SQL_SCHEMA, executed)
 
     had_table = await _exists(driver, _PROBE_TABLE_SQL, [_SCHEMA_NAME, _EFFICIENCY_TABLE])
-    await database.run_unmanaged(_SETUP_SQL_EFFICIENCY_TABLE)
+    await _run_setup_ddl(database, _SETUP_SQL_EFFICIENCY_TABLE, executed)
 
     indexes_created = 0
     for index_name, sql in _SETUP_SQL_EFFICIENCY_INDEXES:
         had_index = await _exists(driver, _PROBE_INDEX_SQL, [_SCHEMA_NAME, index_name])
-        await database.run_unmanaged(sql)
+        await _run_setup_ddl(database, sql, executed)
         if not had_index:
             indexes_created += 1
 
@@ -461,6 +506,7 @@ async def setup_efficiency_observations(database: Database) -> EfficiencyObserva
         schema_created=not had_schema,
         table_created=not had_table,
         indexes_created=indexes_created,
+        setup_sql=tuple(executed),
     )
 
 

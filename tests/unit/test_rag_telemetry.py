@@ -10,8 +10,8 @@ from mcpg.config import load_settings
 from mcpg.rag_telemetry import (
     LogRerankEventResult,
     RagTelemetryError,
-    RagTelemetrySetupResult,
     log_rerank_event,
+    setup_efficiency_observations,
     setup_rag_telemetry,
 )
 from mcpg.server import create_server
@@ -52,15 +52,49 @@ async def test_setup_first_run_reports_everything_created() -> None:
     # Catalog probes all return empty → everything is "new".
     db = FakeDatabase(FakeRoutingDriver({}))  # type: ignore[arg-type]
     result = await setup_rag_telemetry(db)  # type: ignore[arg-type]
-    assert result == RagTelemetrySetupResult(
-        schema_created=True,
-        table_created=True,
-        indexes_created=3,
-    )
-    # Five run_unmanaged calls: schema + table + 3 indexes.
+    # Field-by-field assertions so the new setup_sql tuple doesn't
+    # force every caller to anticipate every executed statement.
+    assert result.schema_created is True
+    assert result.table_created is True
+    assert result.indexes_created == 3
+    # Five run_unmanaged calls: schema + table + 3 indexes. The
+    # result's setup_sql records the same five in execution order
+    # so audit / change-review callers don't have to also peek at
+    # the database double.
     assert len(db.unmanaged) == 5
     assert "CREATE SCHEMA IF NOT EXISTS mcpg_rag" in db.unmanaged[0]
     assert "CREATE TABLE IF NOT EXISTS mcpg_rag.rerank_events" in db.unmanaged[1]
+    assert result.setup_sql == tuple(db.unmanaged)
+
+
+async def test_setup_rag_telemetry_wraps_driver_failure_as_rag_telemetry_error() -> None:
+    """Regression for deep-review architecture P1: the four
+    run_unmanaged calls in setup_rag_telemetry let any raw
+    psycopg / DatabaseError leak past the RagTelemetryError
+    boundary. Same wrap pattern as PR #92 (turboquant DDL) and the
+    existing pg_search create/reindex paths."""
+    db = FakeDatabase(FakeRoutingDriver({}), unmanaged_fail=True)  # type: ignore[arg-type]
+
+    with pytest.raises(RagTelemetryError, match="setup DDL failed"):
+        await setup_rag_telemetry(db)  # type: ignore[arg-type]
+
+
+async def test_setup_rag_telemetry_preserves_cause_chain_on_failure() -> None:
+    db = FakeDatabase(FakeRoutingDriver({}), unmanaged_fail=True)  # type: ignore[arg-type]
+
+    with pytest.raises(RagTelemetryError) as excinfo:
+        await setup_rag_telemetry(db)  # type: ignore[arg-type]
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    assert "maintenance failed" in str(excinfo.value.__cause__)
+
+
+async def test_setup_efficiency_observations_wraps_driver_failure() -> None:
+    """Same wrap on the second setup function — both paths must
+    typed-error consistently."""
+    db = FakeDatabase(FakeRoutingDriver({}), unmanaged_fail=True)  # type: ignore[arg-type]
+
+    with pytest.raises(RagTelemetryError, match="setup DDL failed"):
+        await setup_efficiency_observations(db)  # type: ignore[arg-type]
 
 
 async def test_setup_idempotent_when_everything_already_exists() -> None:
@@ -75,14 +109,15 @@ async def test_setup_idempotent_when_everything_already_exists() -> None:
         )
     )
     result = await setup_rag_telemetry(db)  # type: ignore[arg-type]
-    assert result == RagTelemetrySetupResult(
-        schema_created=False,
-        table_created=False,
-        indexes_created=0,
-    )
+    assert result.schema_created is False
+    assert result.table_created is False
+    assert result.indexes_created == 0
     # All five DDL statements still ran (idempotent — the table /
     # indexes / schema may exist by name but with a different shape).
     assert len(db.unmanaged) == 5
+    # No-op result still records the SQL that ran — the operation
+    # was idempotent, not skipped.
+    assert result.setup_sql == tuple(db.unmanaged)
 
 
 # --- log_rerank_event validation -------------------------------------------
@@ -242,11 +277,9 @@ async def test_setup_rag_telemetry_registers_with_ddl_opt_in() -> None:
 
 
 from mcpg.rag_telemetry import (  # noqa: E402
-    EfficiencyObservationsSetupResult,
     RecordEfficiencyObservationResult,
     recommend_efficiency_thresholds,
     record_efficiency_observation,
-    setup_efficiency_observations,
 )
 
 
@@ -304,13 +337,12 @@ def test_percentile_implementations_match_across_modules() -> None:
 async def test_setup_efficiency_observations_first_run_creates_table_and_indexes() -> None:
     db = FakeDatabase(FakeRoutingDriver({}))  # type: ignore[arg-type]
     result = await setup_efficiency_observations(db)  # type: ignore[arg-type]
-    assert result == EfficiencyObservationsSetupResult(
-        schema_created=True,
-        table_created=True,
-        indexes_created=2,
-    )
+    assert result.schema_created is True
+    assert result.table_created is True
+    assert result.indexes_created == 2
     # Four run_unmanaged calls: schema + table + 2 indexes.
     assert len(db.unmanaged) == 4
+    assert result.setup_sql == tuple(db.unmanaged)
 
 
 async def test_setup_efficiency_observations_idempotent_when_exists() -> None:

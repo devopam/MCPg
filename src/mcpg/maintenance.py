@@ -27,10 +27,19 @@ class MaintenanceError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class MaintenanceResult:
-    """The outcome of a maintenance run."""
+    """The outcome of a maintenance run.
+
+    :attr:`maintenance_sql` carries the rendered DDL that actually
+    executed (e.g. ``VACUUM (ANALYZE) "public"."docs"``) — same
+    record-the-SQL invariant ``CreateIndexResult.create_sql`` and
+    ``ReindexResult.reindex_sql`` enforce on the pg_search /
+    turboquant DDL surfaces. Audit / change-review callers get a
+    consistent shape across every DDL-emitting tool.
+    """
 
     operation: str
     target: str
+    maintenance_sql: str = ""
 
 
 def _quote_identifier(name: str) -> str:
@@ -59,8 +68,9 @@ async def run_maintenance(database: Database, operation: str, schema: str, table
         raise MaintenanceError(f"unknown operation {operation!r}; expected one of {expected}")
     target = f"{_quote_identifier(schema)}.{_quote_identifier(table)}"
     label = f"{schema}.{table}"
+    sql = f"{command} {target}"
     try:
-        await database.run_unmanaged(f"{command} {target}")
+        await database.run_unmanaged(sql)
     except Exception as exc:
         raise MaintenanceError(f"{operation} on {label} failed: {exc}") from exc
-    return MaintenanceResult(operation=operation, target=label)
+    return MaintenanceResult(operation=operation, target=label, maintenance_sql=sql)
