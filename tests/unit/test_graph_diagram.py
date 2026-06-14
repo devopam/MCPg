@@ -8,6 +8,7 @@ from _fakes import FakeDatabase, FakeRoutingDriver
 from mcpg.config import Settings
 from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
+from mcpg.graph import GraphError
 from mcpg.graph_diagram import generate_graph_diagram
 from mcpg.listen import ListenManager
 
@@ -24,7 +25,7 @@ async def test_generate_graph_diagram_validates_inputs() -> None:
         cursor_manager=CursorManager(url),
     )
 
-    with pytest.raises(ValueError, match="invalid graph name"):
+    with pytest.raises(GraphError, match="invalid graph name"):
         await generate_graph_diagram(context, "my-graph-with-dashes")
 
 
@@ -40,7 +41,7 @@ async def test_generate_graph_diagram_raises_error_if_not_exists() -> None:
         cursor_manager=CursorManager(url),
     )
 
-    with pytest.raises(ValueError, match="graph 'my_graph' does not exist"):
+    with pytest.raises(GraphError, match="graph 'my_graph' does not exist"):
         await generate_graph_diagram(context, "my_graph")
 
 

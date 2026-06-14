@@ -31,13 +31,16 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import httpx
 
 from mcpg._vendor.sql import SqlDriver
 from mcpg.introspection import describe_table, list_foreign_keys, list_tables
 from mcpg.query import DEFAULT_MAX_ROWS, QueryError, run_select
+
+if TYPE_CHECKING:
+    from mcpg.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +275,96 @@ class GeminiProvider:
 def is_valid_provider(name: str) -> bool:
     """Return ``True`` for any name :func:`build_provider` will accept."""
     return name in _SUPPORTED_PROVIDERS
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderCallParams:
+    """The fully-resolved set of inputs needed to call one provider.
+
+    Produced by :func:`resolve_provider_call_params` so the tool
+    wrapper layer in :mod:`mcpg.tools` doesn't carry provider-
+    selection / API-key dispatch / model-override logic. The tool
+    wrapper becomes a thin pass-through: build a provider with the
+    constructor args here, then call :func:`translate_nl_to_sql`.
+    """
+
+    provider_name: str
+    api_key: str
+    model: str
+    base_url: str | None
+
+
+def resolve_provider_call_params(settings: Settings, requested_provider: str | None) -> ProviderCallParams:
+    """Pick the provider for this call and resolve its full call shape.
+
+    Threads three signals together:
+
+    1. ``requested_provider`` from the caller (``provider=`` arg on
+       ``translate_nl_to_sql``) — highest precedence.
+    2. ``settings.nl2sql_provider`` (``MCPG_NL2SQL_PROVIDER``) — the
+       operator-configured default.
+    3. Whatever vendor keys are present in the operator-supplied
+       credentials. If neither (1) nor (2) is set, fail fast — this
+       is a configuration issue the caller can't solve.
+
+    Overrides for ``model`` / ``base_url`` only apply when the chosen
+    provider IS the configured default. Forwarding an Anthropic-shaped
+    model id to an OpenAI call (or vice versa) would just break, so
+    non-default calls always use the upstream default model + no
+    base_url override.
+    """
+    api_keys = dict(settings.nl2sql_api_keys)
+    # Normalize each candidate *individually* and only then pick the
+    # first non-empty one. A bare ``(a or b or "").strip().lower()``
+    # would let a whitespace-only ``requested_provider`` short-circuit
+    # the chain (``"   "`` is truthy) and bury a perfectly-valid
+    # operator default behind a misleading "no provider configured"
+    # error (gemini review on #102).
+    requested_norm = (requested_provider or "").strip().lower() or None
+    default_norm = (settings.nl2sql_provider or "").strip().lower() or None
+    chosen = requested_norm or default_norm
+    if chosen is None:
+        # No provider arg AND no default configured AND no vendor keys
+        # in the env — provider= alone can't fix this, the operator
+        # needs to set at least one vendor API key.
+        raise NL2SQLError(
+            "translate_nl_to_sql has no provider configured. Set at "
+            "least one of ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+            "GEMINI_API_KEY (or GOOGLE_API_KEY) in the server's "
+            "environment. The tool's provider= argument selects "
+            "between providers that are already configured — it can't "
+            "supply credentials on its own."
+        )
+    if not is_valid_provider(chosen):
+        raise NL2SQLError(f"unknown NL→SQL provider {chosen!r}; supported: anthropic, openai, gemini")
+    api_key = api_keys.get(chosen)
+    if api_key is None:
+        configured = sorted(api_keys) or ["(none)"]
+        raise NL2SQLError(
+            f"provider {chosen!r} is not configured (currently configured: "
+            f"{', '.join(configured)}). Set {VENDOR_ENV_VAR_HINT[chosen]} "
+            "in the environment, or pick a configured provider via the "
+            "provider= argument."
+        )
+
+    # Compare against the normalized form of the configured default —
+    # ``chosen`` is already strip()ped + lower()ed and
+    # ``settings.nl2sql_provider`` can carry mixed casing or stray
+    # whitespace from the env. Without normalization here, a default
+    # like ``"Anthropic\n"`` would silently disable the operator's
+    # ``MCPG_NL2SQL_MODEL`` / ``MCPG_NL2SQL_BASE_URL`` overrides and
+    # route traffic at the public endpoint — gemini review on #102
+    # called this out as security-critical (the base_url path is
+    # often a private proxy / regional gateway).
+    is_default = chosen == default_norm
+    model = settings.nl2sql_model if (is_default and settings.nl2sql_model) else DEFAULT_MODELS[chosen]
+    base_url = settings.nl2sql_base_url if is_default else None
+    return ProviderCallParams(
+        provider_name=chosen,
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+    )
 
 
 def build_provider(

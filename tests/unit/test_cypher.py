@@ -9,6 +9,7 @@ from mcpg.config import AccessMode, Settings
 from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
 from mcpg.cypher import parse_return_columns, run_cypher
+from mcpg.graph import GraphError
 from mcpg.listen import ListenManager
 from mcpg.policy import PermissionError
 
@@ -35,7 +36,7 @@ async def test_run_cypher_validates_inputs() -> None:
         cursor_manager=CursorManager(url),
     )
 
-    with pytest.raises(ValueError, match="invalid graph name"):
+    with pytest.raises(GraphError, match="invalid graph name"):
         await run_cypher(context, "my-graph-with-dashes", "MATCH (n) RETURN n")
 
 
@@ -51,7 +52,7 @@ async def test_run_cypher_checks_graph_existence() -> None:
         cursor_manager=CursorManager(url),
     )
 
-    with pytest.raises(ValueError, match="graph 'my_graph' does not exist"):
+    with pytest.raises(GraphError, match="graph 'my_graph' does not exist"):
         await run_cypher(context, "my_graph", "MATCH (n) RETURN n")
 
 

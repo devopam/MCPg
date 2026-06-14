@@ -19,6 +19,16 @@ from typing import Any
 
 from mcpg._vendor.sql import SqlDriver
 
+
+class LocksError(Exception):
+    """Raised on invalid input to a lock-inspection function.
+
+    Matches the ``*Error``-per-module convention every other surface
+    follows (PgSearchError, TurboQuantError, GraphError, …) rather
+    than the bare ``ValueError`` the lock helpers used to raise.
+    """
+
+
 DEFAULT_LOCK_LIMIT = 100
 DEFAULT_BLOCKING_LIMIT = 50
 
@@ -73,7 +83,7 @@ async def list_locks(driver: SqlDriver, *, limit: int = DEFAULT_LOCK_LIMIT) -> l
     — the entries most likely to need agent attention.
     """
     if limit < 1:
-        raise ValueError("limit must be >= 1")
+        raise LocksError("limit must be >= 1")
     rows = await driver.execute_query(
         "SELECT l.pid, l.locktype, l.mode, l.granted, "
         "       CASE WHEN l.relation IS NOT NULL "
@@ -121,7 +131,7 @@ async def find_blocking_chains(driver: SqlDriver, *, limit: int = DEFAULT_BLOCKI
     becomes one row.
     """
     if limit < 1:
-        raise ValueError("limit must be >= 1")
+        raise LocksError("limit must be >= 1")
     rows = await driver.execute_query(
         "SELECT blocked.pid AS blocked_pid, "
         "       LEFT(blocked.query, 200) AS blocked_query, "
@@ -390,7 +400,7 @@ async def walk_blocking_chains(driver: SqlDriver, *, limit: int = DEFAULT_BLOCKI
     and renders a Mermaid flowchart representing the lock dependency graph.
     """
     if limit < 1:
-        raise ValueError("limit must be >= 1")
+        raise LocksError("limit must be >= 1")
 
     rows = await driver.execute_query(
         "SELECT blocked.pid AS blocked_pid, "

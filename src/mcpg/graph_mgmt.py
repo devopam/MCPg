@@ -11,6 +11,7 @@ from typing import TypedDict
 
 from mcpg.context import AppContext
 from mcpg.database import DatabaseError
+from mcpg.graph import GraphError
 from mcpg.policy import Capability, check_permission
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ async def create_graph(context: AppContext, graph_name: str) -> GraphMgmtResult:
     """
     # 1. Validate name
     if not graph_name.replace("_", "").isalnum() or graph_name[0].isdigit():
-        raise ValueError(f"invalid graph name: {graph_name!r}")
+        raise GraphError(f"invalid graph name: {graph_name!r}")
 
     # 2. Gate under DDL permission
     check_permission(Capability.DDL, context.settings.access_mode)
@@ -78,7 +79,7 @@ async def drop_graph(context: AppContext, graph_name: str, cascade: bool = True)
     """
     # 1. Validate name
     if not graph_name.replace("_", "").isalnum() or graph_name[0].isdigit():
-        raise ValueError(f"invalid graph name: {graph_name!r}")
+        raise GraphError(f"invalid graph name: {graph_name!r}")
 
     # 2. Gate under DDL permission
     check_permission(Capability.DDL, context.settings.access_mode)

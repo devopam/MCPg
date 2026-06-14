@@ -15,6 +15,20 @@ from mcpg.context import AppContext
 from mcpg.database import DatabaseError
 
 
+class GraphError(Exception):
+    """Raised on invalid input or invariant violations across the
+    Apache AGE graph integration.
+
+    Shared by :mod:`mcpg.graph`, :mod:`mcpg.cypher`,
+    :mod:`mcpg.graph_mgmt`, and :mod:`mcpg.graph_diagram` — every
+    public-facing wrapper raises this rather than a bare
+    :class:`ValueError`, so callers get one consistent error class
+    to catch (matches the ``*Error``-per-module convention every
+    other surface follows: PgSearchError, TurboQuantError,
+    SecretsError, …).
+    """
+
+
 class GraphInfo(TypedDict):
     """Structured information about an Apache AGE graph."""
 
@@ -99,7 +113,7 @@ async def describe_graph(context: AppContext, graph_name: str) -> GraphDescripti
     """
     # Defensive quoting validation
     if not graph_name.replace("_", "").isalnum() or graph_name[0].isdigit():
-        raise ValueError(f"invalid graph name: {graph_name!r}")
+        raise GraphError(f"invalid graph name: {graph_name!r}")
 
     driver = context.database.driver()
 
@@ -113,7 +127,7 @@ async def describe_graph(context: AppContext, graph_name: str) -> GraphDescripti
         raise DatabaseError("could not query graph metadata") from exc
 
     if not graph_rows:
-        raise ValueError(f"graph {graph_name!r} does not exist")
+        raise GraphError(f"graph {graph_name!r} does not exist")
 
     # Load age to ensure graph functions are visible
     await driver.execute_query("LOAD 'age';")

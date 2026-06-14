@@ -13,7 +13,7 @@ from typing import Any, TypedDict
 
 from mcpg.context import AppContext
 from mcpg.database import DatabaseError
-from mcpg.graph import parse_agtype
+from mcpg.graph import GraphError, parse_agtype
 from mcpg.policy import Capability, check_permission
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ async def run_cypher(
     """
     # 1. Defensive validation of graph_name
     if not graph_name.replace("_", "").isalnum() or graph_name[0].isdigit():
-        raise ValueError(f"invalid graph name: {graph_name!r}")
+        raise GraphError(f"invalid graph name: {graph_name!r}")
 
     # 2. Safety / Write checks: Cypher statements can modify graph state.
     # We inspect if the Cypher query contains modifying keywords as single words.
@@ -106,7 +106,7 @@ async def run_cypher(
         raise DatabaseError("could not verify graph existence") from exc
 
     if not graph_rows:
-        raise ValueError(f"graph {graph_name!r} does not exist")
+        raise GraphError(f"graph {graph_name!r} does not exist")
 
     # 4. Parse return columns and run the cypher() call on a DEDICATED
     #    pool checkout so ``SET LOCAL search_path`` auto-resets at the
