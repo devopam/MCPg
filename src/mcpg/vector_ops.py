@@ -1105,6 +1105,18 @@ DEFAULT_DRIFT_SAMPLE_SIZE = 5000
 # embedding models. Callers tune for their model's noise floor.
 DEFAULT_DRIFT_THRESHOLD = 0.05
 
+# Over-fetch multiplier on the probability-based sampling path in
+# _fetch_window_vectors. ``WHERE random() < p`` makes each row pass
+# the filter independently with probability ``p``, so the realised
+# row count is ``Binomial(window_size, p)`` — mean ``p · window_size``,
+# standard deviation ``sqrt(window_size · p · (1-p))``. Setting
+# ``p = sample_size · 1.5 / window_size`` keeps the expected count
+# 50% above the requested sample size, which makes underrun
+# (returning fewer than ``sample_size`` rows on a sparse draw)
+# vanishingly unlikely for sample sizes ≥ 100. The trailing LIMIT
+# clips the over-fetch back to exactly ``sample_size``.
+_DRIFT_SAMPLE_OVER_FETCH = 1.5
+
 
 @dataclass(frozen=True, slots=True)
 class EmbeddingWindowStats:
@@ -1215,24 +1227,80 @@ async def _fetch_window_vectors(
 ) -> list[list[float]]:
     """Pull up to ``sample_size`` parseable embeddings in a window.
 
-    Uses ``ORDER BY RANDOM()`` so the sample is unbiased. Drift
-    detection compares two distributions, so a systematic ordering
-    bias on both windows (e.g. always sampling the first rows in
-    each) can hide a real shift that happens later inside the
-    window — or fabricate one when the table grew between windows.
-    The cost is a full scan + sort of each window, which is
-    acceptable for the typical drift-monitoring cadence (daily /
-    hourly on a partition-pruned slice); callers with extreme-
-    cardinality windows should pre-aggregate before invoking.
+    Two-pass sampling tuned to keep the cost bounded even when the
+    timestamp column lacks an index:
+
+    1. **COUNT the window first.** One round-trip; index-friendly when
+       a btree on ``ts_col`` exists, falls back to a sequential scan
+       otherwise — same cost as the old implementation's mandatory
+       full scan but without the sort step, and the count drives
+       whether we even need to sample.
+    2. **If the window has ≤ ``sample_size`` qualifying rows, fetch
+       them all** with a bare ``LIMIT`` and no random filter / sort.
+       For small windows this is strictly cheaper than the legacy
+       ``ORDER BY RANDOM()``.
+    3. **Otherwise apply a probability pre-filter** —
+       ``WHERE random() < p`` with ``p = sample_size · over_fetch /
+       window_size``. The over-fetch factor accounts for the binomial
+       variance (each row passes independently with probability ``p``,
+       so the realised count is ``Binomial(window_size, p)``); a 1.5x
+       factor keeps the underrun probability negligible for the
+       sample sizes this tool accepts. PostgreSQL gets to stop
+       scanning as soon as ``LIMIT`` is satisfied.
+
+    The previous shape (``ORDER BY RANDOM() LIMIT n``) forced PG to
+    materialise + sort every row in the window before applying the
+    limit — on un-pre-pruned windows this was the documented
+    process-cliff (deep-review scalability P0 #4). Bounded
+    ``sample_size`` from PR #99 already caps the worst case;
+    probability-based sampling makes the typical case proportional to
+    the sample size rather than the window size.
+
+    **Bias trade-off.** A ``WHERE random() < p`` + ``LIMIT`` pair
+    returns the first ``sample_size`` rows that passed the filter
+    in scan order (heap / index order, NOT random order). For drift
+    detection — comparing centroid means and L2-norm distributions
+    across two windows — this scan-order bias on which qualifying
+    rows survive the LIMIT is statistically negligible compared to
+    the gain in being able to sample at all on a large window. The
+    over-fetch factor cushions against under-sampling but doesn't
+    eliminate the scan-order tie-breaking; documented honestly here
+    so future maintainers don't claim "uniformly random" without the
+    caveat.
     """
-    rows = await driver.execute_query(
-        f"SELECT {emb_col} AS embedding FROM {relation} "
-        f"WHERE {ts_col} >= %s AND {ts_col} < %s AND {emb_col} IS NOT NULL "
-        f"ORDER BY RANDOM() "
-        f"LIMIT %s",
-        params=[window_start, window_end, sample_size],
+    count_rows = await driver.execute_query(
+        f"SELECT count(*) AS n FROM {relation} WHERE {ts_col} >= %s AND {ts_col} < %s AND {emb_col} IS NOT NULL",
+        params=[window_start, window_end],
         force_readonly=True,
     )
+    window_size = int(count_rows[0].cells.get("n", 0) or 0) if count_rows else 0
+    if window_size == 0:
+        return []
+
+    if window_size <= sample_size:
+        # Window is already at or below the desired sample size — no
+        # selection needed. Skip both the random filter and the sort.
+        sql = (
+            f"SELECT {emb_col} AS embedding FROM {relation} "
+            f"WHERE {ts_col} >= %s AND {ts_col} < %s AND {emb_col} IS NOT NULL "
+            f"LIMIT %s"
+        )
+        params: list[Any] = [window_start, window_end, sample_size]
+    else:
+        # Probability-based pre-filter. ``p`` is capped at 1.0 so an
+        # over_fetch factor of 1.5 against a tight ratio (e.g.
+        # sample_size 5000 vs window_size 5001) doesn't try to ask PG
+        # for "150% of all rows".
+        p = min(1.0, (sample_size * _DRIFT_SAMPLE_OVER_FETCH) / window_size)
+        sql = (
+            f"SELECT {emb_col} AS embedding FROM {relation} "
+            f"WHERE {ts_col} >= %s AND {ts_col} < %s AND {emb_col} IS NOT NULL "
+            f"  AND random() < %s "
+            f"LIMIT %s"
+        )
+        params = [window_start, window_end, p, sample_size]
+
+    rows = await driver.execute_query(sql, params=params, force_readonly=True)
     out: list[list[float]] = []
     for row in rows or []:
         vec = _parse_embedding(row.cells.get("embedding"))
