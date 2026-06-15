@@ -242,6 +242,31 @@ async def test_migrate_native_applies_lz4_on_pg_14_plus() -> None:
     assert "ALTER COLUMN error SET COMPRESSION lz4" in queries
 
 
+async def test_native_migration_sent_as_single_write_call() -> None:
+    """The migration DDL must be batched into ONE execute_query call so
+    the ACCESS EXCLUSIVE lock holds across all statements. If the
+    LOCK / RENAME / CREATE / INSERT / DROP each ran as separate
+    execute_query calls, the driver's per-call COMMIT
+    (sql_driver.py:249/260) would release the lock immediately,
+    letting concurrent record_audit calls race the rename dance and
+    risk row loss / FK violations (symmetric fix to the one applied
+    to mcpg.rag_telemetry after the gemini critical review on
+    PR #110)."""
+    driver = FakeRoutingDriver(_native_existing_routes())
+    await migrate_audit_events_to_partitioned(driver, env={})  # type: ignore[arg-type]
+
+    write_calls = [c for c in driver.calls if c[2] is False]
+    migration_write_calls = [c for c in write_calls if "LOCK TABLE" in c[0] or "INSERT INTO mcpg_audit.events" in c[0]]
+    # Exactly one batched write — the migration itself. RLS apply
+    # statements that follow may be separate (independent
+    # operations).
+    assert len(migration_write_calls) == 1
+    sql = migration_write_calls[0][0]
+    assert "LOCK TABLE mcpg_audit.events IN ACCESS EXCLUSIVE MODE" in sql
+    assert "INSERT INTO mcpg_audit.events" in sql
+    assert "DROP TABLE mcpg_audit.events_migration_legacy" in sql
+
+
 async def test_migrate_native_skips_lz4_on_pg_13() -> None:
     """Server_version_num < 140000 → version probe returns and we
     skip the LZ4 ALTERs entirely, preserving transaction integrity."""
