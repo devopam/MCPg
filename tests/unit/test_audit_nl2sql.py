@@ -249,3 +249,52 @@ async def test_list_nl2sql_events_rejects_non_positive_limit() -> None:
 def test_audit_constants_use_expected_names() -> None:
     assert AUDIT_SCHEMA == "mcpg_audit"
     assert AUDIT_TABLE == "nl2sql_events"
+
+
+async def test_resolve_settings_rejects_chunk_interval_with_injection() -> None:
+    """Interval strings flow into DDL as ``INTERVAL '<value>'`` and
+    can't be parameterised — anything that doesn't match
+    ``<digits> <unit>`` is refused before reaching the driver
+    (gemini critical review, PR #107)."""
+    with pytest.raises(NL2SQLAuditError, match="CHUNK_INTERVAL"):
+        await ensure_nl2sql_audit_table(
+            FakeRoutingDriver(_no_extensions_routes()),  # type: ignore[arg-type]
+            env={"MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL": "1 day'); DROP TABLE x; --"},
+        )
+
+
+async def test_resolve_settings_rejects_compress_after_with_injection() -> None:
+    with pytest.raises(NL2SQLAuditError, match="COMPRESS_AFTER"):
+        await ensure_nl2sql_audit_table(
+            FakeRoutingDriver(_no_extensions_routes()),  # type: ignore[arg-type]
+            env={"MCPG_NL2SQL_AUDIT_COMPRESS_AFTER": "7 days; SELECT 1"},
+        )
+
+
+async def test_resolve_settings_accepts_legitimate_interval_shapes() -> None:
+    """Bare digit + unit (singular or plural) passes; the DDL doesn't
+    care about whitespace or case."""
+    for value in ("1 day", "7 DAYS", "30 minutes", "12 hours", "2 weeks"):
+        # No raise — ensure_nl2sql_audit_table runs through the validator
+        # on its way to the driver.
+        _reset_setup_cache()
+        await ensure_nl2sql_audit_table(
+            FakeRoutingDriver(_no_extensions_routes()),  # type: ignore[arg-type]
+            env={"MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL": value, "MCPG_NL2SQL_AUDIT_COMPRESS_AFTER": value},
+        )
+
+
+async def test_cached_path_returns_real_backend_not_default() -> None:
+    """Second call on the same driver must report whichever backend
+    was chosen on the first call — the previous version recomputed via
+    env and silently defaulted to ``'native'`` when the operator's
+    forced choice was TimescaleDB but env was empty afterwards
+    (sourcery review, PR #107)."""
+    # Mock TimescaleDB as available so first call selects it.
+    driver = FakeRoutingDriver(_timescaledb_present_routes())
+    first = await ensure_nl2sql_audit_table(driver, env={})  # type: ignore[arg-type]
+    assert first.backend == "timescaledb"
+    # Same driver, no env at all on the second call.
+    second = await ensure_nl2sql_audit_table(driver, env={})  # type: ignore[arg-type]
+    assert second.backend == "timescaledb"
+    assert second.table_created is False

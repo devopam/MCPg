@@ -258,6 +258,41 @@ def test_nl2sql_audit_backend_rejects_unknown_choice() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "var,bad_value",
+    [
+        ("MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL", "1 day'); DROP TABLE x"),
+        ("MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL", "daily"),  # pg_partman preset, not supported
+        ("MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL", "1d"),  # missing unit word
+        ("MCPG_NL2SQL_AUDIT_COMPRESS_AFTER", "7 days; SELECT 1"),
+        ("MCPG_NL2SQL_AUDIT_COMPRESS_AFTER", "forever"),
+    ],
+)
+def test_nl2sql_audit_intervals_fail_fast_on_malformed_values(var: str, bad_value: str) -> None:
+    """Interval strings flow into DDL as ``INTERVAL '<value>'`` and
+    must match ``<digits> <unit>`` — the loader fails at startup so a
+    misconfigured env never reaches the driver."""
+    with pytest.raises(ConfigError, match=var):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, var: bad_value})
+
+
+def test_nl2sql_audit_intervals_repr_round_trip_in_settings() -> None:
+    """sourcery review: the new fields must show up in repr() so
+    runtime misconfigurations are easy to spot in logs."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL": "2 hours",
+            "MCPG_NL2SQL_AUDIT_COMPRESS_AFTER": "3 days",
+            "MCPG_NL2SQL_AUDIT_READER_ROLE": "audit_ro",
+        }
+    )
+    rendered = repr(settings)
+    assert "nl2sql_audit_chunk_interval='2 hours'" in rendered
+    assert "nl2sql_audit_compress_after='3 days'" in rendered
+    assert "nl2sql_audit_reader_role='audit_ro'" in rendered
+
+
 def test_nl2sql_provider_rejects_unknown_vendor() -> None:
     with pytest.raises(ConfigError, match="MCPG_NL2SQL_PROVIDER"):
         load_settings(

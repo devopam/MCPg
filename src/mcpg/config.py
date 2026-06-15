@@ -249,7 +249,10 @@ class Settings:
             f"nl2sql_audit_persist={self.nl2sql_audit_persist}, "
             f"nl2sql_audit_backend={self.nl2sql_audit_backend!r}, "
             f"nl2sql_audit_retention_days={self.nl2sql_audit_retention_days}, "
+            f"nl2sql_audit_chunk_interval={self.nl2sql_audit_chunk_interval!r}, "
+            f"nl2sql_audit_compress_after={self.nl2sql_audit_compress_after!r}, "
             f"nl2sql_audit_rls={self.nl2sql_audit_rls}, "
+            f"nl2sql_audit_reader_role={self.nl2sql_audit_reader_role!r}, "
             f"rate_limit_enabled={self.rate_limit_enabled}, "
             f"rate_limit_max_requests={self.rate_limit_max_requests}, "
             f"rate_limit_window_seconds={self.rate_limit_window_seconds}, "
@@ -650,11 +653,26 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if (raw := env.get("MCPG_NL2SQL_AUDIT_RETENTION_DAYS")) is not None:
         nl2sql_audit_retention_days = _parse_positive_int("MCPG_NL2SQL_AUDIT_RETENTION_DAYS", raw)
 
+    # Interval strings here reach Timescale / pg_partman DDL as
+    # ``INTERVAL '<value>'`` and can't be parameterised — pin them to
+    # ``<digits> <unit>`` at startup so a misconfigured env can't
+    # smuggle SQL into the audit-table setup path
+    # (gemini critical review, PR #107).
+    _interval_pattern = re.compile(
+        r"\A\d+\s+(?:second|minute|hour|day|week|month|year)s?\Z",
+        re.IGNORECASE,
+    )
+
     nl2sql_audit_chunk_interval = "1 day"
     if (raw := env.get("MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL")) is not None:
         stripped = raw.strip()
         if not stripped:
             raise ConfigError("MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL must not be blank when set")
+        if not _interval_pattern.match(stripped):
+            raise ConfigError(
+                f"MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL {stripped!r} is not a valid interval "
+                "(expected: <digits> <second|minute|hour|day|week|month|year>[s])"
+            )
         nl2sql_audit_chunk_interval = stripped
 
     nl2sql_audit_compress_after = "7 days"
@@ -662,6 +680,11 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         stripped = raw.strip()
         if not stripped:
             raise ConfigError("MCPG_NL2SQL_AUDIT_COMPRESS_AFTER must not be blank when set")
+        if not _interval_pattern.match(stripped):
+            raise ConfigError(
+                f"MCPG_NL2SQL_AUDIT_COMPRESS_AFTER {stripped!r} is not a valid interval "
+                "(expected: <digits> <second|minute|hour|day|week|month|year>[s])"
+            )
         nl2sql_audit_compress_after = stripped
 
     nl2sql_audit_rls = True

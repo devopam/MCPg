@@ -61,6 +61,19 @@ _QUALIFIED = f"{AUDIT_SCHEMA}.{AUDIT_TABLE}"
 # before any DDL is built.
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
+# Strict pattern for the interval strings we inline into TimescaleDB /
+# pg_partman DDL (chunk_time_interval, compression policy after-window,
+# partman partition_interval). These reach SQL as ``INTERVAL '<value>'``
+# — psycopg can't parameterise an interval inside a function call —
+# so anything sneaking past the regex would land as DDL. Lock to a
+# digit-count + unit shape; pg_partman's ``"daily"`` / ``"monthly"``
+# string presets are intentionally rejected (operators pick a numeric
+# form to keep the validator simple and the surface narrow).
+_INTERVAL_PATTERN = re.compile(
+    r"\A\d+\s+(?:second|minute|hour|day|week|month|year)s?\Z",
+    re.IGNORECASE,
+)
+
 Backend = Literal["timescaledb", "pg_partman", "native"]
 _KNOWN_BACKENDS: frozenset[str] = frozenset({"timescaledb", "pg_partman", "native"})
 
@@ -107,8 +120,11 @@ class NL2SQLAuditEntry:
 
 
 # Per-driver cache mirroring audit_trail.ensure_audit_table — keyed by
-# id(driver) so it doesn't pin objects in memory or survive test teardown.
-_ENSURED_DRIVER_IDS: set[int] = set()
+# id(driver) so it doesn't pin objects in memory or survive test
+# teardown. Value is the backend selected on the first call so the
+# cached-path NL2SQLAuditSetupResult can report the real backend
+# instead of defaulting to ``'native'`` (sourcery review, PR #107).
+_ENSURED_DRIVER_BACKENDS: dict[int, Backend] = {}
 _ENSURE_LOCK: asyncio.Lock | None = None
 
 
@@ -121,7 +137,7 @@ def _get_lock() -> asyncio.Lock:
 
 def _reset_setup_cache() -> None:
     """Test-only escape hatch — forget which drivers have been initialised."""
-    _ENSURED_DRIVER_IDS.clear()
+    _ENSURED_DRIVER_BACKENDS.clear()
 
 
 def _check_identifier(name: str, *, kind: str) -> None:
@@ -129,6 +145,18 @@ def _check_identifier(name: str, *, kind: str) -> None:
         raise NL2SQLAuditError(
             f"{kind} {name!r} is not a valid unquoted SQL identifier — must match {_IDENTIFIER.pattern}"
         )
+
+
+def _check_interval(value: str, *, kind: str) -> None:
+    """Defence-in-depth interval validator.
+
+    config.load_settings already rejects malformed values at startup;
+    this catches direct callers (test harnesses, multi-tenant runners)
+    that pass a custom ``env`` mapping with a value that never went
+    through the loader.
+    """
+    if not isinstance(value, str) or not _INTERVAL_PATTERN.match(value):
+        raise NL2SQLAuditError(f"{kind} {value!r} is not a valid interval — must match {_INTERVAL_PATTERN.pattern}")
 
 
 async def detect_backend(
@@ -193,7 +221,9 @@ def _resolve_settings(
     if retention_days < 1:
         raise NL2SQLAuditError(f"MCPG_NL2SQL_AUDIT_RETENTION_DAYS must be a positive integer; got {retention_raw!r}")
     chunk_interval = (source.get("MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL") or "").strip() or "1 day"
+    _check_interval(chunk_interval, kind="MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL")
     compress_after = (source.get("MCPG_NL2SQL_AUDIT_COMPRESS_AFTER") or "").strip() or "7 days"
+    _check_interval(compress_after, kind="MCPG_NL2SQL_AUDIT_COMPRESS_AFTER")
     rls_raw = (source.get("MCPG_NL2SQL_AUDIT_RLS") or "").strip().lower()
     rls = True if rls_raw in ("", "true", "1", "yes", "on") else False
     reader_role = (source.get("MCPG_NL2SQL_AUDIT_READER_ROLE") or "").strip() or None
@@ -221,27 +251,38 @@ async def ensure_nl2sql_audit_table(
 
     Subsequent calls on the same driver instance are O(1) — the cache
     short-circuits before any catalog round-trip.
+
+    .. note::
+       The physical layout (native PG partitioned table vs Timescale
+       hypertable) is effectively fixed at the time the parent table
+       is first created. Changing ``MCPG_NL2SQL_AUDIT_BACKEND`` later
+       does **not** reshape the existing table — TimescaleDB's
+       ``create_hypertable`` is rejected on a partitioned parent and
+       vice-versa. Migrate the audit table (export + drop + re-create)
+       before swapping backends.
     """
-    if id(driver) in _ENSURED_DRIVER_IDS:
-        # Cached — return a minimal result; real values were logged on
-        # the first call and the table is already in steady state.
-        backend, *_ = _resolve_settings(env)
+    cached_backend = _ENSURED_DRIVER_BACKENDS.get(id(driver))
+    if cached_backend is not None:
+        # Cached — return a minimal result whose ``backend`` reflects
+        # what was actually selected on the first call (not a re-read
+        # of env, which would mis-report when the operator's forced
+        # choice didn't match the auto-detected backend).
         return NL2SQLAuditSetupResult(
             schema_created=False,
             table_created=False,
-            backend=(backend or "native"),  # type: ignore[arg-type]
+            backend=cached_backend,
             compression_enabled=False,
             retention_days=None,
             rls_enabled=False,
             reader_role=None,
         )
     async with _get_lock():
-        if id(driver) in _ENSURED_DRIVER_IDS:
-            backend, *_ = _resolve_settings(env)
+        cached_backend = _ENSURED_DRIVER_BACKENDS.get(id(driver))
+        if cached_backend is not None:
             return NL2SQLAuditSetupResult(
                 schema_created=False,
                 table_created=False,
-                backend=(backend or "native"),  # type: ignore[arg-type]
+                backend=cached_backend,
                 compression_enabled=False,
                 retention_days=None,
                 rls_enabled=False,
@@ -411,7 +452,7 @@ async def ensure_nl2sql_audit_table(
                 await driver.execute_query(sql_grant_t, force_readonly=False)
                 statements.append(sql_grant_t)
 
-        _ENSURED_DRIVER_IDS.add(id(driver))
+        _ENSURED_DRIVER_BACKENDS[id(driver)] = backend
         return NL2SQLAuditSetupResult(
             schema_created=True,
             table_created=True,
