@@ -237,6 +237,30 @@ async def test_migration_only_one_table_when_other_missing() -> None:
     assert result.migrated_efficiency is False
 
 
+async def test_native_migration_sent_as_single_write_call() -> None:
+    """The migration DDL must be batched into ONE execute_query call so
+    the ACCESS EXCLUSIVE lock is held across all statements. If the
+    LOCK / RENAME / CREATE / INSERT / DROP each ran as separate
+    execute_query calls, the driver's per-call COMMIT (sql_driver.py
+    L249/260) would release the lock immediately and let concurrent
+    writers race the rename dance (gemini critical review PR #110).
+    """
+    driver = FakeRoutingDriver(_native_existing_routes())
+    await migrate_rag_telemetry_to_partitioned(driver, env={})  # type: ignore[arg-type]
+
+    write_calls = [c for c in driver.calls if c[2] is False]
+    migration_write_calls = [c for c in write_calls if "LOCK TABLE" in c[0] or "INSERT INTO mcpg_rag" in c[0]]
+    # Exactly two write calls — one batch per table (rerank +
+    # efficiency). Each batch carries LOCK + RENAME + CREATE + INSERT
+    # + DROP in a single execute_query.
+    assert len(migration_write_calls) == 2
+    for call in migration_write_calls:
+        sql = call[0]
+        assert "LOCK TABLE" in sql
+        assert "INSERT INTO mcpg_rag" in sql
+        assert "DROP TABLE" in sql
+
+
 def test_migration_result_shape() -> None:
     result = RagTelemetryMigrationResult(
         migrated_rerank=True,

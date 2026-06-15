@@ -1021,42 +1021,47 @@ async def _rag_migrate_native(
 ) -> tuple[int, bool, list[str]]:
     """Rename + create partitioned + copy + drop legacy under one
     ACCESS EXCLUSIVE lock. Returns
-    ``(rows_copied, compression_enabled, statements)``."""
-    statements: list[str] = []
+    ``(rows_copied, compression_enabled, statements)``.
+
+    .. important::
+       All migration DDL is concatenated into a single multi-statement
+       string and sent via one :meth:`execute_query` call. The driver
+       commits at each ``execute_query`` boundary (line 249/260 of
+       sql_driver.py), so issuing the LOCK in its own call would
+       release the ACCESS EXCLUSIVE mode immediately and let
+       concurrent writers race the rename dance (gemini critical
+       review, PR #110). PG's simple-query protocol treats a
+       semicolon-separated batch as one implicit transaction, so the
+       lock holds for the entire migration when sent as one call.
+    """
+    # Reads are issued separately — they happen before the lock and
+    # don't need to be in the migration transaction.
     lo, hi, row_count = await _rag_data_range(driver, spec)
+    version_rows = await driver.execute_query(
+        "SELECT current_setting('server_version_num')::integer AS ver",
+        force_readonly=True,
+    )
+    pg_version = int(version_rows[0].cells["ver"]) if version_rows else 0
 
     qualified = f"{_SCHEMA_NAME}.{spec.table}"
     seq_qualified = f"{_SCHEMA_NAME}.{spec.table}_{spec.pk_column}_seq"
     legacy = f"{spec.table}_migration_legacy"
     legacy_qualified = f"{_SCHEMA_NAME}.{legacy}"
 
-    sql_lock = f"LOCK TABLE {qualified} IN ACCESS EXCLUSIVE MODE"
-    await driver.execute_query(sql_lock, force_readonly=False)
-    statements.append(sql_lock)
-
-    sql_seq_detach = f"ALTER SEQUENCE {seq_qualified} OWNED BY NONE"
-    await driver.execute_query(sql_seq_detach, force_readonly=False)
-    statements.append(sql_seq_detach)
-
-    sql_rename = f"ALTER TABLE {qualified} RENAME TO {legacy}"
-    await driver.execute_query(sql_rename, force_readonly=False)
-    statements.append(sql_rename)
-
-    await driver.execute_query(spec.create_ddl, force_readonly=False)
-    statements.append(spec.create_ddl)
-
-    sql_seq_attach = f"ALTER SEQUENCE {seq_qualified} OWNED BY {qualified}.{spec.pk_column}"
-    await driver.execute_query(sql_seq_attach, force_readonly=False)
-    statements.append(sql_seq_attach)
+    statements: list[str] = [
+        f"LOCK TABLE {qualified} IN ACCESS EXCLUSIVE MODE",
+        f"ALTER SEQUENCE {seq_qualified} OWNED BY NONE",
+        f"ALTER TABLE {qualified} RENAME TO {legacy}",
+        spec.create_ddl,
+        f"ALTER SEQUENCE {seq_qualified} OWNED BY {qualified}.{spec.pk_column}",
+    ]
 
     # Monthly partitions across data range + ±7 daily trailing/forward.
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     if lo is not None and hi is not None:
         cursor = lo.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         while cursor <= hi:
-            sql_part = _rag_native_monthly_partition_sql(spec, cursor)
-            await driver.execute_query(sql_part, force_readonly=False)
-            statements.append(sql_part)
+            statements.append(_rag_native_monthly_partition_sql(spec, cursor))
             cursor = (
                 cursor.replace(year=cursor.year + 1, month=1)
                 if cursor.month == 12
@@ -1064,41 +1069,35 @@ async def _rag_migrate_native(
             )
     for offset_d in range(-_RAG_NATIVE_WINDOW_DAYS, _RAG_NATIVE_WINDOW_DAYS + 1):
         day = today + timedelta(days=offset_d)
-        sql_day = _rag_native_daily_partition_sql(spec, day)
         if lo is not None and hi is not None:
             month_start = day.replace(day=1)
             if month_start <= hi.replace(day=1):
                 # Monthly partition for this month already covers it.
                 continue
-        await driver.execute_query(sql_day, force_readonly=False)
-        statements.append(sql_day)
+        statements.append(_rag_native_daily_partition_sql(spec, day))
 
     col_list = ", ".join(spec.columns)
-    sql_copy = (
+    statements.append(
         f"INSERT INTO {qualified} ({col_list}) SELECT {col_list} FROM {legacy_qualified} ORDER BY {spec.pk_column}"
     )
-    await driver.execute_query(sql_copy, force_readonly=False)
-    statements.append(sql_copy)
 
-    # LZ4 (PG 14+). Probe the server version up front — a failed
-    # ALTER inside this transaction aborts everything that follows
-    # (DROP legacy), same gotcha as PR #109.
+    # LZ4 (PG 14+). Decided up front from the version probe — a
+    # failed ALTER inside the migration batch would abort everything
+    # that follows (DROP legacy).
     compression_enabled = False
-    version_rows = await driver.execute_query(
-        "SELECT current_setting('server_version_num')::integer AS ver",
-        force_readonly=True,
-    )
-    pg_version = int(version_rows[0].cells["ver"]) if version_rows else 0
     if pg_version >= 140000:
         for col in spec.lz4_columns:
-            sql_lz4 = f"ALTER TABLE {qualified} ALTER COLUMN {col} SET COMPRESSION lz4"
-            await driver.execute_query(sql_lz4, force_readonly=False)
-            statements.append(sql_lz4)
+            statements.append(f"ALTER TABLE {qualified} ALTER COLUMN {col} SET COMPRESSION lz4")
             compression_enabled = True
 
-    sql_drop = f"DROP TABLE {legacy_qualified}"
-    await driver.execute_query(sql_drop, force_readonly=False)
-    statements.append(sql_drop)
+    statements.append(f"DROP TABLE {legacy_qualified}")
+
+    # Send the entire migration as one query. PG's simple-query
+    # protocol holds the implicit transaction across all statements
+    # in the batch, so the LOCK acquired in the first statement is
+    # held through the DROP at the end.
+    batch_sql = ";\n".join(statements)
+    await driver.execute_query(batch_sql, force_readonly=False)
 
     return row_count, compression_enabled, statements
 
@@ -1111,19 +1110,27 @@ async def _rag_migrate_timescaledb(
     compress_after: str,
     retention_days: int | None,
 ) -> tuple[int, bool, list[str]]:
-    """In-place create_hypertable(migrate_data => TRUE)."""
+    """In-place create_hypertable(migrate_data => TRUE).
+
+    The PK rebuild (DROP + ADD) needs to be atomic — between the two
+    statements the table has no PK constraint and a concurrent writer
+    could insert duplicates. Bundle into one execute_query call so
+    the simple-query protocol holds an implicit transaction across
+    both statements (same fix as :func:`_rag_migrate_native`,
+    gemini critical review PR #110).
+    """
     statements: list[str] = []
     qualified = f"{_SCHEMA_NAME}.{spec.table}"
     _, _, row_count = await _rag_data_range(driver, spec)
 
-    # Existing PK is single-column ({pk}). Extend to (pk, ts_column)
-    # so TimescaleDB accepts the conversion.
-    sql_drop_pk = f"ALTER TABLE {qualified} DROP CONSTRAINT IF EXISTS {spec.table}_pkey"
-    await driver.execute_query(sql_drop_pk, force_readonly=False)
-    statements.append(sql_drop_pk)
-    sql_new_pk = f"ALTER TABLE {qualified} ADD PRIMARY KEY ({spec.pk_column}, {spec.ts_column})"
-    await driver.execute_query(sql_new_pk, force_readonly=False)
-    statements.append(sql_new_pk)
+    # Atomic PK rebuild — single batch so the no-PK window is invisible
+    # to other writers.
+    pk_rebuild = (
+        f"ALTER TABLE {qualified} DROP CONSTRAINT IF EXISTS {spec.table}_pkey;\n"
+        f"ALTER TABLE {qualified} ADD PRIMARY KEY ({spec.pk_column}, {spec.ts_column})"
+    )
+    await driver.execute_query(pk_rebuild, force_readonly=False)
+    statements.append(pk_rebuild)
 
     sql_ht = (
         f"SELECT create_hypertable('{qualified}', '{spec.ts_column}', "
