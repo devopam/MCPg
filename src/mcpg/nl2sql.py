@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import re
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -651,6 +652,7 @@ async def translate_nl_to_sql(
     columns_per_table: int = DEFAULT_COLUMNS_PER_TABLE,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     env: Mapping[str, str] | None = None,
+    audit_persist: bool = False,
 ) -> TranslationResult:
     """Translate ``question`` into a SQL query against ``schema``.
 
@@ -670,6 +672,12 @@ async def translate_nl_to_sql(
             ``MCPG_NL2SQL_SCHEMA_*`` settings are read from
             ``os.environ``. Pass a custom mapping for multi-tenant or
             test scenarios where the global env shouldn't drive policy.
+        audit_persist: When ``True``, every translation (success or
+            failure) is recorded in ``mcpg_audit.nl2sql_events`` via
+            :func:`mcpg.audit_nl2sql.record_nl2sql_event`. Audit
+            failures are logged but never abort the translation —
+            losing one audit row is preferable to a 500 on every
+            NL→SQL call when the audit table is misconfigured.
 
     Raises:
         NL2SQLError: When inputs fail validation or the model returns
@@ -687,6 +695,8 @@ async def translate_nl_to_sql(
     #   3. Enforces MCPG_NL2SQL_SCHEMA_ALLOWLIST when set (strict
     #      deployments lock NL→SQL to one or two schemas).
     schema = _validate_schema_name(schema, env=env)
+
+    started = time.monotonic()
 
     schema_brief = await _build_schema_brief(
         driver,
@@ -721,7 +731,7 @@ async def translate_nl_to_sql(
     sql, explanation = _parse_response(raw)
 
     if not execute or not sql:
-        return TranslationResult(
+        translation = TranslationResult(
             sql=sql,
             explanation=explanation,
             model=model,
@@ -732,31 +742,57 @@ async def translate_nl_to_sql(
             row_count=0,
             error=None if sql else "model returned no SQL",
         )
+    else:
+        # Execution path: route through the same safety stack as run_select.
+        try:
+            exec_result = await run_select(driver, sql, max_rows=max_rows)
+            translation = TranslationResult(
+                sql=sql,
+                explanation=explanation,
+                model=model,
+                provider=provider.name,
+                executed=True,
+                rows=exec_result.rows,
+                columns=exec_result.columns,
+                row_count=exec_result.row_count,
+                error=None,
+            )
+        except QueryError as exc:
+            translation = TranslationResult(
+                sql=sql,
+                explanation=explanation,
+                model=model,
+                provider=provider.name,
+                executed=False,
+                rows=[],
+                columns=[],
+                row_count=0,
+                error=str(exc),
+            )
 
-    # Execution path: route through the same safety stack as run_select.
-    try:
-        result = await run_select(driver, sql, max_rows=max_rows)
-    except QueryError as exc:
-        return TranslationResult(
-            sql=sql,
-            explanation=explanation,
-            model=model,
-            provider=provider.name,
-            executed=False,
-            rows=[],
-            columns=[],
-            row_count=0,
-            error=str(exc),
-        )
+    if audit_persist:
+        # Best-effort — a write failure here must not turn a successful
+        # translation into a user-facing 500. The audit subsystem logs
+        # its own errors; we only swallow them so the caller keeps the
+        # translation result it just earned.
+        try:
+            from mcpg.audit_nl2sql import record_nl2sql_event
 
-    return TranslationResult(
-        sql=sql,
-        explanation=explanation,
-        model=model,
-        provider=provider.name,
-        executed=True,
-        rows=result.rows,
-        columns=result.columns,
-        row_count=result.row_count,
-        error=None,
-    )
+            duration_ms = int((time.monotonic() - started) * 1000)
+            await record_nl2sql_event(
+                driver,
+                provider=translation.provider,
+                model=translation.model,
+                schema_arg=schema,
+                question=question.strip(),
+                sql_generated=translation.sql or None,
+                sql_executed=translation.executed,
+                row_count=translation.row_count if translation.executed else None,
+                error=translation.error,
+                duration_ms=duration_ms,
+                env=env,
+            )
+        except Exception as exc:  # pragma: no cover - swallowed on purpose
+            logger.warning("NL→SQL audit persist failed (translation kept): %s", exc)
+
+    return translation

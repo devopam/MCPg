@@ -214,6 +214,48 @@ def test_nl2sql_defaults_to_unset_and_zero_overhead() -> None:
     assert settings.nl2sql_api_keys == ()
     assert settings.nl2sql_model is None
     assert settings.nl2sql_max_tokens == 2048
+    # NL→SQL audit persistence defaults: off, no backend forced,
+    # 90-day retention, RLS on, no reader role.
+    assert settings.nl2sql_audit_persist is False
+    assert settings.nl2sql_audit_backend is None
+    assert settings.nl2sql_audit_retention_days == 90
+    assert settings.nl2sql_audit_chunk_interval == "1 day"
+    assert settings.nl2sql_audit_compress_after == "7 days"
+    assert settings.nl2sql_audit_rls is True
+    assert settings.nl2sql_audit_reader_role is None
+
+
+def test_nl2sql_audit_env_vars_round_trip_through_settings() -> None:
+    """Verify each MCPG_NL2SQL_AUDIT_* knob lands in the right field."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_AUDIT_PERSIST": "true",
+            "MCPG_NL2SQL_AUDIT_BACKEND": "native",
+            "MCPG_NL2SQL_AUDIT_RETENTION_DAYS": "30",
+            "MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL": "1 hour",
+            "MCPG_NL2SQL_AUDIT_COMPRESS_AFTER": "2 days",
+            "MCPG_NL2SQL_AUDIT_RLS": "false",
+            "MCPG_NL2SQL_AUDIT_READER_ROLE": "analytics_ro",
+        }
+    )
+    assert settings.nl2sql_audit_persist is True
+    assert settings.nl2sql_audit_backend == "native"
+    assert settings.nl2sql_audit_retention_days == 30
+    assert settings.nl2sql_audit_chunk_interval == "1 hour"
+    assert settings.nl2sql_audit_compress_after == "2 days"
+    assert settings.nl2sql_audit_rls is False
+    assert settings.nl2sql_audit_reader_role == "analytics_ro"
+
+
+def test_nl2sql_audit_backend_rejects_unknown_choice() -> None:
+    with pytest.raises(ConfigError, match="MCPG_NL2SQL_AUDIT_BACKEND"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_NL2SQL_AUDIT_BACKEND": "mongodb",
+            }
+        )
 
 
 def test_nl2sql_provider_rejects_unknown_vendor() -> None:

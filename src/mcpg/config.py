@@ -127,6 +127,19 @@ class Settings:
     nl2sql_model: str | None = None
     nl2sql_base_url: str | None = None
     nl2sql_max_tokens: int = 2048
+    # NL→SQL audit persistence — when on, every translate_nl_to_sql
+    # call records one row in ``mcpg_audit.nl2sql_events``. The table
+    # is auto-provisioned on first use against the best available
+    # partitioning backend (timescaledb > pg_partman > native) with
+    # compression, retention, and RLS pre-configured. See
+    # :mod:`mcpg.audit_nl2sql` for the full lifecycle.
+    nl2sql_audit_persist: bool = False
+    nl2sql_audit_backend: str | None = None
+    nl2sql_audit_retention_days: int = 90
+    nl2sql_audit_chunk_interval: str = "1 day"
+    nl2sql_audit_compress_after: str = "7 days"
+    nl2sql_audit_rls: bool = True
+    nl2sql_audit_reader_role: str | None = None
     rate_limit_enabled: bool = False
     rate_limit_max_requests: int = 60
     rate_limit_window_seconds: int = 60
@@ -233,6 +246,10 @@ class Settings:
             f"nl2sql_model={self.nl2sql_model!r}, "
             f"nl2sql_base_url={self.nl2sql_base_url!r}, "
             f"nl2sql_max_tokens={self.nl2sql_max_tokens}, "
+            f"nl2sql_audit_persist={self.nl2sql_audit_persist}, "
+            f"nl2sql_audit_backend={self.nl2sql_audit_backend!r}, "
+            f"nl2sql_audit_retention_days={self.nl2sql_audit_retention_days}, "
+            f"nl2sql_audit_rls={self.nl2sql_audit_rls}, "
             f"rate_limit_enabled={self.rate_limit_enabled}, "
             f"rate_limit_max_requests={self.rate_limit_max_requests}, "
             f"rate_limit_window_seconds={self.rate_limit_window_seconds}, "
@@ -618,6 +635,46 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         if nl2sql_max_tokens > 16_384:
             raise ConfigError(f"MCPG_NL2SQL_MAX_TOKENS ({nl2sql_max_tokens}) exceeds the hard cap of 16384")
 
+    nl2sql_audit_persist = False
+    if (raw := env.get("MCPG_NL2SQL_AUDIT_PERSIST")) is not None:
+        nl2sql_audit_persist = _parse_bool("MCPG_NL2SQL_AUDIT_PERSIST", raw)
+
+    nl2sql_audit_backend: str | None = None
+    if (raw := env.get("MCPG_NL2SQL_AUDIT_BACKEND")) is not None:
+        stripped = raw.strip().lower()
+        if stripped not in ("timescaledb", "pg_partman", "native"):
+            raise ConfigError("MCPG_NL2SQL_AUDIT_BACKEND must be one of timescaledb / pg_partman / native")
+        nl2sql_audit_backend = stripped
+
+    nl2sql_audit_retention_days = 90
+    if (raw := env.get("MCPG_NL2SQL_AUDIT_RETENTION_DAYS")) is not None:
+        nl2sql_audit_retention_days = _parse_positive_int("MCPG_NL2SQL_AUDIT_RETENTION_DAYS", raw)
+
+    nl2sql_audit_chunk_interval = "1 day"
+    if (raw := env.get("MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_NL2SQL_AUDIT_CHUNK_INTERVAL must not be blank when set")
+        nl2sql_audit_chunk_interval = stripped
+
+    nl2sql_audit_compress_after = "7 days"
+    if (raw := env.get("MCPG_NL2SQL_AUDIT_COMPRESS_AFTER")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_NL2SQL_AUDIT_COMPRESS_AFTER must not be blank when set")
+        nl2sql_audit_compress_after = stripped
+
+    nl2sql_audit_rls = True
+    if (raw := env.get("MCPG_NL2SQL_AUDIT_RLS")) is not None:
+        nl2sql_audit_rls = _parse_bool("MCPG_NL2SQL_AUDIT_RLS", raw)
+
+    nl2sql_audit_reader_role: str | None = None
+    if (raw := env.get("MCPG_NL2SQL_AUDIT_READER_ROLE")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_NL2SQL_AUDIT_READER_ROLE must not be blank when set")
+        nl2sql_audit_reader_role = stripped
+
     rate_limit_enabled = False
     if (raw := env.get("MCPG_RATE_LIMIT_ENABLED")) is not None:
         rate_limit_enabled = _parse_bool("MCPG_RATE_LIMIT_ENABLED", raw)
@@ -860,6 +917,13 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         nl2sql_model=nl2sql_model,
         nl2sql_base_url=nl2sql_base_url,
         nl2sql_max_tokens=nl2sql_max_tokens,
+        nl2sql_audit_persist=nl2sql_audit_persist,
+        nl2sql_audit_backend=nl2sql_audit_backend,
+        nl2sql_audit_retention_days=nl2sql_audit_retention_days,
+        nl2sql_audit_chunk_interval=nl2sql_audit_chunk_interval,
+        nl2sql_audit_compress_after=nl2sql_audit_compress_after,
+        nl2sql_audit_rls=nl2sql_audit_rls,
+        nl2sql_audit_reader_role=nl2sql_audit_reader_role,
         rate_limit_enabled=rate_limit_enabled,
         rate_limit_max_requests=rate_limit_max_requests,
         rate_limit_window_seconds=rate_limit_window_seconds,
