@@ -6,6 +6,37 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **NL→SQL hardening sweep** (PR-3 of the NL→SQL remediation arc).
+  Five P1/P2 findings from the deep-review audit closed in one pass:
+
+  - *Schema-brief character cap* — `_build_schema_brief` now applies a
+    final char limit (`max_brief_chars`, default 32 KB, hard cap 128 KB)
+    after the per-table / per-column bounds, so a schema with hundreds
+    of long column names can't smuggle the LLM-token budget past the
+    operator's `max_tokens` setting (P1 #4).
+  - *Vendor-egress one-time warning* — first call per provider per
+    process logs a single `mcpg.nl2sql` warning telling operators that
+    catalog metadata (schema / table / column names, FK edges,
+    sanitised DEFAULT expressions) leaves the network. The notice
+    surfaces an operational concern most deployments don't realise
+    until incident time (P2 #5).
+  - *`QueryError` redaction* — execution-path failures now flow
+    through `obfuscate_password` before reaching
+    `TranslationResult.error`. psycopg / libpq error messages routinely
+    embed DSN fragments and password-bearing connection-string values,
+    same vector closed for `mcpg_audit.events.error` in PR #96 (P2 #6).
+  - *Single-statement assertion* — generated SQL is parsed with pglast
+    before `run_select` runs; multi-statement input (`"SELECT 1; DROP TABLE x"`)
+    is refused at the NL→SQL layer as defense-in-depth ahead of the
+    `SafeSqlDriver` allowlist (P2 #7).
+  - *Robust fence handling* — `_parse_response` now extracts the body
+    of a fenced JSON block when the outer JSON parse fails, instead of
+    the leading/trailing strip-and-pray approach. Models that wrap
+    valid JSON in explanatory prose + a fence now parse correctly
+    instead of degrading to "raw text as explanation" (P2 #8).
+
 ### Added
 
 - **NL→SQL audit table — partitioned, compressed, RLS-gated**

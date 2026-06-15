@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import httpx
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg._vendor.sql import SqlDriver, obfuscate_password
 from mcpg.introspection import describe_table, list_foreign_keys, list_tables
 from mcpg.query import DEFAULT_MAX_ROWS, QueryError, run_select
 
@@ -85,6 +85,19 @@ _SUPPORTED_PROVIDERS = frozenset({"anthropic", "openai", "gemini"})
 # ``table_filter`` to focus on a subset.
 DEFAULT_MAX_TABLES_IN_BRIEF = 30
 DEFAULT_COLUMNS_PER_TABLE = 60
+
+# Final character cap on the rendered schema brief — enforced after
+# ``max_tables`` / ``columns_per_table`` so a malicious schema with
+# hundreds of long column names can't smuggle the LLM-token budget
+# past the operator's max_tokens setting (deep-review nl2sql audit
+# P1 #4). 32 KB ≈ 8k tokens — leaves room for the system prompt + the
+# user's question inside the typical 16k-32k context window.
+DEFAULT_MAX_BRIEF_CHARS = 32_768
+
+# Hard upper bound — even an opt-in operator can't ask for more than
+# this so a typo in the env can't make MCPg send a million-char
+# brief to the LLM vendor.
+HARD_MAX_BRIEF_CHARS = 131_072
 
 # Plain unquoted PostgreSQL identifier — matches the rule every other
 # surface in the codebase uses (pg_search, turboquant, rag_efficiency,
@@ -559,6 +572,7 @@ async def _build_schema_brief(
     max_tables: int,
     columns_per_table: int,
     table_filter: tuple[str, ...] | None,
+    max_brief_chars: int = DEFAULT_MAX_BRIEF_CHARS,
 ) -> str:
     """Produce a compact text description of ``schema`` for the prompt.
 
@@ -605,36 +619,117 @@ async def _build_schema_brief(
                 f"-> {fk.to_schema}.{fk.to_table}({','.join(fk.to_columns)})"
             )
 
-    return "\n".join(lines)
+    brief = "\n".join(lines)
+    if len(brief) > max_brief_chars:
+        # Truncate to the budget, append a one-line tell so the LLM
+        # knows the schema brief was bounded (and the operator can
+        # see it in audit logs) — deep-review nl2sql audit P1 #4,
+        # "schema brief unbounded in chars".
+        keep = max(0, max_brief_chars - 64)
+        suffix = f"\n... [schema brief truncated at {max_brief_chars} chars]"
+        brief = brief[:keep] + suffix
+    return brief
 
 
-# Strip Markdown code fences the model might emit around the JSON
-# despite being told to return JSON only. Greedy enough to handle both
-# ```json and ```sql variants and trim either side.
-_CODE_FENCE = re.compile(r"^\s*```(?:json|sql)?\s*|\s*```\s*$", re.IGNORECASE | re.MULTILINE)
+# Match a fenced code block — captures the body between an opening
+# ```[json|sql] fence and its matching close, in either order. The
+# DOTALL flag lets ``.`` cross newlines so multi-line bodies are
+# captured correctly. We prefer extracting the body over a leading
+# trailing strip because models occasionally wrap valid JSON in
+# explanatory text + a fence, and the strip-and-pray approach left
+# garbage that broke json.loads (deep-review nl2sql audit P2 #8,
+# "fragile code-fence stripping").
+_CODE_FENCE_BLOCK = re.compile(
+    r"```(?:json|sql)?\s*\n?(.*?)\n?\s*```",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _parse_response(raw: str) -> tuple[str, str]:
     """Return ``(sql, explanation)`` parsed from a provider's text reply.
 
-    Tolerates a leading / trailing code fence and falls back to
-    treating the whole response as ``explanation`` (with empty SQL)
-    when the JSON shape isn't recognised — so the agent always sees
-    *something*.
+    Strategy: try to JSON-parse the whole reply first; if that fails,
+    extract the first fenced code block (`````json … `````)
+    and JSON-parse its body; if *that* fails too, fall back to
+    treating the whole reply as ``explanation`` (with empty SQL) so
+    the agent always sees *something*.
     """
-    stripped = _CODE_FENCE.sub("", raw).strip()
+    candidates: list[str] = [raw.strip()]
+    match = _CODE_FENCE_BLOCK.search(raw)
+    if match:
+        candidates.append(match.group(1).strip())
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        # json.loads succeeds for non-dict shapes (lists, raw strings,
+        # numbers); .get on those crashes. Treat anything non-dict as
+        # a parse failure so the raw text reaches the agent unchanged.
+        if not isinstance(parsed, dict):
+            continue
+        sql = str(parsed.get("sql", "")).strip()
+        explanation = str(parsed.get("explanation", "")).strip()
+        return (sql, explanation)
+    return ("", raw.strip())
+
+
+def _assert_single_statement(sql: str) -> None:
+    """Reject multi-statement SQL before it reaches ``run_select``.
+
+    ``SafeSqlDriver``'s pglast allowlist validates statement *kinds*
+    (only SELECT-like), but a string with multiple SELECTs would still
+    fan out one ``execute_query`` call per parsed statement. NL→SQL
+    explicitly returns a single statement to the agent, so anything
+    more is either model error or attempted multi-statement smuggling
+    via injected SQL fragments in the question (deep-review nl2sql
+    audit P2 #7, "single-statement assertion missing").
+    """
     try:
-        parsed = json.loads(stripped)
-    except json.JSONDecodeError:
-        return ("", raw.strip())
-    # json.loads succeeds for non-dict shapes (lists, raw strings,
-    # numbers); .get on those crashes. Treat anything non-dict as a
-    # parse failure so the raw text reaches the agent unchanged.
-    if not isinstance(parsed, dict):
-        return ("", raw.strip())
-    sql = str(parsed.get("sql", "")).strip()
-    explanation = str(parsed.get("explanation", "")).strip()
-    return (sql, explanation)
+        import pglast
+
+        statements = pglast.parse_sql(sql)
+    except Exception as exc:
+        raise NL2SQLError(f"generated SQL did not parse: {exc}") from exc
+    if len(statements) != 1:
+        raise NL2SQLError(
+            f"generated SQL must contain exactly one statement; got {len(statements)} — "
+            "NL→SQL refuses to execute multi-statement input."
+        )
+
+
+def _emit_egress_warning_once(provider_name: str) -> None:
+    """Log a one-time warning that catalog metadata leaves the network.
+
+    NL→SQL ships the schema brief (table + column names, FK edges,
+    sanitised DEFAULT expressions) to the configured provider's
+    HTTPS API. Operators routinely deploy this without realising
+    catalog metadata egresses to a third-party — log a single
+    explicit notice the first time a provider is exercised so the
+    information is in the operational record (deep-review nl2sql
+    audit P2 #5, "LLM-vendor exfil note").
+    """
+    if provider_name in _EGRESS_NOTICE_LOGGED:
+        return
+    _EGRESS_NOTICE_LOGGED.add(provider_name)
+    logger.warning(
+        "NL→SQL is sending catalog metadata (schema, table + column names, "
+        "FK edges, sanitised DEFAULT expressions) to provider %r over HTTPS. "
+        "Disable MCPG_NL2SQL_PROVIDER or unset the API key to keep schema "
+        "metadata in-network.",
+        provider_name,
+    )
+
+
+# Set of provider names we've already logged the egress notice for —
+# module-level so the warning fires once per process. Test harnesses
+# can clear it via _reset_egress_notice_cache().
+_EGRESS_NOTICE_LOGGED: set[str] = set()
+
+
+def _reset_egress_notice_cache() -> None:
+    """Test-only escape hatch — forget which providers logged the notice."""
+    _EGRESS_NOTICE_LOGGED.clear()
 
 
 async def translate_nl_to_sql(
@@ -650,6 +745,7 @@ async def translate_nl_to_sql(
     max_rows: int = DEFAULT_MAX_ROWS,
     max_tables_in_brief: int = DEFAULT_MAX_TABLES_IN_BRIEF,
     columns_per_table: int = DEFAULT_COLUMNS_PER_TABLE,
+    max_brief_chars: int = DEFAULT_MAX_BRIEF_CHARS,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     env: Mapping[str, str] | None = None,
     audit_persist: bool = False,
@@ -668,6 +764,11 @@ async def translate_nl_to_sql(
         max_tokens / max_rows / max_tables_in_brief / columns_per_table:
             Bounds on the prompt and the executed result. The hard
             cap on ``max_tokens`` is :data:`HARD_MAX_TOKENS`.
+        max_brief_chars: Final character cap on the rendered schema
+            brief — defends against a schema with hundreds of long
+            column names blowing the LLM token budget. Default
+            :data:`DEFAULT_MAX_BRIEF_CHARS` (32 KB); hard upper
+            bound :data:`HARD_MAX_BRIEF_CHARS`.
         env: Optional configuration mapping. When omitted, the
             ``MCPG_NL2SQL_SCHEMA_*`` settings are read from
             ``os.environ``. Pass a custom mapping for multi-tenant or
@@ -687,6 +788,9 @@ async def translate_nl_to_sql(
         raise NL2SQLError("question must not be empty")
     if max_tokens < 1 or max_tokens > HARD_MAX_TOKENS:
         raise NL2SQLError(f"max_tokens must be between 1 and {HARD_MAX_TOKENS}")
+    if max_brief_chars < 1 or max_brief_chars > HARD_MAX_BRIEF_CHARS:
+        raise NL2SQLError(f"max_brief_chars must be between 1 and {HARD_MAX_BRIEF_CHARS}")
+    _emit_egress_warning_once(provider.name)
     # _validate_schema_name does three things in one place:
     #   1. Rejects non-identifier values (the schema name lands in the
     #      LLM prompt verbatim — caller-side prompt injection vector).
@@ -704,6 +808,7 @@ async def translate_nl_to_sql(
         max_tables=max_tables_in_brief,
         columns_per_table=columns_per_table,
         table_filter=table_filter,
+        max_brief_chars=max_brief_chars,
     )
     # ``.replace`` (not ``.format``) so curly braces in the user's
     # question (e.g. asking about a jsonb literal like ``{"k":1}``)
@@ -743,8 +848,12 @@ async def translate_nl_to_sql(
             error=None if sql else "model returned no SQL",
         )
     else:
-        # Execution path: route through the same safety stack as run_select.
+        # Execution path: assert single-statement first (defence-in-
+        # depth against the model returning ``"SELECT 1; DROP TABLE x"``
+        # or the user smuggling a fragment into the question), then
+        # route through the same safety stack as run_select.
         try:
+            _assert_single_statement(sql)
             exec_result = await run_select(driver, sql, max_rows=max_rows)
             translation = TranslationResult(
                 sql=sql,
@@ -757,7 +866,12 @@ async def translate_nl_to_sql(
                 row_count=exec_result.row_count,
                 error=None,
             )
-        except QueryError as exc:
+        except (QueryError, NL2SQLError) as exc:
+            # psycopg / libpq error messages routinely embed DSN
+            # fragments and password-bearing connection-string
+            # values — pipe through obfuscate_password so the
+            # ``result.error`` field never leaks credentials to the
+            # caller (deep-review nl2sql audit P2 #6).
             translation = TranslationResult(
                 sql=sql,
                 explanation=explanation,
@@ -767,7 +881,7 @@ async def translate_nl_to_sql(
                 rows=[],
                 columns=[],
                 row_count=0,
-                error=str(exc),
+                error=obfuscate_password(str(exc)),
             )
 
     if audit_persist:
