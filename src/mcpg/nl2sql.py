@@ -98,14 +98,15 @@ _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 # this via MCPG_NL2SQL_SCHEMA_DENYLIST; a non-empty
 # MCPG_NL2SQL_SCHEMA_ALLOWLIST flips the policy to allowlist-only.
 DEFAULT_SCHEMA_DENYLIST: frozenset[str] = frozenset(
-    {
+    name.lower()
+    for name in (
         "pg_catalog",
         "pg_toast",
         "information_schema",
         "mcpg_audit",
         "mcpg_rag",
         "mcpg_migrations",
-    }
+    )
 )
 
 # Cap on the rendered ``DEFAULT <expr>`` text per column in the schema
@@ -536,16 +537,16 @@ def _validate_schema_name(schema: str, *, env: Mapping[str, str] | None = None) 
     normalised = candidate.lower()
     denylist, allowlist = _resolve_schema_policy(env)
     if allowlist is not None and normalised not in allowlist:
+        # Surface only the offending schema name — the full allowlist is
+        # operator configuration and shouldn't leak through a caller-
+        # facing error (sourcery review, PR #106).
         raise NL2SQLError(
-            f"schema {schema!r} is not in MCPG_NL2SQL_SCHEMA_ALLOWLIST "
-            f"({', '.join(sorted(allowlist))}); NL→SQL refuses to query it."
+            f"schema {schema!r} is not permitted by MCPG_NL2SQL_SCHEMA_ALLOWLIST; NL→SQL refuses to query it."
         )
     if normalised in denylist:
         raise NL2SQLError(
-            f"schema {schema!r} is on the NL→SQL deny-list "
-            f"(default denies {', '.join(sorted(DEFAULT_SCHEMA_DENYLIST))} plus any value of "
-            "MCPG_NL2SQL_SCHEMA_DENYLIST); pick a non-system schema or amend the deny-list "
-            "if you really mean to expose this schema to NL→SQL."
+            f"schema {schema!r} is on the NL→SQL deny-list; pick a non-system schema "
+            "or amend MCPG_NL2SQL_SCHEMA_DENYLIST if you really mean to expose it."
         )
     return normalised
 
@@ -649,6 +650,7 @@ async def translate_nl_to_sql(
     max_tables_in_brief: int = DEFAULT_MAX_TABLES_IN_BRIEF,
     columns_per_table: int = DEFAULT_COLUMNS_PER_TABLE,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    env: Mapping[str, str] | None = None,
 ) -> TranslationResult:
     """Translate ``question`` into a SQL query against ``schema``.
 
@@ -664,6 +666,10 @@ async def translate_nl_to_sql(
         max_tokens / max_rows / max_tables_in_brief / columns_per_table:
             Bounds on the prompt and the executed result. The hard
             cap on ``max_tokens`` is :data:`HARD_MAX_TOKENS`.
+        env: Optional configuration mapping. When omitted, the
+            ``MCPG_NL2SQL_SCHEMA_*`` settings are read from
+            ``os.environ``. Pass a custom mapping for multi-tenant or
+            test scenarios where the global env shouldn't drive policy.
 
     Raises:
         NL2SQLError: When inputs fail validation or the model returns
@@ -680,7 +686,7 @@ async def translate_nl_to_sql(
     #      and PG system schemas off by default).
     #   3. Enforces MCPG_NL2SQL_SCHEMA_ALLOWLIST when set (strict
     #      deployments lock NL→SQL to one or two schemas).
-    schema = _validate_schema_name(schema)
+    schema = _validate_schema_name(schema, env=env)
 
     schema_brief = await _build_schema_brief(
         driver,

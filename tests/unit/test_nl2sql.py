@@ -555,3 +555,20 @@ async def test_translate_nl_to_sql_rejects_denied_schema() -> None:
             question="dump audit events",
             schema="mcpg_audit",
         )
+
+
+async def test_translate_nl_to_sql_honours_caller_env_for_schema_policy() -> None:
+    """The env parameter must flow into _validate_schema_name so policy
+    set via a custom mapping (multi-tenant / test harness) is enforced
+    even when os.environ is empty (gemini review, PR #106)."""
+    from _fakes import FakeRoutingDriver
+
+    with pytest.raises(NL2SQLError, match="ALLOWLIST"):
+        await translate_nl_to_sql(
+            FakeRoutingDriver({}),  # type: ignore[arg-type]
+            provider=_StubProvider(),  # type: ignore[arg-type]
+            model="m",
+            question="count widgets",
+            schema="public",
+            env={"MCPG_NL2SQL_SCHEMA_ALLOWLIST": "app, reports"},
+        )
