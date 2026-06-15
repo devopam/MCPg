@@ -74,6 +74,18 @@ class Settings:
     subprocess_memory_mb: int | None = None
     listen_queue_max: int = 1000
     audit_persist: bool = False
+    # mcpg_audit.events partitioning retrofit knobs (PR-4) — only
+    # consumed by :func:`mcpg.audit_trail.migrate_audit_events_to_partitioned`.
+    # Retention is intentionally unset by default: the HMAC chain
+    # anchors on the oldest event, so dropping old chunks would break
+    # verify_audit_chain. Operators who want chunked retention must
+    # disable integrity first.
+    audit_events_backend: str | None = None
+    audit_events_retention_days: int | None = None
+    audit_events_chunk_interval: str = "1 day"
+    audit_events_compress_after: str = "7 days"
+    audit_events_rls: bool = True
+    audit_events_reader_role: str | None = None
     pool_min_size: int = 1
     pool_max_size: int = 5
     # HTTP-transport bearer token. When set and the active transport is
@@ -231,6 +243,12 @@ class Settings:
             f"subprocess_memory_mb={self.subprocess_memory_mb}, "
             f"listen_queue_max={self.listen_queue_max}, "
             f"audit_persist={self.audit_persist}, "
+            f"audit_events_backend={self.audit_events_backend!r}, "
+            f"audit_events_retention_days={self.audit_events_retention_days}, "
+            f"audit_events_chunk_interval={self.audit_events_chunk_interval!r}, "
+            f"audit_events_compress_after={self.audit_events_compress_after!r}, "
+            f"audit_events_rls={self.audit_events_rls}, "
+            f"audit_events_reader_role={self.audit_events_reader_role!r}, "
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size}, "
             f"http_auth_token={http_auth_token_repr!r}, "
             f"auth_mode={self.auth_mode!r}, "
@@ -476,6 +494,52 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     audit_persist = False
     if (raw := env.get("MCPG_AUDIT_PERSIST")) is not None:
         audit_persist = _parse_bool("MCPG_AUDIT_PERSIST", raw)
+
+    audit_events_backend: str | None = None
+    if (raw := env.get("MCPG_AUDIT_EVENTS_BACKEND")) is not None:
+        stripped = raw.strip().lower()
+        if stripped not in ("timescaledb", "pg_partman", "native"):
+            raise ConfigError("MCPG_AUDIT_EVENTS_BACKEND must be one of timescaledb / pg_partman / native")
+        audit_events_backend = stripped
+
+    audit_events_retention_days: int | None = None
+    if (raw := env.get("MCPG_AUDIT_EVENTS_RETENTION_DAYS")) is not None:
+        audit_events_retention_days = _parse_positive_int("MCPG_AUDIT_EVENTS_RETENTION_DAYS", raw)
+
+    _events_interval_pattern = re.compile(
+        r"\A\d+\s+(?:second|minute|hour|day|week|month|year)s?\Z",
+        re.IGNORECASE,
+    )
+    audit_events_chunk_interval = "1 day"
+    if (raw := env.get("MCPG_AUDIT_EVENTS_CHUNK_INTERVAL")) is not None:
+        stripped = raw.strip()
+        if not stripped or not _events_interval_pattern.match(stripped):
+            raise ConfigError(
+                f"MCPG_AUDIT_EVENTS_CHUNK_INTERVAL {stripped!r} is not a valid interval "
+                "(expected: <digits> <second|minute|hour|day|week|month|year>[s])"
+            )
+        audit_events_chunk_interval = stripped
+
+    audit_events_compress_after = "7 days"
+    if (raw := env.get("MCPG_AUDIT_EVENTS_COMPRESS_AFTER")) is not None:
+        stripped = raw.strip()
+        if not stripped or not _events_interval_pattern.match(stripped):
+            raise ConfigError(
+                f"MCPG_AUDIT_EVENTS_COMPRESS_AFTER {stripped!r} is not a valid interval "
+                "(expected: <digits> <second|minute|hour|day|week|month|year>[s])"
+            )
+        audit_events_compress_after = stripped
+
+    audit_events_rls = True
+    if (raw := env.get("MCPG_AUDIT_EVENTS_RLS")) is not None:
+        audit_events_rls = _parse_bool("MCPG_AUDIT_EVENTS_RLS", raw)
+
+    audit_events_reader_role: str | None = None
+    if (raw := env.get("MCPG_AUDIT_EVENTS_READER_ROLE")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_AUDIT_EVENTS_READER_ROLE must not be blank when set")
+        audit_events_reader_role = stripped
 
     pool_min_size = 1
     if (raw := env.get("MCPG_POOL_MIN_SIZE")) is not None:
@@ -924,6 +988,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         subprocess_memory_mb=subprocess_memory_mb,
         listen_queue_max=listen_queue_max,
         audit_persist=audit_persist,
+        audit_events_backend=audit_events_backend,
+        audit_events_retention_days=audit_events_retention_days,
+        audit_events_chunk_interval=audit_events_chunk_interval,
+        audit_events_compress_after=audit_events_compress_after,
+        audit_events_rls=audit_events_rls,
+        audit_events_reader_role=audit_events_reader_role,
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
         http_auth_token=http_auth_token,
