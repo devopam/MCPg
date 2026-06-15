@@ -6,7 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **NL→SQL audit table — partitioned, compressed, RLS-gated**
+  (`mcpg.audit_nl2sql`). When `MCPG_NL2SQL_AUDIT_PERSIST=true`, every
+  `translate_nl_to_sql` call records one row in
+  `mcpg_audit.nl2sql_events` with the question, generated SQL, exec
+  outcome, and timing. First write per driver auto-provisions the
+  table against the best partitioning backend available — TimescaleDB
+  hypertable with native columnar compression + retention policies,
+  pg_partman with LZ4 TOAST compression, or PostgreSQL declarative
+  range partitioning with daily child partitions pre-created ±7 days.
+  RLS is on by default; an optional reader role
+  (`MCPG_NL2SQL_AUDIT_READER_ROLE`) gets a SELECT-only policy.
+  Question / SQL / error text run through `obfuscate_password` so
+  embedded connection-string credentials never reach the audit table.
+  All operations are idempotent and short-circuit via a per-driver
+  cache after the first call.
+
 ### Security
+
+- **NL→SQL schema policy honours caller-supplied env** (PR #106
+  follow-up). `translate_nl_to_sql` now accepts an `env: Mapping[str, str]`
+  parameter that flows into `_validate_schema_name` —
+  `MCPG_NL2SQL_SCHEMA_DENYLIST` / `MCPG_NL2SQL_SCHEMA_ALLOWLIST` are
+  enforced from custom mappings (multi-tenant servers, test harnesses)
+  instead of always falling back to `os.environ`. Schema-policy error
+  messages no longer echo the full allow/deny configuration —
+  operators get the offending schema name only, the lists stay in
+  configuration.
 
 - **Audit error field is now redacted** (#96). `mcpg_audit.events.error`
   used to persist the raw `str(exc)` written by `write._persist_audit`;

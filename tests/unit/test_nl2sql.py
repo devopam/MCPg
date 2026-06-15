@@ -572,3 +572,80 @@ async def test_translate_nl_to_sql_honours_caller_env_for_schema_policy() -> Non
             schema="public",
             env={"MCPG_NL2SQL_SCHEMA_ALLOWLIST": "app, reports"},
         )
+
+
+async def test_translate_nl_to_sql_audit_persist_records_one_row() -> None:
+    """audit_persist=True must auto-provision the audit table and emit
+    one INSERT carrying the provider/model/sql triple, even when the
+    translation is generation-only (execute=False)."""
+    from _fakes import FakeRoutingDriver
+
+    from mcpg.audit_nl2sql import _reset_setup_cache
+
+    _reset_setup_cache()
+
+    routes = _routes_for_simple_schema()
+    # extension probe must look unavailable so backend == native
+    routes["FROM pg_extension WHERE extname"] = []
+    driver = FakeRoutingDriver(routes)
+    provider = _StubProvider(response='{"sql": "SELECT 1", "explanation": "smoke"}')
+
+    result = await translate_nl_to_sql(
+        driver,  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="m",
+        question="smoke test",
+        schema="public",
+        audit_persist=True,
+        env={},
+    )
+
+    assert result.sql == "SELECT 1"
+    inserts = [c for c in driver.calls if "INSERT INTO mcpg_audit.nl2sql_events" in c[0]]
+    assert len(inserts) == 1
+    params = inserts[0][1]
+    assert params[0] == "stub"  # provider name
+    assert params[1] == "m"  # model
+    assert params[2] == "public"  # schema_arg
+    assert params[3] == "smoke test"  # question
+
+
+async def test_translate_nl_to_sql_audit_persist_failure_doesnt_break_translation() -> None:
+    """If the audit recorder raises, the translation result must still
+    be returned to the caller — losing one audit row is preferable to
+    a 500 on every NL→SQL call."""
+    import _fakes as fakes_mod
+
+    from mcpg.audit_nl2sql import _reset_setup_cache
+
+    _reset_setup_cache()
+
+    routes = _routes_for_simple_schema()
+    routes["FROM pg_extension WHERE extname"] = []
+    driver = fakes_mod.FakeRoutingDriver(routes)
+    provider = _StubProvider(response='{"sql": "SELECT 1", "explanation": "smoke"}')
+
+    # Monkey-patch the record_nl2sql_event to raise.
+    import mcpg.audit_nl2sql as audit_mod
+
+    original = audit_mod.record_nl2sql_event
+
+    async def _raising(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("audit insert failed")
+
+    audit_mod.record_nl2sql_event = _raising  # type: ignore[assignment]
+    try:
+        result = await translate_nl_to_sql(
+            driver,  # type: ignore[arg-type]
+            provider=provider,  # type: ignore[arg-type]
+            model="m",
+            question="smoke test",
+            schema="public",
+            audit_persist=True,
+            env={},
+        )
+    finally:
+        audit_mod.record_nl2sql_event = original  # type: ignore[assignment]
+
+    assert result.sql == "SELECT 1"
+    assert result.explanation == "smoke"
