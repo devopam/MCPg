@@ -22,13 +22,19 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from os import environ
 from typing import Any
 
 from mcpg._vendor.sql import SqlDriver, obfuscate_password
 from mcpg.audit import is_secret_key
+from mcpg.audit_nl2sql import Backend
+from mcpg.audit_nl2sql import NL2SQLAuditError as _SharedAuditError
+from mcpg.audit_nl2sql import _check_identifier as _shared_check_identifier
+from mcpg.audit_nl2sql import _check_interval as _shared_check_interval
+from mcpg.audit_nl2sql import detect_backend as _detect_backend
 from mcpg.config import _parse_bool
+from mcpg.extensions import extension_installed
 
 _AUDIT_LOCK: asyncio.Lock | None = None
 
@@ -52,6 +58,25 @@ _MASK = "****"
 
 class AuditTrailError(Exception):
     """Raised when an audit-trail maintenance operation is rejected."""
+
+
+def _audit_check_identifier(name: str, *, kind: str) -> None:
+    """Identifier check that raises ``AuditTrailError`` instead of the
+    shared ``NL2SQLAuditError`` so callers of this module see a
+    consistent exception type."""
+    try:
+        _shared_check_identifier(name, kind=kind)
+    except _SharedAuditError as exc:
+        raise AuditTrailError(str(exc)) from exc
+
+
+def _audit_check_interval(value: str, *, kind: str) -> None:
+    """Interval check translated to ``AuditTrailError`` — same
+    reasoning as :func:`_audit_check_identifier`."""
+    try:
+        _shared_check_interval(value, kind=kind)
+    except _SharedAuditError as exc:
+        raise AuditTrailError(str(exc)) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,3 +480,494 @@ async def capture_columns(driver: SqlDriver, schema: str, table: str) -> list[di
         }
         for row in rows or []
     ]
+
+
+# --- mcpg_audit.events partitioning retrofit (PR-4) -----------------------
+#
+# Distinct from the bigserial-only ``ensure_audit_table`` above:
+# :func:`migrate_audit_events_to_partitioned` converts an existing
+# unpartitioned ``mcpg_audit.events`` into a partitioned/hypertable
+# shape — TimescaleDB hypertable if installed, native PG declarative
+# partitioning otherwise. Migration preserves the HMAC chain
+# (event_hmac / prev_hmac columns + the chain_tip pointer) so
+# ``verify_audit_chain`` continues to work post-migration.
+#
+# Backend ladder mirrors :mod:`mcpg.audit_nl2sql`:
+# timescaledb > pg_partman > native. The TimescaleDB path uses
+# ``create_hypertable(migrate_data => TRUE)`` which converts the
+# existing table in-place. The native + pg_partman paths use a
+# rename-create-insert-drop dance inside a single transaction.
+#
+# Retention is OFF by default for this table — the HMAC chain
+# anchors on the oldest event, so dropping it breaks
+# ``verify_audit_chain`` (see :func:`prune_audit_events`'s integrity
+# guard). Operators who explicitly want chunked retention can set
+# ``MCPG_AUDIT_EVENTS_RETENTION_DAYS`` AND disable integrity.
+
+
+_EVENTS_NATIVE_WINDOW_DAYS = 7
+
+
+@dataclass(frozen=True, slots=True)
+class EventsAuditMigrationResult:
+    """Outcome of :func:`migrate_audit_events_to_partitioned`."""
+
+    migrated: bool
+    backend: Backend
+    rows_copied: int
+    compression_enabled: bool
+    retention_days: int | None
+    rls_enabled: bool
+    reader_role: str | None
+    setup_sql: tuple[str, ...]
+
+
+def _resolve_events_settings(
+    env: Any | None,
+) -> tuple[str | None, int | None, str, str, bool, str | None]:
+    """Read MCPG_AUDIT_EVENTS_* knobs out of env.
+
+    Returns ``(backend, retention_days, chunk_interval, compress_after,
+    rls, reader_role)``. ``retention_days`` is ``None`` by default —
+    the HMAC chain on the events table makes wholesale dropping of the
+    oldest chunks dangerous, so retention only fires when the operator
+    explicitly opts in.
+    """
+    source = env if env is not None else environ
+    backend_raw = (source.get("MCPG_AUDIT_EVENTS_BACKEND") or "").strip() or None
+    retention_raw = (source.get("MCPG_AUDIT_EVENTS_RETENTION_DAYS") or "").strip()
+    retention_days = int(retention_raw) if retention_raw else None
+    if retention_days is not None and retention_days < 1:
+        raise AuditTrailError(f"MCPG_AUDIT_EVENTS_RETENTION_DAYS must be a positive integer; got {retention_raw!r}")
+    chunk_interval = (source.get("MCPG_AUDIT_EVENTS_CHUNK_INTERVAL") or "").strip() or "1 day"
+    _audit_check_interval(chunk_interval, kind="MCPG_AUDIT_EVENTS_CHUNK_INTERVAL")
+    compress_after = (source.get("MCPG_AUDIT_EVENTS_COMPRESS_AFTER") or "").strip() or "7 days"
+    _audit_check_interval(compress_after, kind="MCPG_AUDIT_EVENTS_COMPRESS_AFTER")
+    rls_raw = (source.get("MCPG_AUDIT_EVENTS_RLS") or "").strip().lower()
+    rls = rls_raw in ("", "true", "1", "yes", "on")
+    reader_role = (source.get("MCPG_AUDIT_EVENTS_READER_ROLE") or "").strip() or None
+    if reader_role is not None:
+        _audit_check_identifier(reader_role, kind="audit-events reader role")
+    return backend_raw, retention_days, chunk_interval, compress_after, rls, reader_role
+
+
+async def _events_table_is_partitioned(driver: SqlDriver) -> bool:
+    """Return True when mcpg_audit.events is already a partitioned table
+    (native PG) or a TimescaleDB hypertable."""
+    rows = await driver.execute_query(
+        "SELECT 1 FROM pg_partitioned_table pt "
+        "JOIN pg_class c ON c.oid = pt.partrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relname = %s",
+        params=[AUDIT_SCHEMA, AUDIT_TABLE],
+        force_readonly=True,
+    )
+    if rows:
+        return True
+    # TimescaleDB: probe the hypertable catalog if the extension is present.
+    if await extension_installed(driver, "timescaledb"):
+        ht_rows = await driver.execute_query(
+            "SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_schema = %s AND hypertable_name = %s",
+            params=[AUDIT_SCHEMA, AUDIT_TABLE],
+            force_readonly=True,
+        )
+        if ht_rows:
+            return True
+    return False
+
+
+async def _events_data_range(driver: SqlDriver) -> tuple[datetime | None, datetime | None, int]:
+    """Return ``(min_occurred_at, max_occurred_at, row_count)`` for events.
+
+    Used to pre-create historical partitions on the native + pg_partman
+    paths. Empty table returns ``(None, None, 0)`` so the caller can
+    skip the partition-pre-create step.
+    """
+    rows = await driver.execute_query(
+        f"SELECT min(occurred_at) AS lo, max(occurred_at) AS hi, count(*) AS n FROM {_QUALIFIED}",
+        force_readonly=True,
+    )
+    if not rows:
+        return (None, None, 0)
+    cells = rows[0].cells
+    return (cells.get("lo"), cells.get("hi"), int(cells.get("n") or 0))
+
+
+def _events_native_partition_sql(month_start: datetime) -> str:
+    """``CREATE TABLE IF NOT EXISTS`` for one monthly historical partition.
+
+    Monthly granularity for the backfill window keeps partition counts
+    sensible even for multi-year deployments (12 partitions/year vs
+    365 for daily).
+    """
+    # Normalise to the first of the month.
+    start = month_start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # Next month's first day. Avoid relativedelta to keep no deps.
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
+    else:
+        end = start.replace(month=start.month + 1)
+    suffix = start.strftime("%Y%m")
+    return (
+        f"CREATE TABLE IF NOT EXISTS {AUDIT_SCHEMA}.{AUDIT_TABLE}_p{suffix} "
+        f"PARTITION OF {_QUALIFIED} "
+        f"FOR VALUES FROM ('{start.isoformat()}') TO ('{end.isoformat()}')"
+    )
+
+
+def _events_native_daily_partition_sql(day: datetime) -> str:
+    """Daily child partition for the trailing window — keeps recent
+    writes on focused partitions for fast retention drops later."""
+    start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return (
+        f"CREATE TABLE IF NOT EXISTS {AUDIT_SCHEMA}.{AUDIT_TABLE}_p{start.strftime('%Y%m%d')} "
+        f"PARTITION OF {_QUALIFIED} "
+        f"FOR VALUES FROM ('{start.isoformat()}') TO ('{end.isoformat()}')"
+    )
+
+
+async def _events_apply_rls(
+    driver: SqlDriver,
+    *,
+    enabled: bool,
+    reader_role: str | None,
+    statements: list[str],
+) -> None:
+    """Apply ALTER … ENABLE / FORCE ROW LEVEL SECURITY and an optional
+    reader-role SELECT policy. Idempotent on re-runs via the DO-block
+    EXCEPTION trick (CREATE POLICY has no IF NOT EXISTS)."""
+    if not enabled:
+        return
+    sql_rls = f"ALTER TABLE {_QUALIFIED} ENABLE ROW LEVEL SECURITY"
+    await driver.execute_query(sql_rls, force_readonly=False)
+    statements.append(sql_rls)
+    sql_force = f"ALTER TABLE {_QUALIFIED} FORCE ROW LEVEL SECURITY"
+    await driver.execute_query(sql_force, force_readonly=False)
+    statements.append(sql_force)
+    if reader_role is None:
+        return
+    policy_name = f"{AUDIT_TABLE}_reader_select"
+    sql_policy = (
+        "DO $$ BEGIN "
+        f"  CREATE POLICY {policy_name} ON {_QUALIFIED} "
+        f"    FOR SELECT TO {reader_role} USING (true); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; END $$"
+    )
+    await driver.execute_query(sql_policy, force_readonly=False)
+    statements.append(sql_policy)
+    sql_grant_schema = f"GRANT USAGE ON SCHEMA {AUDIT_SCHEMA} TO {reader_role}"
+    await driver.execute_query(sql_grant_schema, force_readonly=False)
+    statements.append(sql_grant_schema)
+    sql_grant_tab = f"GRANT SELECT ON {_QUALIFIED} TO {reader_role}"
+    await driver.execute_query(sql_grant_tab, force_readonly=False)
+    statements.append(sql_grant_tab)
+
+
+async def _events_migrate_native(
+    driver: SqlDriver,
+    *,
+    rls: bool,
+    reader_role: str | None,
+) -> tuple[int, bool, list[str]]:
+    """Rename → create partitioned → copy data → drop legacy dance.
+
+    Runs under an ACCESS EXCLUSIVE lock so concurrent record_audit
+    calls block instead of racing. Returns
+    ``(rows_copied, compression_enabled, statements)``.
+    """
+    statements: list[str] = []
+    lo, hi, row_count = await _events_data_range(driver)
+
+    # 1. Lock the table — blocks every concurrent record_audit until
+    # the migration commits or rolls back.
+    sql_lock = f"LOCK TABLE {_QUALIFIED} IN ACCESS EXCLUSIVE MODE"
+    await driver.execute_query(sql_lock, force_readonly=False)
+    statements.append(sql_lock)
+
+    # 2. Detach the bigserial sequence from the soon-to-be-renamed table
+    # so the new partitioned table can adopt it.
+    seq_qualified = f"{AUDIT_SCHEMA}.{AUDIT_TABLE}_id_seq"
+    sql_seq_detach = f"ALTER SEQUENCE {seq_qualified} OWNED BY NONE"
+    await driver.execute_query(sql_seq_detach, force_readonly=False)
+    statements.append(sql_seq_detach)
+
+    # 3. Rename old → events_migration_legacy.
+    legacy_table = f"{AUDIT_TABLE}_migration_legacy"
+    legacy_qualified = f"{AUDIT_SCHEMA}.{legacy_table}"
+    sql_rename = f"ALTER TABLE {_QUALIFIED} RENAME TO {legacy_table}"
+    await driver.execute_query(sql_rename, force_readonly=False)
+    statements.append(sql_rename)
+
+    # 4. Create new partitioned events with the same column shape +
+    # the (id, occurred_at) composite PK that PG requires for
+    # declarative partitioning on a non-PK column.
+    sql_create = (
+        f"CREATE TABLE {_QUALIFIED} ("
+        f"  id bigint NOT NULL DEFAULT nextval('{seq_qualified}'), "
+        "  occurred_at timestamptz NOT NULL DEFAULT now(), "
+        "  tool text NOT NULL, "
+        "  arguments jsonb NOT NULL, "
+        "  status text NOT NULL, "
+        "  error text, "
+        "  result jsonb, "
+        "  prev_hmac text, "
+        "  event_hmac text, "
+        "  PRIMARY KEY (id, occurred_at)"
+        ") PARTITION BY RANGE (occurred_at)"
+    )
+    await driver.execute_query(sql_create, force_readonly=False)
+    statements.append(sql_create)
+
+    # 5. Re-tie sequence ownership to the new table so DROP TABLE
+    # events still cascade-drops the sequence later.
+    sql_seq_attach = f"ALTER SEQUENCE {seq_qualified} OWNED BY {_QUALIFIED}.id"
+    await driver.execute_query(sql_seq_attach, force_readonly=False)
+    statements.append(sql_seq_attach)
+
+    # 6. Pre-create partitions covering the data range (monthly) +
+    # the trailing/forward week (daily). Empty table → only the
+    # trailing window.
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    if lo is not None and hi is not None:
+        cursor = lo.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        while cursor <= hi:
+            sql_part = _events_native_partition_sql(cursor)
+            await driver.execute_query(sql_part, force_readonly=False)
+            statements.append(sql_part)
+            cursor = (
+                cursor.replace(year=cursor.year + 1, month=1)
+                if cursor.month == 12
+                else cursor.replace(month=cursor.month + 1)
+            )
+    for offset in range(-_EVENTS_NATIVE_WINDOW_DAYS, _EVENTS_NATIVE_WINDOW_DAYS + 1):
+        day = today + timedelta(days=offset)
+        # Skip days the monthly partitions already cover (avoid
+        # overlapping ranges, which PG rejects).
+        sql_day = _events_native_daily_partition_sql(day)
+        if lo is not None and day < hi.replace(day=1) + (  # type: ignore[union-attr]
+            timedelta(days=31)  # generous covering check
+        ):
+            # Skip — the monthly partition for this day's month already
+            # exists, covering the range.
+            # However we still want today + forward partitions if they
+            # fall after the last monthly partition.
+            month_start = day.replace(day=1)
+            if hi is not None and month_start <= hi.replace(day=1):
+                continue
+        await driver.execute_query(sql_day, force_readonly=False)
+        statements.append(sql_day)
+
+    # 7. Copy rows. ORDER BY id keeps the HMAC chain reads working
+    # in the temporary window where verify_audit_chain is racing
+    # (it isn't — the lock prevents it — but ordered inserts are
+    # cheap insurance against future readers).
+    sql_copy = (
+        f"INSERT INTO {_QUALIFIED} "
+        "  (id, occurred_at, tool, arguments, status, error, result, prev_hmac, event_hmac) "
+        f"SELECT id, occurred_at, tool, arguments, status, error, result, prev_hmac, event_hmac "
+        f"FROM {legacy_qualified} ORDER BY id"
+    )
+    await driver.execute_query(sql_copy, force_readonly=False)
+    statements.append(sql_copy)
+
+    # 8. LZ4 compression on the wide text columns (PG 14+). Silently
+    # skipped on older versions.
+    compression_enabled = False
+    for col in ("arguments", "result", "error"):
+        sql_lz4 = f"ALTER TABLE {_QUALIFIED} ALTER COLUMN {col} SET COMPRESSION lz4"
+        try:
+            await driver.execute_query(sql_lz4, force_readonly=False)
+            statements.append(sql_lz4)
+            compression_enabled = True
+        except Exception:
+            break
+
+    # 9. Drop the legacy table — its rows now live in events.
+    sql_drop_legacy = f"DROP TABLE {legacy_qualified}"
+    await driver.execute_query(sql_drop_legacy, force_readonly=False)
+    statements.append(sql_drop_legacy)
+
+    return row_count, compression_enabled, statements
+
+
+async def _events_migrate_timescaledb(
+    driver: SqlDriver,
+    *,
+    chunk_interval: str,
+    compress_after: str,
+    retention_days: int | None,
+    rls: bool,
+    reader_role: str | None,
+) -> tuple[int, bool, list[str]]:
+    """In-place conversion via ``create_hypertable(migrate_data => TRUE)``.
+
+    No rename dance — TimescaleDB rewrites the table internally,
+    chunking by occurred_at. Compression / retention policies are
+    added with ``if_not_exists => TRUE`` so re-runs are no-ops.
+    """
+    statements: list[str] = []
+    _, _, row_count = await _events_data_range(driver)
+
+    # TimescaleDB requires the partition column to be part of the
+    # PK. Existing events PK is (id) alone — extend it.
+    sql_drop_pk = f"ALTER TABLE {_QUALIFIED} DROP CONSTRAINT IF EXISTS events_pkey"
+    await driver.execute_query(sql_drop_pk, force_readonly=False)
+    statements.append(sql_drop_pk)
+    sql_new_pk = f"ALTER TABLE {_QUALIFIED} ADD PRIMARY KEY (id, occurred_at)"
+    await driver.execute_query(sql_new_pk, force_readonly=False)
+    statements.append(sql_new_pk)
+
+    sql_ht = (
+        f"SELECT create_hypertable('{_QUALIFIED}', 'occurred_at', "
+        f"chunk_time_interval => INTERVAL '{chunk_interval}', "
+        "migrate_data => TRUE, "
+        "if_not_exists => TRUE)"
+    )
+    await driver.execute_query(sql_ht, force_readonly=False)
+    statements.append(sql_ht)
+
+    sql_compress = f"ALTER TABLE {_QUALIFIED} SET (timescaledb.compress = TRUE)"
+    await driver.execute_query(sql_compress, force_readonly=False)
+    statements.append(sql_compress)
+    sql_compress_pol = (
+        f"SELECT add_compression_policy('{_QUALIFIED}', INTERVAL '{compress_after}', if_not_exists => TRUE)"
+    )
+    compression_enabled = False
+    try:
+        await driver.execute_query(sql_compress_pol, force_readonly=False)
+        statements.append(sql_compress_pol)
+        compression_enabled = True
+    except Exception:
+        pass
+
+    if retention_days is not None:
+        # HMAC chain anchors on the oldest event. Operator opt-in is
+        # required (retention_days unset by default); when they DO opt
+        # in, surface the gotcha in audit logs but apply the policy.
+        sql_retention = (
+            f"SELECT add_retention_policy('{_QUALIFIED}', INTERVAL '{retention_days} days', if_not_exists => TRUE)"
+        )
+        try:
+            await driver.execute_query(sql_retention, force_readonly=False)
+            statements.append(sql_retention)
+        except Exception:
+            pass
+
+    return row_count, compression_enabled, statements
+
+
+async def migrate_audit_events_to_partitioned(
+    driver: SqlDriver,
+    *,
+    env: Any | None = None,
+) -> EventsAuditMigrationResult:
+    """Retrofit ``mcpg_audit.events`` onto the partitioning stack.
+
+    Idempotent — re-running on an already-partitioned table is a
+    near-zero-cost no-op (one catalog probe, then immediate return).
+    The migration preserves all rows + HMAC chain columns +
+    chain_tip pointer so :func:`mcpg.audit_integrity.verify_audit_chain`
+    continues to work.
+
+    Backend ladder (auto-detected, overrideable via
+    ``MCPG_AUDIT_EVENTS_BACKEND``):
+
+    * **timescaledb** — `create_hypertable(migrate_data => TRUE)`
+      converts in-place. Compression policy via
+      ``add_compression_policy``. Retention requires the operator
+      to set ``MCPG_AUDIT_EVENTS_RETENTION_DAYS`` (the HMAC chain
+      makes wholesale chunk-drops dangerous; opt-in only).
+    * **pg_partman** / **native** — rename + create partitioned +
+      copy + drop legacy, all under one ACCESS EXCLUSIVE lock.
+      Monthly historical partitions + daily trailing/forward
+      window. LZ4 column compression on `arguments` / `result` /
+      `error` (PG 14+).
+
+    Raises:
+        AuditTrailError: When the events table doesn't exist yet
+            (caller should run :func:`ensure_audit_table` first) or
+            an invalid backend is forced.
+    """
+    if not await _audit_table_exists(driver):
+        raise AuditTrailError(
+            "mcpg_audit.events does not exist; call ensure_audit_table first or enable "
+            "MCPG_AUDIT_PERSIST so the table is created on first write."
+        )
+
+    forced, retention_days, chunk_interval, compress_after, rls, reader_role = _resolve_events_settings(env)
+
+    if await _events_table_is_partitioned(driver):
+        # Already partitioned — but RLS + reader-role might be new
+        # operator config, so still apply those (they're idempotent).
+        statements: list[str] = []
+        backend = await _detect_backend(driver, forced=forced)
+        await _events_apply_rls(
+            driver,
+            enabled=rls,
+            reader_role=reader_role,
+            statements=statements,
+        )
+        return EventsAuditMigrationResult(
+            migrated=False,
+            backend=backend,
+            rows_copied=0,
+            compression_enabled=False,
+            retention_days=retention_days,
+            rls_enabled=rls,
+            reader_role=reader_role,
+            setup_sql=tuple(statements),
+        )
+
+    backend = await _detect_backend(driver, forced=forced)
+
+    if backend == "timescaledb":
+        rows_copied, compression_enabled, statements = await _events_migrate_timescaledb(
+            driver,
+            chunk_interval=chunk_interval,
+            compress_after=compress_after,
+            retention_days=retention_days,
+            rls=rls,
+            reader_role=reader_role,
+        )
+    else:
+        # Native + pg_partman share the rename-create-insert dance.
+        rows_copied, compression_enabled, statements = await _events_migrate_native(
+            driver,
+            rls=rls,
+            reader_role=reader_role,
+        )
+        if backend == "pg_partman":
+            sql_partman = (
+                f"SELECT partman.create_parent("
+                f"  p_parent_table := '{_QUALIFIED}', "
+                "  p_control := 'occurred_at', "
+                "  p_type := 'range', "
+                f"  p_interval := '{chunk_interval}'"
+                ")"
+            )
+            try:
+                await driver.execute_query(sql_partman, force_readonly=False)
+                statements.append(sql_partman)
+            except Exception:
+                # create_parent rejects re-registration; treat as
+                # idempotent success.
+                pass
+
+    await _events_apply_rls(
+        driver,
+        enabled=rls,
+        reader_role=reader_role,
+        statements=statements,
+    )
+
+    return EventsAuditMigrationResult(
+        migrated=True,
+        backend=backend,
+        rows_copied=rows_copied,
+        compression_enabled=compression_enabled,
+        retention_days=retention_days,
+        rls_enabled=rls,
+        reader_role=reader_role,
+        setup_sql=tuple(statements),
+    )

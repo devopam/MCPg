@@ -6,6 +6,36 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`mcpg_audit.events` partitioning retrofit**
+  (`mcpg.audit_trail.migrate_audit_events_to_partitioned`). One-shot
+  operator-callable migration that converts an existing unpartitioned
+  events table onto the same partitioning / compression / RLS stack
+  introduced for `mcpg_audit.nl2sql_events` in PR #107. The HMAC chain
+  is preserved (id values + `prev_hmac` / `event_hmac` columns +
+  `chain_tip` pointer), so `verify_audit_chain` keeps working
+  post-migration.
+
+  Backend ladder (auto-detected, overrideable via
+  `MCPG_AUDIT_EVENTS_BACKEND`): TimescaleDB hypertable
+  (`create_hypertable(migrate_data => TRUE)`, in-place); pg_partman
+  / native (rename + create partitioned + copy + drop dance inside
+  one `ACCESS EXCLUSIVE` lock). Monthly partitions cover historical
+  data; daily partitions cover ±7 days from now.
+
+  Compression: TimescaleDB columnar or LZ4 column compression on
+  `arguments` / `result` / `error` (PG 14+). Retention is **off by
+  default** — the HMAC chain anchors on the oldest event, so dropping
+  old chunks would break `verify_audit_chain`; operators who
+  explicitly want chunked retention set
+  `MCPG_AUDIT_EVENTS_RETENTION_DAYS` and must disable
+  `MCPG_AUDIT_INTEGRITY` first.
+
+  RLS on by default; optional reader role via
+  `MCPG_AUDIT_EVENTS_READER_ROLE` gets a SELECT-only policy. Re-running
+  on an already-partitioned events table is a near-zero-cost no-op.
+
 ### Security
 
 - **NL→SQL hardening sweep** (PR-3 of the NL→SQL remediation arc).
