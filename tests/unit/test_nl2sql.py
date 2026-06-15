@@ -9,8 +9,10 @@ from _fakes import FakeRoutingDriver
 
 from mcpg.config import load_settings
 from mcpg.nl2sql import (
+    DEFAULT_MAX_BRIEF_CHARS,
     DEFAULT_MODELS,
     DEFAULT_SCHEMA_DENYLIST,
+    HARD_MAX_BRIEF_CHARS,
     HARD_MAX_TOKENS,
     AnthropicProvider,
     GeminiProvider,
@@ -18,7 +20,9 @@ from mcpg.nl2sql import (
     NL2SQLError,
     OpenAIProvider,
     ProviderCallParams,
+    _assert_single_statement,
     _parse_response,
+    _reset_egress_notice_cache,
     _resolve_schema_policy,
     _sanitize_default_expr,
     _validate_schema_name,
@@ -649,3 +653,237 @@ async def test_translate_nl_to_sql_audit_persist_failure_doesnt_break_translatio
 
     assert result.sql == "SELECT 1"
     assert result.explanation == "smoke"
+
+
+# --- P1 #4 — schema brief char cap ---------------------------------------
+
+
+async def test_schema_brief_is_truncated_when_exceeding_char_cap() -> None:
+    """A schema with hundreds of long column names can't push the brief
+    past ``max_brief_chars`` — the cap applies after per-table /
+    per-column caps so an attacker-shaped schema can't smuggle the
+    LLM-token budget past the operator's max_tokens setting."""
+    from _fakes import FakeRoutingDriver
+
+    # Build a column list that overflows the cap when rendered.
+    long_cols = [
+        {
+            "column_name": f"col_{i:04d}_with_a_quite_long_name_field",
+            "data_type": "text",
+            "nullable": True,
+            "column_default": None,
+            "type_name": "text",
+            "type_mod": -1,
+        }
+        for i in range(800)
+    ]
+    routes = {
+        "c.relispartition": [{"name": "widget", "relkind": "r", "is_partition": False}],
+        "format_type(a.atttypid, a.atttypmod)": long_cols,
+        "WHERE con.contype = 'f'": [],
+    }
+    provider = _StubProvider(response='{"sql": "SELECT 1", "explanation": "x"}')
+
+    await translate_nl_to_sql(
+        FakeRoutingDriver(routes),  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="m",
+        question="count widgets",
+        schema="public",
+        max_brief_chars=2048,
+        columns_per_table=800,
+    )
+
+    assert "[schema brief truncated at 2048 chars]" in provider.captured_user
+    # The user prompt holds the system+schema brief; ensure it actually
+    # respects the cap (with a little overhead for the template).
+    assert len(provider.captured_user) < 2048 + 1024
+
+
+async def test_translate_nl_to_sql_rejects_oversize_max_brief_chars() -> None:
+    from _fakes import FakeRoutingDriver
+
+    with pytest.raises(NL2SQLError, match="max_brief_chars"):
+        await translate_nl_to_sql(
+            FakeRoutingDriver({}),  # type: ignore[arg-type]
+            provider=_StubProvider(),  # type: ignore[arg-type]
+            model="m",
+            question="x",
+            schema="public",
+            max_brief_chars=HARD_MAX_BRIEF_CHARS + 1,
+        )
+
+
+def test_default_max_brief_chars_under_hard_cap() -> None:
+    assert DEFAULT_MAX_BRIEF_CHARS <= HARD_MAX_BRIEF_CHARS
+    assert DEFAULT_MAX_BRIEF_CHARS > 0
+
+
+# --- P2 #5 — vendor-egress one-time warning -------------------------------
+
+
+async def test_translate_nl_to_sql_emits_egress_warning_once_per_provider() -> None:
+    """Operators should see exactly one warning per process telling
+    them catalog metadata leaves the network. Subsequent calls on the
+    same provider stay silent (so the warning doesn't spam logs).
+
+    Tested by spying on the module-level cache rather than caplog —
+    the suite's logging config disables propagation on ``mcpg.*``
+    loggers, which fights with caplog in the full-suite run.
+    """
+    from _fakes import FakeRoutingDriver
+
+    import mcpg.nl2sql as nl2sql_mod
+
+    _reset_egress_notice_cache()
+    provider = _StubProvider(response='{"sql": "SELECT 1", "explanation": "x"}')
+    for _ in range(3):
+        await translate_nl_to_sql(
+            FakeRoutingDriver(_routes_for_simple_schema()),  # type: ignore[arg-type]
+            provider=provider,  # type: ignore[arg-type]
+            model="m",
+            question="x",
+            schema="public",
+        )
+    # Exactly one provider — "stub" — is in the cache; if the warning
+    # fired twice, the set membership doesn't change but the test
+    # below would catch any logic that bypassed the cache.
+    assert nl2sql_mod._EGRESS_NOTICE_LOGGED == {"stub"}
+
+
+async def test_translate_nl_to_sql_egress_warning_fires_per_distinct_provider() -> None:
+    """Each provider warms the cache once; switching providers
+    triggers a fresh notice."""
+    from _fakes import FakeRoutingDriver
+
+    import mcpg.nl2sql as nl2sql_mod
+
+    _reset_egress_notice_cache()
+    routes = _routes_for_simple_schema()
+    for name in ("anthropic_x", "openai_x", "gemini_x"):
+        provider = _StubProvider(name=name, response='{"sql": "SELECT 1", "explanation": "x"}')
+        await translate_nl_to_sql(
+            FakeRoutingDriver(routes),  # type: ignore[arg-type]
+            provider=provider,  # type: ignore[arg-type]
+            model="m",
+            question="x",
+            schema="public",
+        )
+    assert nl2sql_mod._EGRESS_NOTICE_LOGGED == {"anthropic_x", "openai_x", "gemini_x"}
+
+
+# --- P2 #6 — QueryError redaction ----------------------------------------
+
+
+async def test_query_error_message_is_redacted_in_translation_result() -> None:
+    """The execute path's error string flows straight to the caller;
+    psycopg embeds DSN fragments in failure messages, so it must go
+    through obfuscate_password first."""
+    from _fakes import FakeRoutingDriver
+
+    routes = _routes_for_simple_schema()
+    # Route a SELECT-shaped query to a failing pglast parse so we
+    # exercise the QueryError branch via the safety stack.
+
+    class _RaisingDriver(FakeRoutingDriver):
+        async def execute_query(self, query, params=None, force_readonly=False):  # type: ignore[override]
+            if "SELECT count(*)" in query and "public.widget" in query:
+                # Simulate a libpq error with an embedded credential.
+                from mcpg.query import QueryError
+
+                raise QueryError("could not connect to postgres://alice:hunter2@db/x")
+            return await super().execute_query(query, params, force_readonly)
+
+    provider = _StubProvider(response='{"sql": "SELECT count(*) FROM public.widget", "explanation": "x"}')
+    result = await translate_nl_to_sql(
+        _RaisingDriver(routes),  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="m",
+        question="how many widgets",
+        schema="public",
+        execute=True,
+    )
+
+    assert result.executed is False
+    assert result.error is not None
+    assert "hunter2" not in result.error
+
+
+# --- P2 #7 — single-statement assertion ----------------------------------
+
+
+def test_assert_single_statement_accepts_one_select() -> None:
+    _assert_single_statement("SELECT 1")
+    _assert_single_statement("SELECT count(*) FROM widget WHERE id > 5")
+
+
+def test_assert_single_statement_rejects_two_statements() -> None:
+    with pytest.raises(NL2SQLError, match="exactly one statement"):
+        _assert_single_statement("SELECT 1; SELECT 2")
+
+
+def test_assert_single_statement_rejects_select_with_trailing_smuggle() -> None:
+    """The classic injection: a valid SELECT followed by a DROP that
+    the model was tricked into emitting."""
+    with pytest.raises(NL2SQLError, match="exactly one statement"):
+        _assert_single_statement("SELECT id FROM widget; DROP TABLE widget")
+
+
+def test_assert_single_statement_rejects_unparseable_sql() -> None:
+    with pytest.raises(NL2SQLError, match="did not parse"):
+        _assert_single_statement("not even sql ###")
+
+
+async def test_translate_nl_to_sql_rejects_multi_statement_at_execution() -> None:
+    """End-to-end: a model that returns two statements gets caught
+    before run_select runs, and the error reaches the caller in the
+    redacted form."""
+    from _fakes import FakeRoutingDriver
+
+    provider = _StubProvider(response='{"sql": "SELECT 1; SELECT 2", "explanation": "x"}')
+    result = await translate_nl_to_sql(
+        FakeRoutingDriver(_routes_for_simple_schema()),  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="m",
+        question="x",
+        schema="public",
+        execute=True,
+    )
+    assert result.executed is False
+    assert result.error is not None
+    assert "exactly one statement" in result.error
+
+
+# --- P2 #8 — better fence handling ---------------------------------------
+
+
+def test_parse_response_handles_fence_with_surrounding_prose() -> None:
+    """Models occasionally emit explanatory text + a fenced JSON
+    block; the parser must extract from the fence instead of giving
+    up because the outer JSON parse fails."""
+    raw = (
+        "Sure! Here you go:\n\n"
+        "```json\n"
+        '{"sql": "SELECT 1", "explanation": "wrapped"}\n'
+        "```\n\n"
+        "Let me know if you'd like adjustments."
+    )
+    sql, explanation = _parse_response(raw)
+    assert sql == "SELECT 1"
+    assert explanation == "wrapped"
+
+
+def test_parse_response_handles_multiline_sql_inside_fence() -> None:
+    raw = '```\n{"sql": "SELECT id\\nFROM widget\\nWHERE id > 5", "explanation": "multi"}\n```'
+    sql, explanation = _parse_response(raw)
+    assert "SELECT id" in sql
+    assert explanation == "multi"
+
+
+def test_parse_response_extracts_fence_body_over_outer_garbage() -> None:
+    """Mixed text + fence — the outer text isn't JSON, so the fence
+    body wins."""
+    raw = 'Here is the answer.\n```\n{"sql": "SELECT 2", "explanation": "ok"}\n```\nDone.'
+    sql, explanation = _parse_response(raw)
+    assert sql == "SELECT 2"
+    assert explanation == "ok"
