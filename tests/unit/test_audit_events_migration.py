@@ -221,3 +221,39 @@ def test_audit_events_migration_result_shape() -> None:
 def test_audit_constants_use_expected_names() -> None:
     assert AUDIT_SCHEMA == "mcpg_audit"
     assert AUDIT_TABLE == "events"
+
+
+async def test_migrate_native_applies_lz4_on_pg_14_plus() -> None:
+    """When server_version_num >= 140000 the LZ4 ALTER must fire on
+    each large text column. We probe up front instead of try/except
+    so a pre-14 server doesn't abort the migration transaction
+    (gemini critical review, PR #109)."""
+    routes = _native_existing_routes()
+    # Mock the version probe — PG 16.4 = 160004.
+    routes["current_setting('server_version_num')"] = [{"ver": 160004}]
+    driver = FakeRoutingDriver(routes)
+
+    result = await migrate_audit_events_to_partitioned(driver, env={})  # type: ignore[arg-type]
+    queries = " | ".join(call[0] for call in driver.calls)
+
+    assert result.compression_enabled is True
+    assert "ALTER COLUMN arguments SET COMPRESSION lz4" in queries
+    assert "ALTER COLUMN result SET COMPRESSION lz4" in queries
+    assert "ALTER COLUMN error SET COMPRESSION lz4" in queries
+
+
+async def test_migrate_native_skips_lz4_on_pg_13() -> None:
+    """Server_version_num < 140000 → version probe returns and we
+    skip the LZ4 ALTERs entirely, preserving transaction integrity."""
+    routes = _native_existing_routes()
+    routes["current_setting('server_version_num')"] = [{"ver": 130012}]
+    driver = FakeRoutingDriver(routes)
+
+    result = await migrate_audit_events_to_partitioned(driver, env={})  # type: ignore[arg-type]
+    queries = " | ".join(call[0] for call in driver.calls)
+
+    assert result.compression_enabled is False
+    assert "SET COMPRESSION lz4" not in queries
+    # The DROP TABLE legacy step (which follows compression) still
+    # runs — transaction integrity preserved.
+    assert "DROP TABLE mcpg_audit.events_migration_legacy" in queries

@@ -745,15 +745,13 @@ async def _events_migrate_native(
         # Skip days the monthly partitions already cover (avoid
         # overlapping ranges, which PG rejects).
         sql_day = _events_native_daily_partition_sql(day)
-        if lo is not None and day < hi.replace(day=1) + (  # type: ignore[union-attr]
-            timedelta(days=31)  # generous covering check
-        ):
+        if lo is not None and hi is not None and day < hi.replace(day=1) + timedelta(days=31):
             # Skip — the monthly partition for this day's month already
             # exists, covering the range.
             # However we still want today + forward partitions if they
             # fall after the last monthly partition.
             month_start = day.replace(day=1)
-            if hi is not None and month_start <= hi.replace(day=1):
+            if month_start <= hi.replace(day=1):
                 continue
         await driver.execute_query(sql_day, force_readonly=False)
         statements.append(sql_day)
@@ -771,17 +769,24 @@ async def _events_migrate_native(
     await driver.execute_query(sql_copy, force_readonly=False)
     statements.append(sql_copy)
 
-    # 8. LZ4 compression on the wide text columns (PG 14+). Silently
-    # skipped on older versions.
+    # 8. LZ4 compression on the wide text columns (PG 14+). Probe the
+    # server version up front — a failed ``ALTER … SET COMPRESSION``
+    # inside this transaction would abort everything that follows
+    # (DROP legacy, RLS apply), since psycopg refuses subsequent
+    # statements after a transaction error (gemini critical review,
+    # PR #109).
     compression_enabled = False
-    for col in ("arguments", "result", "error"):
-        sql_lz4 = f"ALTER TABLE {_QUALIFIED} ALTER COLUMN {col} SET COMPRESSION lz4"
-        try:
+    version_rows = await driver.execute_query(
+        "SELECT current_setting('server_version_num')::integer AS ver",
+        force_readonly=True,
+    )
+    pg_version = int(version_rows[0].cells["ver"]) if version_rows else 0
+    if pg_version >= 140000:
+        for col in ("arguments", "result", "error"):
+            sql_lz4 = f"ALTER TABLE {_QUALIFIED} ALTER COLUMN {col} SET COMPRESSION lz4"
             await driver.execute_query(sql_lz4, force_readonly=False)
             statements.append(sql_lz4)
             compression_enabled = True
-        except Exception:
-            break
 
     # 9. Drop the legacy table — its rows now live in events.
     sql_drop_legacy = f"DROP TABLE {legacy_qualified}"
