@@ -26,10 +26,18 @@ actually created so the caller can tell first-run from no-op.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from os import environ
 from typing import Any
 
 from mcpg._vendor.sql import SqlDriver
+from mcpg.audit_nl2sql import Backend
+from mcpg.audit_nl2sql import NL2SQLAuditError as _SharedAuditError
+from mcpg.audit_nl2sql import _check_identifier as _shared_check_identifier
+from mcpg.audit_nl2sql import _check_interval as _shared_check_interval
+from mcpg.audit_nl2sql import detect_backend as _detect_backend
 from mcpg.database import Database
 
 _SCHEMA_NAME = "mcpg_rag"
@@ -743,4 +751,588 @@ async def recommend_efficiency_thresholds(
         ranking_degraded_recall=_THRESHOLD_RANKING_DEGRADED_RECALL,
         corpus_size=corpus_size,
         derived_from_corpus=any((recall_adapted, spearman_adapted, pruning_adapted)),
+    )
+
+
+# --- mcpg_rag partitioning retrofit (PR-5) ---------------------------------
+#
+# Mirrors the audit-events retrofit (PR #109) but for the two
+# mcpg_rag time-series tables: rerank_events + efficiency_observations.
+# These have no HMAC chain, so retention can default on (90 days) —
+# operators rarely keep raw per-event rerank telemetry past a quarter.
+#
+# Backend ladder is the same: timescaledb > pg_partman > native. The
+# native path does the rename + create partitioned + copy + drop dance
+# inside one ACCESS EXCLUSIVE lock per table.
+
+
+_RAG_NATIVE_WINDOW_DAYS = 7
+
+
+def _rag_check_identifier(name: str, *, kind: str) -> None:
+    try:
+        _shared_check_identifier(name, kind=kind)
+    except _SharedAuditError as exc:
+        raise RagTelemetryError(str(exc)) from exc
+
+
+def _rag_check_interval(value: str, *, kind: str) -> None:
+    try:
+        _shared_check_interval(value, kind=kind)
+    except _SharedAuditError as exc:
+        raise RagTelemetryError(str(exc)) from exc
+
+
+@dataclass(frozen=True, slots=True)
+class RagTelemetryMigrationResult:
+    """Outcome of :func:`migrate_rag_telemetry_to_partitioned`."""
+
+    migrated_rerank: bool
+    migrated_efficiency: bool
+    backend: Backend
+    rerank_rows_copied: int
+    efficiency_rows_copied: int
+    compression_enabled: bool
+    retention_days: int | None
+    rls_enabled: bool
+    reader_role: str | None
+    setup_sql: tuple[str, ...]
+
+
+# Per-table migration parameters: PK column + timestamp column +
+# qualified table + column list (for INSERT) + LZ4-target text columns.
+@dataclass(frozen=True, slots=True)
+class _RagTableSpec:
+    table: str
+    pk_column: str
+    ts_column: str
+    columns: tuple[str, ...]
+    lz4_columns: tuple[str, ...]
+    create_ddl: str
+
+
+_RERANK_SPEC = _RagTableSpec(
+    table=_TABLE_NAME,
+    pk_column="event_id",
+    ts_column="occurred_at",
+    columns=(
+        "event_id",
+        "occurred_at",
+        "query_hash",
+        "retrieval_index",
+        "retrieval_backend",
+        "candidate_id",
+        "bi_encoder_score",
+        "bi_encoder_rank",
+        "cross_encoder_score",
+        "cross_encoder_rank",
+        "reranker_model",
+        "used_in_context",
+        "ground_truth_relevance",
+        "extra",
+    ),
+    # JSONB extra is a fat target; query_hash is bytea (LZ4 still
+    # applies but the column is usually small). Stick to the
+    # heavyweight ones.
+    lz4_columns=("extra",),
+    create_ddl=(
+        f"CREATE TABLE {_SCHEMA_NAME}.{_TABLE_NAME} ("
+        f"  event_id bigint NOT NULL DEFAULT nextval('{_SCHEMA_NAME}.{_TABLE_NAME}_event_id_seq'), "
+        "  occurred_at timestamptz NOT NULL DEFAULT now(), "
+        "  query_hash bytea NOT NULL, "
+        "  retrieval_index text NOT NULL, "
+        "  retrieval_backend text NOT NULL, "
+        "  candidate_id bigint NOT NULL, "
+        "  bi_encoder_score double precision, "
+        "  bi_encoder_rank smallint NOT NULL, "
+        "  cross_encoder_score double precision NOT NULL, "
+        "  cross_encoder_rank smallint NOT NULL, "
+        "  reranker_model text NOT NULL, "
+        "  used_in_context boolean NOT NULL DEFAULT FALSE, "
+        "  ground_truth_relevance smallint, "
+        "  extra jsonb NOT NULL DEFAULT '{}'::jsonb, "
+        "  PRIMARY KEY (event_id, occurred_at)"
+        ") PARTITION BY RANGE (occurred_at)"
+    ),
+)
+
+
+_EFFICIENCY_SPEC = _RagTableSpec(
+    table=_EFFICIENCY_TABLE,
+    pk_column="observation_id",
+    ts_column="observed_at",
+    columns=(
+        "observation_id",
+        "observed_at",
+        "schema_name",
+        "table_name",
+        "column_name",
+        "index_name",
+        "backend",
+        "metric",
+        "k",
+        "sample_size",
+        "recall_baseline",
+        "rerank_lift_curve",
+        "spearman",
+        "kendall",
+        "pages_pruned_ratio_p50",
+        "duration_seconds",
+        "extra",
+    ),
+    lz4_columns=("rerank_lift_curve", "extra"),
+    create_ddl=(
+        f"CREATE TABLE {_SCHEMA_NAME}.{_EFFICIENCY_TABLE} ("
+        f"  observation_id bigint NOT NULL "
+        f"    DEFAULT nextval('{_SCHEMA_NAME}.{_EFFICIENCY_TABLE}_observation_id_seq'), "
+        "  observed_at timestamptz NOT NULL DEFAULT now(), "
+        "  schema_name text NOT NULL, "
+        "  table_name text NOT NULL, "
+        "  column_name text NOT NULL, "
+        "  index_name text NOT NULL, "
+        "  backend text NOT NULL, "
+        "  metric text NOT NULL, "
+        "  k int NOT NULL, "
+        "  sample_size int NOT NULL, "
+        "  recall_baseline double precision, "
+        "  rerank_lift_curve jsonb NOT NULL DEFAULT '[]'::jsonb, "
+        "  spearman double precision, "
+        "  kendall double precision, "
+        "  pages_pruned_ratio_p50 double precision, "
+        "  duration_seconds double precision, "
+        "  extra jsonb NOT NULL DEFAULT '{}'::jsonb, "
+        "  PRIMARY KEY (observation_id, observed_at)"
+        ") PARTITION BY RANGE (observed_at)"
+    ),
+)
+
+
+def _resolve_rag_telemetry_settings(
+    env: Mapping[str, str] | None,
+) -> tuple[str | None, int, str, str, bool, str | None]:
+    """Read MCPG_RAG_TELEMETRY_* knobs out of env.
+
+    Returns ``(backend, retention_days, chunk_interval, compress_after,
+    rls, reader_role)``. Retention defaults to 90 days — the RAG
+    tables have no HMAC chain to anchor, so periodic chunk-drops are
+    safe (and operators rarely keep raw per-event rerank rows past
+    a quarter).
+    """
+    source = env if env is not None else environ
+    backend_raw = (source.get("MCPG_RAG_TELEMETRY_BACKEND") or "").strip() or None
+    retention_raw = (source.get("MCPG_RAG_TELEMETRY_RETENTION_DAYS") or "").strip()
+    if retention_raw:
+        parsed = int(retention_raw)
+        if parsed < 1:
+            raise RagTelemetryError(
+                f"MCPG_RAG_TELEMETRY_RETENTION_DAYS must be a positive integer; got {retention_raw!r}"
+            )
+        retention_days: int = parsed
+    else:
+        retention_days = 90
+    chunk_interval = (source.get("MCPG_RAG_TELEMETRY_CHUNK_INTERVAL") or "").strip() or "1 day"
+    _rag_check_interval(chunk_interval, kind="MCPG_RAG_TELEMETRY_CHUNK_INTERVAL")
+    compress_after = (source.get("MCPG_RAG_TELEMETRY_COMPRESS_AFTER") or "").strip() or "7 days"
+    _rag_check_interval(compress_after, kind="MCPG_RAG_TELEMETRY_COMPRESS_AFTER")
+    rls_raw = (source.get("MCPG_RAG_TELEMETRY_RLS") or "").strip().lower()
+    rls = rls_raw in ("", "true", "1", "yes", "on")
+    reader_role = (source.get("MCPG_RAG_TELEMETRY_READER_ROLE") or "").strip() or None
+    if reader_role is not None:
+        _rag_check_identifier(reader_role, kind="rag telemetry reader role")
+    return backend_raw, retention_days, chunk_interval, compress_after, rls, reader_role
+
+
+async def _rag_table_exists(driver: SqlDriver, table: str) -> bool:
+    rows = await driver.execute_query(
+        "SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relname = %s",
+        params=[_SCHEMA_NAME, table],
+        force_readonly=True,
+    )
+    return bool(rows)
+
+
+async def _rag_table_is_partitioned(driver: SqlDriver, table: str) -> bool:
+    rows = await driver.execute_query(
+        "SELECT 1 FROM pg_partitioned_table pt "
+        "JOIN pg_class c ON c.oid = pt.partrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relname = %s",
+        params=[_SCHEMA_NAME, table],
+        force_readonly=True,
+    )
+    if rows:
+        return True
+    # TimescaleDB hypertable probe.
+    ht_rows = await driver.execute_query(
+        "SELECT 1 FROM pg_extension WHERE extname = %s",
+        params=["timescaledb"],
+        force_readonly=True,
+    )
+    if ht_rows:
+        ht = await driver.execute_query(
+            "SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_schema = %s AND hypertable_name = %s",
+            params=[_SCHEMA_NAME, table],
+            force_readonly=True,
+        )
+        if ht:
+            return True
+    return False
+
+
+async def _rag_data_range(driver: SqlDriver, spec: _RagTableSpec) -> tuple[datetime | None, datetime | None, int]:
+    rows = await driver.execute_query(
+        f"SELECT min({spec.ts_column}) AS lo, max({spec.ts_column}) AS hi, count(*) AS n "
+        f"FROM {_SCHEMA_NAME}.{spec.table}",
+        force_readonly=True,
+    )
+    if not rows:
+        return (None, None, 0)
+    c = rows[0].cells
+    return (c.get("lo"), c.get("hi"), int(c.get("n") or 0))
+
+
+def _rag_native_monthly_partition_sql(spec: _RagTableSpec, month_start: datetime) -> str:
+    start = month_start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
+    else:
+        end = start.replace(month=start.month + 1)
+    return (
+        f"CREATE TABLE IF NOT EXISTS {_SCHEMA_NAME}.{spec.table}_p{start.strftime('%Y%m')} "
+        f"PARTITION OF {_SCHEMA_NAME}.{spec.table} "
+        f"FOR VALUES FROM ('{start.isoformat()}') TO ('{end.isoformat()}')"
+    )
+
+
+def _rag_native_daily_partition_sql(spec: _RagTableSpec, day: datetime) -> str:
+    start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return (
+        f"CREATE TABLE IF NOT EXISTS {_SCHEMA_NAME}.{spec.table}_p{start.strftime('%Y%m%d')} "
+        f"PARTITION OF {_SCHEMA_NAME}.{spec.table} "
+        f"FOR VALUES FROM ('{start.isoformat()}') TO ('{end.isoformat()}')"
+    )
+
+
+async def _rag_migrate_native(
+    driver: SqlDriver,
+    spec: _RagTableSpec,
+) -> tuple[int, bool, list[str]]:
+    """Rename + create partitioned + copy + drop legacy under one
+    ACCESS EXCLUSIVE lock. Returns
+    ``(rows_copied, compression_enabled, statements)``.
+
+    .. important::
+       All migration DDL is concatenated into a single multi-statement
+       string and sent via one :meth:`execute_query` call. The driver
+       commits at each ``execute_query`` boundary (line 249/260 of
+       sql_driver.py), so issuing the LOCK in its own call would
+       release the ACCESS EXCLUSIVE mode immediately and let
+       concurrent writers race the rename dance (gemini critical
+       review, PR #110). PG's simple-query protocol treats a
+       semicolon-separated batch as one implicit transaction, so the
+       lock holds for the entire migration when sent as one call.
+    """
+    # Reads are issued separately — they happen before the lock and
+    # don't need to be in the migration transaction.
+    lo, hi, row_count = await _rag_data_range(driver, spec)
+    version_rows = await driver.execute_query(
+        "SELECT current_setting('server_version_num')::integer AS ver",
+        force_readonly=True,
+    )
+    pg_version = int(version_rows[0].cells["ver"]) if version_rows else 0
+
+    qualified = f"{_SCHEMA_NAME}.{spec.table}"
+    seq_qualified = f"{_SCHEMA_NAME}.{spec.table}_{spec.pk_column}_seq"
+    legacy = f"{spec.table}_migration_legacy"
+    legacy_qualified = f"{_SCHEMA_NAME}.{legacy}"
+
+    statements: list[str] = [
+        f"LOCK TABLE {qualified} IN ACCESS EXCLUSIVE MODE",
+        f"ALTER SEQUENCE {seq_qualified} OWNED BY NONE",
+        f"ALTER TABLE {qualified} RENAME TO {legacy}",
+        spec.create_ddl,
+        f"ALTER SEQUENCE {seq_qualified} OWNED BY {qualified}.{spec.pk_column}",
+    ]
+
+    # Monthly partitions across data range + ±7 daily trailing/forward.
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    if lo is not None and hi is not None:
+        cursor = lo.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        while cursor <= hi:
+            statements.append(_rag_native_monthly_partition_sql(spec, cursor))
+            cursor = (
+                cursor.replace(year=cursor.year + 1, month=1)
+                if cursor.month == 12
+                else cursor.replace(month=cursor.month + 1)
+            )
+    for offset_d in range(-_RAG_NATIVE_WINDOW_DAYS, _RAG_NATIVE_WINDOW_DAYS + 1):
+        day = today + timedelta(days=offset_d)
+        if lo is not None and hi is not None:
+            month_start = day.replace(day=1)
+            if month_start <= hi.replace(day=1):
+                # Monthly partition for this month already covers it.
+                continue
+        statements.append(_rag_native_daily_partition_sql(spec, day))
+
+    col_list = ", ".join(spec.columns)
+    statements.append(
+        f"INSERT INTO {qualified} ({col_list}) SELECT {col_list} FROM {legacy_qualified} ORDER BY {spec.pk_column}"
+    )
+
+    # LZ4 (PG 14+). Decided up front from the version probe — a
+    # failed ALTER inside the migration batch would abort everything
+    # that follows (DROP legacy).
+    compression_enabled = False
+    if pg_version >= 140000:
+        for col in spec.lz4_columns:
+            statements.append(f"ALTER TABLE {qualified} ALTER COLUMN {col} SET COMPRESSION lz4")
+            compression_enabled = True
+
+    statements.append(f"DROP TABLE {legacy_qualified}")
+
+    # Send the entire migration as one query. PG's simple-query
+    # protocol holds the implicit transaction across all statements
+    # in the batch, so the LOCK acquired in the first statement is
+    # held through the DROP at the end.
+    batch_sql = ";\n".join(statements)
+    await driver.execute_query(batch_sql, force_readonly=False)
+
+    return row_count, compression_enabled, statements
+
+
+async def _rag_migrate_timescaledb(
+    driver: SqlDriver,
+    spec: _RagTableSpec,
+    *,
+    chunk_interval: str,
+    compress_after: str,
+    retention_days: int | None,
+) -> tuple[int, bool, list[str]]:
+    """In-place create_hypertable(migrate_data => TRUE).
+
+    The PK rebuild (DROP + ADD) needs to be atomic — between the two
+    statements the table has no PK constraint and a concurrent writer
+    could insert duplicates. Bundle into one execute_query call so
+    the simple-query protocol holds an implicit transaction across
+    both statements (same fix as :func:`_rag_migrate_native`,
+    gemini critical review PR #110).
+    """
+    statements: list[str] = []
+    qualified = f"{_SCHEMA_NAME}.{spec.table}"
+    _, _, row_count = await _rag_data_range(driver, spec)
+
+    # Atomic PK rebuild — single batch so the no-PK window is invisible
+    # to other writers.
+    pk_rebuild = (
+        f"ALTER TABLE {qualified} DROP CONSTRAINT IF EXISTS {spec.table}_pkey;\n"
+        f"ALTER TABLE {qualified} ADD PRIMARY KEY ({spec.pk_column}, {spec.ts_column})"
+    )
+    await driver.execute_query(pk_rebuild, force_readonly=False)
+    statements.append(pk_rebuild)
+
+    sql_ht = (
+        f"SELECT create_hypertable('{qualified}', '{spec.ts_column}', "
+        f"chunk_time_interval => INTERVAL '{chunk_interval}', "
+        "migrate_data => TRUE, "
+        "if_not_exists => TRUE)"
+    )
+    await driver.execute_query(sql_ht, force_readonly=False)
+    statements.append(sql_ht)
+
+    sql_compress = f"ALTER TABLE {qualified} SET (timescaledb.compress = TRUE)"
+    await driver.execute_query(sql_compress, force_readonly=False)
+    statements.append(sql_compress)
+
+    compression_enabled = False
+    sql_cp = f"SELECT add_compression_policy('{qualified}', INTERVAL '{compress_after}', if_not_exists => TRUE)"
+    try:
+        await driver.execute_query(sql_cp, force_readonly=False)
+        statements.append(sql_cp)
+        compression_enabled = True
+    except Exception:
+        pass
+
+    if retention_days is not None:
+        sql_rp = f"SELECT add_retention_policy('{qualified}', INTERVAL '{retention_days} days', if_not_exists => TRUE)"
+        try:
+            await driver.execute_query(sql_rp, force_readonly=False)
+            statements.append(sql_rp)
+        except Exception:
+            pass
+
+    return row_count, compression_enabled, statements
+
+
+async def _rag_apply_rls(
+    driver: SqlDriver,
+    *,
+    table: str,
+    enabled: bool,
+    reader_role: str | None,
+    statements: list[str],
+) -> None:
+    if not enabled:
+        return
+    qualified = f"{_SCHEMA_NAME}.{table}"
+    sql_rls = f"ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY"
+    await driver.execute_query(sql_rls, force_readonly=False)
+    statements.append(sql_rls)
+    sql_force = f"ALTER TABLE {qualified} FORCE ROW LEVEL SECURITY"
+    await driver.execute_query(sql_force, force_readonly=False)
+    statements.append(sql_force)
+    if reader_role is None:
+        return
+    policy_name = f"{table}_reader_select"
+    sql_policy = (
+        "DO $$ BEGIN "
+        f"  CREATE POLICY {policy_name} ON {qualified} "
+        f"    FOR SELECT TO {reader_role} USING (true); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; END $$"
+    )
+    await driver.execute_query(sql_policy, force_readonly=False)
+    statements.append(sql_policy)
+    sql_grant_schema = f"GRANT USAGE ON SCHEMA {_SCHEMA_NAME} TO {reader_role}"
+    await driver.execute_query(sql_grant_schema, force_readonly=False)
+    statements.append(sql_grant_schema)
+    sql_grant_tab = f"GRANT SELECT ON {qualified} TO {reader_role}"
+    await driver.execute_query(sql_grant_tab, force_readonly=False)
+    statements.append(sql_grant_tab)
+
+
+async def _migrate_one_rag_table(
+    driver: SqlDriver,
+    spec: _RagTableSpec,
+    *,
+    backend: Backend,
+    chunk_interval: str,
+    compress_after: str,
+    retention_days: int | None,
+    rls: bool,
+    reader_role: str | None,
+) -> tuple[bool, int, bool, list[str]]:
+    """Migrate one RAG telemetry table. Returns
+    ``(migrated, rows_copied, compression_enabled, statements)``.
+
+    Skips when the table is missing (telemetry was never set up) or
+    already partitioned (re-run is a no-op).
+    """
+    if not await _rag_table_exists(driver, spec.table):
+        return (False, 0, False, [])
+    statements: list[str] = []
+    if await _rag_table_is_partitioned(driver, spec.table):
+        await _rag_apply_rls(
+            driver,
+            table=spec.table,
+            enabled=rls,
+            reader_role=reader_role,
+            statements=statements,
+        )
+        return (False, 0, False, statements)
+
+    if backend == "timescaledb":
+        rows_copied, compression_enabled, table_stmts = await _rag_migrate_timescaledb(
+            driver,
+            spec,
+            chunk_interval=chunk_interval,
+            compress_after=compress_after,
+            retention_days=retention_days,
+        )
+    else:
+        rows_copied, compression_enabled, table_stmts = await _rag_migrate_native(driver, spec)
+        if backend == "pg_partman":
+            sql_partman = (
+                f"SELECT partman.create_parent("
+                f"  p_parent_table := '{_SCHEMA_NAME}.{spec.table}', "
+                f"  p_control := '{spec.ts_column}', "
+                "  p_type := 'range', "
+                f"  p_interval := '{chunk_interval}'"
+                ")"
+            )
+            try:
+                await driver.execute_query(sql_partman, force_readonly=False)
+                table_stmts.append(sql_partman)
+            except Exception:
+                pass
+
+    statements.extend(table_stmts)
+    await _rag_apply_rls(
+        driver,
+        table=spec.table,
+        enabled=rls,
+        reader_role=reader_role,
+        statements=statements,
+    )
+    return (True, rows_copied, compression_enabled, statements)
+
+
+async def migrate_rag_telemetry_to_partitioned(
+    driver: SqlDriver,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> RagTelemetryMigrationResult:
+    """Retrofit ``mcpg_rag.rerank_events`` + ``mcpg_rag.efficiency_observations``
+    onto the partitioning stack.
+
+    Idempotent — re-running on already-partitioned tables is a near-no-op.
+    Either table may be absent (telemetry never set up); the migration
+    handles each independently. Returns one consolidated result so the
+    operator can inspect everything that ran.
+
+    Backend ladder (auto-detected, overrideable via
+    ``MCPG_RAG_TELEMETRY_BACKEND``):
+
+    * **timescaledb** — in-place ``create_hypertable(migrate_data => TRUE)``
+      per table. Compression + retention policies applied with
+      ``if_not_exists => TRUE``.
+    * **pg_partman** / **native** — rename + create partitioned + copy +
+      drop dance per table, each under its own ACCESS EXCLUSIVE lock.
+      Monthly historical partitions + daily trailing/forward window.
+      LZ4 column compression on JSONB columns (PG 14+).
+
+    Retention defaults to **90 days** — no HMAC chain to anchor here,
+    unlike :func:`migrate_audit_events_to_partitioned`. Operators with
+    longer audit horizons override via
+    ``MCPG_RAG_TELEMETRY_RETENTION_DAYS``.
+    """
+    forced, retention_days, chunk_interval, compress_after, rls, reader_role = _resolve_rag_telemetry_settings(env)
+    backend = await _detect_backend(driver, forced=forced)
+    all_statements: list[str] = []
+
+    migrated_rerank, rerank_rows, comp_a, stmts_a = await _migrate_one_rag_table(
+        driver,
+        _RERANK_SPEC,
+        backend=backend,
+        chunk_interval=chunk_interval,
+        compress_after=compress_after,
+        retention_days=retention_days,
+        rls=rls,
+        reader_role=reader_role,
+    )
+    all_statements.extend(stmts_a)
+
+    migrated_eff, eff_rows, comp_b, stmts_b = await _migrate_one_rag_table(
+        driver,
+        _EFFICIENCY_SPEC,
+        backend=backend,
+        chunk_interval=chunk_interval,
+        compress_after=compress_after,
+        retention_days=retention_days,
+        rls=rls,
+        reader_role=reader_role,
+    )
+    all_statements.extend(stmts_b)
+
+    return RagTelemetryMigrationResult(
+        migrated_rerank=migrated_rerank,
+        migrated_efficiency=migrated_eff,
+        backend=backend,
+        rerank_rows_copied=rerank_rows,
+        efficiency_rows_copied=eff_rows,
+        compression_enabled=(comp_a or comp_b),
+        retention_days=retention_days,
+        rls_enabled=rls,
+        reader_role=reader_role,
+        setup_sql=tuple(all_statements),
     )

@@ -8,6 +8,32 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`mcpg_rag.rerank_events` + `mcpg_rag.efficiency_observations`
+  partitioning retrofit**
+  (`mcpg.rag_telemetry.migrate_rag_telemetry_to_partitioned`). PR-5
+  of the NL→SQL remediation arc. Same partitioning / compression / RLS
+  treatment now applied to both RAG telemetry tables. Migration handles
+  each table independently — either or both can be absent (telemetry
+  never set up).
+
+  Unlike `mcpg_audit.events`, retention defaults **on** (90 days): no
+  HMAC chain anchors these tables, so periodic chunk-drops are safe.
+  Overrideable via `MCPG_RAG_TELEMETRY_RETENTION_DAYS`. LZ4 column
+  compression on the JSONB columns (`extra`, `rerank_lift_curve`) for
+  the pg_partman / native paths, gated on `server_version_num >=
+  140000` to avoid the PG-13 transaction-abort gotcha that PR #109
+  fixed for the events table.
+
+  Native + pg_partman runs the rename-create-insert-drop dance per
+  table under an `ACCESS EXCLUSIVE` lock. TimescaleDB uses in-place
+  `create_hypertable(migrate_data => TRUE)` per table.
+
+  RLS on by default; optional reader role via
+  `MCPG_RAG_TELEMETRY_READER_ROLE` gets a SELECT-only policy on both
+  tables. Re-running on already-partitioned tables is a near-zero-cost
+  no-op.
+
+
 - **`mcpg_audit.events` partitioning retrofit**
   (`mcpg.audit_trail.migrate_audit_events_to_partitioned`). One-shot
   operator-callable migration that converts an existing unpartitioned

@@ -86,6 +86,16 @@ class Settings:
     audit_events_compress_after: str = "7 days"
     audit_events_rls: bool = True
     audit_events_reader_role: str | None = None
+    # mcpg_rag.* partitioning retrofit knobs (PR-5) — consumed by
+    # :func:`mcpg.rag_telemetry.migrate_rag_telemetry_to_partitioned`.
+    # Retention defaults to 90 days (no HMAC chain to anchor here,
+    # unlike audit_events).
+    rag_telemetry_backend: str | None = None
+    rag_telemetry_retention_days: int = 90
+    rag_telemetry_chunk_interval: str = "1 day"
+    rag_telemetry_compress_after: str = "7 days"
+    rag_telemetry_rls: bool = True
+    rag_telemetry_reader_role: str | None = None
     pool_min_size: int = 1
     pool_max_size: int = 5
     # HTTP-transport bearer token. When set and the active transport is
@@ -249,6 +259,9 @@ class Settings:
             f"audit_events_compress_after={self.audit_events_compress_after!r}, "
             f"audit_events_rls={self.audit_events_rls}, "
             f"audit_events_reader_role={self.audit_events_reader_role!r}, "
+            f"rag_telemetry_backend={self.rag_telemetry_backend!r}, "
+            f"rag_telemetry_retention_days={self.rag_telemetry_retention_days}, "
+            f"rag_telemetry_rls={self.rag_telemetry_rls}, "
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size}, "
             f"http_auth_token={http_auth_token_repr!r}, "
             f"auth_mode={self.auth_mode!r}, "
@@ -540,6 +553,48 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         if not stripped:
             raise ConfigError("MCPG_AUDIT_EVENTS_READER_ROLE must not be blank when set")
         audit_events_reader_role = stripped
+
+    rag_telemetry_backend: str | None = None
+    if (raw := env.get("MCPG_RAG_TELEMETRY_BACKEND")) is not None:
+        stripped = raw.strip().lower()
+        if stripped not in ("timescaledb", "pg_partman", "native"):
+            raise ConfigError("MCPG_RAG_TELEMETRY_BACKEND must be one of timescaledb / pg_partman / native")
+        rag_telemetry_backend = stripped
+
+    rag_telemetry_retention_days = 90
+    if (raw := env.get("MCPG_RAG_TELEMETRY_RETENTION_DAYS")) is not None:
+        rag_telemetry_retention_days = _parse_positive_int("MCPG_RAG_TELEMETRY_RETENTION_DAYS", raw)
+
+    rag_telemetry_chunk_interval = "1 day"
+    if (raw := env.get("MCPG_RAG_TELEMETRY_CHUNK_INTERVAL")) is not None:
+        stripped = raw.strip()
+        if not stripped or not _events_interval_pattern.match(stripped):
+            raise ConfigError(
+                f"MCPG_RAG_TELEMETRY_CHUNK_INTERVAL {stripped!r} is not a valid interval "
+                "(expected: <digits> <second|minute|hour|day|week|month|year>[s])"
+            )
+        rag_telemetry_chunk_interval = stripped
+
+    rag_telemetry_compress_after = "7 days"
+    if (raw := env.get("MCPG_RAG_TELEMETRY_COMPRESS_AFTER")) is not None:
+        stripped = raw.strip()
+        if not stripped or not _events_interval_pattern.match(stripped):
+            raise ConfigError(
+                f"MCPG_RAG_TELEMETRY_COMPRESS_AFTER {stripped!r} is not a valid interval "
+                "(expected: <digits> <second|minute|hour|day|week|month|year>[s])"
+            )
+        rag_telemetry_compress_after = stripped
+
+    rag_telemetry_rls = True
+    if (raw := env.get("MCPG_RAG_TELEMETRY_RLS")) is not None:
+        rag_telemetry_rls = _parse_bool("MCPG_RAG_TELEMETRY_RLS", raw)
+
+    rag_telemetry_reader_role: str | None = None
+    if (raw := env.get("MCPG_RAG_TELEMETRY_READER_ROLE")) is not None:
+        stripped = raw.strip()
+        if not stripped:
+            raise ConfigError("MCPG_RAG_TELEMETRY_READER_ROLE must not be blank when set")
+        rag_telemetry_reader_role = stripped
 
     pool_min_size = 1
     if (raw := env.get("MCPG_POOL_MIN_SIZE")) is not None:
@@ -994,6 +1049,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         audit_events_compress_after=audit_events_compress_after,
         audit_events_rls=audit_events_rls,
         audit_events_reader_role=audit_events_reader_role,
+        rag_telemetry_backend=rag_telemetry_backend,
+        rag_telemetry_retention_days=rag_telemetry_retention_days,
+        rag_telemetry_chunk_interval=rag_telemetry_chunk_interval,
+        rag_telemetry_compress_after=rag_telemetry_compress_after,
+        rag_telemetry_rls=rag_telemetry_rls,
+        rag_telemetry_reader_role=rag_telemetry_reader_role,
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
         http_auth_token=http_auth_token,
