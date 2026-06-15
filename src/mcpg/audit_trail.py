@@ -675,55 +675,62 @@ async def _events_migrate_native(
     Runs under an ACCESS EXCLUSIVE lock so concurrent record_audit
     calls block instead of racing. Returns
     ``(rows_copied, compression_enabled, statements)``.
+
+    .. important::
+       The DDL that needs to share a transaction (LOCK through DROP
+       legacy) is concatenated into a **single multi-statement
+       execute_query** call. The driver issues ``COMMIT`` at the end
+       of every ``execute_query`` (``sql_driver.py:249/260``), so
+       splitting the migration into per-statement calls would commit
+       — and thus release the ACCESS EXCLUSIVE lock — after the
+       LOCK TABLE statement, letting concurrent writers race the
+       rename dance. PG's simple-query protocol holds an implicit
+       transaction across all semicolon-separated statements in a
+       single execute call, so the lock holds through the final DROP
+       (symmetric fix to the one applied to
+       :func:`mcpg.rag_telemetry._rag_migrate_native` after the
+       gemini critical review on PR #110).
     """
-    statements: list[str] = []
+    # Read probes run separately — they're pre-lock and don't need
+    # transactional coupling with the migration batch.
     lo, hi, row_count = await _events_data_range(driver)
+    version_rows = await driver.execute_query(
+        "SELECT current_setting('server_version_num')::integer AS ver",
+        force_readonly=True,
+    )
+    pg_version = int(version_rows[0].cells["ver"]) if version_rows else 0
 
-    # 1. Lock the table — blocks every concurrent record_audit until
-    # the migration commits or rolls back.
-    sql_lock = f"LOCK TABLE {_QUALIFIED} IN ACCESS EXCLUSIVE MODE"
-    await driver.execute_query(sql_lock, force_readonly=False)
-    statements.append(sql_lock)
-
-    # 2. Detach the bigserial sequence from the soon-to-be-renamed table
-    # so the new partitioned table can adopt it.
     seq_qualified = f"{AUDIT_SCHEMA}.{AUDIT_TABLE}_id_seq"
-    sql_seq_detach = f"ALTER SEQUENCE {seq_qualified} OWNED BY NONE"
-    await driver.execute_query(sql_seq_detach, force_readonly=False)
-    statements.append(sql_seq_detach)
-
-    # 3. Rename old → events_migration_legacy.
     legacy_table = f"{AUDIT_TABLE}_migration_legacy"
     legacy_qualified = f"{AUDIT_SCHEMA}.{legacy_table}"
-    sql_rename = f"ALTER TABLE {_QUALIFIED} RENAME TO {legacy_table}"
-    await driver.execute_query(sql_rename, force_readonly=False)
-    statements.append(sql_rename)
 
-    # 4. Create new partitioned events with the same column shape +
-    # the (id, occurred_at) composite PK that PG requires for
-    # declarative partitioning on a non-PK column.
-    sql_create = (
-        f"CREATE TABLE {_QUALIFIED} ("
-        f"  id bigint NOT NULL DEFAULT nextval('{seq_qualified}'), "
-        "  occurred_at timestamptz NOT NULL DEFAULT now(), "
-        "  tool text NOT NULL, "
-        "  arguments jsonb NOT NULL, "
-        "  status text NOT NULL, "
-        "  error text, "
-        "  result jsonb, "
-        "  prev_hmac text, "
-        "  event_hmac text, "
-        "  PRIMARY KEY (id, occurred_at)"
-        ") PARTITION BY RANGE (occurred_at)"
-    )
-    await driver.execute_query(sql_create, force_readonly=False)
-    statements.append(sql_create)
-
-    # 5. Re-tie sequence ownership to the new table so DROP TABLE
-    # events still cascade-drops the sequence later.
-    sql_seq_attach = f"ALTER SEQUENCE {seq_qualified} OWNED BY {_QUALIFIED}.id"
-    await driver.execute_query(sql_seq_attach, force_readonly=False)
-    statements.append(sql_seq_attach)
+    statements: list[str] = [
+        # 1. Lock — held for the whole batch.
+        f"LOCK TABLE {_QUALIFIED} IN ACCESS EXCLUSIVE MODE",
+        # 2. Detach the bigserial sequence so the new partitioned
+        # table can adopt it.
+        f"ALTER SEQUENCE {seq_qualified} OWNED BY NONE",
+        # 3. Rename old → events_migration_legacy.
+        f"ALTER TABLE {_QUALIFIED} RENAME TO {legacy_table}",
+        # 4. Create new partitioned events with the same column
+        # shape + (id, occurred_at) composite PK.
+        (
+            f"CREATE TABLE {_QUALIFIED} ("
+            f"  id bigint NOT NULL DEFAULT nextval('{seq_qualified}'), "
+            "  occurred_at timestamptz NOT NULL DEFAULT now(), "
+            "  tool text NOT NULL, "
+            "  arguments jsonb NOT NULL, "
+            "  status text NOT NULL, "
+            "  error text, "
+            "  result jsonb, "
+            "  prev_hmac text, "
+            "  event_hmac text, "
+            "  PRIMARY KEY (id, occurred_at)"
+            ") PARTITION BY RANGE (occurred_at)"
+        ),
+        # 5. Re-tie sequence ownership.
+        f"ALTER SEQUENCE {seq_qualified} OWNED BY {_QUALIFIED}.id",
+    ]
 
     # 6. Pre-create partitions covering the data range (monthly) +
     # the trailing/forward week (daily). Empty table → only the
@@ -732,9 +739,7 @@ async def _events_migrate_native(
     if lo is not None and hi is not None:
         cursor = lo.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         while cursor <= hi:
-            sql_part = _events_native_partition_sql(cursor)
-            await driver.execute_query(sql_part, force_readonly=False)
-            statements.append(sql_part)
+            statements.append(_events_native_partition_sql(cursor))
             cursor = (
                 cursor.replace(year=cursor.year + 1, month=1)
                 if cursor.month == 12
@@ -742,56 +747,39 @@ async def _events_migrate_native(
             )
     for offset in range(-_EVENTS_NATIVE_WINDOW_DAYS, _EVENTS_NATIVE_WINDOW_DAYS + 1):
         day = today + timedelta(days=offset)
-        # Skip days the monthly partitions already cover (avoid
-        # overlapping ranges, which PG rejects).
-        sql_day = _events_native_daily_partition_sql(day)
-        if lo is not None and hi is not None and day < hi.replace(day=1) + timedelta(days=31):
-            # Skip — the monthly partition for this day's month already
-            # exists, covering the range.
-            # However we still want today + forward partitions if they
-            # fall after the last monthly partition.
+        if lo is not None and hi is not None:
             month_start = day.replace(day=1)
             if month_start <= hi.replace(day=1):
+                # Monthly partition for this month already covers it.
                 continue
-        await driver.execute_query(sql_day, force_readonly=False)
-        statements.append(sql_day)
+        statements.append(_events_native_daily_partition_sql(day))
 
-    # 7. Copy rows. ORDER BY id keeps the HMAC chain reads working
-    # in the temporary window where verify_audit_chain is racing
-    # (it isn't — the lock prevents it — but ordered inserts are
-    # cheap insurance against future readers).
-    sql_copy = (
+    # 7. Copy rows. ORDER BY id keeps the HMAC chain order intact.
+    statements.append(
         f"INSERT INTO {_QUALIFIED} "
         "  (id, occurred_at, tool, arguments, status, error, result, prev_hmac, event_hmac) "
         f"SELECT id, occurred_at, tool, arguments, status, error, result, prev_hmac, event_hmac "
         f"FROM {legacy_qualified} ORDER BY id"
     )
-    await driver.execute_query(sql_copy, force_readonly=False)
-    statements.append(sql_copy)
 
-    # 8. LZ4 compression on the wide text columns (PG 14+). Probe the
-    # server version up front — a failed ``ALTER … SET COMPRESSION``
-    # inside this transaction would abort everything that follows
-    # (DROP legacy, RLS apply), since psycopg refuses subsequent
-    # statements after a transaction error (gemini critical review,
-    # PR #109).
+    # 8. LZ4 compression on the wide text columns (PG 14+).
     compression_enabled = False
-    version_rows = await driver.execute_query(
-        "SELECT current_setting('server_version_num')::integer AS ver",
-        force_readonly=True,
-    )
-    pg_version = int(version_rows[0].cells["ver"]) if version_rows else 0
     if pg_version >= 140000:
         for col in ("arguments", "result", "error"):
-            sql_lz4 = f"ALTER TABLE {_QUALIFIED} ALTER COLUMN {col} SET COMPRESSION lz4"
-            await driver.execute_query(sql_lz4, force_readonly=False)
-            statements.append(sql_lz4)
+            statements.append(f"ALTER TABLE {_QUALIFIED} ALTER COLUMN {col} SET COMPRESSION lz4")
             compression_enabled = True
 
     # 9. Drop the legacy table — its rows now live in events.
-    sql_drop_legacy = f"DROP TABLE {legacy_qualified}"
-    await driver.execute_query(sql_drop_legacy, force_readonly=False)
-    statements.append(sql_drop_legacy)
+    statements.append(f"DROP TABLE {legacy_qualified}")
+
+    # Send the migration as one batch. PG's simple-query protocol
+    # treats the whole semicolon-separated string as one implicit
+    # transaction, so the LOCK acquired in statement 1 is held
+    # through the DROP at the end. Without this batching the
+    # driver's per-execute_query COMMIT would release the lock
+    # after the LOCK TABLE call itself.
+    batch_sql = ";\n".join(statements)
+    await driver.execute_query(batch_sql, force_readonly=False)
 
     return row_count, compression_enabled, statements
 
@@ -815,13 +803,18 @@ async def _events_migrate_timescaledb(
     _, _, row_count = await _events_data_range(driver)
 
     # TimescaleDB requires the partition column to be part of the
-    # PK. Existing events PK is (id) alone — extend it.
-    sql_drop_pk = f"ALTER TABLE {_QUALIFIED} DROP CONSTRAINT IF EXISTS events_pkey"
-    await driver.execute_query(sql_drop_pk, force_readonly=False)
-    statements.append(sql_drop_pk)
-    sql_new_pk = f"ALTER TABLE {_QUALIFIED} ADD PRIMARY KEY (id, occurred_at)"
-    await driver.execute_query(sql_new_pk, force_readonly=False)
-    statements.append(sql_new_pk)
+    # PK. Existing events PK is (id) alone — extend it. The DROP +
+    # ADD must be atomic; between them the table has no PK and a
+    # concurrent record_audit could insert a duplicate. Bundle into
+    # one execute_query so the simple-query protocol holds an
+    # implicit transaction across both (same fix as the native
+    # path; symmetric to PR #110 review).
+    pk_rebuild = (
+        f"ALTER TABLE {_QUALIFIED} DROP CONSTRAINT IF EXISTS events_pkey;\n"
+        f"ALTER TABLE {_QUALIFIED} ADD PRIMARY KEY (id, occurred_at)"
+    )
+    await driver.execute_query(pk_rebuild, force_readonly=False)
+    statements.append(pk_rebuild)
 
     sql_ht = (
         f"SELECT create_hypertable('{_QUALIFIED}', 'occurred_at', "
