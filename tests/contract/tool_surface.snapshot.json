@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 173
+    "tool_count": 174
   },
   "tools": [
     {
@@ -1065,6 +1065,15 @@
         "type": "object"
       },
       "name": "describe_graph"
+    },
+    {
+      "description": "Return a high-level summary of what mcpg can do, organised into capability buckets (schema introspection, query execution, vector search, RAG telemetry, audit trail, migrations, time-series, etc.). Call this first when discovering mcpg's surface — it's much more compact than walking the full tool catalogue. Returns an object with `headline`, `version`, `tool_count`, `capability_count`, and a `capabilities` list, where each capability has `id`, `name`, `summary`, `detail`, `headline_tools` (top 3-6 tools to reach for first), `tool_count`, and `all_tools` (the full list in that bucket). Read-only; no database access. Pair with `list_tools` (MCP-protocol) when you need every tool's full schema.",
+      "inputSchema": {
+        "properties": {},
+        "title": "describe_selfArguments",
+        "type": "object"
+      },
+      "name": "describe_self"
     },
     {
       "description": "Describe the columns of a table, in ordinal order.\n\nExample: `describe_table(schema='public', table='users')`",

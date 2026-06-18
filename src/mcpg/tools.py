@@ -190,6 +190,35 @@ def _register_server_info(server: FastMCP[AppContext]) -> None:
         return asdict(build_server_info(ctx.request_context.lifespan_context))
 
     @server.tool(
+        name="describe_self",
+        description=(
+            "Return a high-level summary of what mcpg can do, organised into "
+            "capability buckets (schema introspection, query execution, vector "
+            "search, RAG telemetry, audit trail, migrations, time-series, "
+            "etc.). Call this first when discovering mcpg's surface — it's "
+            "much more compact than walking the full tool catalogue. Returns "
+            "an object with `headline`, `version`, `tool_count`, "
+            "`capability_count`, and a `capabilities` list, where each "
+            "capability has `id`, `name`, `summary`, `detail`, "
+            "`headline_tools` (top 3-6 tools to reach for first), `tool_count`, "
+            "and `all_tools` (the full list in that bucket). Read-only; no "
+            "database access. Pair with `list_tools` (MCP-protocol) when you "
+            "need every tool's full schema."
+        ),
+    )
+    async def describe_self(ctx: _Ctx) -> dict[str, Any]:
+        del ctx  # purely-static response; no per-request state
+        # Pull the live tool list off the FastMCP instance so the per-bucket
+        # counts stay accurate even if a stricter flag profile hides some
+        # tools. The protected attribute access is intentional — FastMCP
+        # doesn't expose a public iterator yet.
+        registered_tools = list(await server.list_tools())
+        names = [t.name for t in registered_tools]
+        from mcpg.about import build_capability_summary
+
+        return build_capability_summary(names)
+
+    @server.tool(
         name="get_metrics_exposition",
         description=(
             "Return the in-process Prometheus-format metrics for this MCPg "
