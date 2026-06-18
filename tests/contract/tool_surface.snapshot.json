@@ -1,0 +1,5093 @@
+{
+  "_meta": {
+    "schema_version": 1,
+    "tool_count": 173
+  },
+  "tools": [
+    {
+      "description": "Enable TimescaleDB column-store compression on a hypertable and schedule a policy that compresses chunks older than `compress_after` (e.g. '7 days'). Requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "inputSchema": {
+        "properties": {
+          "compress_after": {
+            "default": "7 days",
+            "title": "Compress After",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "add_compression_policyArguments",
+        "type": "object"
+      },
+      "name": "add_compression_policy"
+    },
+    {
+      "description": "Schedule a TimescaleDB retention policy that drops hypertable chunks older than `drop_after` (e.g. '30 days'). Requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "inputSchema": {
+        "properties": {
+          "drop_after": {
+            "default": "30 days",
+            "title": "Drop After",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "add_retention_policyArguments",
+        "type": "object"
+      },
+      "name": "add_retention_policy"
+    },
+    {
+      "description": "Recommend a pgvector distance metric (cosine | l2 | inner_product) from the embedding-magnitude distribution. Samples up to `sample_size` non-NULL rows of schema.table.column, computes each embedding's L2 norm, and applies a small heuristic: pre-normalised (CV < 5% and mean ≈ 1.0) → inner_product; nearly-constant magnitude but not unit-norm → cosine (same ranking as L2, safer default); variable magnitude → cosine (normalises out heterogeneous sources). Returns the metric + a rationale + the underlying distribution stats. Reports available=false if the pgvector extension is not installed.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "sample_size": {
+            "default": 1000,
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column"
+        ],
+        "title": "analyze_distance_metricArguments",
+        "type": "object"
+      },
+      "name": "analyze_distance_metric"
+    },
+    {
+      "description": "Sweeps ef_search values to measure the latency and recall trade-off curve for a given pgvector query vector against exact brute-force ground truth. Requires the vector extension.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "k": {
+            "default": 10,
+            "title": "K",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "query_vector": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Query Vector"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column",
+          "query_vector"
+        ],
+        "title": "analyze_hnsw_recallArguments",
+        "type": "object"
+      },
+      "name": "analyze_hnsw_recall"
+    },
+    {
+      "description": "Summarise a query's execution plan: total estimated cost, estimated rows, node types used, and any sequentially-scanned tables.\n\nExample: `analyze_query_plan(sql='SELECT * FROM orders WHERE customer_id = 42')`",
+      "inputSchema": {
+        "properties": {
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "analyze_query_planArguments",
+        "type": "object"
+      },
+      "name": "analyze_query_plan"
+    },
+    {
+      "description": "NDCG@k under bi-encoder ordering vs cross-encoder ordering, averaged across labeled queries (``ground_truth_relevance IS NOT NULL``). Reports the delta (cross - bi) — positive = the rerank is adding real ranking quality, negative = it's hurting. Surfaces ``rerank_hurts_ndcg`` (CRITICAL) or ``rerank_lifts_ndcg`` (GOOD evidence). Reads from mcpg_rag.rerank_events; returns zero counts when no labeled rows exist in the window.",
+      "inputSchema": {
+        "properties": {
+          "days": {
+            "default": 7,
+            "title": "Days",
+            "type": "integer"
+          },
+          "k": {
+            "default": 10,
+            "title": "K",
+            "type": "integer"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "retrieval_index": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retrieval Index"
+          }
+        },
+        "title": "analyze_rerank_ndcgArguments",
+        "type": "object"
+      },
+      "name": "analyze_rerank_ndcg"
+    },
+    {
+      "description": "Equal-width histogram of cross_encoder_score values over the window plus the top-decile share. Surfaces ``score_clustering`` (WARNING) when the reranker isn't discriminating (more than half of scores land in the top decile of the range). Reads from mcpg_rag.rerank_events.",
+      "inputSchema": {
+        "properties": {
+          "days": {
+            "default": 7,
+            "title": "Days",
+            "type": "integer"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "n_buckets": {
+            "default": 20,
+            "title": "N Buckets",
+            "type": "integer"
+          },
+          "retrieval_index": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retrieval Index"
+          }
+        },
+        "title": "analyze_rerank_score_distributionArguments",
+        "type": "object"
+      },
+      "name": "analyze_rerank_score_distribution"
+    },
+    {
+      "description": "Per-query Spearman + Kendall correlation between bi-encoder and cross-encoder ranks, aggregated across queries in the window. Low correlation = the reranker is actively reordering (doing real work); high correlation = the reranker mostly confirms the bi-encoder order. Optional ``model`` / ``retrieval_index`` filters. Surfaces ``reranker_idle`` (WARNING) when the reranker rarely changes ordering. Reads from mcpg_rag.rerank_events; returns a report with zero counts when the table doesn't exist or the window is empty.",
+      "inputSchema": {
+        "properties": {
+          "days": {
+            "default": 7,
+            "title": "Days",
+            "type": "integer"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "retrieval_index": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retrieval Index"
+          }
+        },
+        "title": "analyze_reranker_liftArguments",
+        "type": "object"
+      },
+      "name": "analyze_reranker_lift"
+    },
+    {
+      "description": "Jaccard overlap between top-K-by-bi-rank and top-K-by-cross-rank per query, aggregated. High mean Jaccard means the reranker isn't actually changing the top-K membership. Surfaces ``topk_stable`` (WARNING) when the rerank is barely earning its place at this K. Reads from mcpg_rag.rerank_events; returns a report with zero counts when the table doesn't exist or the window is empty.",
+      "inputSchema": {
+        "properties": {
+          "days": {
+            "default": 7,
+            "title": "Days",
+            "type": "integer"
+          },
+          "k": {
+            "default": 10,
+            "title": "K",
+            "type": "integer"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "retrieval_index": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retrieval Index"
+          }
+        },
+        "title": "analyze_topk_stabilityArguments",
+        "type": "object"
+      },
+      "name": "analyze_topk_stability"
+    },
+    {
+      "description": "Cross-backend retrieval-quality report for a pgvector or pg_turboquant ANN index. Detects the backend (HNSW / IVFFlat / turboquant), sweeps the matching per-backend knob (ef_search / probes / candidate_limit) across a multiplier curve, computes recall@k vs a brute-force exact baseline, Spearman + Kendall rank correlation, per-query p50/p95 wall-clock latency, and (for turboquant) the page-pruning ratio from tq_last_scan_stats. Emits findings: ``baseline_recall_low`` (CRITICAL), ``rerank_lift_flat`` / ``rerank_lift_steep`` / ``ranking_degraded`` / ``pruning_ineffective`` (WARNING). Burns sample_size x (1 + len(candidate_multipliers)) queries; ad-hoc diagnostic, not a cron tool. Requires the vector extension; turboquant-arm metrics require pg_turboquant.",
+      "inputSchema": {
+        "properties": {
+          "candidate_multipliers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Candidate Multipliers"
+          },
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "id_column": {
+            "title": "Id Column",
+            "type": "string"
+          },
+          "index_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Index Name"
+          },
+          "k": {
+            "default": 10,
+            "title": "K",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "cosine",
+            "title": "Metric",
+            "type": "string"
+          },
+          "sample_size": {
+            "default": 30,
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column",
+          "id_column"
+        ],
+        "title": "analyze_vector_search_efficiencyArguments",
+        "type": "object"
+      },
+      "name": "analyze_vector_search_efficiency"
+    },
+    {
+      "description": "Return the slowest queries by mean execution time, via the pg_stat_statements extension. Reports availability=false if the extension is not installed.\n\nExample: `analyze_workload(limit=10)`",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "analyze_workloadArguments",
+        "type": "object"
+      },
+      "name": "analyze_workload"
+    },
+    {
+      "description": "Run a deep, comprehensive DBA-level database performance, logs, and health audit over the specified schema. Scans memory, checkpoints, temp file spills, contention locks, dead tuple cleanliness, and optionally scans custom logging tables.",
+      "inputSchema": {
+        "properties": {
+          "log_table": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Log Table"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "audit_databaseArguments",
+        "type": "object"
+      },
+      "name": "audit_database"
+    },
+    {
+      "description": "Drop a prepared migration's shadow schema and mark it cancelled. Idempotent — calling cancel on a non-existent or already-completed migration returns shadow_dropped=false without raising.",
+      "inputSchema": {
+        "properties": {
+          "migration_id": {
+            "title": "Migration Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "migration_id"
+        ],
+        "title": "cancel_migrationArguments",
+        "type": "object"
+      },
+      "name": "cancel_migration"
+    },
+    {
+      "description": "Cancel the query running on a backend PID (pg_cancel_backend); the connection stays open. Available only in unrestricted mode.",
+      "inputSchema": {
+        "properties": {
+          "pid": {
+            "title": "Pid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid"
+        ],
+        "title": "cancel_queryArguments",
+        "type": "object"
+      },
+      "name": "cancel_query"
+    },
+    {
+      "description": "Run database health checks: connection utilisation, buffer cache hit ratio, tables needing vacuum, and invalid indexes.\n\nExample: `check_database_health()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "check_database_healthArguments",
+        "type": "object"
+      },
+      "name": "check_database_health"
+    },
+    {
+      "description": "Close a server-side cursor and release its dedicated connection. Idempotent — returns closed=false when the cursor was not open (already closed, expired, or never existed).",
+      "inputSchema": {
+        "properties": {
+          "cursor_id": {
+            "title": "Cursor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cursor_id"
+        ],
+        "title": "close_cursorArguments",
+        "type": "object"
+      },
+      "name": "close_cursor"
+    },
+    {
+      "description": "k-means cluster a pgvector column. Samples up to `sample_size` (default 5000) non-NULL rows of schema.table.embedding_column, runs Lloyd's algorithm with k-means++ seeding (`seed` for determinism), and returns `centroids` (one per cluster, with size) + `assignments` (per-row cluster index + distance). When `id_column` is set each assignment carries that column's value; otherwise the row's positional sample index. metric='l2' (default — squared Euclidean) or 'cosine' (vectors normalised; centroids re-normalised every iteration). `k` >= 2 and there must be at least 2k parseable rows. Reports available=false if pgvector is not installed.\n\nExample: `cluster_vectors(schema='public', table='docs', embedding_column='embedding', k=8, metric='cosine')`",
+      "inputSchema": {
+        "properties": {
+          "embedding_column": {
+            "title": "Embedding Column",
+            "type": "string"
+          },
+          "id_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id Column"
+          },
+          "k": {
+            "title": "K",
+            "type": "integer"
+          },
+          "max_iterations": {
+            "default": 20,
+            "title": "Max Iterations",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "sample_size": {
+            "default": 5000,
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "seed": {
+            "default": 42,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "embedding_column",
+          "k"
+        ],
+        "title": "cluster_vectorsArguments",
+        "type": "object"
+      },
+      "name": "cluster_vectors"
+    },
+    {
+      "description": "Return the structural diff between two schemas — tables/columns/indexes/constraints/foreign-keys added, removed, or changed. Base tables only; views and custom types are not compared. Renames surface as a paired add + remove.\n\nExample: `compare_schemas(left_schema='public', right_schema='staging')`",
+      "inputSchema": {
+        "properties": {
+          "left_schema": {
+            "title": "Left Schema",
+            "type": "string"
+          },
+          "right_schema": {
+            "title": "Right Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "left_schema",
+          "right_schema"
+        ],
+        "title": "compare_schemasArguments",
+        "type": "object"
+      },
+      "name": "compare_schemas"
+    },
+    {
+      "description": "Apply a prepared migration's candidate SQL to its target schema. Refuses if the migration is not in 'prepared' status or its TTL has expired. Drops the shadow on success and marks the row completed. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "inputSchema": {
+        "properties": {
+          "migration_id": {
+            "title": "Migration Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "migration_id"
+        ],
+        "title": "complete_migrationArguments",
+        "type": "object"
+      },
+      "name": "complete_migration"
+    },
+    {
+      "description": "Copy a single table from one database to another by piping pg_dump (source) into pg_restore (destination). The source URL is the caller-supplied source_url; the destination is the configured database URL. Specify at least one of include_schema / include_data. Credentials pass through libpq env vars on each leg, never on the command line. If the captured pg_dump archive would exceed MCPG_SHELL_MAX_OUTPUT_BYTES, the tool errors BEFORE pg_restore runs (a truncated custom-format archive cannot be safely restored). Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL.",
+      "inputSchema": {
+        "properties": {
+          "include_data": {
+            "title": "Include Data",
+            "type": "boolean"
+          },
+          "include_schema": {
+            "title": "Include Schema",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_url",
+          "schema",
+          "table",
+          "include_schema",
+          "include_data"
+        ],
+        "title": "copy_table_between_databasesArguments",
+        "type": "object"
+      },
+      "name": "copy_table_between_databases"
+    },
+    {
+      "description": "Create a new Apache AGE property graph space in the database. Performs DDL — requires DDL permission enabled.",
+      "inputSchema": {
+        "properties": {
+          "graph_name": {
+            "title": "Graph Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_name"
+        ],
+        "title": "create_graphArguments",
+        "type": "object"
+      },
+      "name": "create_graph"
+    },
+    {
+      "description": "Convert an existing table into a TimescaleDB hypertable on `time_column`. Validates schema / table / column names against the plain-identifier allowlist and the chunk interval against a TimescaleDB-style pattern (e.g. '7 days', '1 hour'). Requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "inputSchema": {
+        "properties": {
+          "chunk_time_interval": {
+            "default": "7 days",
+            "title": "Chunk Time Interval",
+            "type": "string"
+          },
+          "if_not_exists": {
+            "default": true,
+            "title": "If Not Exists",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "time_column": {
+            "title": "Time Column",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "time_column"
+        ],
+        "title": "create_hypertableArguments",
+        "type": "object"
+      },
+      "name": "create_hypertable"
+    },
+    {
+      "description": "Build a CREATE INDEX … USING bm25 statement under tight allowlists and run it on autocommit (CONCURRENTLY can't run inside a transaction). ``columns`` is the list of attribute names the index covers; ``key_field`` is the primary-key column (required by upstream). All 13 documented bm25 reloptions are exposed as kwargs — the 7 JSONB-shaped options (``text_fields``, ``numeric_fields``, ``boolean_fields``, ``json_fields``, ``range_fields``, ``datetime_fields``, ``search_tokenizer``) accept Python dicts and serialize via json.dumps; the 2 int options (``target_segment_count``, ``mutable_segment_rows``) and 3 text options (``layer_sizes``, ``background_layer_sizes``, ``sort_by``) pass through type-aware validation. The rendered CREATE INDEX SQL is returned in ``create_sql`` for auditability. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_search installed.",
+      "inputSchema": {
+        "properties": {
+          "background_layer_sizes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Background Layer Sizes"
+          },
+          "boolean_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Boolean Fields"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "concurrently": {
+            "default": true,
+            "title": "Concurrently",
+            "type": "boolean"
+          },
+          "datetime_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Datetime Fields"
+          },
+          "index_name": {
+            "title": "Index Name",
+            "type": "string"
+          },
+          "json_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Json Fields"
+          },
+          "key_field": {
+            "title": "Key Field",
+            "type": "string"
+          },
+          "layer_sizes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Layer Sizes"
+          },
+          "mutable_segment_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mutable Segment Rows"
+          },
+          "numeric_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Numeric Fields"
+          },
+          "range_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Range Fields"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "search_tokenizer": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Search Tokenizer"
+          },
+          "sort_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sort By"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "target_segment_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target Segment Count"
+          },
+          "text_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Text Fields"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "columns",
+          "index_name",
+          "key_field"
+        ],
+        "title": "create_pg_search_indexArguments",
+        "type": "object"
+      },
+      "name": "create_pg_search_index"
+    },
+    {
+      "description": "Build a CREATE INDEX … USING turboquant statement under tight allowlists and run it on autocommit (CONCURRENTLY can't run inside a transaction). ``metric`` is 'cosine' | 'inner_product' | 'l2' (mapped to the matching tq_*_ops opclass). Index options ``bits`` (1..64), ``lists`` (0..1_000_000), ``transform`` (allowlist: 'hadamard'), ``normalized`` (bool) are all optional; any not supplied are omitted from the WITH clause so upstream's defaults apply. The rendered CREATE INDEX SQL is returned in ``create_sql`` for auditability. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed.",
+      "inputSchema": {
+        "properties": {
+          "bits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bits"
+          },
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "concurrently": {
+            "default": true,
+            "title": "Concurrently",
+            "type": "boolean"
+          },
+          "index_name": {
+            "title": "Index Name",
+            "type": "string"
+          },
+          "lists": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lists"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "normalized": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Normalized"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "transform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Transform"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column",
+          "index_name",
+          "metric"
+        ],
+        "title": "create_turboquant_indexArguments",
+        "type": "object"
+      },
+      "name": "create_turboquant_index"
+    },
+    {
+      "description": "Find the k rows in target_schema.target_table most similar to a specific row in source_schema.source_table. Locates the source row via source_id_column = source_id_value, reads its embedding from source_embedding_column, then issues a pgvector k-NN query against target_embedding_column. Both columns must be vector(N) of the same N — verified from the catalog up front so a mismatch fails with a clear error rather than a cast error. Useful for entity-resolution / linking across tables whose embeddings come from different models but share a dimension. Returns source_embedding_found=false when no row matches the id value. Reports available=false if pgvector is not installed.",
+      "inputSchema": {
+        "properties": {
+          "k": {
+            "default": 10,
+            "title": "K",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "source_embedding_column": {
+            "title": "Source Embedding Column",
+            "type": "string"
+          },
+          "source_id_column": {
+            "title": "Source Id Column",
+            "type": "string"
+          },
+          "source_id_value": {
+            "title": "Source Id Value"
+          },
+          "source_schema": {
+            "title": "Source Schema",
+            "type": "string"
+          },
+          "source_table": {
+            "title": "Source Table",
+            "type": "string"
+          },
+          "target_embedding_column": {
+            "title": "Target Embedding Column",
+            "type": "string"
+          },
+          "target_schema": {
+            "title": "Target Schema",
+            "type": "string"
+          },
+          "target_table": {
+            "title": "Target Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_schema",
+          "source_table",
+          "source_embedding_column",
+          "source_id_column",
+          "source_id_value",
+          "target_schema",
+          "target_table",
+          "target_embedding_column"
+        ],
+        "title": "cross_table_similarityArguments",
+        "type": "object"
+      },
+      "name": "cross_table_similarity"
+    },
+    {
+      "description": "Describe the schema structure, vertex labels, and edge labels of a specific property graph.",
+      "inputSchema": {
+        "properties": {
+          "graph_name": {
+            "title": "Graph Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_name"
+        ],
+        "title": "describe_graphArguments",
+        "type": "object"
+      },
+      "name": "describe_graph"
+    },
+    {
+      "description": "Describe the columns of a table, in ordinal order.\n\nExample: `describe_table(schema='public', table='users')`",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "describe_tableArguments",
+        "type": "object"
+      },
+      "name": "describe_table"
+    },
+    {
+      "description": "Surface query templates in pg_stat_statements that look like an N+1 loop: hundreds of calls, each returning at most a row or two, with meaningful total wall-clock time spent. Returns the candidates sorted by total time descending so the worst offender appears first. Thresholds (min_calls, max_rows_per_call, min_total_ms) are tunable. Treat results as candidates for investigation, NOT verdicts — a hot cache-miss pattern on a primary-key lookup can trip the same shape. Reports availability=false if pg_stat_statements is not installed.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 25,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "max_rows_per_call": {
+            "default": 2.0,
+            "title": "Max Rows Per Call",
+            "type": "number"
+          },
+          "min_calls": {
+            "default": 100,
+            "title": "Min Calls",
+            "type": "integer"
+          },
+          "min_total_ms": {
+            "default": 50.0,
+            "title": "Min Total Ms",
+            "type": "number"
+          }
+        },
+        "title": "detect_n_plus_oneArguments",
+        "type": "object"
+      },
+      "name": "detect_n_plus_one"
+    },
+    {
+      "description": "Flag pgvector rows whose embedding sits far from any cluster centroid. Samples up to `sample_size` (default 5000) non-NULL rows of schema.table.embedding_column, clusters them with k-means (same engine as `cluster_vectors`), then per cluster computes a z-score on the distance from each row to its centroid and flags rows whose z-score exceeds `zscore_threshold` (default 3.0). Per-cluster scoring catches rows that are weird-for-their-group rather than weird-overall, which is usually what 'find outliers' should mean. Returns `outliers` sorted by z-score descending (capped at `max_results`), `total_outliers` (the unclipped count), and `cluster_stats` (per-cluster mean / std of within-cluster distances). When `id_column` is set each outlier carries that column's value; otherwise the row's positional sample index. `k` >= 2 and there must be at least 2k parseable rows. Reports available=false if pgvector is not installed.",
+      "inputSchema": {
+        "properties": {
+          "embedding_column": {
+            "title": "Embedding Column",
+            "type": "string"
+          },
+          "id_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id Column"
+          },
+          "k": {
+            "default": 8,
+            "title": "K",
+            "type": "integer"
+          },
+          "max_iterations": {
+            "default": 20,
+            "title": "Max Iterations",
+            "type": "integer"
+          },
+          "max_results": {
+            "default": 100,
+            "title": "Max Results",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "sample_size": {
+            "default": 5000,
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "seed": {
+            "default": 42,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "zscore_threshold": {
+            "default": 3.0,
+            "title": "Zscore Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "embedding_column"
+        ],
+        "title": "detect_vector_outliersArguments",
+        "type": "object"
+      },
+      "name": "detect_vector_outliers"
+    },
+    {
+      "description": "Delete an Apache AGE property graph space, dropping all its nodes, edges, and backing tables. Performs DDL — requires DDL permission enabled.",
+      "inputSchema": {
+        "properties": {
+          "cascade": {
+            "default": true,
+            "title": "Cascade",
+            "type": "boolean"
+          },
+          "graph_name": {
+            "title": "Graph Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_name"
+        ],
+        "title": "drop_graphArguments",
+        "type": "object"
+      },
+      "name": "drop_graph"
+    },
+    {
+      "description": "Run pg_dump against the connected database and return the SQL dump as a string (for `format='plain'`) or base64-encoded bytes (for `custom`/`tar`). Credentials pass through libpq env vars, never on the command line. The result includes `output_truncated` and `timed_out` flags so the caller can re-run with a higher cap or a narrower scope. Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL.",
+      "inputSchema": {
+        "properties": {
+          "format": {
+            "default": "plain",
+            "title": "Format",
+            "type": "string"
+          },
+          "schema_only": {
+            "default": false,
+            "title": "Schema Only",
+            "type": "boolean"
+          }
+        },
+        "title": "dump_databaseArguments",
+        "type": "object"
+      },
+      "name": "dump_database"
+    },
+    {
+      "description": "Enable a known PostgreSQL extension (CREATE EXTENSION IF NOT EXISTS). Only allowlisted extensions may be enabled. Available only in unrestricted access mode with MCPG_ALLOW_DDL enabled.",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "enable_extensionArguments",
+        "type": "object"
+      },
+      "name": "enable_extension"
+    },
+    {
+      "description": "Return the PostgreSQL execution plan for a query without running it. The query is validated by the same safety allowlist as run_select.\n\nExample: `explain_query(sql='SELECT * FROM orders WHERE created_at > now() - interval \\'7 days\\'')`",
+      "inputSchema": {
+        "properties": {
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "explain_queryArguments",
+        "type": "object"
+      },
+      "name": "explain_query"
+    },
+    {
+      "description": "Run a read-only SQL query and serialise its rows to CSV or JSON. Reuses the SQL-safety checks of run_select. Truncates at `limit` rows and flags it in the result so callers can paginate.\n\nExample: `export_query(sql='SELECT id, email FROM users', format='csv', limit=10000)`",
+      "inputSchema": {
+        "properties": {
+          "format": {
+            "default": "csv",
+            "title": "Format",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10000,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "export_queryArguments",
+        "type": "object"
+      },
+      "name": "export_query"
+    },
+    {
+      "description": "Serialise every row in schema.table (up to `limit`) to CSV or JSON. Schema and table names must be plain identifiers.",
+      "inputSchema": {
+        "properties": {
+          "format": {
+            "default": "csv",
+            "title": "Format",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10000,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "export_tableArguments",
+        "type": "object"
+      },
+      "name": "export_table"
+    },
+    {
+      "description": "Fetch the next batch from an open server-side cursor. exhausted=true means the FETCH returned fewer rows than requested — stop polling. batch_size defaults to 100; hard cap is 10000 per call.",
+      "inputSchema": {
+        "properties": {
+          "batch_size": {
+            "default": 100,
+            "title": "Batch Size",
+            "type": "integer"
+          },
+          "cursor_id": {
+            "title": "Cursor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cursor_id"
+        ],
+        "title": "fetch_cursorArguments",
+        "type": "object"
+      },
+      "name": "fetch_cursor"
+    },
+    {
+      "description": "Return (blocked, blocking) backend pairs via pg_blocking_pids. Each row pairs a backend waiting on a Lock with one PID holding the lock that's preventing progress. Cycles are possible (A blocks B, B blocks A); render with care. Read-only.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 50,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "find_blocking_chainsArguments",
+        "type": "object"
+      },
+      "name": "find_blocking_chains"
+    },
+    {
+      "description": "Flag columns whose names or types look like they hold sensitive data (passwords, tokens, PII, financial info, health records). Pure heuristic — no row sampling, no value introspection. Categories: credential, financial, contact, identifier, health, government_id, location. Each finding carries a confidence (high / medium / low) so an agent can filter for a first review pass. Treat as a SIGNAL, not a verdict — a column named email_template_id matches the email pattern but isn't itself an email address.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "find_sensitive_columnsArguments",
+        "type": "object"
+      },
+      "name": "find_sensitive_columns"
+    },
+    {
+      "description": "Find tables and indexes with zero scans since pg_stat was last reset — a strong signal of dead code, but NOT a verdict. Tables report seq+idx scan counts, write counts, and estimated row count; indexes report size and definition. Excludes PRIMARY KEY and UNIQUE indexes (PG needs those regardless of scans). Run this after the database has been hot for a meaningful period — fresh stats produce false positives.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "find_unused_objectsArguments",
+        "type": "object"
+      },
+      "name": "find_unused_objects"
+    },
+    {
+      "description": "Rank a text column's documents against a full-text query using PostgreSQL's built-in tsvector/tsquery. The query accepts web-search syntax (quoted phrases, or, - exclusion).\n\nExample: `full_text_search(schema='public', table='articles', column='body', search_query='\"new york\" OR -draft')`",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "config": {
+            "default": "english",
+            "title": "Config",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "search_query": {
+            "title": "Search Query",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column",
+          "search_query"
+        ],
+        "title": "full_text_searchArguments",
+        "type": "object"
+      },
+      "name": "full_text_search"
+    },
+    {
+      "description": "Rank a text column's values by pg_trgm trigram similarity to a search term. mode='word' (default) matches fragments within longer text; mode='full' compares whole strings. Reports available=false if pg_trgm is not installed.\n\nExample: `fuzzy_search(schema='public', table='users', column='name', term='janne', mode='word')`",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "word",
+            "title": "Mode",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "term": {
+            "title": "Term",
+            "type": "string"
+          },
+          "threshold": {
+            "default": 0.3,
+            "title": "Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column",
+          "term"
+        ],
+        "title": "fuzzy_searchArguments",
+        "type": "object"
+      },
+      "name": "fuzzy_search"
+    },
+    {
+      "description": "Read a PostgreSQL schema and emit a Diesel ORM (Rust) schema.rs. One `table!` macro per table with column SQL types, `Nullable<T>` for nullable columns, plus `joinable!` declarations for single-column intra-schema FKs and an `allow_tables_to_appear_in_same_query!` macro so multi-table joins type-check. Enum types are emitted as Text-backed wrapper enums in a `pg_enum` module so the output works without `diesel_derive_enum`. Composite FKs are a documented v1 gap.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_diesel_schemaArguments",
+        "type": "object"
+      },
+      "name": "generate_diesel_schema"
+    },
+    {
+      "description": "Read a PostgreSQL schema and emit a Drizzle ORM TypeScript schema string (drizzle-orm/pg-core). Covers tables, columns with PG-native types, primary/foreign keys, unique constraints, indexes, defaults, and enums. Single-column FKs emit column-level .references(); composite FKs are a documented v1 gap. Views, foreign tables, partitions, triggers, and functions are out of scope.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_drizzle_schemaArguments",
+        "type": "object"
+      },
+      "name": "generate_drizzle_schema"
+    },
+    {
+      "description": "Read a PostgreSQL schema and emit Ecto (Elixir) schema modules — one .ex file per table, named after the singularised table. Each module uses Ecto.Schema with field declarations, belongs_to for single-column intra-schema FKs, and timestamps() when both inserted_at and updated_at exist. The Elixir top-level module is configurable via app_module (default MyApp). Returns a JSON object {filename: source} so the agent can write each file.",
+      "inputSchema": {
+        "properties": {
+          "app_module": {
+            "default": "MyApp",
+            "title": "App Module",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_ecto_schemasArguments",
+        "type": "object"
+      },
+      "name": "generate_ecto_schemas"
+    },
+    {
+      "description": "Read a PostgreSQL schema and emit Ent (Go) Schema struct files — one .go file per table. Each file exports a struct that lists field.X(...) calls for every column, edge.To(...) for single-column intra-schema FKs, and field.Enum().Values() for enum-typed columns. Composite FKs are a documented v1 gap. Returns a JSON object {filename: source} so the agent can write each file.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_ent_schemasArguments",
+        "type": "object"
+      },
+      "name": "generate_ent_schemas"
+    },
+    {
+      "description": "Build a Mermaid graph LR of foreign-key cascade chains in a schema. Each edge runs from the referencing table to the referenced table, labelled with the cascade action(s) on DELETE / UPDATE. By default only FKs with at least one CASCADE / SET NULL / SET DEFAULT action are included — those are the ones that produce a write blast radius. Pass include_all=true to include NO ACTION / RESTRICT FKs too (full FK topology view). Cross-schema FK targets are rendered as separate nodes prefixed with their schema.",
+      "inputSchema": {
+        "properties": {
+          "include_all": {
+            "default": false,
+            "title": "Include All",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_fk_cascade_graphArguments",
+        "type": "object"
+      },
+      "name": "generate_fk_cascade_graph"
+    },
+    {
+      "description": "Generate a Mermaid flowchart diagram representing nodes and relationships in a property graph to visualize its schema and topology.",
+      "inputSchema": {
+        "properties": {
+          "graph_name": {
+            "title": "Graph Name",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "graph_name"
+        ],
+        "title": "generate_graph_diagramArguments",
+        "type": "object"
+      },
+      "name": "generate_graph_diagram"
+    },
+    {
+      "description": "Read a PostgreSQL schema and emit a jooq-codegen configuration XML pointing at it. Unlike the other exporters, jOOQ generates Java code itself from a live database — the artefact here is the configuration file the user feeds to mvn jooq-codegen:generate (or the Gradle task). The XML lists every base table explicitly via an <includes> regex, excludes MCPg's bookkeeping tables, and emits a <forcedType> for every json / jsonb column so they map to org.jooq.JSON / org.jooq.JSONB out of the box. Default Java package is com.example.jooq; override via the target_package arg.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "target_directory": {
+            "default": "src/main/java",
+            "title": "Target Directory",
+            "type": "string"
+          },
+          "target_package": {
+            "default": "com.example.jooq",
+            "title": "Target Package",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_jooq_configArguments",
+        "type": "object"
+      },
+      "name": "generate_jooq_config"
+    },
+    {
+      "description": "Read a PostgreSQL schema and emit a valid Prisma `.prisma` schema string (mirrors `prisma db pull`). Covers tables, columns, primary/foreign keys, unique constraints, indexes, and enums. Views, foreign tables, partitions, triggers, functions, and policies are out of scope; unmappable types fall back to `Unsupported(\"...\")`.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_prisma_schemaArguments",
+        "type": "object"
+      },
+      "name": "generate_prisma_schema"
+    },
+    {
+      "description": "Render a Mermaid ER diagram for a schema. Views and foreign tables are excluded; partitions are excluded by default — pass include_partitions=true to draw each partition as its own entity.\n\nExample: `generate_schema_diagram(schema='public', include_partitions=false)`",
+      "inputSchema": {
+        "properties": {
+          "include_partitions": {
+            "default": false,
+            "title": "Include Partitions",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_schema_diagramArguments",
+        "type": "object"
+      },
+      "name": "generate_schema_diagram"
+    },
+    {
+      "description": "Generate a detailed Markdown reference of a schema's tables, columns, constraints, indexes, views, foreign tables, and custom enums along with comments / descriptions. Optional include_samples fetches a few distinct, non-null values for each column.\n\nExample: `generate_schema_docs(schema='public', include_samples=true)`",
+      "inputSchema": {
+        "properties": {
+          "include_samples": {
+            "default": false,
+            "title": "Include Samples",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_schema_docsArguments",
+        "type": "object"
+      },
+      "name": "generate_schema_docs"
+    },
+    {
+      "description": "Read a PostgreSQL schema and emit a SQLAlchemy 2.0 declarative models file (DeclarativeBase + Mapped[T] + mapped_column). Covers tables, columns with PG-native types (incl. jsonb via sqlalchemy.dialects.postgresql.JSONB), primary keys, single-column FKs via ForeignKey(), unique constraints (column-level + composite via __table_args__), defaults, and enums (emitted as Python enum.Enum classes). Composite FKs are a documented v1 gap.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_sqlalchemy_modelsArguments",
+        "type": "object"
+      },
+      "name": "generate_sqlalchemy_models"
+    },
+    {
+      "description": "Read a PostgreSQL schema and emit a sqlc-friendly schema.sql (plain DDL). Order: CREATE SCHEMA, CREATE TYPE for each enum, CREATE TABLE statements (columns only), ALTER TABLE ADD CONSTRAINT (PK / unique / check / foreign key in that order), then CREATE INDEX for non-constraint indexes. The file replays cleanly against an empty database so FKs land after all referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_sqlc_schemaArguments",
+        "type": "object"
+      },
+      "name": "generate_sqlc_schema"
+    },
+    {
+      "description": "Generate synthetic INSERT statements for a table — typed values respecting column type, NOT NULL, and DEFAULT. Returns the SQL as strings; does NOT execute it. Useful for seeding dev / staging environments. The generator is deterministic when a seed is provided. Foreign keys are NOT resolved — the caller must pre-seed referenced rows or drop the FK before applying. Hard cap of 10000 rows per call. Pure read (the actual writes go through run_write under unrestricted mode).",
+      "inputSchema": {
+        "properties": {
+          "rows": {
+            "default": 10,
+            "title": "Rows",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seed"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "generate_test_dataArguments",
+        "type": "object"
+      },
+      "name": "generate_test_data"
+    },
+    {
+      "description": "Find the rows nearest to a lon/lat point by PostGIS distance. Reports available=false if the postgis extension is not installed.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column",
+          "longitude",
+          "latitude"
+        ],
+        "title": "geo_searchArguments",
+        "type": "object"
+      },
+      "name": "geo_search"
+    },
+    {
+      "description": "Return a highly condensed, token-efficient text summary of a schema's tables, columns, primary keys, nullability, and relations to save context window tokens.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "get_compact_schemaArguments",
+        "type": "object"
+      },
+      "name": "get_compact_schema"
+    },
+    {
+      "description": "Return the in-process Prometheus-format metrics for this MCPg server. Three series: mcpg_tool_calls_total (counter by tool / status), mcpg_tool_duration_seconds (histogram by tool with sum and count). Useful when the HTTP transport's /metrics endpoint is unreachable (e.g. running over stdio) or to fetch via the MCP protocol itself.",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_metrics_expositionArguments",
+        "type": "object"
+      },
+      "name": "get_metrics_exposition"
+    },
+    {
+      "description": "Fetch the parsed reloptions for a single BM25 index (schema.index). Same shape as one entry of ``list_pg_search_indexes`` — typed accessors for the 13 documented options plus the raw ``index_options`` dict. Raises when the extension is not installed or no BM25 index by that name exists.",
+      "inputSchema": {
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "index"
+        ],
+        "title": "get_pg_search_index_metadataArguments",
+        "type": "object"
+      },
+      "name": "get_pg_search_index_metadata"
+    },
+    {
+      "description": "Return the MCPg server version, access mode, transport, and database connection status.",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_server_infoArguments",
+        "type": "object"
+      },
+      "name": "get_server_info"
+    },
+    {
+      "description": "Return the exact heap row count tq_index_heap_stats() reports for a single turboquant index (schema.index). The raw upstream payload is preserved in ``raw`` for any extra counters upstream may add. Requires the pg_turboquant extension.",
+      "inputSchema": {
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "index"
+        ],
+        "title": "get_turboquant_heap_statsArguments",
+        "type": "object"
+      },
+      "name": "get_turboquant_heap_stats"
+    },
+    {
+      "description": "Fetch the tq_index_metadata payload for a single turboquant index (schema.index). Documented fields are surfaced as typed attributes; the full upstream payload is preserved in ``raw_metadata`` so advisors can reach unanticipated fields. Raises when the extension is not installed or no turboquant index by that name exists.",
+      "inputSchema": {
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "index"
+        ],
+        "title": "get_turboquant_index_metadataArguments",
+        "type": "object"
+      },
+      "name": "get_turboquant_index_metadata"
+    },
+    {
+      "description": "Return the backend-local JSON tq_last_scan_stats() reports for the most recent turboquant scan: score_mode, simd_kernel, pages_scanned, pages_pruned, plus the raw payload. Returns ``null`` when the extension is absent or no turboquant scan has run on this connection yet.",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_turboquant_last_scan_statsArguments",
+        "type": "object"
+      },
+      "name": "get_turboquant_last_scan_stats"
+    },
+    {
+      "description": "Combine a BM25 search and a pgvector search via Reciprocal Rank Fusion — the canonical v2 pattern ParadeDB documents in the 2025-10-22 'Hybrid Search Missing Manual' blog post. Returns hits as {id, score, bm25_rank, vector_rank}. ``score`` is the summed ``sum(weight * 1.0 / (k + rank))`` across both legs; per-leg ranks are surfaced for transparency (either can be NULL if a row only appeared in one leg's top-K). ``distance_op`` is the pgvector operator ('<=>'/'<->'/'<#>' — RRF is operator-agnostic). ``bm25_columns=None`` searches the whole BM25 index; ``bm25_columns=[\"col\"]`` restricts the BM25 leg to a single field. Defaults mirror upstream's demonstrated form (cosine, k=60, equal weights, per_leg_limit=20). Requires the pg_search and pgvector extensions.",
+      "inputSchema": {
+        "properties": {
+          "bm25_columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bm25 Columns"
+          },
+          "bm25_weight": {
+            "default": 1.0,
+            "title": "Bm25 Weight",
+            "type": "number"
+          },
+          "distance_op": {
+            "default": "<=>",
+            "title": "Distance Op",
+            "type": "string"
+          },
+          "final_limit": {
+            "title": "Final Limit",
+            "type": "integer"
+          },
+          "k": {
+            "default": 60,
+            "title": "K",
+            "type": "integer"
+          },
+          "key_field": {
+            "title": "Key Field",
+            "type": "string"
+          },
+          "per_leg_limit": {
+            "default": 20,
+            "title": "Per Leg Limit",
+            "type": "integer"
+          },
+          "query_text": {
+            "title": "Query Text",
+            "type": "string"
+          },
+          "query_vector": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Query Vector"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "vector_column": {
+            "title": "Vector Column",
+            "type": "string"
+          },
+          "vector_weight": {
+            "default": 1.0,
+            "title": "Vector Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "query_text",
+          "query_vector",
+          "key_field",
+          "vector_column",
+          "final_limit"
+        ],
+        "title": "hybrid_bm25_vector_searchArguments",
+        "type": "object"
+      },
+      "name": "hybrid_bm25_vector_search"
+    },
+    {
+      "description": "Combine vector and full-text ranking via reciprocal-rank fusion (RRF) — pulls candidates from each source, then fuses them so rows ranked highly in EITHER source surface. Closes the gap between pure vector (misses keyword/identifier matches) and pure full-text (misses semantic synonyms). Parameters: vector_column, text_column, query_vector, text_query, plus metric / text_config / limit / candidate_pool / rrf_k tunables. Each match carries vector_rank, fts_rank, the fused rrf_score, and (when present) the original distance + ts_rank values.\n\nExample: `hybrid_search(schema='public', table='docs', vector_column='embedding', text_column='body', query_vector=[0.1, ...], text_query='postgresql tuning')`",
+      "inputSchema": {
+        "properties": {
+          "candidate_pool": {
+            "default": 50,
+            "title": "Candidate Pool",
+            "type": "integer"
+          },
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "query_vector": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Query Vector",
+            "type": "array"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "text_column": {
+            "title": "Text Column",
+            "type": "string"
+          },
+          "text_config": {
+            "default": "english",
+            "title": "Text Config",
+            "type": "string"
+          },
+          "text_query": {
+            "title": "Text Query",
+            "type": "string"
+          },
+          "vector_column": {
+            "title": "Vector Column",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "vector_column",
+          "text_column",
+          "query_vector",
+          "text_query"
+        ],
+        "title": "hybrid_searchArguments",
+        "type": "object"
+      },
+      "name": "hybrid_search"
+    },
+    {
+      "description": "Bulk-load CSV content into schema.table via COPY ... FROM STDIN. The CSV text is sent verbatim — the caller is responsible for correctness (matching column count, proper quoting). `header=true` skips the first line. Optional `columns` restricts loading to the named columns in order; unlisted columns take their default. Performs writes — requires unrestricted mode.",
+      "inputSchema": {
+        "properties": {
+          "columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Columns"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "delimiter": {
+            "default": ",",
+            "title": "Delimiter",
+            "type": "string"
+          },
+          "header": {
+            "default": true,
+            "title": "Header",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "content"
+        ],
+        "title": "import_csvArguments",
+        "type": "object"
+      },
+      "name": "import_csv"
+    },
+    {
+      "description": "Bulk-load a JSON array of objects into schema.table. Parses the array, derives column names from the first row (or from `columns` when given), and runs a parametrised INSERT once per row. Nested dict/list values are JSON-serialised so they round-trip into jsonb columns. Missing keys in later rows bind as NULL. Performs writes — requires unrestricted mode.",
+      "inputSchema": {
+        "properties": {
+          "columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Columns"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "content"
+        ],
+        "title": "import_jsonArguments",
+        "type": "object"
+      },
+      "name": "import_json"
+    },
+    {
+      "description": "Bulk-load embeddings into a pgvector vector(N) column. Reads the column's declared N from the catalog and validates every row in `content` against it BEFORE any INSERT — a dimension mismatch on row 1000 fails the whole call rather than leaving 999 partial inserts behind. format='json' (default) expects a JSON array of objects whose `embedding_column` field is a list of numbers or a pgvector text literal; format='csv' expects a header row with `embedding_column` (and `id_column` when set) and cells that are bracketed literals or comma-separated numbers. When `id_column` is given, the parallel column receives each row's identifier. Errors when the column isn't pgvector vector(N) (so dimension validation can't run). Performs writes — requires unrestricted mode.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "embedding_column": {
+            "title": "Embedding Column",
+            "type": "string"
+          },
+          "format": {
+            "default": "json",
+            "title": "Format",
+            "type": "string"
+          },
+          "id_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id Column"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "embedding_column",
+          "content"
+        ],
+        "title": "import_vectorsArguments",
+        "type": "object"
+      },
+      "name": "import_vectors"
+    },
+    {
+      "description": "Lint table / column / index naming in a schema. Detects the majority case style (snake_case / camelCase / PascalCase / SCREAMING_SNAKE) per schema and per table, then flags outliers. Also flags indexes whose names do not start with a conventional prefix (idx_, ix_, pk_, uq_, fk_ by default). Findings carry the offender's style and the detected majority — agents can use the style field to filter for renames vs accept-as-is. Pure read.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "lint_naming_conventionsArguments",
+        "type": "object"
+      },
+      "name": "lint_naming_conventions"
+    },
+    {
+      "description": "List the queries currently running on the server, with each backend's wait event, duration, and the PIDs blocking it.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_active_queriesArguments",
+        "type": "object"
+      },
+      "name": "list_active_queries"
+    },
+    {
+      "description": "List recent rows from mcpg_audit.events (newest first). Returns an empty list when MCPG_AUDIT_PERSIST has never been turned on (no audit table yet). Optionally filter by tool name.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 100,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool"
+          }
+        },
+        "title": "list_audit_eventsArguments",
+        "type": "object"
+      },
+      "name": "list_audit_events"
+    },
+    {
+      "description": "List every extension available to the database, with whether it is installed.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_available_extensionsArguments",
+        "type": "object"
+      },
+      "name": "list_available_extensions"
+    },
+    {
+      "description": "List the chunks of a TimescaleDB hypertable with each chunk's range_start / range_end and whether it has been compressed. Empty list when the table is not a hypertable.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "list_chunksArguments",
+        "type": "object"
+      },
+      "name": "list_chunks"
+    },
+    {
+      "description": "List the standalone composite types in a schema with their attributes.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "list_composite_typesArguments",
+        "type": "object"
+      },
+      "name": "list_composite_types"
+    },
+    {
+      "description": "List a table's constraints — primary/foreign keys, unique, check, exclusion.\n\nExample: `list_constraints(schema='public', table='orders')`",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "list_constraintsArguments",
+        "type": "object"
+      },
+      "name": "list_constraints"
+    },
+    {
+      "description": "List the pg_cron jobs registered in the database. Returns an empty list when pg_cron is not installed.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_cron_jobsArguments",
+        "type": "object"
+      },
+      "name": "list_cron_jobs"
+    },
+    {
+      "description": "List every currently-open server-side cursor with its SQL, rows_returned so far, age in seconds, and the TTL after which it'll be auto-closed.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_cursorsArguments",
+        "type": "object"
+      },
+      "name": "list_cursors"
+    },
+    {
+      "description": "List the domain types in a schema, with base type, default, and check constraints.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "list_domainsArguments",
+        "type": "object"
+      },
+      "name": "list_domains"
+    },
+    {
+      "description": "List the enum types in a schema, with their labels in sort order.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "list_enumsArguments",
+        "type": "object"
+      },
+      "name": "list_enums"
+    },
+    {
+      "description": "List the extensions installed in the database.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_extensionsArguments",
+        "type": "object"
+      },
+      "name": "list_extensions"
+    },
+    {
+      "description": "List the foreign-data wrappers installed in the database.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_foreign_data_wrappersArguments",
+        "type": "object"
+      },
+      "name": "list_foreign_data_wrappers"
+    },
+    {
+      "description": "List foreign keys in a schema, resolved to columns and referenced table.\n\nExample: `list_foreign_keys(schema='public')`",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "list_foreign_keysArguments",
+        "type": "object"
+      },
+      "name": "list_foreign_keys"
+    },
+    {
+      "description": "List the foreign servers defined in the database, with their FDW and options.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_foreign_serversArguments",
+        "type": "object"
+      },
+      "name": "list_foreign_servers"
+    },
+    {
+      "description": "List the foreign tables in a schema, with their server and options.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "list_foreign_tablesArguments",
+        "type": "object"
+      },
+      "name": "list_foreign_tables"
+    },
+    {
+      "description": "List the functions and procedures defined in a schema.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "list_functionsArguments",
+        "type": "object"
+      },
+      "name": "list_functions"
+    },
+    {
+      "description": "List every GENERATED ALWAYS AS (...) STORED column in a schema, with its data type, the underlying expression, and whether it's stored or virtual. PostgreSQL today supports only the stored form; the kind field is reported anyway so the response shape is forward-compatible when PG adds virtual columns.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "list_generated_columnsArguments",
+        "type": "object"
+      },
+      "name": "list_generated_columns"
+    },
+    {
+      "description": "List the privileges granted on a table — who may do what to it.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "list_grantsArguments",
+        "type": "object"
+      },
+      "name": "list_grants"
+    },
+    {
+      "description": "List all active Apache AGE property graphs in the database.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_graphsArguments",
+        "type": "object"
+      },
+      "name": "list_graphs"
+    },
+    {
+      "description": "List every TimescaleDB hypertable visible to the current role, with chunk count, compression flag, and total size. Reports available=false when the timescaledb extension is not installed.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_hypertablesArguments",
+        "type": "object"
+      },
+      "name": "list_hypertables"
+    },
+    {
+      "description": "List the indexes defined on a table.\n\nExample: `list_indexes(schema='public', table='users')`",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "list_indexesArguments",
+        "type": "object"
+      },
+      "name": "list_indexes"
+    },
+    {
+      "description": "List currently-held and waiting locks, joined with backend state from pg_stat_activity. Ordered by (granted ASC, pid) so waiting locks float to the top. Returns lock type, mode, qualified relation name when applicable, transaction / virtualxid, the application_name + state + wait event of the owning backend, and the first 200 chars of its query. Read-only.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 100,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "list_locksArguments",
+        "type": "object"
+      },
+      "name": "list_locks"
+    },
+    {
+      "description": "List active LISTEN subscriptions in this server process as {subscription_id, channel} pairs. Subscriptions are process-local and lost on restart.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_notification_subscriptionsArguments",
+        "type": "object"
+      },
+      "name": "list_notification_subscriptions"
+    },
+    {
+      "description": "Describe how a table is partitioned (strategy and bounds) and list its partitions.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "list_partitionsArguments",
+        "type": "object"
+      },
+      "name": "list_partitions"
+    },
+    {
+      "description": "List migrations currently in 'prepared' status, newest first. Sweeps expired entries (drops their shadows, flips status to 'expired') before listing.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_pending_migrationsArguments",
+        "type": "object"
+      },
+      "name": "list_pending_migrations"
+    },
+    {
+      "description": "List every pg_search BM25 index in the database along with the parsed reloptions (the ``WITH (...)`` config) for each. Surfaces the 13 documented bm25 options (key_field, the six *_fields jsonb configs, layer_sizes, background_layer_sizes, target_segment_count, mutable_segment_rows, sort_by, search_tokenizer). The full parsed dict is preserved in ``index_options`` so unsurfaced or future options stay reachable. Returns an empty list when the pg_search extension is not installed.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_pg_search_indexesArguments",
+        "type": "object"
+      },
+      "name": "list_pg_search_indexes"
+    },
+    {
+      "description": "List the Row-Level-Security policies on a table, and whether row security is enabled.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "list_policiesArguments",
+        "type": "object"
+      },
+      "name": "list_policies"
+    },
+    {
+      "description": "List logical-replication publications with the tables and operations they include.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_publicationsArguments",
+        "type": "object"
+      },
+      "name": "list_publications"
+    },
+    {
+      "description": "Report the health of every configured read replica. Each entry shows index, password-obfuscated DSN, whether the replica is currently degraded (skipped from routing), the last error that took it out, and how many seconds remain before it's re-probed. Returns an empty list when no replicas are configured.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_replicasArguments",
+        "type": "object"
+      },
+      "name": "list_replicas"
+    },
+    {
+      "description": "List the database roles and their attributes, excluding PostgreSQL's own roles unless include_system is true.",
+      "inputSchema": {
+        "properties": {
+          "include_system": {
+            "default": false,
+            "title": "Include System",
+            "type": "boolean"
+          }
+        },
+        "title": "list_rolesArguments",
+        "type": "object"
+      },
+      "name": "list_roles"
+    },
+    {
+      "description": "List database schemas, excluding PostgreSQL's own schemas unless include_system is true.\n\nExample: `list_schemas(include_system=false)`",
+      "inputSchema": {
+        "properties": {
+          "include_system": {
+            "default": false,
+            "title": "Include System",
+            "type": "boolean"
+          }
+        },
+        "title": "list_schemasArguments",
+        "type": "object"
+      },
+      "name": "list_schemas"
+    },
+    {
+      "description": "List the sequences defined in a schema, with their range, increment, and last value.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "list_sequencesArguments",
+        "type": "object"
+      },
+      "name": "list_sequences"
+    },
+    {
+      "description": "List logical-replication subscriptions; requires superuser to see any rows.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_subscriptionsArguments",
+        "type": "object"
+      },
+      "name": "list_subscriptions"
+    },
+    {
+      "description": "List the tables and views in a schema, flagging partitioned tables and partitions.\n\nExample: `list_tables(schema='public')`",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "list_tablesArguments",
+        "type": "object"
+      },
+      "name": "list_tables"
+    },
+    {
+      "description": "List the user-defined triggers on a table.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "list_triggersArguments",
+        "type": "object"
+      },
+      "name": "list_triggers"
+    },
+    {
+      "description": "List every pg_turboquant ANN index in the database along with the metadata payload that tq_index_metadata() reports for it: algorithm_version, quantizer_family, residual_sketch_kind, fast_path_eligible, capability_flags, delta_state, and maintenance_recommended. Returns an empty list when the pg_turboquant extension is not installed.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_turboquant_indexesArguments",
+        "type": "object"
+      },
+      "name": "list_turboquant_indexes"
+    },
+    {
+      "description": "List on-disk migration scripts that haven't been applied yet. Walks `scripts_dir` (one level deep) for framework-specific files — Flyway `V<version>__<desc>.sql`, Alembic `<revision>_<slug>.py`, Liquibase `<changeset>.sql` — extracts each script's identifier from its filename, then cross-references against the framework's history table (`flyway_schema_history`, `alembic_version`, `databasechangelog`). Returns the pending list, the applied identifiers, and a one-line first-comment preview per pending script. `available=false` when no history table exists yet (greenfield database); the pending list still surfaces every on-disk script so a from-scratch plan is possible. Read-only DB-side; filesystem access is gated by `MCPG_MIGRATION_SCRIPTS_ROOTS` — by default the tool refuses every path.",
+      "inputSchema": {
+        "properties": {
+          "framework": {
+            "title": "Framework",
+            "type": "string"
+          },
+          "history_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "History Schema"
+          },
+          "scripts_dir": {
+            "title": "Scripts Dir",
+            "type": "string"
+          }
+        },
+        "required": [
+          "framework",
+          "scripts_dir"
+        ],
+        "title": "list_unapplied_migration_scriptsArguments",
+        "type": "object"
+      },
+      "name": "list_unapplied_migration_scripts"
+    },
+    {
+      "description": "List role-to-foreign-server mappings; the catch-all appears as user='public'.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_user_mappingsArguments",
+        "type": "object"
+      },
+      "name": "list_user_mappings"
+    },
+    {
+      "description": "List the views and materialized views in a schema, with their definitions.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "list_viewsArguments",
+        "type": "object"
+      },
+      "name": "list_views"
+    },
+    {
+      "description": "Insert one row into mcpg_rag.rerank_events — one (query, candidate) pair from a RAG reranker step. ``query_hash`` is the caller-computed join key (raw bytes; SHA-256 is conventional but not required). ``bi_encoder_score`` may be null (some retrieval paths don't expose a score); ``cross_encoder_score`` is required. ``extra`` is a free-form dict serialised as jsonb (caller-specific fields: latency_ms, variant tag, user_id, etc). Available only in unrestricted mode; the table must be created first via ``setup_rag_telemetry``.",
+      "inputSchema": {
+        "properties": {
+          "bi_encoder_rank": {
+            "title": "Bi Encoder Rank",
+            "type": "integer"
+          },
+          "bi_encoder_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bi Encoder Score"
+          },
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "integer"
+          },
+          "cross_encoder_rank": {
+            "title": "Cross Encoder Rank",
+            "type": "integer"
+          },
+          "cross_encoder_score": {
+            "title": "Cross Encoder Score",
+            "type": "number"
+          },
+          "extra": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Extra"
+          },
+          "ground_truth_relevance": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ground Truth Relevance"
+          },
+          "query_hash": {
+            "format": "binary",
+            "title": "Query Hash",
+            "type": "string"
+          },
+          "reranker_model": {
+            "title": "Reranker Model",
+            "type": "string"
+          },
+          "retrieval_backend": {
+            "title": "Retrieval Backend",
+            "type": "string"
+          },
+          "retrieval_index": {
+            "title": "Retrieval Index",
+            "type": "string"
+          },
+          "used_in_context": {
+            "default": false,
+            "title": "Used In Context",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query_hash",
+          "retrieval_index",
+          "retrieval_backend",
+          "candidate_id",
+          "bi_encoder_score",
+          "bi_encoder_rank",
+          "cross_encoder_score",
+          "cross_encoder_rank",
+          "reranker_model"
+        ],
+        "title": "log_rerank_eventArguments",
+        "type": "object"
+      },
+      "name": "log_rerank_event"
+    },
+    {
+      "description": "Run tq_maintain_index on a turboquant index — lightweight merge / compaction of the physical delta tier. The wrapper pre-flights that the named index is actually a turboquant index (catalog lookup on pg_am) before invoking upstream, so the call can't be turned into a way to probe arbitrary indexes for error messages. Returns wall-clock timestamps and elapsed duration measured client-side; the PG return value of tq_maintain_index is intentionally not parsed (upstream doesn't document a return shape). Available only in unrestricted mode; requires pg_turboquant installed.",
+      "inputSchema": {
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "index"
+        ],
+        "title": "maintain_turboquant_indexArguments",
+        "type": "object"
+      },
+      "name": "maintain_turboquant_index"
+    },
+    {
+      "description": "Generate a DDL plan that converts a pgvector vector(N) column to halfvec(N) — halving per-element storage (4 → 2 bytes) with typically negligible recall impact at d ≥ 768. Reads the column's current type + dimension from the catalog, finds every index on the column, and emits an ordered `migration_sql` plan: DROP each affected index, ALTER COLUMN to halfvec(N) via a `USING` cast, then recreate each index with its halfvec opclass. Also returns a mirror `rollback_sql` that restores the original vector(N) type plus the original index definitions. Nothing is executed — feed the plan through the shadow-migration workflow (`prepare_migration` / `validate_migration_schema`) before applying. Returns `already_halfvec=true` (and an empty plan) when the column is already halfvec, and refuses any index whose opclass has no halfvec sibling rather than rewriting it incorrectly. Requires the vector extension.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column"
+        ],
+        "title": "migrate_vector_to_halfvecArguments",
+        "type": "object"
+      },
+      "name": "migrate_vector_to_halfvec"
+    },
+    {
+      "description": "Diversity-aware vector search: fetch `fetch_k` nearest candidates by pgvector distance, then re-rank with Maximal Marginal Relevance to return `k` rows that are relevant but not near-duplicates — better LLM context than raw top-k. `lambda_mult` in [0,1] trades relevance (1.0) for diversity (0.0); default 0.5. Relevance + diversity are cosine similarities computed over candidate embeddings, so the result is independent of the recall-pass `metric`. Each hit carries its relevance, mmr_score, and selection rank. Reports available=false if the pgvector extension is not installed.\n\nExample: `mmr_search(schema='public', table='docs', column='embedding', query_vector=[0.1, ...], k=10, lambda_mult=0.5)`",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "fetch_k": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fetch K"
+          },
+          "k": {
+            "default": 10,
+            "title": "K",
+            "type": "integer"
+          },
+          "lambda_mult": {
+            "default": 0.5,
+            "title": "Lambda Mult",
+            "type": "number"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "query_vector": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Query Vector",
+            "type": "array"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column",
+          "query_vector"
+        ],
+        "title": "mmr_searchArguments",
+        "type": "object"
+      },
+      "name": "mmr_search"
+    },
+    {
+      "description": "Compare two time windows of a pgvector column and flag distributional drift. Samples up to `sample_size` (default 5000) non-NULL embeddings from each window (filtered by `timestamp_column`), computes the centroid (per-dimension mean vector) and L2-norm distribution of each, then reports the cosine distance between the two centroids (the main drift signal), the relative change in mean / std of the L2-norm distribution, and a boolean `drift_detected` that flips when cosine distance exceeds `drift_threshold` (default 0.05). Each window is treated as a half-open `[start, end)` interval. Useful for ops monitoring of embedding pipelines — an upstream model swap typically shows up as a large centroid cosine distance even if the norm distribution looks stable. `insufficient_data` is returned distinctly from `drift_detected=false` when either window is empty. Reports `available=false` if pgvector is not installed.\n\nExample: `monitor_embedding_drift(schema='public', table='docs', embedding_column='embedding', timestamp_column='created_at', baseline_start='2026-01-01', baseline_end='2026-02-01', current_start='2026-02-01', current_end='2026-03-01')`",
+      "inputSchema": {
+        "properties": {
+          "baseline_end": {
+            "title": "Baseline End",
+            "type": "string"
+          },
+          "baseline_start": {
+            "title": "Baseline Start",
+            "type": "string"
+          },
+          "current_end": {
+            "title": "Current End",
+            "type": "string"
+          },
+          "current_start": {
+            "title": "Current Start",
+            "type": "string"
+          },
+          "drift_threshold": {
+            "default": 0.05,
+            "title": "Drift Threshold",
+            "type": "number"
+          },
+          "embedding_column": {
+            "title": "Embedding Column",
+            "type": "string"
+          },
+          "sample_size": {
+            "default": 5000,
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "timestamp_column": {
+            "title": "Timestamp Column",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "embedding_column",
+          "timestamp_column",
+          "baseline_start",
+          "baseline_end",
+          "current_start",
+          "current_end"
+        ],
+        "title": "monitor_embedding_driftArguments",
+        "type": "object"
+      },
+      "name": "monitor_embedding_drift"
+    },
+    {
+      "description": "Surface every active CREATE INDEX and its progress from pg_stat_progress_create_index (PG12+, no extension). One row per build with pid, schema.relation.index_name, the command, phase label, blocks_done/total, tuples_done/total, and a computed progress_pct (blocks first, tuples as fallback, null when neither phase reports a denominator). Useful next to list_active_queries when an HNSW / IVFFlat build on a big table is taking longer than expected.",
+      "inputSchema": {
+        "properties": {},
+        "title": "monitor_index_buildArguments",
+        "type": "object"
+      },
+      "name": "monitor_index_build"
+    },
+    {
+      "description": "Open a server-side cursor for a SELECT query. The cursor holds the result set on the server side so an agent can page through millions of rows without loading them all. SQL is validated by the same safety allowlist as run_select. Returns the cursor_id; fetch the rows with fetch_cursor and close with close_cursor (or let the 5-minute TTL clean up). Hard cap of 16 concurrent cursors.",
+      "inputSchema": {
+        "properties": {
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "open_cursorArguments",
+        "type": "object"
+      },
+      "name": "open_cursor"
+    },
+    {
+      "description": "Analyze a SQL query for syntax anti-patterns and performance issues using EXPLAIN plan costs and index scans, returning an optimized version.",
+      "inputSchema": {
+        "properties": {
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "optimize_queryArguments",
+        "type": "object"
+      },
+      "name": "optimize_query"
+    },
+    {
+      "description": "Register a partitioned table with pg_partman. ``partition_type`` must be 'range', 'list', or 'native'. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_partman installed.",
+      "inputSchema": {
+        "properties": {
+          "control_column": {
+            "title": "Control Column",
+            "type": "string"
+          },
+          "parent_table": {
+            "title": "Parent Table",
+            "type": "string"
+          },
+          "partition_interval": {
+            "title": "Partition Interval",
+            "type": "string"
+          },
+          "partition_type": {
+            "default": "range",
+            "title": "Partition Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_table",
+          "control_column",
+          "partition_interval"
+        ],
+        "title": "partman_create_parentArguments",
+        "type": "object"
+      },
+      "name": "partman_create_parent"
+    },
+    {
+      "description": "Drop pg_partman partitions older than ``retention``. Time-controlled parents take a PG interval (e.g. '30 days'); id-controlled parents take an integer-like string with control_is_time=false. Returns the dropped partition names. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "inputSchema": {
+        "properties": {
+          "control_is_time": {
+            "default": true,
+            "title": "Control Is Time",
+            "type": "boolean"
+          },
+          "parent_table": {
+            "title": "Parent Table",
+            "type": "string"
+          },
+          "retention": {
+            "title": "Retention",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_table",
+          "retention"
+        ],
+        "title": "partman_drop_partitionArguments",
+        "type": "object"
+      },
+      "name": "partman_drop_partition"
+    },
+    {
+      "description": "Run pg_partman maintenance — add forward partitions and drop retired ones. Pass parent_table to scope to one parent; omit to run for every managed parent. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "inputSchema": {
+        "properties": {
+          "parent_table": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Parent Table"
+          }
+        },
+        "title": "partman_run_maintenanceArguments",
+        "type": "object"
+      },
+      "name": "partman_run_maintenance"
+    },
+    {
+      "description": "Find rows similar to a seed document via ``pdb.more_like_this`` + ``@@@``. ``document_id`` is the value of ``key_field`` for the seed row. All nine documented pdb.more_like_this tuning args (``fields`` jsonb, ``min_doc_frequency``, ``max_doc_frequency``, ``min_term_frequency``, ``max_query_terms``, ``min_word_length``, ``max_word_length``, ``boost_factor``, ``stop_words``) are optional kwargs — when omitted the wrapper does not mention them in the SQL so upstream's defaults apply. Returns the same {id, score} hit shape as ``pg_search_run``. Requires the pg_search extension.",
+      "inputSchema": {
+        "properties": {
+          "boost_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Boost Factor"
+          },
+          "document_id": {
+            "title": "Document Id"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fields"
+          },
+          "key_field": {
+            "title": "Key Field",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "max_doc_frequency": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Doc Frequency"
+          },
+          "max_query_terms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Query Terms"
+          },
+          "max_word_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Word Length"
+          },
+          "min_doc_frequency": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Min Doc Frequency"
+          },
+          "min_term_frequency": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Min Term Frequency"
+          },
+          "min_word_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Min Word Length"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "stop_words": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stop Words"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "document_id",
+          "key_field",
+          "limit"
+        ],
+        "title": "pg_search_more_like_thisArguments",
+        "type": "object"
+      },
+      "name": "pg_search_more_like_this"
+    },
+    {
+      "description": "Parse a query string through ``pdb.parse`` and return its canonical text form for debugging — useful for confirming the parser interpreted a phrase as expected. ``lenient=True`` relaxes syntax checking; ``conjunction_mode=True`` treats space-separated terms as AND-joined rather than OR-joined. Requires the pg_search extension.",
+      "inputSchema": {
+        "properties": {
+          "conjunction_mode": {
+            "default": false,
+            "title": "Conjunction Mode",
+            "type": "boolean"
+          },
+          "lenient": {
+            "default": false,
+            "title": "Lenient",
+            "type": "boolean"
+          },
+          "query_string": {
+            "title": "Query String",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query_string"
+        ],
+        "title": "pg_search_parse_queryArguments",
+        "type": "object"
+      },
+      "name": "pg_search_parse_query"
+    },
+    {
+      "description": "Run a BM25 keyword search against a pg_search-indexed table. Returns hits as {id, score, snippets} where ``id`` is the value of the caller-supplied ``key_field`` and ``score`` is ``pdb.score(t)``. ``columns=None`` searches the whole index; ``columns=[\"col\"]`` restricts to a single text field. Multi-column search needs the pdb.parse per-field config JSON and is deferred to a follow-up phase. ``return_snippets=True`` requires ``snippet_field`` and projects ``pdb.snippets`` over that column. Requires the pg_search extension. SECURITY: ``snippet_start_tag`` / ``snippet_end_tag`` are not sanitized (they pass through to upstream as-is). The defaults match pg_search's HTML defaults; if callers forward untrusted values and a downstream consumer renders snippets as HTML, that's an XSS vector — output escaping is the renderer's responsibility.",
+      "inputSchema": {
+        "properties": {
+          "columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Columns"
+          },
+          "key_field": {
+            "title": "Key Field",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "return_snippets": {
+            "default": false,
+            "title": "Return Snippets",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "snippet_end_tag": {
+            "default": "</b>",
+            "title": "Snippet End Tag",
+            "type": "string"
+          },
+          "snippet_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Snippet Field"
+          },
+          "snippet_max_num_chars": {
+            "default": 150,
+            "title": "Snippet Max Num Chars",
+            "type": "integer"
+          },
+          "snippet_start_tag": {
+            "default": "<b>",
+            "title": "Snippet Start Tag",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "query",
+          "key_field",
+          "limit"
+        ],
+        "title": "pg_search_runArguments",
+        "type": "object"
+      },
+      "name": "pg_search_run"
+    },
+    {
+      "description": "Drain up to `max_messages` notifications from `subscription_id`. When the queue is empty, waits at most `timeout_ms` for the first notification (0 = return immediately). Each notification carries {channel, payload, delivered_at, dropped_count}; dropped_count is non-zero only on the first message after a queue overflow.",
+      "inputSchema": {
+        "properties": {
+          "max_messages": {
+            "default": 100,
+            "title": "Max Messages",
+            "type": "integer"
+          },
+          "subscription_id": {
+            "title": "Subscription Id",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "subscription_id"
+        ],
+        "title": "poll_notificationsArguments",
+        "type": "object"
+      },
+      "name": "poll_notifications"
+    },
+    {
+      "description": "Stage a candidate migration against a shadow clone of `target_schema`. Replicates the target schema's structure into mcpg_shadow_<id>, applies `candidate_sql` there, then runs compare_schemas(target, shadow) so the agent can review the structural diff before completing. Returns the migration id, shadow schema name, TTL, and the diff. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL.\n\nExample: `prepare_migration(name='add_user_avatar', target_schema='public', candidate_sql='ALTER TABLE users ADD COLUMN avatar_url text')`",
+      "inputSchema": {
+        "properties": {
+          "candidate_sql": {
+            "title": "Candidate Sql",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "target_schema": {
+            "title": "Target Schema",
+            "type": "string"
+          },
+          "ttl_minutes": {
+            "default": 60,
+            "title": "Ttl Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "target_schema",
+          "candidate_sql"
+        ],
+        "title": "prepare_migrationArguments",
+        "type": "object"
+      },
+      "name": "prepare_migration"
+    },
+    {
+      "description": "Delete persisted audit events older than older_than_days from mcpg_audit.events — a cron-friendly retention helper for the otherwise-unbounded audit table. Returns the number deleted, the cutoff timestamp, and the rows remaining. Refuses to run when MCPG_AUDIT_INTEGRITY is enabled (pruning would break the HMAC signature chain). Available only in unrestricted mode.",
+      "inputSchema": {
+        "properties": {
+          "older_than_days": {
+            "title": "Older Than Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "older_than_days"
+        ],
+        "title": "prune_audit_eventsArguments",
+        "type": "object"
+      },
+      "name": "prune_audit_events"
+    },
+    {
+      "description": "Query and summarize historical migrations applied to the database by popular migration frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). Allows filtering by schema.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema"
+          }
+        },
+        "title": "read_migration_historyArguments",
+        "type": "object"
+      },
+      "name": "read_migration_history"
+    },
+    {
+      "description": "Read the list of database relations taking up the most space in the PostgreSQL shared buffer cache. Reports buffered size, percentage of shared buffers, percent of relation buffered, average usage count, and dirty pages. Allows filtering by schema. Requires the pg_buffercache extension. If not installed, returns available=false.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 100,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema"
+          }
+        },
+        "title": "read_pg_buffercache_relationsArguments",
+        "type": "object"
+      },
+      "name": "read_pg_buffercache_relations"
+    },
+    {
+      "description": "Read a high-level summary of the PostgreSQL shared buffer cache usage. Reports total buffers, free/used buffers, dirty buffers, and average usage count. Requires the pg_buffercache extension. If not installed, returns available=false.",
+      "inputSchema": {
+        "properties": {},
+        "title": "read_pg_buffercache_summaryArguments",
+        "type": "object"
+      },
+      "name": "read_pg_buffercache_summary"
+    },
+    {
+      "description": "Read the pg_stat_io view (PostgreSQL 16+). Reports per (backend_type, object, context) cumulative I/O activity — reads, writes, extends, evictions, hits, fsyncs. Useful for spotting buffer-cache misses and write amplification. On PostgreSQL 14 / 15 the view doesn't exist, so the tool returns available=false and an empty list.",
+      "inputSchema": {
+        "properties": {},
+        "title": "read_pg_stat_ioArguments",
+        "type": "object"
+      },
+      "name": "read_pg_stat_io"
+    },
+    {
+      "description": "Read Write-Ahead Log (WAL) records information over a specified LSN range. Requires the pg_walinspect extension. If not installed, returns available=false.",
+      "inputSchema": {
+        "properties": {
+          "end_lsn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "End Lsn"
+          },
+          "limit": {
+            "default": 100,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "start_lsn": {
+            "title": "Start Lsn",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_lsn"
+        ],
+        "title": "read_pg_wal_recordsArguments",
+        "type": "object"
+      },
+      "name": "read_pg_wal_records"
+    },
+    {
+      "description": "Read Write-Ahead Log (WAL) record statistics over a specified LSN range, grouped by resource manager or record type. Requires the pg_walinspect extension. If not installed, returns available=false.",
+      "inputSchema": {
+        "properties": {
+          "end_lsn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "End Lsn"
+          },
+          "per_record": {
+            "default": false,
+            "title": "Per Record",
+            "type": "boolean"
+          },
+          "start_lsn": {
+            "title": "Start Lsn",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_lsn"
+        ],
+        "title": "read_pg_wal_statsArguments",
+        "type": "object"
+      },
+      "name": "read_pg_wal_stats"
+    },
+    {
+      "description": "Compute corpus-percentile thresholds from accumulated ``mcpg_rag.efficiency_observations`` history. Phase E currently adapts three thresholds: ``baseline_recall_low`` (p10 of recall_baseline), ``ranking_degraded_spearman`` (p10 of spearman), and ``pruning_ineffective`` (p10 of pages_pruned_ratio_p50). The remaining four thresholds stay at their hardcoded defaults. Filters by ``days`` window + optional ``backend`` / ``metric`` / ``k`` so callers can ask 'what's normal for HNSW+cosine+k=10 in this deployment' vs 'what's normal globally'. Falls back to defaults (with ``derived_from_corpus=false``) when the corpus is smaller than the minimum required.",
+      "inputSchema": {
+        "properties": {
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Backend"
+          },
+          "days": {
+            "default": 30,
+            "title": "Days",
+            "type": "integer"
+          },
+          "k": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "K"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Metric"
+          }
+        },
+        "title": "recommend_efficiency_thresholdsArguments",
+        "type": "object"
+      },
+      "name": "recommend_efficiency_thresholds"
+    },
+    {
+      "description": "Sibling of `recommend_indexes` for indexes to remove. Walks `pg_stat_user_indexes` + `pg_stat_user_tables` for existing indexes that look like pure cost — large on disk but never (or barely) scanned. Three reason codes, descending strength: `never_used` (no recorded idx_scans since the last stats reset — candidate for drop, but verify before removal), `scan_no_fetch` (planner picks it but it returns no rows — usually existence-check pattern), `rarely_used` (scan rate below `low_scan_ratio` of the table's total scan activity). Primary-key / unique / exclusion-constraint indexes are excluded (dropping those would be a schema change, not a performance win); indexes below `min_index_size_bytes` are skipped too. Returns a ready-to-run `DROP INDEX CONCURRENTLY` statement per candidate. Read-only advisor — execution is on the operator.\n\nExample: `recommend_index_drops(schema='public', min_index_size_bytes=1000000, low_scan_ratio=0.01)`",
+      "inputSchema": {
+        "properties": {
+          "low_scan_ratio": {
+            "default": 0.01,
+            "title": "Low Scan Ratio",
+            "type": "number"
+          },
+          "min_index_size_bytes": {
+            "default": 1000000,
+            "title": "Min Index Size Bytes",
+            "type": "integer"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema"
+          }
+        },
+        "title": "recommend_index_dropsArguments",
+        "type": "object"
+      },
+      "name": "recommend_index_drops"
+    },
+    {
+      "description": "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan.\n\nExample: `recommend_indexes(min_live_tuples=10000)`",
+      "inputSchema": {
+        "properties": {
+          "min_live_tuples": {
+            "default": 10000,
+            "title": "Min Live Tuples",
+            "type": "integer"
+          }
+        },
+        "title": "recommend_indexesArguments",
+        "type": "object"
+      },
+      "name": "recommend_indexes"
+    },
+    {
+      "description": "Walk every pg_search BM25 index and emit advisor findings. Rules currently surfaced: ``missing_key_field`` (CRITICAL — the key_field reloption is required by upstream; an index without it can't satisfy queries) and ``no_field_configs`` (WARNING — none of the six *_fields reloptions are set, so the index falls back to default tokenization for every indexed column). Each finding carries a ready-to-run ``suggested_action`` SQL statement. Returns an empty list when the extension is not installed. Also feeds the ``pg_search BM25 Indexes`` category in audit_database.",
+      "inputSchema": {
+        "properties": {},
+        "title": "recommend_pg_search_maintenanceArguments",
+        "type": "object"
+      },
+      "name": "recommend_pg_search_maintenance"
+    },
+    {
+      "description": "Roll-up advisor over the four analytics for one window. Returns a single headline ``summary`` + the full list of findings. Built from whichever combination of ``reranker_idle`` / ``topk_stable`` / ``score_clustering`` / ``rerank_hurts_ndcg`` / ``rerank_lifts_ndcg`` fires. Also feeds the ``RAG Reranker Pipeline`` category in audit_database. Reads from mcpg_rag.rerank_events.",
+      "inputSchema": {
+        "properties": {
+          "days": {
+            "default": 7,
+            "title": "Days",
+            "type": "integer"
+          },
+          "retrieval_index": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retrieval Index"
+          }
+        },
+        "title": "recommend_rerank_strategyArguments",
+        "type": "object"
+      },
+      "name": "recommend_rerank_strategy"
+    },
+    {
+      "description": "Walk every pg_turboquant index and emit advisor findings. Rules currently surfaced: ``prerequisites_unmet`` (CRITICAL — pgvector is missing) and ``delta_tier_large`` (WARNING — upstream's own ``delta_health.merge_recommended=true`` advisory, emits a ``tq_maintain_index`` suggested_action). Each finding carries a ready-to-run ``suggested_action`` SQL statement. Returns an empty list when the extension is not installed. Also feeds the ``pg_turboquant Indexes`` category in audit_database.",
+      "inputSchema": {
+        "properties": {},
+        "title": "recommend_turboquant_maintenanceArguments",
+        "type": "object"
+      },
+      "name": "recommend_turboquant_maintenance"
+    },
+    {
+      "description": "Run tq_recommended_query_knobs — per-query knob advisor. Two modes: plain (just ``candidate_limit`` + optional ``final_limit``) gives generic recommendations; index-aware (supply both ``index_schema`` and ``index_name``, plus optional ``filter_selectivity``) specialises the recommendations to the named index's catalog state. Returns ``probes``, ``oversample_factor``, ``max_visited_codes``, ``max_visited_pages`` — pass these to ``turboquant_approx_candidates`` / ``turboquant_rerank_candidates``. Requires pg_turboquant.",
+      "inputSchema": {
+        "properties": {
+          "candidate_limit": {
+            "title": "Candidate Limit",
+            "type": "integer"
+          },
+          "filter_selectivity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filter Selectivity"
+          },
+          "final_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Final Limit"
+          },
+          "index_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Index Name"
+          },
+          "index_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Index Schema"
+          }
+        },
+        "required": [
+          "candidate_limit"
+        ],
+        "title": "recommend_turboquant_query_knobsArguments",
+        "type": "object"
+      },
+      "name": "recommend_turboquant_query_knobs"
+    },
+    {
+      "description": "Scan a schema for `vector(N)` columns whose storage could be halved by switching to pgvector v0.7+'s `halfvec(N)` type (16-bit float). Returns one recommendation per qualifying column with current vs suggested bytes, the savings ratio, and a one-line rationale. Skips columns that are already non-`vector` and small tables where the absolute saving wouldn't justify the migration.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "recommend_vector_quantizationArguments",
+        "type": "object"
+      },
+      "name": "recommend_vector_quantization"
+    },
+    {
+      "description": "Insert one row into mcpg_rag.efficiency_observations - one observation per analyze_vector_search_efficiency run. Fields mirror VectorEfficiencyReport one-to-one; pass the report's schema_name / table_name / column_name / index_name / backend / metric / k / sample_size / recall_baseline / rerank_lift_curve (as list[dict]) / spearman / kendall / pages_pruned_ratio_p50 / duration_seconds + optional extra dict. Tool arguments recall_baseline / spearman / kendall correspond to VectorEfficiencyReport.recall_at_k_baseline / score_rank_correlation_spearman / score_rank_correlation_kendall respectively. Available only in unrestricted mode; the table must be created first via setup_efficiency_observations.",
+      "inputSchema": {
+        "properties": {
+          "backend": {
+            "title": "Backend",
+            "type": "string"
+          },
+          "column_name": {
+            "title": "Column Name",
+            "type": "string"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "extra": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Extra"
+          },
+          "index_name": {
+            "title": "Index Name",
+            "type": "string"
+          },
+          "k": {
+            "title": "K",
+            "type": "integer"
+          },
+          "kendall": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kendall"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "pages_pruned_ratio_p50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages Pruned Ratio P50"
+          },
+          "recall_baseline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall Baseline"
+          },
+          "rerank_lift_curve": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Lift Curve"
+          },
+          "sample_size": {
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "schema_name": {
+            "title": "Schema Name",
+            "type": "string"
+          },
+          "spearman": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spearman"
+          },
+          "table_name": {
+            "title": "Table Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_name",
+          "table_name",
+          "column_name",
+          "index_name",
+          "backend",
+          "metric",
+          "k",
+          "sample_size",
+          "recall_baseline",
+          "rerank_lift_curve",
+          "spearman",
+          "kendall",
+          "pages_pruned_ratio_p50",
+          "duration_seconds"
+        ],
+        "title": "record_efficiency_observationArguments",
+        "type": "object"
+      },
+      "name": "record_efficiency_observation"
+    },
+    {
+      "description": "REINDEX a pg_search BM25 index. Pre-flight confirms the named index actually uses the bm25 access method (catalog lookup on pg_am) before running. ``concurrently=True`` is the default and runs on autocommit since REINDEX CONCURRENTLY can't run inside a transaction. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_search installed.",
+      "inputSchema": {
+        "properties": {
+          "concurrently": {
+            "default": true,
+            "title": "Concurrently",
+            "type": "boolean"
+          },
+          "index": {
+            "title": "Index",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "index"
+        ],
+        "title": "reindex_pg_search_indexArguments",
+        "type": "object"
+      },
+      "name": "reindex_pg_search_index"
+    },
+    {
+      "description": "REINDEX a turboquant index. Pre-flight confirms the named index is actually a turboquant index (catalog lookup on pg_am) before running. ``concurrently=True`` is the default and runs on autocommit since REINDEX CONCURRENTLY can't run inside a transaction. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed.",
+      "inputSchema": {
+        "properties": {
+          "concurrently": {
+            "default": true,
+            "title": "Concurrently",
+            "type": "boolean"
+          },
+          "index": {
+            "title": "Index",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "index"
+        ],
+        "title": "reindex_turboquant_indexArguments",
+        "type": "object"
+      },
+      "name": "reindex_turboquant_index"
+    },
+    {
+      "description": "Restore a dump into the connected database. `format='plain'` pipes the SQL text in `content` through psql with --single-transaction + ON_ERROR_STOP; `custom`/`tar` base64-decode `content` and pipe the bytes through pg_restore. Credentials pass through libpq env vars, never on the command line. Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "format": {
+            "default": "plain",
+            "title": "Format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "restore_databaseArguments",
+        "type": "object"
+      },
+      "name": "restore_database"
+    },
+    {
+      "description": "Run a set of catalog-driven advisor rules against a schema and return the aggregated findings. Rules cover missing primary keys, unindexed foreign keys, duplicate indexes, and nullable timestamps without time zone. Advisory only — no writes.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "run_advisorsArguments",
+        "type": "object"
+      },
+      "name": "run_advisors"
+    },
+    {
+      "description": "Execute an openCypher query on a specific graph database. Supports read queries (MATCH) and write/modifying queries (CREATE, SET, DELETE, MERGE, REMOVE).",
+      "inputSchema": {
+        "properties": {
+          "cypher_query": {
+            "title": "Cypher Query",
+            "type": "string"
+          },
+          "graph_name": {
+            "title": "Graph Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_name",
+          "cypher_query"
+        ],
+        "title": "run_cypherArguments",
+        "type": "object"
+      },
+      "name": "run_cypher"
+    },
+    {
+      "description": "Execute a single DDL statement (CREATE/ALTER/DROP and related). Available only in unrestricted access mode with MCPG_ALLOW_DDL enabled. When schema+table hints are supplied, the result includes a before/after column snapshot for that table. When MCPG_AUDIT_PERSIST is on, one row is appended to mcpg_audit.events for every call.",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          },
+          "table": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Table"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "run_ddlArguments",
+        "type": "object"
+      },
+      "name": "run_ddl"
+    },
+    {
+      "description": "Run VACUUM or ANALYZE against one table (operation: vacuum, analyze, or vacuum_analyze). Available only in unrestricted mode.",
+      "inputSchema": {
+        "properties": {
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "schema",
+          "table"
+        ],
+        "title": "run_maintenanceArguments",
+        "type": "object"
+      },
+      "name": "run_maintenance"
+    },
+    {
+      "description": "Validate and run a read-only SQL query. Writes, DDL, and other unsafe statements are rejected before execution.\n\nExample: `run_select(sql='SELECT id, email FROM users LIMIT 10', max_rows=1000)`",
+      "inputSchema": {
+        "properties": {
+          "max_rows": {
+            "default": 1000,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "run_selectArguments",
+        "type": "object"
+      },
+      "name": "run_select"
+    },
+    {
+      "description": "Run up to parallel_limit read-only SELECTs concurrently. Each statement is validated by the same safety allowlist as run_select; one bad query does not abort the others — its error is captured in its own outcome slot. Useful for dashboard-style fan-out where round-trip latency dominates (e.g. fetching counters / aggregates from several tables at once). Each outcome includes an index so the caller can correlate results without relying on ordering.",
+      "inputSchema": {
+        "properties": {
+          "max_rows": {
+            "default": 1000,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "parallel_limit": {
+            "default": 8,
+            "title": "Parallel Limit",
+            "type": "integer"
+          },
+          "statements": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Statements",
+            "type": "array"
+          }
+        },
+        "required": [
+          "statements"
+        ],
+        "title": "run_select_parallelArguments",
+        "type": "object"
+      },
+      "name": "run_select_parallel"
+    },
+    {
+      "description": "Execute a single INSERT, UPDATE, or DELETE statement in a read-write transaction. Add a RETURNING clause to receive affected rows. Available only in unrestricted access mode. When MCPG_AUDIT_PERSIST is on, one row is appended to mcpg_audit.events for every call.",
+      "inputSchema": {
+        "properties": {
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "run_writeArguments",
+        "type": "object"
+      },
+      "name": "run_write"
+    },
+    {
+      "description": "Register a pg_cron job. ``schedule`` is a cron expression or pg_cron interval shortcut (e.g. '30 seconds'). Available only in unrestricted mode; requires pg_cron installed.",
+      "inputSchema": {
+        "properties": {
+          "command": {
+            "title": "Command",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "schedule": {
+            "title": "Schedule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "schedule",
+          "command"
+        ],
+        "title": "schedule_cron_jobArguments",
+        "type": "object"
+      },
+      "name": "schedule_cron_job"
+    },
+    {
+      "description": "Schedule a recurring pg_dump via pg_cron + COPY TO PROGRAM. The scheduled job runs pg_dump on the database host's filesystem and writes the dump to ``destination`` on that host. ``database`` is required — pg_dump invoked through COPY TO PROGRAM does not inherit the connection's database and falls back to the OS user name without ``-d``. ``destination`` must be an absolute POSIX path with only [A-Za-z0-9_./-] (no shell metacharacters) so it cannot escape the COPY TO PROGRAM shell string; ``database`` additionally allows the hyphen common in real DB names. ``format`` is 'plain' | 'custom' | 'tar'; ``compress`` pipes through gzip; ``port`` defaults to 5432. COPY TO PROGRAM is PostgreSQL-superuser-only, so the connected role must be superuser for the scheduled job to succeed at runtime. Available only in unrestricted mode; requires pg_cron installed.",
+      "inputSchema": {
+        "properties": {
+          "compress": {
+            "default": false,
+            "title": "Compress",
+            "type": "boolean"
+          },
+          "database": {
+            "title": "Database",
+            "type": "string"
+          },
+          "destination": {
+            "title": "Destination",
+            "type": "string"
+          },
+          "format": {
+            "default": "plain",
+            "title": "Format",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pg_dump_path": {
+            "default": "pg_dump",
+            "title": "Pg Dump Path",
+            "type": "string"
+          },
+          "port": {
+            "default": 5432,
+            "title": "Port",
+            "type": "integer"
+          },
+          "schedule": {
+            "title": "Schedule",
+            "type": "string"
+          },
+          "schema_only": {
+            "default": false,
+            "title": "Schema Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "schedule",
+          "destination",
+          "database"
+        ],
+        "title": "schedule_logical_backupArguments",
+        "type": "object"
+      },
+      "name": "schedule_logical_backup"
+    },
+    {
+      "description": "Generate and execute synthetic INSERT statements to seed a table with sample data. Values respect column types, NOT NULL, and DEFAULT constraints. Foreign keys are NOT resolved — you must pre-seed referenced rows or drop the FK before seeding. Hard cap of 10000 rows. Available only in unrestricted access mode.",
+      "inputSchema": {
+        "properties": {
+          "rows": {
+            "default": 10,
+            "title": "Rows",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seed"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "seed_table_with_sample_dataArguments",
+        "type": "object"
+      },
+      "name": "seed_table_with_sample_data"
+    },
+    {
+      "description": "Create the ``mcpg_rag.efficiency_observations`` table + two indexes (``observed_at``, composite ``(backend, metric, k, observed_at)``). Idempotent — safe to re-run; returns ``{schema_created, table_created, indexes_created}``. Required before any ``record_efficiency_observation`` call or before ``recommend_efficiency_thresholds`` can return corpus-derived values. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "inputSchema": {
+        "properties": {},
+        "title": "setup_efficiency_observationsArguments",
+        "type": "object"
+      },
+      "name": "setup_efficiency_observations"
+    },
+    {
+      "description": "Create the ``mcpg_rag`` schema, ``rerank_events`` table, and the three supporting indexes (occurred_at, query_hash, (reranker_model, occurred_at)). Idempotent — safe to re-run. Returns ``{schema_created, table_created, indexes_created}`` so the caller can tell first-run from no-op. Required before any ``log_rerank_event`` call or the Phase-D reranker analytics. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "inputSchema": {
+        "properties": {},
+        "title": "setup_rag_telemetryArguments",
+        "type": "object"
+      },
+      "name": "setup_rag_telemetry"
+    },
+    {
+      "description": "Open a PostgreSQL LISTEN on `channel` and return a subscription id. Notifications buffer in process memory; poll for them via poll_notifications. Channel name must match [A-Za-z_][A-Za-z0-9_]*. Subscriptions are lost on server restart. Requires unrestricted mode + MCPG_ALLOW_LISTEN.",
+      "inputSchema": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "title": "subscribe_channelArguments",
+        "type": "object"
+      },
+      "name": "subscribe_channel"
+    },
+    {
+      "description": "Return a one-stop snapshot of a table: columns, primary key, foreign keys, every other constraint, indexes, storage + row-count + last-vacuum/analyze stats, and (optionally) a short sample of rows. Replaces what would otherwise be 4-5 individual tool calls. Set sample_rows=0 on wide / jsonb-heavy tables where the sample isn't useful.\n\nExample: `summarize_table(schema='public', table='users', sample_rows=5)`",
+      "inputSchema": {
+        "properties": {
+          "sample_rows": {
+            "default": 5,
+            "title": "Sample Rows",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "summarize_tableArguments",
+        "type": "object"
+      },
+      "name": "summarize_table"
+    },
+    {
+      "description": "Terminate a backend PID (pg_terminate_backend), closing its connection. Available only in unrestricted mode.",
+      "inputSchema": {
+        "properties": {
+          "pid": {
+            "title": "Pid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid"
+        ],
+        "title": "terminate_backendArguments",
+        "type": "object"
+      },
+      "name": "terminate_backend"
+    },
+    {
+      "description": "Test what an RLS-bound role can read from a table. Reports whether RLS is enabled on the table, lists the policies that apply to the given role, counts the rows the role can read, and returns up to sample_size rows so the agent can inspect them. Runs as the target role inside a READ ONLY transaction — no writes can leak. Pure read.",
+      "inputSchema": {
+        "properties": {
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sample_size": {
+            "default": 25,
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "role"
+        ],
+        "title": "test_rls_for_roleArguments",
+        "type": "object"
+      },
+      "name": "test_rls_for_role"
+    },
+    {
+      "description": "Translate a natural-language question into a read-only PostgreSQL query against `schema`. The LLM provider (anthropic / openai / gemini) sees a compact brief of the schema (tables, columns, foreign keys) and is instructed to return JSON with `sql` and `explanation`. When execute=true, the generated SQL goes through the SAME safety allowlist as run_select before running — writes / DDL / multi-statement input are rejected even if the model produced them. Returns the SQL, model rationale, and (when executed) rows / columns / row_count. table_filter narrows the brief to a known subset when the question is clearly scoped. `provider`, when supplied, selects which configured LLM provider to call (use this to route between anthropic / openai / gemini per-call when multiple are configured); when omitted, MCPg uses the default (MCPG_NL2SQL_PROVIDER, otherwise the first available in preference order anthropic → openai → gemini). Call get_server_info to see which providers are configured.\n\nExample: `translate_nl_to_sql(question='top 10 customers by revenue last month', schema='public', execute=true)`",
+      "inputSchema": {
+        "properties": {
+          "execute": {
+            "default": false,
+            "title": "Execute",
+            "type": "boolean"
+          },
+          "max_rows": {
+            "default": 1000,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Provider"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Table Filter"
+          }
+        },
+        "required": [
+          "question",
+          "schema"
+        ],
+        "title": "translate_nl_to_sqlArguments",
+        "type": "object"
+      },
+      "name": "translate_nl_to_sql"
+    },
+    {
+      "description": "Recommend an ivfflat or hnsw configuration for a pgvector column. Reads the live row count and column dimension, applies the standard pgvector heuristics, and returns the parameters plus a ready-to-run CREATE INDEX statement. Requires the vector extension.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "index_type": {
+            "default": "hnsw",
+            "title": "Index Type",
+            "type": "string"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column"
+        ],
+        "title": "tune_vector_indexArguments",
+        "type": "object"
+      },
+      "name": "tune_vector_index"
+    },
+    {
+      "description": "Run tq_approx_candidates against a turboquant index — approximate k-NN retrieval, no exact rerank. ``metric`` is 'cosine' | 'inner_product' | 'l2' (mapped to upstream's runtime metric text). ``half_precision=True`` switches to the halfvec overload. ``probes`` / ``oversample_factor`` are optional per-query knobs (consider calling ``recommend_turboquant_query_knobs`` first). Requires the pg_turboquant extension.",
+      "inputSchema": {
+        "properties": {
+          "candidate_limit": {
+            "title": "Candidate Limit",
+            "type": "integer"
+          },
+          "embedding_column": {
+            "title": "Embedding Column",
+            "type": "string"
+          },
+          "half_precision": {
+            "default": false,
+            "title": "Half Precision",
+            "type": "boolean"
+          },
+          "id_column": {
+            "title": "Id Column",
+            "type": "string"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "oversample_factor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Oversample Factor"
+          },
+          "probes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Probes"
+          },
+          "query_vector": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Query Vector"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "id_column",
+          "embedding_column",
+          "query_vector",
+          "metric",
+          "candidate_limit"
+        ],
+        "title": "turboquant_approx_candidatesArguments",
+        "type": "object"
+      },
+      "name": "turboquant_approx_candidates"
+    },
+    {
+      "description": "Run tq_rerank_candidates against a turboquant index — approximate retrieval followed by SQL-side exact rerank to ``final_limit`` results. Returns the candidates with both approximate and exact ranks / distances. ``half_precision=True`` switches to the halfvec overload. Requires the pg_turboquant extension.",
+      "inputSchema": {
+        "properties": {
+          "candidate_limit": {
+            "title": "Candidate Limit",
+            "type": "integer"
+          },
+          "embedding_column": {
+            "title": "Embedding Column",
+            "type": "string"
+          },
+          "final_limit": {
+            "title": "Final Limit",
+            "type": "integer"
+          },
+          "half_precision": {
+            "default": false,
+            "title": "Half Precision",
+            "type": "boolean"
+          },
+          "id_column": {
+            "title": "Id Column",
+            "type": "string"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "oversample_factor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Oversample Factor"
+          },
+          "probes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Probes"
+          },
+          "query_vector": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Query Vector"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "id_column",
+          "embedding_column",
+          "query_vector",
+          "metric",
+          "candidate_limit",
+          "final_limit"
+        ],
+        "title": "turboquant_rerank_candidatesArguments",
+        "type": "object"
+      },
+      "name": "turboquant_rerank_candidates"
+    },
+    {
+      "description": "Unschedule a pg_cron job by name. Returns ``removed=true`` when the job existed. Available only in unrestricted mode.",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "unschedule_cron_jobArguments",
+        "type": "object"
+      },
+      "name": "unschedule_cron_job"
+    },
+    {
+      "description": "Remove a subscription. Returns true if it existed. The underlying LISTEN is dropped when the last subscription on the channel goes away. Requires unrestricted mode + MCPG_ALLOW_LISTEN.",
+      "inputSchema": {
+        "properties": {
+          "subscription_id": {
+            "title": "Subscription Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscription_id"
+        ],
+        "title": "unsubscribe_channelArguments",
+        "type": "object"
+      },
+      "name": "unsubscribe_channel"
+    },
+    {
+      "description": "Apply candidate_sql to a TRANSIENT shadow of target_schema that's pre-populated with up to sample_rows_per_table rows copied from each base table. The shadow is dropped before returning regardless of outcome. Catches failure modes a pure structural diff misses: NOT NULL added to a column with existing NULLs, CHECK constraints violated by live rows, type narrowings that fail on real values, triggers that error against actual data. Reports per-table rows_before / rows_after so the effect of a DELETE-shaped candidate is visible. error is non-null iff the candidate raised. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "inputSchema": {
+        "properties": {
+          "candidate_sql": {
+            "title": "Candidate Sql",
+            "type": "string"
+          },
+          "sample_rows_per_table": {
+            "default": 100,
+            "title": "Sample Rows Per Table",
+            "type": "integer"
+          },
+          "target_schema": {
+            "title": "Target Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_schema",
+          "candidate_sql"
+        ],
+        "title": "validate_migrationArguments",
+        "type": "object"
+      },
+      "name": "validate_migration"
+    },
+    {
+      "description": "Verify a candidate migration against a reference schema. Clones target_schema's structure into a transient shadow schema, applies candidate_sql, and compares the shadow schema with reference_schema using compare_schemas. The shadow is dropped before returning. Returns whether the candidate applied, any error, and the structural diff if applied. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "inputSchema": {
+        "properties": {
+          "candidate_sql": {
+            "title": "Candidate Sql",
+            "type": "string"
+          },
+          "reference_schema": {
+            "title": "Reference Schema",
+            "type": "string"
+          },
+          "target_schema": {
+            "title": "Target Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_schema",
+          "reference_schema",
+          "candidate_sql"
+        ],
+        "title": "validate_migration_schemaArguments",
+        "type": "object"
+      },
+      "name": "validate_migration_schema"
+    },
+    {
+      "description": "Return every row within `max_distance` of a query vector (a threshold-based query rather than top-k). Useful for de-dup, similarity gating, and clustering pre-passes. Still ordered by distance and capped at `limit` to avoid pulling huge result sets. Reports available=false if the pgvector extension is not installed.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "max_distance": {
+            "title": "Max Distance",
+            "type": "number"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "query_vector": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Query Vector",
+            "type": "array"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column",
+          "query_vector",
+          "max_distance"
+        ],
+        "title": "vector_range_searchArguments",
+        "type": "object"
+      },
+      "name": "vector_range_search"
+    },
+    {
+      "description": "Measure recall@k of an existing pgvector index against a brute-force ground truth (function-form distance, which pgvector documents as non-indexed). Returns the mean overlap over a sample of rows from the table. Requires the vector extension.",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "id_column": {
+            "title": "Id Column",
+            "type": "string"
+          },
+          "k": {
+            "default": 10,
+            "title": "K",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "sample_size": {
+            "default": 20,
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column",
+          "id_column"
+        ],
+        "title": "vector_recall_at_kArguments",
+        "type": "object"
+      },
+      "name": "vector_recall_at_k"
+    },
+    {
+      "description": "Find the rows nearest to a query vector by pgvector distance (metric: l2, cosine, or inner_product). Reports available=false if the pgvector extension is not installed.\n\nExample: `vector_search(schema='public', table='docs', column='embedding', query_vector=[0.1, 0.2, ...], metric='cosine', limit=10)`",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "query_vector": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Query Vector",
+            "type": "array"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column",
+          "query_vector"
+        ],
+        "title": "vector_searchArguments",
+        "type": "object"
+      },
+      "name": "vector_search"
+    },
+    {
+      "description": "Verify the HMAC-SHA256 signature chain of persisted audit events in mcpg_audit.events.",
+      "inputSchema": {
+        "properties": {},
+        "title": "verify_audit_chainArguments",
+        "type": "object"
+      },
+      "name": "verify_audit_chain"
+    },
+    {
+      "description": "Report whether MCPg's own connection to PostgreSQL is TLS-encrypted, including the negotiated protocol version, cipher, and key bits (from pg_stat_ssl). Also returns a cluster-wide tally of encrypted vs unencrypted backends (a lower bound under non-superuser privileges). Complements the startup TLS-enforcement check by confirming the live connection actually came up encrypted.",
+      "inputSchema": {
+        "properties": {},
+        "title": "verify_connection_encryptionArguments",
+        "type": "object"
+      },
+      "name": "verify_connection_encryption"
+    },
+    {
+      "description": "Walk and reconstruct the lock-wait graph of the database. Detects deadlock cycles, traces linear blocking paths to their root blockers, and renders a Mermaid flowchart representing the lock dependency graph. Read-only.",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 50,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "walk_blocking_chainsArguments",
+        "type": "object"
+      },
+      "name": "walk_blocking_chains"
+    },
+    {
+      "description": "Diagnose why a SQL query might be slow, in one call. Runs EXPLAIN (FORMAT JSON) — does NOT execute the query — walks the plan tree, snapshots concurrent active queries + blocking lock pairs, reads the cluster-wide cache hit ratio, and produces categorised suggestions (plan / contention / cache / maintenance). Read-only; safe to run on a statement the agent doesn't want to materialise yet.\n\nExample: `why_is_this_slow(sql='SELECT * FROM orders WHERE customer_id = 42')`",
+      "inputSchema": {
+        "properties": {
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "why_is_this_slowArguments",
+        "type": "object"
+      },
+      "name": "why_is_this_slow"
+    }
+  ]
+}
