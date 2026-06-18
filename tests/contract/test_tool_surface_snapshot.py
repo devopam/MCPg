@@ -142,7 +142,7 @@ async def test_tool_surface_matches_snapshot() -> None:
             "tests/contract/test_tool_surface_snapshot.py"
         )
 
-    expected_text = _SNAPSHOT_PATH.read_text()
+    expected_text = _SNAPSHOT_PATH.read_text(encoding="utf-8")
     if captured_text == expected_text:
         return
 
