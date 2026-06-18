@@ -128,7 +128,7 @@ async def test_tool_surface_matches_snapshot() -> None:
     captured_text = _format_canonical(captured)
 
     if os.environ.get("MCPG_REGENERATE_TOOL_SNAPSHOT") == "1":
-        _SNAPSHOT_PATH.write_text(captured_text)
+        _SNAPSHOT_PATH.write_text(captured_text, encoding="utf-8")
         pytest.skip(
             f"Regenerated {_SNAPSHOT_PATH.name} ({captured['_meta']['tool_count']} tools). "
             "Commit the diff alongside the source change."
