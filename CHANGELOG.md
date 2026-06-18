@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-06-17
+
 ### Added
 
 - **`mcpg_rag.rerank_events` + `mcpg_rag.efficiency_observations`
@@ -322,6 +324,26 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 - **Stale `mcpg --version` output bumped 0.5.1 → 0.6.1 in
   `docs/installation.md`** (#95).
+
+### Dependencies
+
+- **Transitive bumps to close 7 Dependabot security alerts** (#113).
+  Lockfile-only refresh (`uv.lock`); no `pyproject.toml` change since
+  every flagged package reaches the project transitively under loose
+  constraints, so downstream PyPI installs already resolve to the
+  patched versions.
+
+  - `cryptography` 48.0.0 → 49.0.0 — OpenSSL CVE in statically-linked
+    wheels (alert #5).
+  - `python-multipart` 0.0.29 → 0.0.32 — closes four alerts:
+    Content-Disposition RFC 2231/5987 parameter smuggling (#1),
+    `application/x-www-form-urlencoded` `;` separator differential
+    (#2), negative `Content-Length` unbounded read in `parse_form`
+    (#3), quadratic-time `;` separator scan DoS (#4).
+  - `starlette` 1.2.0 → 1.3.1 — closes two alerts: unvalidated
+    request path poisons `request.url.hostname` (#6),
+    `request.form()` limits silently ignored on
+    `application/x-www-form-urlencoded` (#7, DoS).
 
 ## [0.6.1] - 2026-06-09
 
