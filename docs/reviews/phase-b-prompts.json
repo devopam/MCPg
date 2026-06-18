@@ -1,0 +1,196 @@
+{
+  "_meta": {
+    "schema_version": 1,
+    "description": "Phase B prompt corpus. Each prompt probes a finding from the Phase A static report. Run via `tools/observe_llm_behaviour.py`.",
+    "prompt_count": 22,
+    "categories": ["overlap_disambiguation", "list_family_picker", "return_shape", "self_introspection"]
+  },
+  "prompts": [
+    {
+      "id": "od-01",
+      "category": "overlap_disambiguation",
+      "phase_a_reference": "tool-overlap-report.md #1 (score 4.99)",
+      "user_prompt": "I want to look at the individual Write-Ahead Log records that have been written since LSN 0/16B00000. Which mcpg tool should I call?",
+      "expected_tool": "read_pg_wal_records",
+      "rationale": "Records (the underlying entries) vs stats (aggregated by resource manager). Word 'individual' should be the signal."
+    },
+    {
+      "id": "od-02",
+      "category": "overlap_disambiguation",
+      "phase_a_reference": "tool-overlap-report.md #1 (score 4.99)",
+      "user_prompt": "I want a summary of WAL traffic by record-type and resource manager over the last hour. Which mcpg tool?",
+      "expected_tool": "read_pg_wal_stats",
+      "rationale": "Aggregated stats, not individual records. Word 'summary' should be the signal."
+    },
+    {
+      "id": "od-03",
+      "category": "overlap_disambiguation",
+      "phase_a_reference": "tool-overlap-report.md #2 (score 4.91)",
+      "user_prompt": "I just shipped a big batch of new documents and want to rebuild the BM25 search index on docs.content. Which tool?",
+      "expected_tool": "reindex_pg_search_index",
+      "rationale": "BM25 = pg_search index, not turboquant (which is vector/ANN). Should not pick reindex_turboquant_index."
+    },
+    {
+      "id": "od-04",
+      "category": "overlap_disambiguation",
+      "phase_a_reference": "tool-overlap-report.md #3 (score 4.62)",
+      "user_prompt": "I have a TimescaleDB hypertable called metrics.events and I want chunks older than 30 days to be dropped automatically. Which tool?",
+      "expected_tool": "add_retention_policy",
+      "rationale": "'Dropped' is the retention signal; should not pick add_compression_policy (which compresses, doesn't drop)."
+    },
+    {
+      "id": "od-05",
+      "category": "overlap_disambiguation",
+      "phase_a_reference": "tool-overlap-report.md #11 (score 3.58)",
+      "user_prompt": "I want to run an approximate-nearest-neighbour query against the turboquant index on documents.embedding. Which tool?",
+      "expected_tool": "turboquant_approx_candidates",
+      "rationale": "Approx candidates (initial retrieval) vs rerank candidates (re-scoring an existing candidate set). 'Approximate-nearest-neighbour query' is the initial retrieval phrase."
+    },
+    {
+      "id": "od-06",
+      "category": "overlap_disambiguation",
+      "phase_a_reference": "tool-overlap-report.md #13 (score 3.52)",
+      "user_prompt": "I'm doing semantic search and want results that are not only relevant but also diverse — no two near-duplicates in my top-10. Which mcpg tool?",
+      "expected_tool": "mmr_search",
+      "rationale": "Diversity / maximal marginal relevance is the MMR algorithm signal; plain vector_search returns top-K by similarity with no diversity penalty."
+    },
+    {
+      "id": "od-07",
+      "category": "overlap_disambiguation",
+      "phase_a_reference": "tool-overlap-report.md #6 (score 4.25)",
+      "user_prompt": "I want to see which PostgreSQL extensions I could install on this database — what's available in the server's library path, regardless of whether it's already enabled?",
+      "expected_tool": "list_available_extensions",
+      "rationale": "'Available' / 'could install' is the signal; list_extensions reports already-installed ones."
+    },
+    {
+      "id": "od-08",
+      "category": "overlap_disambiguation",
+      "phase_a_reference": "tool-overlap-report.md #17 (score 3.45)",
+      "user_prompt": "I have a migration file at /var/migrations/2026-06-add-orders-index.sql and I want mcpg to check whether running it would break anything before I actually run it. Which tool?",
+      "expected_tool": "validate_migration",
+      "rationale": "Validate the migration (operation safety) vs validate_migration_schema (the schema impact only). Depends on tool descriptions; both names sound identical."
+    },
+    {
+      "id": "lf-01",
+      "category": "list_family_picker",
+      "phase_a_reference": "fact-pack §1a (list_* dominates at 22.5%, 39 tools)",
+      "user_prompt": "I want to see which queries are currently running against the database and which one has been running the longest. Which mcpg tool?",
+      "expected_tool": "list_active_queries",
+      "rationale": "Tests whether the LLM picks the right list_* from 39 options when the cue is operational."
+    },
+    {
+      "id": "lf-02",
+      "category": "list_family_picker",
+      "phase_a_reference": "fact-pack §1a",
+      "user_prompt": "I'm cleaning up unused indexes and want to know what triggers exist on the orders table. Which tool?",
+      "expected_tool": "list_triggers",
+      "rationale": "Discriminator: list_triggers vs list_indexes vs list_foreign_keys all share 'list' + a database object name."
+    },
+    {
+      "id": "lf-03",
+      "category": "list_family_picker",
+      "phase_a_reference": "fact-pack §1a",
+      "user_prompt": "I'm doing a security review and want to see every role defined in the database, with the membership relationships between them. Which tool?",
+      "expected_tool": "list_roles",
+      "rationale": "Tests whether the LLM correctly disambiguates list_roles from similar admin tools."
+    },
+    {
+      "id": "lf-04",
+      "category": "list_family_picker",
+      "phase_a_reference": "fact-pack §1a",
+      "user_prompt": "I think a long-running transaction is holding locks and blocking app traffic. I want to see what locks are held right now and by whom.",
+      "expected_tool": "list_locks",
+      "rationale": "Operational cue (blocking app traffic) should help disambiguate from list_active_queries / walk_blocking_chains."
+    },
+    {
+      "id": "rs-01",
+      "category": "return_shape",
+      "phase_a_reference": "fact-pack §2e (75 tools with no return-shape hint)",
+      "user_prompt": "If I call `audit_database` with no arguments, what shape of data should I expect to come back? Describe the response structure without actually calling the tool.",
+      "expected_tool": null,
+      "expected_no_tool_call": true,
+      "rationale": "Tool description doesn't say what it returns. Measure whether LLM guesses or hedges."
+    },
+    {
+      "id": "rs-02",
+      "category": "return_shape",
+      "phase_a_reference": "fact-pack §2e",
+      "user_prompt": "What does `cluster_vectors` return when called with a table and a k value? Describe the response structure without actually calling the tool.",
+      "expected_tool": null,
+      "expected_no_tool_call": true,
+      "rationale": "No return-shape hint; clustering tools have wildly different return shapes (assignments vs centroids vs both)."
+    },
+    {
+      "id": "rs-03",
+      "category": "return_shape",
+      "phase_a_reference": "fact-pack §2e",
+      "user_prompt": "What does `find_sensitive_columns` return? Specifically: is it just column names, or does it also include the matching reason / classification?",
+      "expected_tool": null,
+      "expected_no_tool_call": true,
+      "rationale": "The user's mental model (with reason / without reason) drives whether they pick this tool or write a custom query."
+    },
+    {
+      "id": "rs-04",
+      "category": "return_shape",
+      "phase_a_reference": "fact-pack §2e",
+      "user_prompt": "What does `full_text_search` return? Just matching IDs, or matching rows with ranking scores?",
+      "expected_tool": null,
+      "expected_no_tool_call": true,
+      "rationale": "Score vs no-score is a real picker decision."
+    },
+    {
+      "id": "rs-05",
+      "category": "return_shape",
+      "phase_a_reference": "fact-pack §2e",
+      "user_prompt": "If I run `analyze_hnsw_recall`, what does the result look like? Will it tell me a single recall number, or a per-k recall curve?",
+      "expected_tool": null,
+      "expected_no_tool_call": true,
+      "rationale": "Single-value vs curve is a meaningful difference for downstream code."
+    },
+    {
+      "id": "si-01",
+      "category": "self_introspection",
+      "phase_a_reference": "fact-pack §4 (no resources, no prompts, no `about` tool)",
+      "user_prompt": "What can mcpg do? Give me a high-level summary of its capabilities — I'm new to this server.",
+      "expected_tool": null,
+      "expected_no_tool_call": true,
+      "rationale": "The big test. Does the LLM produce a useful summary? Is it accurate? Does it miss whole capability buckets?"
+    },
+    {
+      "id": "si-02",
+      "category": "self_introspection",
+      "phase_a_reference": "fact-pack §4",
+      "user_prompt": "Does mcpg support vector / semantic search? If yes, what's available?",
+      "expected_tool": null,
+      "expected_no_tool_call": true,
+      "rationale": "Targeted capability question. Should mention pgvector, mmr_search, vector_search, turboquant, BM25 hybrid."
+    },
+    {
+      "id": "si-03",
+      "category": "self_introspection",
+      "phase_a_reference": "fact-pack §4",
+      "user_prompt": "I'm thinking of using mcpg for a multi-tenant SaaS app. Does it support per-tenant role isolation, audit trails, and rate limiting?",
+      "expected_tool": null,
+      "expected_no_tool_call": true,
+      "rationale": "Three-part capability question; tests whether the LLM can piece together capabilities from the tool catalog."
+    },
+    {
+      "id": "si-04",
+      "category": "self_introspection",
+      "phase_a_reference": "fact-pack §4",
+      "user_prompt": "Can mcpg help me migrate data between two PostgreSQL databases? What's the recommended approach?",
+      "expected_tool": null,
+      "expected_no_tool_call": true,
+      "rationale": "Tests whether the LLM finds the data_movement / dump_database / restore_database tools and recommends them coherently."
+    },
+    {
+      "id": "si-05",
+      "category": "self_introspection",
+      "phase_a_reference": "fact-pack §4",
+      "user_prompt": "Does mcpg support graph operations on top of PostgreSQL? I'm thinking of using it for a recommendation system.",
+      "expected_tool": null,
+      "expected_no_tool_call": true,
+      "rationale": "Tests whether the LLM finds the graph tools (create_graph / cypher / walk_blocking_chains-style) and contextualises them appropriately."
+    }
+  ]
+}
