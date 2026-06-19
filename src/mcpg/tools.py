@@ -2611,7 +2611,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "Rank a text column's values by pg_trgm trigram similarity to a "
             "search term. mode='word' (default) matches fragments within "
             "longer text; mode='full' compares whole strings. Reports "
-            "available=false if pg_trgm is not installed.",
+            "available=false if pg_trgm is not installed. "
+            "Returns an object with `available` (bool), `matches` (list of "
+            "`{value, similarity}` ranked by similarity descending), and `mode`.",
             "fuzzy_search(schema='public', table='users', column='name', term='janne', mode='word')",
         ),
     )
@@ -2635,7 +2637,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         description=_with_example(
             "Rank a text column's documents against a full-text query using "
             "PostgreSQL's built-in tsvector/tsquery. The query accepts "
-            "web-search syntax (quoted phrases, or, - exclusion).",
+            "web-search syntax (quoted phrases, or, - exclusion). "
+            "Returns a list of objects with the matched row's primary key columns "
+            "plus `rank` (ts_rank score, higher = better match).",
             "full_text_search(schema='public', table='articles', column='body', search_query='\"new york\" OR -draft')",
         ),
     )
@@ -3984,7 +3988,10 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
 def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="list_graphs",
-        description="List all active Apache AGE property graphs in the database.",
+        description=(
+            "List all active Apache AGE property graphs in the database. "
+            "Returns a list of objects with `name` (graph name) and `oid`."
+        ),
     )
     async def list_graphs(ctx: _Ctx) -> list[dict[str, Any]]:
         app = ctx.request_context.lifespan_context
@@ -3993,7 +4000,10 @@ def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="describe_graph",
-        description=("Describe the schema structure, vertex labels, and edge labels of a specific property graph."),
+        description=(
+            "Describe the schema structure, vertex labels, and edge labels of a specific property graph. "
+            "Returns an object with `graph_name`, `vertex_labels`, and `edge_labels`."
+        ),
     )
     async def describe_graph(ctx: _Ctx, graph_name: str) -> dict[str, Any]:
         app = ctx.request_context.lifespan_context
@@ -4005,7 +4015,9 @@ def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
         description=(
             "Execute an openCypher query on a specific graph database. "
             "Supports read queries (MATCH) and write/modifying queries "
-            "(CREATE, SET, DELETE, MERGE, REMOVE)."
+            "(CREATE, SET, DELETE, MERGE, REMOVE). "
+            "Returns an object with `columns` (list of result column names) and "
+            "`rows` (list of result rows as dicts keyed by column)."
         ),
     )
     async def run_cypher(
@@ -4021,7 +4033,8 @@ def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
         name="generate_graph_diagram",
         description=(
             "Generate a Mermaid flowchart diagram representing nodes and "
-            "relationships in a property graph to visualize its schema and topology."
+            "relationships in a property graph to visualize its schema and topology. "
+            "Returns the Mermaid flowchart as a string."
         ),
     )
     async def generate_graph_diagram(ctx: _Ctx, graph_name: str, limit: int = 50) -> str:
@@ -4040,7 +4053,8 @@ def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
         name="create_graph",
         description=(
             "Create a new Apache AGE property graph space in the database. "
-            "Performs DDL — requires DDL permission enabled."
+            "Performs DDL — requires DDL permission enabled. "
+            "Returns an object with `graph_name` and `created` (bool)."
         ),
     )
     async def create_graph(ctx: _Ctx, graph_name: str) -> dict[str, Any]:
@@ -4053,7 +4067,8 @@ def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
         name="drop_graph",
         description=(
             "Delete an Apache AGE property graph space, dropping all its nodes, "
-            "edges, and backing tables. Performs DDL — requires DDL permission enabled."
+            "edges, and backing tables. Performs DDL — requires DDL permission enabled. "
+            "Returns an object with `graph_name` and `dropped` (bool)."
         ),
     )
     async def drop_graph(ctx: _Ctx, graph_name: str, cascade: bool = True) -> dict[str, Any]:
