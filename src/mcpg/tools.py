@@ -3562,10 +3562,10 @@ def _register_rag_telemetry_efficiency_read(server: FastMCP[AppContext]) -> None
             "``derived_from_corpus=false``) when the corpus is smaller "
             "than the minimum required. "
             "Returns an object with `corpus_size`, `derived_from_corpus` (bool), and "
-            "the seven threshold fields (`baseline_recall_low`, "
-            "`ranking_degraded_spearman`, `pruning_ineffective`, "
-            "`rerank_lift_flat_high`, `rerank_lift_steep_high`, "
-            "`ranking_degraded_recall`, and one reserved slot)."
+            "the threshold fields (`baseline_recall_low`, `baseline_recall_low_adapted`, "
+            "`ranking_degraded_spearman`, `ranking_degraded_spearman_adapted`, "
+            "`pruning_ineffective`, `pruning_ineffective_adapted`, `rerank_lift_flat_delta`, "
+            "`rerank_lift_steep_low`, `rerank_lift_steep_high`, and `ranking_degraded_recall`)."
         ),
     )
     async def recommend_efficiency_thresholds(
