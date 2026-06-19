@@ -3036,9 +3036,8 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             "``probes`` / ``oversample_factor`` are optional per-query knobs "
             "(consider calling ``recommend_turboquant_query_knobs`` first). "
             "Requires the pg_turboquant extension. "
-            "Returns a list of candidate objects with `id` (the value from "
-            "`id_column`), `distance` (approximate kNN distance under the chosen "
-            "metric), and `rank` (1-based position)."
+            "Returns a list of candidate objects with `candidate_id`, "
+            "`approximate_distance`, and `approximate_rank`."
         ),
     )
     async def turboquant_approx_candidates(
