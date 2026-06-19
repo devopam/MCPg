@@ -969,9 +969,9 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
             "(WARNING) when the reranker isn't discriminating (more than "
             "half of scores land in the top decile of the range). Reads "
             "from mcpg_rag.rerank_events. "
-            "Returns an object with `window_days`, `sample_size`, `histogram` "
-            "(list of `{bucket_start, bucket_end, count}`), `top_decile_share`, "
-            "and `findings` (list of advisory findings)."
+            "Returns an object with `window_days`, `event_count`, `histogram` "
+            "(list of counts), `bucket_edges` (list of bucket boundaries), "
+            "`top_decile_share`, and `findings` (list of advisory findings)."
         ),
     )
     async def analyze_rerank_score_distribution(
