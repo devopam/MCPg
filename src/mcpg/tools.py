@@ -792,7 +792,8 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
         description=_with_example(
             "Render a Mermaid ER diagram for a schema. Views and foreign tables are "
             "excluded; partitions are excluded by default — pass include_partitions=true "
-            "to draw each partition as its own entity.",
+            "to draw each partition as its own entity. "
+            "Returns the Mermaid `erDiagram` as a string ready to paste into a Markdown block.",
             "generate_schema_diagram(schema='public', include_partitions=false)",
         ),
     )
@@ -815,7 +816,8 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
             "those are the ones that produce a write blast radius. Pass "
             "include_all=true to include NO ACTION / RESTRICT FKs too "
             "(full FK topology view). Cross-schema FK targets are "
-            "rendered as separate nodes prefixed with their schema."
+            "rendered as separate nodes prefixed with their schema. "
+            "Returns the Mermaid `graph LR` diagram as a string."
         ),
     )
     async def generate_fk_cascade_graph(ctx: _Ctx, schema: str, include_all: bool = False) -> str:
@@ -832,7 +834,8 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
             "Generate a detailed Markdown reference of a schema's "
             "tables, columns, constraints, indexes, views, foreign tables, "
             "and custom enums along with comments / descriptions. Optional "
-            "include_samples fetches a few distinct, non-null values for each column.",
+            "include_samples fetches a few distinct, non-null values for each column. "
+            "Returns a single Markdown document as a string.",
             "generate_schema_docs(schema='public', include_samples=true)",
         ),
     )
@@ -1383,7 +1386,8 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
             "(mirrors `prisma db pull`). Covers tables, columns, primary/foreign keys, "
             "unique constraints, indexes, and enums. Views, foreign tables, partitions, "
             "triggers, functions, and policies are out of scope; unmappable types fall "
-            'back to `Unsupported("...")`.'
+            'back to `Unsupported("...")`. '
+            "Returns the rendered `schema.prisma` source as a single string."
         ),
     )
     async def generate_prisma_schema(ctx: _Ctx, schema: str) -> str:
@@ -1397,7 +1401,8 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
             "types, primary/foreign keys, unique constraints, indexes, defaults, "
             "and enums. Single-column FKs emit column-level .references(); "
             "composite FKs are a documented v1 gap. Views, foreign tables, "
-            "partitions, triggers, and functions are out of scope."
+            "partitions, triggers, and functions are out of scope. "
+            "Returns the rendered TypeScript `schema.ts` source as a single string."
         ),
     )
     async def generate_drizzle_schema(ctx: _Ctx, schema: str) -> str:
@@ -1484,7 +1489,8 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
             "sqlalchemy.dialects.postgresql.JSONB), primary keys, single-column "
             "FKs via ForeignKey(), unique constraints (column-level + composite "
             "via __table_args__), defaults, and enums (emitted as Python "
-            "enum.Enum classes). Composite FKs are a documented v1 gap."
+            "enum.Enum classes). Composite FKs are a documented v1 gap. "
+            "Returns the rendered Python `models.py` source as a single string."
         ),
     )
     async def generate_sqlalchemy_models(ctx: _Ctx, schema: str) -> str:
@@ -1499,7 +1505,8 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
             "CONSTRAINT (PK / unique / check / foreign key in that order), "
             "then CREATE INDEX for non-constraint indexes. The file replays "
             "cleanly against an empty database so FKs land after all "
-            "referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed."
+            "referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed. "
+            "Returns the rendered `schema.sql` text as a single string."
         ),
     )
     async def generate_sqlc_schema(ctx: _Ctx, schema: str) -> str:
