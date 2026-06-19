@@ -968,7 +968,10 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
             "window plus the top-decile share. Surfaces ``score_clustering`` "
             "(WARNING) when the reranker isn't discriminating (more than "
             "half of scores land in the top decile of the range). Reads "
-            "from mcpg_rag.rerank_events."
+            "from mcpg_rag.rerank_events. "
+            "Returns an object with `window_days`, `sample_size`, `histogram` "
+            "(list of `{bucket_start, bucket_end, count}`), `top_decile_share`, "
+            "and `findings` (list of advisory findings)."
         ),
     )
     async def analyze_rerank_score_distribution(
@@ -1125,7 +1128,9 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         description=(
             "Sweeps ef_search values to measure the latency and recall trade-off curve "
             "for a given pgvector query vector against exact brute-force ground truth. "
-            "Requires the vector extension."
+            "Requires the vector extension. "
+            "Returns a list of objects with `ef_search`, `recall_at_k`, `mean_latency_ms`, "
+            "and `p95_latency_ms` — one row per ef_search value tested."
         ),
     )
     async def analyze_hnsw_recall(
@@ -2966,7 +2971,11 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             "attributes; the full upstream payload is preserved in "
             "``raw_metadata`` so advisors can reach unanticipated fields. "
             "Raises when the extension is not installed or no turboquant "
-            "index by that name exists."
+            "index by that name exists. "
+            "Returns an object with `schema`, `index`, `algorithm_version`, "
+            "`quantizer_family`, `residual_sketch_kind`, `fast_path_eligible`, "
+            "`capability_flags`, `delta_state`, `maintenance_recommended`, and "
+            "`raw_metadata` (full upstream payload)."
         ),
     )
     async def get_turboquant_index_metadata(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
@@ -3026,7 +3035,10 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             "text). ``half_precision=True`` switches to the halfvec overload. "
             "``probes`` / ``oversample_factor`` are optional per-query knobs "
             "(consider calling ``recommend_turboquant_query_knobs`` first). "
-            "Requires the pg_turboquant extension."
+            "Requires the pg_turboquant extension. "
+            "Returns a list of candidate objects with `id` (the value from "
+            "`id_column`), `distance` (approximate kNN distance under the chosen "
+            "metric), and `rank` (1-based position)."
         ),
     )
     async def turboquant_approx_candidates(
@@ -3158,7 +3170,9 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
             "``list_pg_search_indexes`` — typed accessors for the 13 "
             "documented options plus the raw ``index_options`` dict. "
             "Raises when the extension is not installed or no BM25 "
-            "index by that name exists."
+            "index by that name exists. "
+            "Returns an object with `schema`, `index`, the typed option fields, "
+            "and `index_options` (raw reloptions dict for forward-compat)."
         ),
     )
     async def get_pg_search_index_metadata(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
@@ -3397,7 +3411,8 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
             "free-form dict serialised as jsonb (caller-specific fields: "
             "latency_ms, variant tag, user_id, etc). Available only in "
             "unrestricted mode; the table must be created first via "
-            "``setup_rag_telemetry``."
+            "``setup_rag_telemetry``. "
+            "Returns an object with `event_id` (the new mcpg_rag.rerank_events row id)."
         ),
     )
     async def log_rerank_event(
@@ -3447,7 +3462,9 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
             "correspond to VectorEfficiencyReport.recall_at_k_baseline / "
             "score_rank_correlation_spearman / score_rank_correlation_kendall "
             "respectively. Available only in unrestricted mode; the table "
-            "must be created first via setup_efficiency_observations."
+            "must be created first via setup_efficiency_observations. "
+            "Returns an object with `observation_id` "
+            "(the new mcpg_rag.efficiency_observations row id)."
         ),
     )
     async def record_efficiency_observation(
@@ -3544,7 +3561,12 @@ def _register_rag_telemetry_efficiency_read(server: FastMCP[AppContext]) -> None
             "'what's normal for HNSW+cosine+k=10 in this deployment' vs "
             "'what's normal globally'. Falls back to defaults (with "
             "``derived_from_corpus=false``) when the corpus is smaller "
-            "than the minimum required."
+            "than the minimum required. "
+            "Returns an object with `corpus_size`, `derived_from_corpus` (bool), and "
+            "the seven threshold fields (`baseline_recall_low`, "
+            "`ranking_degraded_spearman`, `pruning_ineffective`, "
+            "`rerank_lift_flat_high`, `rerank_lift_steep_high`, "
+            "`ranking_degraded_recall`, and one reserved slot)."
         ),
     )
     async def recommend_efficiency_thresholds(
@@ -3618,7 +3640,9 @@ def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
             "pg_am) before running. ``concurrently=True`` is the default "
             "and runs on autocommit since REINDEX CONCURRENTLY can't "
             "run inside a transaction. Performs DDL — requires "
-            "unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed."
+            "unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed. "
+            "Returns an object with `schema`, `index`, `concurrently` (bool), "
+            "and `reindex_sql` (the rendered REINDEX statement that ran)."
         ),
     )
     async def reindex_turboquant_index(
@@ -3710,7 +3734,9 @@ def _register_pg_search_ddl(server: FastMCP[AppContext]) -> None:
             "the default and runs on autocommit since REINDEX "
             "CONCURRENTLY can't run inside a transaction. Performs DDL "
             "— requires unrestricted mode + MCPG_ALLOW_DDL; pg_search "
-            "installed."
+            "installed. "
+            "Returns an object with `schema`, `index`, `concurrently` (bool), "
+            "and `reindex_sql` (the rendered REINDEX statement that ran)."
         ),
     )
     async def reindex_pg_search_index(
