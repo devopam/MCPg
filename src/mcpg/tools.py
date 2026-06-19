@@ -1534,7 +1534,9 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "count; indexes report size and definition. Excludes PRIMARY KEY "
             "and UNIQUE indexes (PG needs those regardless of scans). Run "
             "this after the database has been hot for a meaningful period — "
-            "fresh stats produce false positives."
+            "fresh stats produce false positives. "
+            "Returns an object with `tables` (list of candidate tables with their stats) "
+            "and `indexes` (list of candidate indexes with size and definition)."
         ),
     )
     async def find_unused_objects(ctx: _Ctx, schema: str) -> dict[str, Any]:
@@ -1557,7 +1559,9 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "confidence (high / medium / low) so an agent can filter for "
             "a first review pass. Treat as a SIGNAL, not a verdict — "
             "a column named email_template_id matches the email pattern "
-            "but isn't itself an email address."
+            "but isn't itself an email address. "
+            "Returns an object with `findings` (list of `{schema, table, column, data_type, "
+            "category, confidence, matched_pattern}`) and `summary` counts by category."
         ),
     )
     async def find_sensitive_columns(ctx: _Ctx, schema: str) -> dict[str, Any]:
@@ -1579,7 +1583,10 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "not start with a conventional prefix (idx_, ix_, pk_, "
             "uq_, fk_ by default). Findings carry the offender's style "
             "and the detected majority — agents can use the style "
-            "field to filter for renames vs accept-as-is. Pure read."
+            "field to filter for renames vs accept-as-is. Pure read. "
+            "Returns an object with `schema_style` (detected majority), `findings` "
+            "(list of style outliers), and `index_prefix_findings` (indexes with "
+            "non-conventional prefixes)."
         ),
     )
     async def lint_naming_conventions(ctx: _Ctx, schema: str) -> dict[str, Any]:
@@ -2452,7 +2459,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         name="check_database_health",
         description=_with_example(
             "Run database health checks: connection utilisation, buffer cache "
-            "hit ratio, tables needing vacuum, and invalid indexes.",
+            "hit ratio, tables needing vacuum, and invalid indexes. "
+            "Returns an object with `status` ('ok' / 'warning' / 'critical') and "
+            "`checks` (a list of `{name, status, detail}` per check).",
             "check_database_health()",
         ),
     )
@@ -2466,7 +2475,10 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "Run a deep, comprehensive DBA-level database performance, logs, "
             "and health audit over the specified schema. Scans memory, checkpoints, "
             "temp file spills, contention locks, dead tuple cleanliness, and "
-            "optionally scans custom logging tables."
+            "optionally scans custom logging tables. "
+            "Returns an object with `timestamp`, `database`, `version`, `overall_health` "
+            "('GOOD' / 'WARNING' / 'CRITICAL'), `health_score` (int), `categories` "
+            "(per-area results), `top_issues`, `recommendations`, and `raw_stats_snapshot`."
         ),
     )
     async def audit_database(ctx: _Ctx, schema: str, log_table: str | None = None) -> dict[str, Any]:
@@ -2535,7 +2547,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="recommend_indexes",
         description=_with_example(
-            "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan.",
+            "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan. "
+            "Returns a list of objects with `schema`, `table`, `live_tuples`, `sequential_scans`, "
+            "`index_scans`, and a `reason` explaining why the table is a candidate.",
             "recommend_indexes(min_live_tuples=10000)",
         ),
     )
@@ -2824,7 +2838,10 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
         name="list_active_queries",
         description=(
             "List the queries currently running on the server, with each "
-            "backend's wait event, duration, and the PIDs blocking it."
+            "backend's wait event, duration, and the PIDs blocking it. "
+            "Returns a list of objects with `pid`, `username`, `application`, `state`, "
+            "`wait_event` (null when not waiting), `duration_seconds`, `query`, and "
+            "`blocked_by` (list of PIDs holding locks this backend is waiting on)."
         ),
     )
     async def list_active_queries(ctx: _Ctx) -> list[dict[str, Any]]:
@@ -2856,7 +2873,10 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
             "and a computed progress_pct (blocks first, tuples as "
             "fallback, null when neither phase reports a denominator). "
             "Useful next to list_active_queries when an HNSW / IVFFlat "
-            "build on a big table is taking longer than expected."
+            "build on a big table is taking longer than expected. "
+            "Returns a list of objects with `pid`, `schema`, `relation`, `index_name`, "
+            "`command`, `phase`, `blocks_done`, `blocks_total`, `tuples_done`, "
+            "`tuples_total`, and `progress_pct` (null when no denominator is reported)."
         ),
     )
     async def monitor_index_build(ctx: _Ctx) -> list[dict[str, Any]]:
@@ -3864,7 +3884,9 @@ def _register_maintenance(server: FastMCP[AppContext]) -> None:
         name="run_maintenance",
         description=(
             "Run VACUUM or ANALYZE against one table (operation: vacuum, "
-            "analyze, or vacuum_analyze). Available only in unrestricted mode."
+            "analyze, or vacuum_analyze). Available only in unrestricted mode. "
+            "Returns an object with `operation`, `target` (the qualified table name), "
+            "and `maintenance_sql` (the rendered DDL that actually ran)."
         ),
     )
     async def run_maintenance(ctx: _Ctx, operation: str, schema: str, table: str) -> dict[str, Any]:
@@ -3899,7 +3921,8 @@ def _register_backend_control(server: FastMCP[AppContext]) -> None:
         name="cancel_query",
         description=(
             "Cancel the query running on a backend PID (pg_cancel_backend); "
-            "the connection stays open. Available only in unrestricted mode."
+            "the connection stays open. Available only in unrestricted mode. "
+            "Returns an object with `pid`, `action` ('cancel'), and `succeeded` (bool)."
         ),
     )
     async def cancel_query(ctx: _Ctx, pid: int) -> dict[str, Any]:
@@ -3910,7 +3933,8 @@ def _register_backend_control(server: FastMCP[AppContext]) -> None:
         name="terminate_backend",
         description=(
             "Terminate a backend PID (pg_terminate_backend), closing its "
-            "connection. Available only in unrestricted mode."
+            "connection. Available only in unrestricted mode. "
+            "Returns an object with `pid`, `action` ('terminate'), and `succeeded` (bool)."
         ),
     )
     async def terminate_backend(ctx: _Ctx, pid: int) -> dict[str, Any]:
@@ -3947,7 +3971,8 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
         description=(
             "Enable a known PostgreSQL extension (CREATE EXTENSION IF NOT "
             "EXISTS). Only allowlisted extensions may be enabled. Available "
-            "only in unrestricted access mode with MCPG_ALLOW_DDL enabled."
+            "only in unrestricted access mode with MCPG_ALLOW_DDL enabled. "
+            "Returns an object with `name` and `enabled` (bool)."
         ),
     )
     async def enable_extension(ctx: _Ctx, name: str) -> dict[str, Any]:
