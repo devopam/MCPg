@@ -1724,7 +1724,9 @@ def _register_data_movement(server: FastMCP[AppContext]) -> None:
         name="export_table",
         description=(
             "Serialise every row in schema.table (up to `limit`) to CSV or JSON. "
-            "Schema and table names must be plain identifiers."
+            "Schema and table names must be plain identifiers. "
+            "Returns an object with `format`, `row_count`, `truncated` (bool — true when "
+            "the row count hit `limit`), and `content` (the serialised payload as a string)."
         ),
     )
     async def export_table(
@@ -2030,7 +2032,9 @@ def _register_timescaledb_reads(server: FastMCP[AppContext]) -> None:
             "List every TimescaleDB hypertable visible to the current "
             "role, with chunk count, compression flag, and total size. "
             "Reports available=false when the timescaledb extension is "
-            "not installed."
+            "not installed. "
+            "Returns an object with `available` (bool) and `hypertables` "
+            "(list of `{schema, table, num_chunks, compression_enabled, total_size_bytes}`)."
         ),
     )
     async def list_hypertables(ctx: _Ctx) -> dict[str, Any]:
@@ -2042,7 +2046,9 @@ def _register_timescaledb_reads(server: FastMCP[AppContext]) -> None:
         description=(
             "List the chunks of a TimescaleDB hypertable with each chunk's "
             "range_start / range_end and whether it has been compressed. "
-            "Empty list when the table is not a hypertable."
+            "Empty list when the table is not a hypertable. "
+            "Returns an object with `available` (bool) and `chunks` "
+            "(list of `{chunk_name, range_start, range_end, is_compressed, total_size_bytes}`)."
         ),
     )
     async def list_chunks(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
@@ -2058,7 +2064,9 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
             "`time_column`. Validates schema / table / column names against "
             "the plain-identifier allowlist and the chunk interval against "
             "a TimescaleDB-style pattern (e.g. '7 days', '1 hour'). "
-            "Requires unrestricted mode + MCPG_ALLOW_DDL."
+            "Requires unrestricted mode + MCPG_ALLOW_DDL. "
+            "Returns an object with `available` (bool), `function` ('create_hypertable'), "
+            "and `details` (the create_hypertable return text or an extension-missing note)."
         ),
     )
     async def create_hypertable(
@@ -2086,7 +2094,10 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
             "Enable TimescaleDB column-store compression on a hypertable and "
             "schedule a policy that compresses chunks older than "
             "`compress_after` (e.g. '7 days'). Requires unrestricted mode "
-            "+ MCPG_ALLOW_DDL."
+            "+ MCPG_ALLOW_DDL. "
+            "Returns an object with `available` (bool), `function` "
+            "('add_compression_policy'), and `details` (the scheduled job id or "
+            "an extension-missing note)."
         ),
     )
     async def add_compression_policy(
@@ -2161,7 +2172,8 @@ def _register_listen(server: FastMCP[AppContext]) -> None:
         description=(
             "List active LISTEN subscriptions in this server process as "
             "{subscription_id, channel} pairs. Subscriptions are process-local "
-            "and lost on restart."
+            "and lost on restart. "
+            "Returns a list of objects with `subscription_id` and `channel`."
         ),
     )
     async def list_notification_subscriptions(ctx: _Ctx) -> list[dict[str, str]]:
@@ -2202,7 +2214,9 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             "ON_ERROR_STOP; `custom`/`tar` base64-decode `content` and pipe the "
             "bytes through pg_restore. Credentials pass through libpq env vars, "
             "never on the command line. Performs subprocess execution — requires "
-            "unrestricted mode + MCPG_ALLOW_SHELL."
+            "unrestricted mode + MCPG_ALLOW_SHELL. "
+            "Returns an object with `succeeded` (bool), `stdout`, `stderr`, "
+            "`exit_code`, `timed_out` (bool), and `output_truncated` (bool)."
         ),
     )
     async def restore_database(ctx: _Ctx, content: str, format: str = "plain") -> dict[str, Any]:
@@ -2272,7 +2286,12 @@ def _register_audit_trail(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="verify_audit_chain",
-        description="Verify the HMAC-SHA256 signature chain of persisted audit events in mcpg_audit.events.",
+        description=(
+            "Verify the HMAC-SHA256 signature chain of persisted audit events in mcpg_audit.events. "
+            "Returns an object with `verified` (bool), `events_checked` (int), the `first_event_id` "
+            "and `last_event_id` covered by the walk, and (on failure) `error` and `first_invalid_id` "
+            "pointing at where the chain broke."
+        ),
     )
     async def verify_audit_chain(ctx: _Ctx) -> dict[str, Any]:
         from mcpg.audit_integrity import verify_audit_chain as vac
@@ -3712,7 +3731,9 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
         description=(
             "Register a pg_cron job. ``schedule`` is a cron expression or "
             "pg_cron interval shortcut (e.g. '30 seconds'). Available only "
-            "in unrestricted mode; requires pg_cron installed."
+            "in unrestricted mode; requires pg_cron installed. "
+            "Returns an object with `jobid` (the pg_cron job id), `name`, "
+            "and `schedule`."
         ),
     )
     async def schedule_cron_job(ctx: _Ctx, name: str, schedule: str, command: str) -> dict[str, Any]:
@@ -3785,7 +3806,9 @@ def _register_partman(server: FastMCP[AppContext]) -> None:
         description=(
             "Register a partitioned table with pg_partman. ``partition_type`` "
             "must be 'range', 'list', or 'native'. Performs DDL — requires "
-            "unrestricted mode + MCPG_ALLOW_DDL; pg_partman installed."
+            "unrestricted mode + MCPG_ALLOW_DDL; pg_partman installed. "
+            "Returns an object with `parent_table` and `detail` (the partman "
+            "registration status string)."
         ),
     )
     async def partman_create_parent(
@@ -3811,7 +3834,9 @@ def _register_partman(server: FastMCP[AppContext]) -> None:
             "Run pg_partman maintenance — add forward partitions and drop "
             "retired ones. Pass parent_table to scope to one parent; omit "
             "to run for every managed parent. Performs DDL — requires "
-            "unrestricted mode + MCPG_ALLOW_DDL."
+            "unrestricted mode + MCPG_ALLOW_DDL. "
+            "Returns an object with `parent_table` (the scoped name or '*' for "
+            "all) and `detail` (maintenance summary string)."
         ),
     )
     async def partman_run_maintenance(ctx: _Ctx, parent_table: str | None = None) -> dict[str, Any]:
