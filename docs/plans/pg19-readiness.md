@@ -2,6 +2,42 @@
 
 Tracking document for MCPg's PG 19 readiness work. Spawned by issue #120.
 
+## Compatibility principle — no deprecations
+
+**Adding PG 19 surface never removes existing surface.** Every tool that ships
+today must keep working on PG 14-18, and a user upgrading their database to
+PG 19 must keep every tool they relied on at PG 18. This is a hard rule —
+not a soft preference — and applies to every PR in the Phase 3 plan below.
+
+Concretely:
+
+- **AGE-style `graph_operations` bucket stays.** SQL/PGQ (`property_graph_queries`
+  bucket) ships alongside it. Agents pick by `get_pgq_status` — never forced.
+- **pg_repack shell-out path stays** even after the in-server `REPACK` tool
+  lands. PG ≤ 18 users continue to use pg_repack; PG 19 users can choose.
+- **Existing advisor heuristics stay.** Skip-scan-aware ranking adds a new
+  ``reason`` code (`pg19_skip_scan_candidate`) when PG 19 is detected; the
+  existing reason codes remain valid.
+- **`pg_get_acl()` upgrade in `list_grants` is opt-in via version detection**
+  — the PG ≤ 18 catalog-walking query is kept as a fallback in the same
+  function, not deleted. The result shape doesn't change; only the SQL
+  underneath does.
+- **Schema migrations are additive.** New columns are added with safe
+  defaults; never `DROP COLUMN`, never rename. Existing snapshot rows stay
+  comparable across versions.
+- **Tool naming.** New tools take new names (`run_pgq` next to `run_cypher`).
+  We never silently re-bind an existing tool name to a new behaviour.
+
+When a PG 19 feature *would* obsolete an existing surface (e.g. SQL/PGQ
+vs AGE-style Cypher), the right answer is **coexist** until a separate
+deprecation conversation happens with telemetry behind it. That
+conversation is not part of the PG 19 readiness work and would land
+behind its own SemVer-major release.
+
+The contract test at `tests/contract/test_tool_surface_snapshot.py` is the
+operational guard: any tool removal trips the contract test, so a PG 19 PR
+that accidentally deletes a tool fails CI.
+
 ## Current status
 
 | Phase | Status | Notes |

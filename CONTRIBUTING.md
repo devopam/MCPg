@@ -35,6 +35,24 @@ Claude Code users: the same playbook is installed as a `mcpg-add-tool` skill
 and auto-triggers when you ask to add a new tool or expose a new extension's
 surface.
 
+### Backward compatibility — no deprecations
+
+**Adding new surface never removes existing surface.** Every tool that
+ships today must keep working on PG 14-18, and a user upgrading their
+database to PG 19 (or beyond) must keep every tool they relied on at PG 18.
+
+When a new feature *would* obsolete an existing tool (e.g. SQL/PGQ vs the
+AGE-style Cypher tools), the right answer is **coexist** — add a new tool
+with a new name; let agents pick via a status probe (`get_pgq_status`-style).
+Deprecation is a separate conversation, gated on telemetry, and would land
+behind its own SemVer-major release.
+
+The `tests/contract/test_tool_surface_snapshot.py` contract test is the
+operational guard — any tool removal trips it. PG 19 readiness work is
+explicitly **additive only**; see
+[`docs/plans/pg19-readiness.md`](docs/plans/pg19-readiness.md) for the
+end-to-end policy.
+
 ## Test-Driven Development
 
 MCPg is a TDD project. For all **authored** code:
