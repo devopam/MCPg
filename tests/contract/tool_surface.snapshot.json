@@ -204,7 +204,7 @@
       "name": "analyze_rerank_ndcg"
     },
     {
-      "description": "Equal-width histogram of cross_encoder_score values over the window plus the top-decile share. Surfaces ``score_clustering`` (WARNING) when the reranker isn't discriminating (more than half of scores land in the top decile of the range). Reads from mcpg_rag.rerank_events. Returns an object with `window_days`, `sample_size`, `histogram` (list of `{bucket_start, bucket_end, count}`), `top_decile_share`, and `findings` (list of advisory findings).",
+      "description": "Equal-width histogram of cross_encoder_score values over the window plus the top-decile share. Surfaces ``score_clustering`` (WARNING) when the reranker isn't discriminating (more than half of scores land in the top decile of the range). Reads from mcpg_rag.rerank_events. Returns an object with `window_days`, `event_count`, `histogram` (list of counts), `bucket_edges` (list of bucket boundaries), `top_decile_share`, and `findings` (list of advisory findings).",
       "inputSchema": {
         "properties": {
           "days": {
@@ -3694,7 +3694,7 @@
       "name": "read_pg_wal_stats"
     },
     {
-      "description": "Compute corpus-percentile thresholds from accumulated ``mcpg_rag.efficiency_observations`` history. Phase E currently adapts three thresholds: ``baseline_recall_low`` (p10 of recall_baseline), ``ranking_degraded_spearman`` (p10 of spearman), and ``pruning_ineffective`` (p10 of pages_pruned_ratio_p50). The remaining four thresholds stay at their hardcoded defaults. Filters by ``days`` window + optional ``backend`` / ``metric`` / ``k`` so callers can ask 'what's normal for HNSW+cosine+k=10 in this deployment' vs 'what's normal globally'. Falls back to defaults (with ``derived_from_corpus=false``) when the corpus is smaller than the minimum required. Returns an object with `corpus_size`, `derived_from_corpus` (bool), and the seven threshold fields (`baseline_recall_low`, `ranking_degraded_spearman`, `pruning_ineffective`, `rerank_lift_flat_high`, `rerank_lift_steep_high`, `ranking_degraded_recall`, and one reserved slot).",
+      "description": "Compute corpus-percentile thresholds from accumulated ``mcpg_rag.efficiency_observations`` history. Phase E currently adapts three thresholds: ``baseline_recall_low`` (p10 of recall_baseline), ``ranking_degraded_spearman`` (p10 of spearman), and ``pruning_ineffective`` (p10 of pages_pruned_ratio_p50). The remaining four thresholds stay at their hardcoded defaults. Filters by ``days`` window + optional ``backend`` / ``metric`` / ``k`` so callers can ask 'what's normal for HNSW+cosine+k=10 in this deployment' vs 'what's normal globally'. Falls back to defaults (with ``derived_from_corpus=false``) when the corpus is smaller than the minimum required. Returns an object with `corpus_size`, `derived_from_corpus` (bool), and the threshold fields (`baseline_recall_low`, `baseline_recall_low_adapted`, `ranking_degraded_spearman`, `ranking_degraded_spearman_adapted`, `pruning_ineffective`, `pruning_ineffective_adapted`, `rerank_lift_flat_delta`, `rerank_lift_steep_low`, `rerank_lift_steep_high`, and `ranking_degraded_recall`).",
       "inputSchema": {
         "properties": {
           "backend": {
@@ -4642,7 +4642,7 @@
       "name": "tune_vector_index"
     },
     {
-      "description": "Run tq_approx_candidates against a turboquant index — approximate k-NN retrieval, no exact rerank. ``metric`` is 'cosine' | 'inner_product' | 'l2' (mapped to upstream's runtime metric text). ``half_precision=True`` switches to the halfvec overload. ``probes`` / ``oversample_factor`` are optional per-query knobs (consider calling ``recommend_turboquant_query_knobs`` first). Requires the pg_turboquant extension. Returns a list of candidate objects with `id` (the value from `id_column`), `distance` (approximate kNN distance under the chosen metric), and `rank` (1-based position).",
+      "description": "Run tq_approx_candidates against a turboquant index — approximate k-NN retrieval, no exact rerank. ``metric`` is 'cosine' | 'inner_product' | 'l2' (mapped to upstream's runtime metric text). ``half_precision=True`` switches to the halfvec overload. ``probes`` / ``oversample_factor`` are optional per-query knobs (consider calling ``recommend_turboquant_query_knobs`` first). Requires the pg_turboquant extension. Returns a list of candidate objects with `candidate_id`, `approximate_distance`, and `approximate_rank`.",
       "inputSchema": {
         "properties": {
           "candidate_limit": {
