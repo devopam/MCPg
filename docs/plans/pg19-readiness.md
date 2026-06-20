@@ -44,6 +44,60 @@ Walking each highlighted PG 19 Beta 1 feature against MCPg's existing tool surfa
 | VACUUM: opportunistic freeze + faster pages | `mcpg.maintenance.run_maintenance` | **extend** (update tool description) | TODO |
 | Sequence: per-sequence access methods | DDL surface | **defer** (no user demand) | TODO |
 
+## Phase 2 — prioritised list (MCPg view)
+
+Each candidate is scored along four axes; the headline column **PR weight** is what an implementer needs to read first.
+
+**Scoring axes**
+
+- **Agent value (1-5)** — how often will an LLM-driven workflow hit this surface? 5 = ubiquitous (every DBA session); 1 = niche.
+- **Impl. cost** — `S` (one module + tests, ≤ ~500 lines), `M` (advisor + multi-tool, ~1000 lines), `L` (cross-module refactor).
+- **Differentiation (1-3)** — does exposing this give MCPg a unique value vs `psql` + `pg_stat_*` views? 3 = yes (advisor or autowarm-style automation); 1 = thin wrapper.
+- **PG 19 dependence** — `hard` (only works on PG 19; needs feature-detection shim), `soft` (PG 19 makes existing surface better, no shim needed), `compat` (just shape-compat work to keep PG 14-18 green).
+
+**PR weight = `agent_value * differentiation / impl_cost_weight`** (S = 1, M = 2, L = 3), rounded for ordering.
+
+| # | Feature | Surface change | Agent value | Cost | Diff. | Dep. | PR weight | Notes |
+|---|---|---|---:|:---:|---:|---|---:|---|
+| 1 | **Async I/O advisor (`recommend_io_method`)** | New advisor + extend `read_pg_stat_io` with new columns | 5 | M | 3 | hard | 7.5 | The headline PG 19 differentiator. Operators don't know whether `io_uring` / `worker` / `sync` is right; advisor reads workload from `pg_stat_io` + `pg_stat_database` and recommends. |
+| 2 | **Skip-scan-aware `recommend_indexes`** | Extend existing advisor — add a heuristic that prefers indexes where skip-scan would help | 5 | S | 3 | soft | 15.0 | Highest leverage: improves the most-used advisor without a new tool surface. Cheap because the heuristic plugs into existing scoring. |
+| 3 | **CHECK constraint validation tool (`validate_check_constraint`)** | New DDL tool wrapping `ALTER TABLE ... VALIDATE CONSTRAINT` | 4 | S | 3 | hard | 12.0 | DBAs ship `NOT VALID` constraints all the time; the validate step is often forgotten. A dedicated tool closes the loop. |
+| 4 | **`pg_get_acl()` migration in `list_grants`** | Replace the catalogue-walking query with `pg_get_acl(class, oid)` | 4 | S | 2 | soft | 8.0 | Faster, more accurate, fewer corner cases. Drop-in compat — wraps with a version-detect fallback for PG ≤ 18. |
+| 5 | **Per-relation logical replication progress (`read_logical_replication_progress`)** | New read tool reading from new `pg_stat_subscription_stats` columns | 4 | S | 2 | hard | 8.0 | Replication observability today reads cluster-wide LSN lag; per-relation breakdown is genuinely new. |
+| 6 | **VACUUM `pg_stat` enrichments (`run_advisors`, `check_database_health`)** | Extend existing advisors with new I/O-timing columns | 3 | S | 2 | soft | 6.0 | Quietly improves several advisors. No new tools. |
+| 7 | **Async I/O metrics in observability (`read_pg_stat_io`)** | Pull new columns through to the existing read | 3 | S | 1 | soft | 3.0 | Strictly needed for (1) to work; can land standalone or as part of (1). |
+| 8 | **Partition expression characterisation tests** | No tool change; assert `list_partitions` / `compare_schemas` handle expression-bound partitions | 3 | S | 1 | compat | 3.0 | Defensive — surfaces drift before a user hits it. |
+| 9 | **MERGE … RETURNING characterisation tests** | No tool change; verify `run_write` accepts the new syntax | 3 | S | 1 | compat | 3.0 | Same shape as (8). |
+| 10 | **Hash-on-`interval` partitioning verification** | No tool change; verify `partman_create_parent` accepts interval-hash partition key | 2 | S | 1 | compat | 2.0 | Niche; fits in the same "PG 19 characterisation" PR as (8) + (9). |
+| 11 | **OAuth `pg_hba.conf` documentation** | Docs only — `docs/security.md` callout | 2 | S | 1 | hard | 2.0 | No tool surface; document the operator pattern. |
+| 12 | **GIN OR-of-AND perf bench** | Optional `benchmarks/` script | 1 | S | 1 | soft | 1.0 | Nice to have for the release blog post; not a tool. |
+| 13 | **Per-sequence access methods** | DDL surface | 1 | M | 1 | hard | 0.5 | Defer until concrete user demand. |
+
+### Recommended landing order (Phase 3)
+
+The bigger-than-it-looks rule: weight ordering is the rough guide, but related items batch into the same PR.
+
+1. **PR A — "Skip-scan-aware `recommend_indexes`"** (weight 15.0). Highest leverage, lowest cost. Single advisor extension, full test coverage. Lands first because it doesn't depend on PG 19 — it just becomes more accurate when PG 19 is available.
+2. **PR B — "PG 19 characterisation tests"** (rows 8, 9, 10). Single PR that pins behaviour for partition expressions, MERGE … RETURNING, and interval-hash partitioning. Defensive; lands second so all other Phase 3 PRs branch off a known-good PG 19 baseline.
+3. **PR C — "`validate_check_constraint` tool"** (weight 12.0). New tool with full module / tool / bucket / test treatment per the `mcpg-add-tool` skill. The first net-new tool of Phase 3.
+4. **PR D — "Async I/O advisor"** (weight 7.5; bundles rows 1 + 7). The headline PG 19 differentiator. New module, new advisor, extends `read_pg_stat_io`. Largest single PR of Phase 3.
+5. **PR E — "`pg_get_acl()` upgrade in `list_grants`"** (weight 8.0). Drop-in upgrade with PG ≤ 18 fallback.
+6. **PR F — "Per-relation logical replication progress"** (weight 8.0). Read-only tool over new columns.
+7. **PR G — "VACUUM + autovacuum advisor enrichments"** (weight 6.0). Quiet pass over `run_advisors` + `check_database_health`.
+8. **PR H — "OAuth pg_hba documentation"** (weight 2.0). Doc-only.
+
+After PR D lands, MCPg has covered every PG 19 feature with meaningful operational impact. Items 12 + 13 stay in the queue with no commitment.
+
+### Decision rule
+
+A row is **GO** for the current cycle when:
+
+- weight ≥ 5, **or**
+- it batches with another GO row (same PR), **or**
+- it's a characterisation test that defends an already-shipped surface against PG 19 shape changes.
+
+Everything else stays in the audit table until evidence of demand.
+
 ## Phase 3 — incremental landing plan
 
 | Milestone | Work | Gate |
