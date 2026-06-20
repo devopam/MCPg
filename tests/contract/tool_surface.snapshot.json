@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 174
+    "tool_count": 182
   },
   "tools": [
     {
@@ -899,6 +899,142 @@
       "name": "create_pg_search_index"
     },
     {
+      "description": "Create a foreign server backed by ``redis_fdw`` (``CREATE SERVER … FOREIGN DATA WRAPPER redis_fdw OPTIONS (…)``). TLS is enabled by default; the tool refuses ``tls=false`` against a non-loopback Redis host unless ``allow_insecure_tls=true`` is passed explicitly. ``name`` must be a valid unquoted SQL identifier. Idempotent via ``IF NOT EXISTS``. Requires DDL mode. Returns an object with `name`, `address`, `port`, `database`, `tls`, and `created=true`.\n\nExample: `create_redis_cache_server(name='redis_primary', address='redis.internal', port=6379)`",
+      "inputSchema": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "allow_insecure_tls": {
+            "default": false,
+            "title": "Allow Insecure Tls",
+            "type": "boolean"
+          },
+          "database": {
+            "default": 0,
+            "title": "Database",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "port": {
+            "default": 6379,
+            "title": "Port",
+            "type": "integer"
+          },
+          "tls": {
+            "default": true,
+            "title": "Tls",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "address"
+        ],
+        "title": "create_redis_cache_serverArguments",
+        "type": "object"
+      },
+      "name": "create_redis_cache_server"
+    },
+    {
+      "description": "Create a foreign table backed by ``redis_fdw``. ``key_type`` is the Redis-side structure (one of ``hash`` / ``list`` / ``string`` / ``set`` / ``zset``). ``columns`` is a list of ``{name, type}`` dicts — every name must be a valid unquoted SQL identifier and every type a bare Postgres type. Optional ``key_prefix`` and ``ttl_seconds`` are passed through as redis_fdw options. Idempotent via ``IF NOT EXISTS``. Requires DDL mode. Returns an object with `schema`, `name`, `server`, `key_type`, `columns` (tuple of column names), and `created=true`.\n\nExample: `create_redis_cache_table(schema='public', name='sessions_cache', server='redis_primary', key_type='hash', columns=[{'name': 'key', 'type': 'text'}, {'name': 'value', 'type': 'text'}], key_prefix='session:', ttl_seconds=3600)`",
+      "inputSchema": {
+        "properties": {
+          "columns": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "key_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Key Prefix"
+          },
+          "key_type": {
+            "title": "Key Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "server": {
+            "title": "Server",
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ttl Seconds"
+          }
+        },
+        "required": [
+          "schema",
+          "name",
+          "server",
+          "key_type",
+          "columns"
+        ],
+        "title": "create_redis_cache_tableArguments",
+        "type": "object"
+      },
+      "name": "create_redis_cache_table"
+    },
+    {
+      "description": "Create a user mapping for a redis_fdw foreign server. The Redis password is never accepted as a tool argument — pass ``secret_ref`` (the name of a secret in the configured ``MCPG_SECRETS_BACKEND``) and the tool resolves it before interpolating into the OPTIONS clause. ``user='public'`` creates a PUBLIC mapping; otherwise the user name must be a valid unquoted SQL identifier. Idempotent via ``IF NOT EXISTS``. Requires DDL mode. Returns an object with `server`, `user`, `secret_ref` (echoed by name, not value), and `created=true`.\n\nExample: `create_redis_user_mapping(server='redis_primary', user='public', secret_ref='REDIS_PASSWORD')`",
+      "inputSchema": {
+        "properties": {
+          "secret_ref": {
+            "title": "Secret Ref",
+            "type": "string"
+          },
+          "server": {
+            "title": "Server",
+            "type": "string"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server",
+          "user",
+          "secret_ref"
+        ],
+        "title": "create_redis_user_mappingArguments",
+        "type": "object"
+      },
+      "name": "create_redis_user_mapping"
+    },
+    {
       "description": "Build a CREATE INDEX … USING turboquant statement under tight allowlists and run it on autocommit (CONCURRENTLY can't run inside a transaction). ``metric`` is 'cosine' | 'inner_product' | 'l2' (mapped to the matching tq_*_ops opclass). Index options ``bits`` (1..64), ``lists`` (0..1_000_000), ``transform`` (allowlist: 'hadamard'), ``normalized`` (bool) are all optional; any not supplied are omitted from the WITH clause so upstream's defaults apply. The rendered CREATE INDEX SQL is returned in ``create_sql`` for auditability. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed.",
       "inputSchema": {
         "properties": {
@@ -1065,6 +1201,28 @@
         "type": "object"
       },
       "name": "describe_graph"
+    },
+    {
+      "description": "Describe one foreign table backed by ``redis_fdw``: which server it's mapped to, the Redis-side key structure (`hash` / `list` / `string` / `set` / `zset`), key-prefix, TTL, and SQL-side column shape. Raises an error when the table doesn't exist or isn't backed by redis_fdw. Returns an object with `schema`, `name`, `server`, `key_type`, `key_prefix`, `ttl_seconds`, `columns` (list of `{name, data_type}`), and `options` (the full foreign-table options dict).\n\nExample: `describe_redis_cache_table(schema='public', table='sessions_cache')`",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "describe_redis_cache_tableArguments",
+        "type": "object"
+      },
+      "name": "describe_redis_cache_table"
     },
     {
       "description": "Return a high-level summary of what mcpg can do, organised into capability buckets (schema introspection, query execution, vector search, RAG telemetry, audit trail, migrations, time-series, etc.). Call this first when discovering mcpg's surface — it's much more compact than walking the full tool catalogue. Returns an object with `headline`, `version`, `tool_count`, `capability_count`, and a `capabilities` list, where each capability has `id`, `name`, `summary`, `detail`, `headline_tools` (top 3-6 tools to reach for first), `tool_count`, and `all_tools` (the full list in that bucket). Read-only; no database access. Pair with `list_tools` (MCP-protocol) when you need every tool's full schema.",
@@ -1259,6 +1417,15 @@
         "type": "object"
       },
       "name": "enable_extension"
+    },
+    {
+      "description": "Install the ``redis_fdw`` extension. Thin wrapper over ``enable_extension('redis_fdw')`` — convenient for agents that have located the cache-and-foreign-data bucket but haven't found the generic extension installer. redis_fdw runs in-process inside Postgres; operators should be aware of that operational implication before installing. Requires DDL mode. Returns an object with `name='redis_fdw'` and `enabled=true`.\n\nExample: `enable_redis_fdw()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "enable_redis_fdwArguments",
+        "type": "object"
+      },
+      "name": "enable_redis_fdw"
     },
     {
       "description": "Return the PostgreSQL execution plan for a query without running it. The query is validated by the same safety allowlist as run_select.\n\nExample: `explain_query(sql='SELECT * FROM orders WHERE created_at > now() - interval \\'7 days\\'')`",
@@ -1863,6 +2030,23 @@
         "type": "object"
       },
       "name": "get_pg_search_index_metadata"
+    },
+    {
+      "description": "Best-effort cache metrics for a redis_fdw server. redis_fdw does not ship a uniform stats SQL surface across versions, so the tool validates that the server exists and otherwise reports `available=false` with a diagnostic. Operators wanting live metrics should query Redis directly (INFO / DBSIZE). Returns an object with `server`, `available` (bool), `key_count`, `used_memory_bytes`, and `detail` (a human-readable note).\n\nExample: `get_redis_cache_stats(server='redis_primary')`",
+      "inputSchema": {
+        "properties": {
+          "server": {
+            "title": "Server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "get_redis_cache_statsArguments",
+        "type": "object"
+      },
+      "name": "get_redis_cache_stats"
     },
     {
       "description": "Return the MCPg server version, access mode, transport, and database connection status.",
@@ -2657,6 +2841,15 @@
         "type": "object"
       },
       "name": "list_publications"
+    },
+    {
+      "description": "List the foreign servers backed by ``redis_fdw`` — the FDW that exposes a Redis instance as SQL-queryable foreign tables. Reports each server's connection address, port, database, TLS posture, and whether a user mapping (credential) is configured. Returns an empty list when the redis_fdw extension is not installed. Returns a list of objects with `name`, `address`, `port`, `database`, `tls` (bool), `password_configured` (bool), and `options` (the full server-options dict).\n\nExample: `list_redis_foreign_servers()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_redis_foreign_serversArguments",
+        "type": "object"
+      },
+      "name": "list_redis_foreign_servers"
     },
     {
       "description": "Report the health of every configured read replica. Each entry shows index, password-obfuscated DSN, whether the replica is currently degraded (skipped from routing), the last error that took it out, and how many seconds remain before it's re-probed. Returns an empty list when no replicas are configured.",
@@ -3799,6 +3992,48 @@
         "type": "object"
       },
       "name": "recommend_pg_search_maintenance"
+    },
+    {
+      "description": "Recommend tables that would benefit from a Redis cache layer. Inspects ``pg_stat_user_tables`` for read-heavy, low-write relations whose working set fits comfortably in Redis (default: read/write ratio ≥ 10, ≥ 1000 reads, ≤ 1M rows). When ``server`` is provided the generated ``ready_to_run_sql`` stub targets that server name; otherwise the stub uses a placeholder operators must substitute. Advisor is read-only — never touches Redis itself. Returns an object with `server` and `candidates` — a list of objects with `schema`, `table`, `reads`, `writes`, `read_write_ratio`, `estimated_row_count`, `reason` (`read_only_lookup_table` / `small_hot_relation` / `read_heavy_low_write` / `moderate_read_dominant`), and `ready_to_run_sql` (a CREATE FOREIGN TABLE stub).\n\nExample: `recommend_redis_cache_targets(server='redis_primary', limit=10)`",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 20,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "max_rows": {
+            "default": 1000000,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "min_read_write_ratio": {
+            "default": 10.0,
+            "title": "Min Read Write Ratio",
+            "type": "number"
+          },
+          "min_reads_per_day": {
+            "default": 1000,
+            "title": "Min Reads Per Day",
+            "type": "integer"
+          },
+          "server": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Server"
+          }
+        },
+        "title": "recommend_redis_cache_targetsArguments",
+        "type": "object"
+      },
+      "name": "recommend_redis_cache_targets"
     },
     {
       "description": "Roll-up advisor over the four analytics for one window. Returns a single headline ``summary`` + the full list of findings. Built from whichever combination of ``reranker_idle`` / ``topk_stable`` / ``score_clustering`` / ``rerank_hurts_ndcg`` / ``rerank_lifts_ndcg`` fires. Also feeds the ``RAG Reranker Pipeline`` category in audit_database. Reads from mcpg_rag.rerank_events.",
