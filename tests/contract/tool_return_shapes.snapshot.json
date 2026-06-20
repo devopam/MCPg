@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 198
+    "tool_count": 200
   },
   "tools": {
     "add_compression_policy": {
@@ -561,6 +561,9 @@
         "matches"
       ],
       "kind": "scalar"
+    },
+    "get_aio_status": {
+      "kind": "opaque"
     },
     "get_compact_schema": {
       "kind": "opaque"
@@ -1479,6 +1482,9 @@
         "table"
       ],
       "kind": "list"
+    },
+    "recommend_io_method": {
+      "kind": "opaque"
     },
     "recommend_pg_search_maintenance": {
       "dataclass": "PgSearchAdvisorFinding",

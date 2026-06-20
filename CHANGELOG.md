@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **PG 19 async-I/O advisor** (`mcpg.aio`). Two new tools:
+  `get_aio_status` (version probe + current `io_method` /
+  `io_min_workers` / `io_max_workers` GUCs; never raises) and
+  `recommend_io_method` (read-only advisor that maps workload
+  signals from `pg_stat_database` aggregates to one of `io_uring` /
+  `worker` / `sync` with a stable reason code:
+  `high_concurrent_read_load`, `bursty_io_with_cache_pressure`,
+  `low_io_pressure`, `current_setting_optimal`, or
+  `insufficient_stats`).
+
+  PR-3 of the PG 19 Phase 3 plan; the headline differentiator —
+  release-blog tagline: "Tell me which `io_method` is right for this
+  workload." Emits a `ready_to_run_sql` (`ALTER SYSTEM SET io_method
+  = '…';`) only when the recommendation differs from the current
+  setting; the advisor never invokes ALTER SYSTEM itself.
+
+  Per the no-deprecation rule, the existing `read_pg_stat_io`
+  surface in `mcpg.io_stats` is untouched. Both new tools route to
+  the `operations_and_health` capability bucket. Advances #120.
+
 - **PG 19 in-server `REPACK` coverage** (`mcpg.repack`). Two new
   tools: `get_repack_status` (version probe; never raises) and
   `repack_table` (`REPACK <relation> [CONCURRENTLY]`, defaults to
