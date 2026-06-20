@@ -28,10 +28,12 @@
 version: 2
 updates:
   # ---------------------------------------------------------------------------
-  # Python — uv / pyproject.toml. Dependabot understands uv.lock natively
-  # since GitHub's late-2024 support announcement.
+  # Python — pyproject.toml + uv.lock. Dependabot v2 doesn't expose a
+  # standalone `uv` ecosystem; the supported value is `pip`, and Dependabot
+  # auto-detects uv.lock in the directory and uses uv to resolve updates.
+  # Source: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference#package-ecosystem--
   # ---------------------------------------------------------------------------
-  - package-ecosystem: "uv"
+  - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
