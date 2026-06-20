@@ -49,6 +49,7 @@ from mcpg import (
     partman,
     pg_prewarm,
     pg_search,
+    pgq,
     prisma,
     query,
     rag_efficiency,
@@ -4075,6 +4076,156 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_pgq_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_pgq_status",
+        description=_with_example(
+            "Report whether SQL/PGQ (the SQL standard for property graph "
+            "queries, new in PG 19) is usable on this server. SQL/PGQ "
+            "coexists with the AGE-style `graph_operations` bucket — "
+            "`get_pgq_status` is the agent's hint about which surface to "
+            "reach for. Never raises; on PG < 19 reports "
+            "`available=false` with a diagnostic pointing at `run_cypher`. "
+            "Returns an object with `available` (bool), `server_version_num` "
+            "(int), `server_version` (the human-readable string), and "
+            "`detail` (a guidance string the agent can surface to the user).",
+            "get_pgq_status()",
+        ),
+    )
+    async def get_pgq_status(ctx: _Ctx) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            status = await pgq.get_pgq_status(_driver(ctx))
+            return asdict(status)
+
+        return await _cached_call(ctx, "get_pgq_status", _run)
+
+    @server.tool(
+        name="list_property_graphs",
+        description=_with_example(
+            "List SQL/PGQ property graphs defined in the database (reads "
+            "`information_schema.sql_property_graphs`). Returns an empty "
+            "list on PG < 19 or when the catalog view is missing (early "
+            "Beta builds may not expose it yet — pair with `get_pgq_status` "
+            "to disambiguate). "
+            "Returns a list of objects with `schema`, `name`, "
+            "`vertex_tables` (list of `schema.table` strings), and "
+            "`edge_tables` (same shape).",
+            "list_property_graphs()",
+        ),
+    )
+    async def list_property_graphs(ctx: _Ctx) -> list[dict[str, Any]]:
+        async def _run() -> list[dict[str, Any]]:
+            graphs = await pgq.list_property_graphs(_driver(ctx))
+            return [asdict(g) for g in graphs]
+
+        return await _cached_call(ctx, "list_property_graphs", _run)
+
+    @server.tool(
+        name="describe_property_graph",
+        description=_with_example(
+            "Describe one SQL/PGQ property graph by schema-qualified name. "
+            "Requires PG 19+; raises an error otherwise. Useful when an "
+            "agent has located a graph via `list_property_graphs` and "
+            "needs the full membership before composing a `run_pgq` query. "
+            "Returns an object with `schema`, `name`, `vertex_tables` "
+            "(list of `schema.table` strings), and `edge_tables` (same "
+            "shape).",
+            "describe_property_graph(schema='public', name='org_chart')",
+        ),
+    )
+    async def describe_property_graph(ctx: _Ctx, schema: str, name: str) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            info = await pgq.describe_property_graph(_driver(ctx), schema, name)
+            return asdict(info)
+
+        return await _cached_call(ctx, "describe_property_graph", _run, schema, name)
+
+    @server.tool(
+        name="run_pgq",
+        description=_with_example(
+            "Execute a SQL/PGQ `SELECT ... GRAPH_TABLE` query and return "
+            "the rows. The query must be a single `SELECT` (or `WITH ... "
+            "SELECT`) statement that references `GRAPH_TABLE` — anything "
+            "else is refused at the boundary (use `run_select` for "
+            "non-graph reads). `max_rows` caps the result set; when the "
+            "cap is hit, `truncated=true`. Requires PG 19+. "
+            "Returns an object with `columns` (list of column names from "
+            "the query's `COLUMNS (...)` clause), `rows` (list of dicts "
+            "keyed by those columns), `row_count`, and `truncated` (bool).",
+            (
+                'run_pgq(query="SELECT * FROM GRAPH_TABLE (org_chart '
+                "MATCH (e:Employee)-[:REPORTS_TO]->(m:Manager) "
+                'COLUMNS (e.name AS employee, m.name AS manager))", max_rows=50)'
+            ),
+        ),
+    )
+    async def run_pgq(ctx: _Ctx, query: str, max_rows: int = 200) -> dict[str, Any]:
+        result = await pgq.run_pgq(_driver(ctx), query, max_rows=max_rows)
+        return asdict(result)
+
+
+def _register_pgq_ddl(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="create_property_graph",
+        description=_with_example(
+            "Create a SQL/PGQ property graph. The tool composes the "
+            '`CREATE PROPERTY GRAPH "schema"."name"` header itself; '
+            "`definition_body` carries the `VERTEX TABLES (...)` (and "
+            "optional `EDGE TABLES (...)`) clauses. The body must begin "
+            "with `VERTEX TABLES` and must not contain `;` — that boundary "
+            "rules out smuggling a different DDL statement via the "
+            "parameter. Requires PG 19+ and DDL mode. "
+            "Returns an object with `schema`, `name`, and `created=true`.",
+            (
+                "create_property_graph(schema='public', name='org_chart', "
+                'definition_body="VERTEX TABLES (employees KEY (id) LABEL '
+                "Employee PROPERTIES (id, name)) EDGE TABLES (reports_to "
+                "SOURCE KEY (id) REFERENCES employees (id) DESTINATION KEY "
+                '(manager_id) REFERENCES employees (id) LABEL REPORTS_TO)")'
+            ),
+        ),
+    )
+    async def create_property_graph(
+        ctx: _Ctx,
+        schema: str,
+        name: str,
+        definition_body: str,
+    ) -> dict[str, Any]:
+        result = await pgq.create_property_graph(
+            _driver(ctx),
+            schema=schema,
+            name=name,
+            definition_body=definition_body,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="drop_property_graph",
+        description=_with_example(
+            "Drop a SQL/PGQ property graph. ``if_exists=true`` (the "
+            "default) makes the operation idempotent. Requires PG 19+ and "
+            "DDL mode. "
+            "Returns an object with `schema`, `name`, and `dropped=true`.",
+            "drop_property_graph(schema='public', name='org_chart')",
+        ),
+    )
+    async def drop_property_graph(
+        ctx: _Ctx,
+        schema: str,
+        name: str,
+        if_exists: bool = True,
+    ) -> dict[str, Any]:
+        result = await pgq.drop_property_graph(
+            _driver(ctx),
+            schema=schema,
+            name=name,
+            if_exists=if_exists,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_pg_prewarm_reads(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="get_prewarm_extension_status",
@@ -4637,6 +4788,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_graphs_reads(server)
         _register_redis_fdw_reads(server)
         _register_pg_prewarm_reads(server)
+        _register_pgq_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -4655,6 +4807,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_timescaledb_writes(server)
         _register_graphs_writes(server)
         _register_redis_fdw_ddl(server)
+        _register_pgq_ddl(server)
     if is_permitted(settings.access_mode, Capability.MIGRATE) and settings.allow_ddl:
         _register_migrations(server)
     if is_permitted(settings.access_mode, Capability.SHELL) and settings.allow_shell:

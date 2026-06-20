@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 190
+    "tool_count": 196
   },
   "tools": [
     {
@@ -899,6 +899,33 @@
       "name": "create_pg_search_index"
     },
     {
+      "description": "Create a SQL/PGQ property graph. The tool composes the `CREATE PROPERTY GRAPH \"schema\".\"name\"` header itself; `definition_body` carries the `VERTEX TABLES (...)` (and optional `EDGE TABLES (...)`) clauses. The body must begin with `VERTEX TABLES` and must not contain `;` — that boundary rules out smuggling a different DDL statement via the parameter. Requires PG 19+ and DDL mode. Returns an object with `schema`, `name`, and `created=true`.\n\nExample: `create_property_graph(schema='public', name='org_chart', definition_body=\"VERTEX TABLES (employees KEY (id) LABEL Employee PROPERTIES (id, name)) EDGE TABLES (reports_to SOURCE KEY (id) REFERENCES employees (id) DESTINATION KEY (manager_id) REFERENCES employees (id) LABEL REPORTS_TO)\")`",
+      "inputSchema": {
+        "properties": {
+          "definition_body": {
+            "title": "Definition Body",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "name",
+          "definition_body"
+        ],
+        "title": "create_property_graphArguments",
+        "type": "object"
+      },
+      "name": "create_property_graph"
+    },
+    {
       "description": "Create a foreign server backed by ``redis_fdw`` (``CREATE SERVER … FOREIGN DATA WRAPPER redis_fdw OPTIONS (…)``). TLS is enabled by default; the tool refuses ``tls=false`` against a non-loopback Redis host unless ``allow_insecure_tls=true`` is passed explicitly. ``name`` must be a valid unquoted SQL identifier. Idempotent via ``IF NOT EXISTS``. Requires DDL mode. Returns an object with `name`, `address`, `port`, `database`, `tls`, and `created=true`.\n\nExample: `create_redis_cache_server(name='redis_primary', address='redis.internal', port=6379)`",
       "inputSchema": {
         "properties": {
@@ -1203,6 +1230,28 @@
       "name": "describe_graph"
     },
     {
+      "description": "Describe one SQL/PGQ property graph by schema-qualified name. Requires PG 19+; raises an error otherwise. Useful when an agent has located a graph via `list_property_graphs` and needs the full membership before composing a `run_pgq` query. Returns an object with `schema`, `name`, `vertex_tables` (list of `schema.table` strings), and `edge_tables` (same shape).\n\nExample: `describe_property_graph(schema='public', name='org_chart')`",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "name"
+        ],
+        "title": "describe_property_graphArguments",
+        "type": "object"
+      },
+      "name": "describe_property_graph"
+    },
+    {
       "description": "Describe one foreign table backed by ``redis_fdw``: which server it's mapped to, the Redis-side key structure (`hash` / `list` / `string` / `set` / `zset`), key-prefix, TTL, and SQL-side column shape. Raises an error when the table doesn't exist or isn't backed by redis_fdw. Returns an object with `schema`, `name`, `server`, `key_type`, `key_prefix`, `ttl_seconds`, `columns` (list of `{name, data_type}`), and `options` (the full foreign-table options dict).\n\nExample: `describe_redis_cache_table(schema='public', table='sessions_cache')`",
       "inputSchema": {
         "properties": {
@@ -1380,6 +1429,33 @@
         "type": "object"
       },
       "name": "drop_graph"
+    },
+    {
+      "description": "Drop a SQL/PGQ property graph. ``if_exists=true`` (the default) makes the operation idempotent. Requires PG 19+ and DDL mode. Returns an object with `schema`, `name`, and `dropped=true`.\n\nExample: `drop_property_graph(schema='public', name='org_chart')`",
+      "inputSchema": {
+        "properties": {
+          "if_exists": {
+            "default": true,
+            "title": "If Exists",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "name"
+        ],
+        "title": "drop_property_graphArguments",
+        "type": "object"
+      },
+      "name": "drop_property_graph"
     },
     {
       "description": "Run pg_dump against the connected database and return the SQL dump as a string (for `format='plain'`) or base64-encoded bytes (for `custom`/`tar`). Credentials pass through libpq env vars, never on the command line. The result includes `output_truncated` and `timed_out` flags so the caller can re-run with a higher cap or a narrower scope. Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL.",
@@ -2030,6 +2106,15 @@
         "type": "object"
       },
       "name": "get_pg_search_index_metadata"
+    },
+    {
+      "description": "Report whether SQL/PGQ (the SQL standard for property graph queries, new in PG 19) is usable on this server. SQL/PGQ coexists with the AGE-style `graph_operations` bucket — `get_pgq_status` is the agent's hint about which surface to reach for. Never raises; on PG < 19 reports `available=false` with a diagnostic pointing at `run_cypher`. Returns an object with `available` (bool), `server_version_num` (int), `server_version` (the human-readable string), and `detail` (a guidance string the agent can surface to the user).\n\nExample: `get_pgq_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_pgq_statusArguments",
+        "type": "object"
+      },
+      "name": "get_pgq_status"
     },
     {
       "description": "Report whether ``pg_prewarm`` (and the supporting ``pg_buffercache``) are installed, and whether ``pg_prewarm`` is listed in ``shared_preload_libraries`` (the autoprewarm worker requires it). Returns an object with `pg_prewarm_installed` (bool), `pg_buffercache_installed` (bool), `autoprewarm_libraries_present` (bool), and `shared_preload_libraries` (the raw setting).\n\nExample: `get_prewarm_extension_status()`",
@@ -2877,6 +2962,15 @@
         "type": "object"
       },
       "name": "list_prewarmed_relations"
+    },
+    {
+      "description": "List SQL/PGQ property graphs defined in the database (reads `information_schema.sql_property_graphs`). Returns an empty list on PG < 19 or when the catalog view is missing (early Beta builds may not expose it yet — pair with `get_pgq_status` to disambiguate). Returns a list of objects with `schema`, `name`, `vertex_tables` (list of `schema.table` strings), and `edge_tables` (same shape).\n\nExample: `list_property_graphs()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_property_graphsArguments",
+        "type": "object"
+      },
+      "name": "list_property_graphs"
     },
     {
       "description": "List logical-replication publications with the tables and operations they include. Returns a list of objects with `name`, `owner`, `all_tables` (bool), `publishes_insert` / `publishes_update` / `publishes_delete` / `publishes_truncate` (bools), and `tables` (list of `schema.table` strings).",
@@ -4613,6 +4707,28 @@
         "type": "object"
       },
       "name": "run_maintenance"
+    },
+    {
+      "description": "Execute a SQL/PGQ `SELECT ... GRAPH_TABLE` query and return the rows. The query must be a single `SELECT` (or `WITH ... SELECT`) statement that references `GRAPH_TABLE` — anything else is refused at the boundary (use `run_select` for non-graph reads). `max_rows` caps the result set; when the cap is hit, `truncated=true`. Requires PG 19+. Returns an object with `columns` (list of column names from the query's `COLUMNS (...)` clause), `rows` (list of dicts keyed by those columns), `row_count`, and `truncated` (bool).\n\nExample: `run_pgq(query=\"SELECT * FROM GRAPH_TABLE (org_chart MATCH (e:Employee)-[:REPORTS_TO]->(m:Manager) COLUMNS (e.name AS employee, m.name AS manager))\", max_rows=50)`",
+      "inputSchema": {
+        "properties": {
+          "max_rows": {
+            "default": 200,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "run_pgqArguments",
+        "type": "object"
+      },
+      "name": "run_pgq"
     },
     {
       "description": "Validate and run a read-only SQL query. Writes, DDL, and other unsafe statements are rejected before execution.\n\nExample: `run_select(sql='SELECT id, email FROM users LIMIT 10', max_rows=1000)`",
