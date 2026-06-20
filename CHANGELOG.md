@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **PostgreSQL 19 readiness — Phase 1 (CI matrix + Beta scaffold)**.
+  PG 19 Beta added as an experimental matrix entry on the test job
+  (`continue-on-error: true` until GA — failures don't block PRs).
+  Standalone `.github/ci-postgres-pg19.Dockerfile` builds pgvector v0.8.0
+  from source on top of `postgres:19beta1` (pgvector doesn't ship a
+  `pg19` image tag yet). PostGIS deferred until apt package is published.
+  `docs/plans/pg19-readiness.md` carries the per-feature audit matrix
+  for Phase 2 (skip-scan indexes, `io_method` advisor, `pg_get_acl`,
+  CHECK constraint validation, etc.) — each row becomes a focused
+  follow-up PR. Closes Phase 1 of #120.
+
 - **`pg_prewarm` cache-warming coverage** (`mcpg.pg_prewarm`). Eight
   new tools: `get_prewarm_extension_status`,
   `list_prewarmed_relations`, `recommend_prewarm_targets`,

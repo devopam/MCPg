@@ -60,7 +60,8 @@ graph queries, data movement, live ops, and more.
   audit event with credential-redacted arguments.
 - **Test-driven, multi-version.** 800+ unit tests plus an integration
   suite that runs against a real PostgreSQL container in CI — matrix
-  covers PG **14, 15, 16, 17, 18** on every push.
+  covers PG **14, 15, 16, 17, 18** on every push, plus PG **19 (beta)**
+  as an experimental (non-blocking) entry tracked under issue #120.
 
 ---
 

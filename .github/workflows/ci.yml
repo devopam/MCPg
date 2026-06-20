@@ -55,10 +55,17 @@ jobs:
   test:
     name: Tests (PG ${{ matrix.postgres }})
     runs-on: ubuntu-latest
+    # PG 19 is beta. We track it as an experimental matrix entry —
+    # failures are reported but don't fail the job. Promoted to
+    # required once PG 19 reaches GA (issue #120, Phase 3).
+    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
         postgres: ["14", "15", "16", "17", "18"]
+        include:
+          - postgres: "19"
+            experimental: true
     steps:
       - uses: actions/checkout@v4
       # The ubuntu-latest runner ships an older PostgreSQL client by
@@ -75,7 +82,9 @@ jobs:
           echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-${{ matrix.postgres }}
+          # PG 19 client packages are published under `postgresql-client-19`
+          # by the pgdg repo even while the server is in beta.
+          sudo apt-get install -y "postgresql-client-${{ matrix.postgres }}"
       # A custom image (pgvector + PostGIS) so the integration suite can test
       # vector and geospatial features against a real database. It is built
       # and run as a step because GitHub `services:` cannot build images.
@@ -86,8 +95,16 @@ jobs:
           # "Head https://registry-1.docker.io/...: i/o timeout"). That
           # is transient infra, not a code failure, so retry the build
           # with exponential backoff before giving up.
+          # PG 19 (beta) needs a separate Dockerfile — pgvector doesn't
+          # publish a `pg19` image tag yet, so we build pgvector from source
+          # against `postgres:19beta1`. Drop this branch once pgvector ships
+          # a PG 19 image (issue #120 Phase 3, on GA).
+          DOCKERFILE=".github/ci-postgres.Dockerfile"
+          if [ "${{ matrix.postgres }}" = "19" ]; then
+            DOCKERFILE=".github/ci-postgres-pg19.Dockerfile"
+          fi
           build_db() {
-            docker build -f .github/ci-postgres.Dockerfile \
+            docker build -f "$DOCKERFILE" \
               --build-arg PG_MAJOR=${{ matrix.postgres }} -t mcpg-ci-db .
           }
           attempt=1
