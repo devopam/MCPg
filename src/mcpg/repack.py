@@ -106,9 +106,24 @@ async def get_repack_status(driver: SqlDriver) -> RepackStatus:
 
     Read-only; never raises. On PG < 19 returns ``available=False`` with
     a diagnostic pointing at the long-standing pg_repack shell-out path
-    so the agent can fall back without operator intervention.
+    so the agent can fall back without operator intervention. The
+    version probe is wrapped in a broad ``try/except`` so a transient
+    connection error here surfaces the same "fall back to pg_repack"
+    guidance instead of crashing the tool call (gemini review on PR #129).
     """
-    ver_num, ver = await _server_version(driver)
+    try:
+        ver_num, ver = await _server_version(driver)
+    except Exception as exc:
+        return RepackStatus(
+            available=False,
+            server_version_num=0,
+            server_version="",
+            detail=(
+                f"In-server REPACK is unavailable (server version probe failed: {exc}). "
+                "Fall back to the pg_repack extension shell-out path (run as an unrestricted-mode "
+                "operator via run_ddl with the pg_repack extension installed)."
+            ),
+        )
     available = ver_num >= _MIN_REPACK_VERSION
     detail = (
         "In-server REPACK is available — use repack_table() with concurrently=True for online rebuild."
@@ -160,7 +175,14 @@ async def repack_table(
     qualified = f"{_quote_identifier(schema)}.{_quote_identifier(table)}"
     concurrently_clause = " CONCURRENTLY" if concurrently else ""
     repack_sql = f"REPACK {qualified}{concurrently_clause}"
-    await database.run_unmanaged(repack_sql)
+    # Wrap the driver call so a lock-timeout / permission / syntax failure
+    # surfaces as RepackError instead of leaking a raw driver exception
+    # (gemini review on PR #129, consistent with turboquant / pg_search
+    # which already wrap run_unmanaged errors).
+    try:
+        await database.run_unmanaged(repack_sql)
+    except Exception as exc:
+        raise RepackError(f"REPACK execution failed: {exc}") from exc
     return RepackResult(
         schema=schema,
         table=table,

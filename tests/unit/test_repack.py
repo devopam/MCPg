@@ -46,6 +46,20 @@ async def test_status_handles_missing_version_row() -> None:
     assert status.server_version_num == 0
 
 
+async def test_status_never_raises_on_driver_failure() -> None:
+    """Gemini review on PR #129: get_repack_status must satisfy its
+    'never raises' contract even when the version probe itself fails.
+    """
+    driver = FakeDriver(fail=True)
+    status = await get_repack_status(driver)  # type: ignore[arg-type]
+    assert status.available is False
+    assert status.server_version_num == 0
+    # The diagnostic must point the agent at the pg_repack fallback even
+    # when the failure mode is a driver-level error rather than an
+    # old-PG-version answer.
+    assert "pg_repack" in status.detail
+
+
 # --- repack_table ----------------------------------------------------------
 
 
@@ -113,6 +127,18 @@ async def test_repack_table_rejects_pg18_with_pg_repack_hint() -> None:
         await repack_table(db, schema="public", table="orders")  # type: ignore[arg-type]
     # No DDL should have been dispatched.
     assert db.unmanaged == []
+
+
+async def test_repack_table_wraps_unmanaged_failure_as_repack_error() -> None:
+    """Gemini review on PR #129: a lock-timeout / permission / syntax
+    failure from run_unmanaged must surface as RepackError, not a raw
+    driver exception — consistent with turboquant / pg_search modules
+    which already wrap unmanaged-call failures.
+    """
+    db = _pg19_database()
+    db.unmanaged_fail = True
+    with pytest.raises(RepackError, match="REPACK execution failed"):
+        await repack_table(db, schema="public", table="orders")  # type: ignore[arg-type]
 
 
 # --- Dataclass shape -------------------------------------------------------
