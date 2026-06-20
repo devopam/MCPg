@@ -40,6 +40,7 @@ ENABLEABLE_EXTENSIONS = frozenset(
         "pg_cron",
         "pg_partman",
         "pg_buffercache",
+        "pg_prewarm",
         "pg_walinspect",
         "pg_turboquant",
         "pg_search",
