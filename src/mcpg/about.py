@@ -651,6 +651,10 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "run_pgq": "property_graph_queries",
     "create_property_graph": "property_graph_queries",
     "drop_property_graph": "property_graph_queries",
+    # PG 19 in-server REPACK — operational maintenance, sits next to
+    # run_maintenance / check_database_health.
+    "get_repack_status": "operations_and_health",
+    "repack_table": "operations_and_health",
 }
 
 

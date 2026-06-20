@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 196
+    "tool_count": 198
   },
   "tools": {
     "add_compression_policy": {
@@ -620,6 +620,16 @@
         "key_count",
         "server",
         "used_memory_bytes"
+      ],
+      "kind": "scalar"
+    },
+    "get_repack_status": {
+      "dataclass": "RepackStatus",
+      "fields": [
+        "available",
+        "detail",
+        "server_version",
+        "server_version_num"
       ],
       "kind": "scalar"
     },
@@ -1579,6 +1589,16 @@
         "reindex_sql",
         "schema",
         "started_at"
+      ],
+      "kind": "scalar"
+    },
+    "repack_table": {
+      "dataclass": "RepackResult",
+      "fields": [
+        "concurrently",
+        "repack_sql",
+        "schema",
+        "table"
       ],
       "kind": "scalar"
     },
