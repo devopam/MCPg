@@ -1,0 +1,124 @@
+# Dependabot configuration for MCPg.
+#
+# Tracks three ecosystems and opens grouped PRs on a weekly cadence so
+# routine bumps don't drown the review queue.
+#
+# Coverage:
+#   - Python deps (uv / pyproject.toml + uv.lock)
+#   - GitHub Actions workflow pins (actions/checkout@v4 etc)
+#   - Docker base images in the CI Dockerfiles + the project Dockerfile
+#
+# When a security advisory drops, Dependabot will open a PR *outside*
+# the weekly schedule regardless of `schedule` — that's the whole point
+# of having this file: security alerts surface as PRs the CI gates,
+# not just as nudges in the security tab. See:
+# https://docs.github.com/en/code-security/dependabot/dependabot-security-updates
+#
+# Each ecosystem follows the same template:
+#   - weekly schedule, Monday morning UTC (lines up with the start of
+#     the working week)
+#   - open-pull-requests-limit: 5 so a backlog can't flood
+#   - labels: "dependencies" + the ecosystem name for easy filtering
+#   - commit-message prefix matches Conventional Commits so the
+#     changelog rollup picks them up cleanly
+#   - groups for related updates (e.g. all Python minor/patch into one PR,
+#     all GH Action major bumps separately) so reviewers see the change
+#     set at the right granularity
+
+version: 2
+updates:
+  # ---------------------------------------------------------------------------
+  # Python — uv / pyproject.toml. Dependabot understands uv.lock natively
+  # since GitHub's late-2024 support announcement.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      # `chore(deps): bump …` matches Conventional Commits so the
+      # release rollup script picks them up under the right section.
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      # All non-major Python bumps (minor + patch) into one weekly PR.
+      # Major bumps land separately so they can be reviewed individually.
+      python-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions — the workflow YAML pins.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci(deps)"
+      include: "scope"
+    groups:
+      gh-actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---------------------------------------------------------------------------
+  # Docker — every Dockerfile in the repo gets its `FROM` lines watched.
+  # Three directories: the project Dockerfile at repo root, the CI image
+  # for PG 14-18, and the PG 19 beta scaffold.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "build(deps)"
+      include: "scope"
+
+  - package-ecosystem: "docker"
+    directory: "/.github"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "docker"
+      - "ci"
+    commit-message:
+      prefix: "ci(deps)"
+      include: "scope"
+    # Pin pgvector/pgvector tag bumps and postgres:19beta1 transitions
+    # for explicit review — those Dockerfiles are part of the PG-version
+    # readiness story (issue #120) and deserve eyeballs.
+    ignore:
+      # Don't auto-bump pgvector while we're tracking specific PG-version
+      # tags (`pg14` / `pg15` / `pg16` / `pg17` / `pg18`) — the matrix
+      # entry pins the tag deliberately.
+      - dependency-name: "pgvector/pgvector"
+      - dependency-name: "postgres"
