@@ -261,6 +261,24 @@ async def get_aio_status(driver: SqlDriver) -> AioStatus:
                 f"AIO subsystem is reachable but settings probe failed: {exc}. Re-run after the server is back online."
             ),
         )
+    if method is None:
+        # PG ≥ 19 but the `io_method` GUC isn't recognised — server was
+        # built without AIO, or returned an unrecognised value. Surface
+        # available=False so the agent doesn't try to ALTER SYSTEM SET
+        # something that will fail (gemini review on PR #131).
+        return AioStatus(
+            available=False,
+            server_version_num=ver_num,
+            server_version=ver,
+            io_method=None,
+            io_min_workers=None,
+            io_max_workers=None,
+            detail=(
+                "PG 19 async-I/O GUC 'io_method' is not available on this server. "
+                "The server may have been compiled without AIO support, or it returned "
+                "an unrecognised value. Fall back to read_pg_stat_io / run_maintenance."
+            ),
+        )
     return AioStatus(
         available=True,
         server_version_num=ver_num,
@@ -269,7 +287,7 @@ async def get_aio_status(driver: SqlDriver) -> AioStatus:
         io_min_workers=min_w,
         io_max_workers=max_w,
         detail=(
-            f"AIO subsystem is available. Current io_method={method or 'unknown'} "
+            f"AIO subsystem is available. Current io_method={method} "
             f"(io_min_workers={min_w}, io_max_workers={max_w}). "
             "Call recommend_io_method to get a workload-aware recommendation."
         ),
@@ -292,11 +310,17 @@ async def _io_pressure(driver: SqlDriver) -> tuple[float, float, float]:
     advisor still works while pg_stat_io is being reshaped. Aggregates
     across all non-template databases.
     """
+    # Use COALESCE(MIN(stats_reset), pg_postmaster_start_time()) so the
+    # window doesn't collapse to 0 on a cluster where stats have never
+    # been reset (the default state on a fresh install) — gemini review
+    # on PR #131. pg_postmaster_start_time() is the correct upper bound
+    # on accumulated stats when stats_reset is NULL.
     rows = await driver.execute_query(
         "SELECT "
         "  COALESCE(SUM(blks_read), 0) AS reads, "
         "  COALESCE(SUM(blks_hit), 0) AS hits, "
-        "  EXTRACT(epoch FROM (now() - MIN(stats_reset))) AS window_seconds "
+        "  EXTRACT(epoch FROM (now() - COALESCE(MIN(stats_reset), pg_postmaster_start_time()))) "
+        "    AS window_seconds "
         "FROM pg_stat_database "
         "WHERE datname IS NOT NULL "
         "  AND datname NOT IN ('template0', 'template1')",
@@ -367,6 +391,21 @@ async def recommend_io_method(driver: SqlDriver) -> RecommendIoMethodResult:
             recommendations=[],
         )
     current_method, _, _ = await _aio_settings(driver)
+    if current_method is None:
+        # GUC missing / unrecognised — server was built without AIO, or
+        # returned a value we don't know about. Bail early rather than
+        # recommend a change that will fail (gemini review on PR #131).
+        return RecommendIoMethodResult(
+            available=False,
+            server_version_num=ver_num,
+            detail=(
+                "PG 19 async-I/O GUC 'io_method' is not available on this server. "
+                "The server may have been compiled without AIO support, or it "
+                "returned an unrecognised value. Fall back to read_pg_stat_io / "
+                "run_maintenance for I/O observability and tuning."
+            ),
+            recommendations=[],
+        )
     cache_miss_ratio, reads_per_second, stats_window_seconds = await _io_pressure(driver)
     recommended_method, reason = _classify_io_method(
         current_method=current_method,

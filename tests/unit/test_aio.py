@@ -73,23 +73,40 @@ async def test_status_never_raises_on_driver_failure() -> None:
 
 
 async def test_status_handles_unknown_io_method_value() -> None:
-    """An io_method value the module doesn't recognise normalises to None."""
+    """An io_method value the module doesn't recognise → available=False
+    so the agent doesn't try to ALTER SYSTEM SET something that will fail
+    (gemini review on PR #131)."""
     routes = _version_route(190001, "19beta1")
     routes.update(_settings_route("frobnicate", 4, 16))
     driver = FakeRoutingDriver(routes)
     status = await get_aio_status(driver)  # type: ignore[arg-type]
-    assert status.available is True
-    assert status.io_method is None  # unrecognised value gets nulled
+    assert status.available is False
+    assert status.io_method is None
+    assert "io_method" in status.detail
 
 
 async def test_status_handles_missing_settings_rows() -> None:
-    """PG 19 build without AIO enabled returns NULL for the GUCs."""
+    """PG 19 build without AIO enabled returns NULL for the GUCs →
+    available=False so the agent falls back to the existing IO tools."""
     routes = _version_route(190001, "19beta1")
     routes.update(_settings_route(None, None, None))
     driver = FakeRoutingDriver(routes)
     status = await get_aio_status(driver)  # type: ignore[arg-type]
-    assert status.available is True
+    assert status.available is False
     assert status.io_method is None
+    assert "io_method" in status.detail
+
+
+async def test_recommend_bails_when_io_method_guc_missing() -> None:
+    """recommend_io_method on PG 19 without AIO support → available=False
+    + empty recommendations, no ALTER SYSTEM guess (gemini review)."""
+    routes = _version_route(190001, "19beta1")
+    routes.update(_settings_route(None, None, None))
+    driver = FakeRoutingDriver(routes)
+    result = await recommend_io_method(driver)  # type: ignore[arg-type]
+    assert result.available is False
+    assert result.recommendations == []
+    assert "io_method" in result.detail
 
 
 # --- recommend_io_method ---------------------------------------------------
