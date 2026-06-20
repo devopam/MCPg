@@ -17,6 +17,7 @@ from mcp.server.session import ServerSession
 from mcpg import (
     __version__,
     advisors,
+    aio,
     audit,
     audit_trail,
     composite,
@@ -4448,6 +4449,59 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_aio_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_aio_status",
+        description=_with_example(
+            "Report whether PG 19's async-I/O subsystem is usable. On "
+            "PG < 19 returns `available=false` with a diagnostic pointing "
+            "the agent at the existing `read_pg_stat_io` / `run_maintenance` "
+            "tools. Never raises — driver-level errors during the version "
+            "or settings probe also surface as `available=false`. "
+            "Returns an object with `available` (bool), `server_version_num` "
+            "(int), `server_version`, `io_method` ('sync' / 'worker' / "
+            "'io_uring' / null), `io_min_workers`, `io_max_workers`, and "
+            "`detail` (a guidance string).",
+            "get_aio_status()",
+        ),
+    )
+    async def get_aio_status(ctx: _Ctx) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            status = await aio.get_aio_status(_driver(ctx))
+            return asdict(status)
+
+        return await _cached_call(ctx, "get_aio_status", _run)
+
+    @server.tool(
+        name="recommend_io_method",
+        description=_with_example(
+            "Recommend a PG 19 `io_method` ('sync' / 'worker' / 'io_uring') "
+            "for the current workload. Reads `pg_stat_database` aggregates "
+            "(blks_read / blks_hit / stats_reset) and the current setting, "
+            "then maps the workload signals to one of: "
+            "`high_concurrent_read_load` (→ io_uring), "
+            "`bursty_io_with_cache_pressure` (→ worker), "
+            "`low_io_pressure` (→ sync), `current_setting_optimal` "
+            "(no change), or `insufficient_stats` (window too short). "
+            "Read-only — never invokes ALTER SYSTEM; emits a "
+            "ready_to_run_sql snippet the operator can paste when the "
+            "recommendation differs from the current setting. "
+            "Returns an object with `available` (bool), `server_version_num`, "
+            "`detail`, and `recommendations` — a list of objects with "
+            "`recommended_method`, `reason`, `current_method`, "
+            "`cache_miss_ratio`, `reads_per_second`, `stats_window_seconds`, "
+            "and `ready_to_run_sql` (null when no change suggested).",
+            "recommend_io_method()",
+        ),
+    )
+    async def recommend_io_method(ctx: _Ctx) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            result = await aio.recommend_io_method(_driver(ctx))
+            return asdict(result)
+
+        return await _cached_call(ctx, "recommend_io_method", _run)
+
+
 def _register_repack_reads(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="get_repack_status",
@@ -4850,6 +4904,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_pg_prewarm_reads(server)
         _register_pgq_reads(server)
         _register_repack_reads(server)
+        _register_aio_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)

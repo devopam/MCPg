@@ -655,6 +655,10 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     # run_maintenance / check_database_health.
     "get_repack_status": "operations_and_health",
     "repack_table": "operations_and_health",
+    # PG 19 async-I/O subsystem — observability + advisor; sits in the
+    # operations_and_health bucket next to read_pg_stat_io.
+    "get_aio_status": "operations_and_health",
+    "recommend_io_method": "operations_and_health",
 }
 
 
