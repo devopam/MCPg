@@ -4,6 +4,21 @@ Every new capability in MCPg follows the same shape. Don't reinvent — this gui
 
 > Claude Code users: this playbook is also installed as a [`mcpg-add-tool`](../../) skill at `~/.claude/skills/mcpg-add-tool/SKILL.md`. The skill auto-triggers when the user asks to add a new tool or expose a new extension's surface, and reads the same content as this file.
 
+## 0a. Backward compatibility — no deprecations
+
+**Adding new surface never removes existing surface.** This is a hard rule, not a soft preference. Every tool that ships today must keep working on PG 14-18, and a user upgrading their database to PG 19 (or beyond) must keep every tool they relied on at PG 18.
+
+When a new feature *would* obsolete an existing tool (e.g. SQL/PGQ vs the AGE-style Cypher tools, or in-server `REPACK` vs the pg_repack shell-out path), the right answer is **coexist** — add a new tool with a new name; let agents pick via a status probe (`get_pgq_status`-style). Deprecation conversations are gated on telemetry and land behind their own SemVer-major release. Don't pre-empt them.
+
+Concretely when writing a PR:
+
+- **Don't delete a tool** — the `tests/contract/test_tool_surface_snapshot.py` contract test will trip if you do.
+- **Don't rename a tool** — bind the new behaviour to a new name.
+- **Don't change a tool's return shape** — add new fields with safe defaults; never remove or rename existing ones.
+- **Version-detect inside the tool when a faster PG ≥ 19 path is available** — keep the PG ≤ 18 fallback in the same function, e.g. `if server_version_num >= 190000: use pg_get_acl() else: use the catalogue-walking query`. The result shape doesn't change; only the SQL underneath does.
+
+The end-to-end PG 19 readiness policy lives in [`docs/plans/pg19-readiness.md`](../plans/pg19-readiness.md).
+
 ## 0. Branch and commit cadence
 
 - Branch off `main`: `git checkout -b claude/<feature>-coverage`.
