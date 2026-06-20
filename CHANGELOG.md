@@ -8,6 +8,31 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Return-shape contract test**
+  (`tests/contract/test_tool_return_shapes.py`). Closes the gap the
+  existing `test_tool_surface_snapshot` doesn't cover: that snapshot
+  pins `name` / `description` / `inputSchema`, but a developer could
+  still rename or remove a dataclass field on the underlying helper
+  module and the tool wrapper would happily `asdict()` the new shape
+  into the wire response — silently breaking the documented
+  "Returns an object with `field_a`, `field_b`…" contract.
+
+  The new guard AST-walks `src/mcpg/tools.py`, identifies each tool
+  handler's underlying `await <module>.<helper>(...)` call, imports
+  the helper, and snapshots the return dataclass's field set. Any
+  rename / removal lights up red in CI.
+
+  Coverage at landing: 156 / 196 tools (79.6%) auto-classified
+  (108 `scalar`, 48 `list`); 40 tools recorded as `opaque` (ad-hoc
+  dict returns from ORM generators, `describe_self`, cursor
+  lifecycle, etc.). Coverage floor pinned at 75%.
+
+  Regen pattern matches the existing surface snapshot:
+  `MCPG_REGENERATE_TOOL_RETURN_SHAPES=1 uv run pytest tests/contract/test_tool_return_shapes.py`.
+
+  Skill (`mcpg-add-tool`) + CONTRIBUTING + `docs/contributing/adding-tools.md`
+  updated to call out the new test by name.
+
 - **SQL/PGQ property graph queries coverage** (`mcpg.pgq`). PG 19's
   built-in SQL standard for property-graph queries (`GRAPH_TABLE(...)` /
   `MATCH` patterns) lands as six new MCPg tools, side-by-side with the

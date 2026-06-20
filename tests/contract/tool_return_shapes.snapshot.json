@@ -1,0 +1,1901 @@
+{
+  "_meta": {
+    "schema_version": 1,
+    "tool_count": 196
+  },
+  "tools": {
+    "add_compression_policy": {
+      "dataclass": "TimescaleWriteResult",
+      "fields": [
+        "available",
+        "details",
+        "function"
+      ],
+      "kind": "scalar"
+    },
+    "add_retention_policy": {
+      "dataclass": "TimescaleWriteResult",
+      "fields": [
+        "available",
+        "details",
+        "function"
+      ],
+      "kind": "scalar"
+    },
+    "analyze_distance_metric": {
+      "dataclass": "DistanceMetricRecommendation",
+      "fields": [
+        "available",
+        "magnitude_cv",
+        "magnitude_std",
+        "mean_magnitude",
+        "pre_normalised",
+        "rationale",
+        "recommended_metric",
+        "sampled_rows"
+      ],
+      "kind": "scalar"
+    },
+    "analyze_hnsw_recall": {
+      "kind": "opaque"
+    },
+    "analyze_query_plan": {
+      "kind": "opaque"
+    },
+    "analyze_rerank_ndcg": {
+      "dataclass": "NDCGReport",
+      "fields": [
+        "delta",
+        "findings",
+        "k",
+        "labeled_query_count",
+        "model",
+        "ndcg_at_k_under_bi_order",
+        "ndcg_at_k_under_cross_order",
+        "retrieval_index",
+        "window_days"
+      ],
+      "kind": "scalar"
+    },
+    "analyze_rerank_score_distribution": {
+      "dataclass": "RerankScoreDistributionReport",
+      "fields": [
+        "bucket_edges",
+        "event_count",
+        "findings",
+        "histogram",
+        "model",
+        "retrieval_index",
+        "top_decile_share",
+        "window_days"
+      ],
+      "kind": "scalar"
+    },
+    "analyze_reranker_lift": {
+      "dataclass": "RerankerLiftReport",
+      "fields": [
+        "findings",
+        "interpretation",
+        "mean_kendall",
+        "mean_spearman",
+        "model",
+        "p25_spearman",
+        "p75_spearman",
+        "query_count",
+        "retrieval_index",
+        "window_days"
+      ],
+      "kind": "scalar"
+    },
+    "analyze_topk_stability": {
+      "dataclass": "TopKStabilityReport",
+      "fields": [
+        "findings",
+        "k",
+        "mean_jaccard",
+        "model",
+        "p25_jaccard",
+        "p75_jaccard",
+        "query_count",
+        "retrieval_index",
+        "window_days"
+      ],
+      "kind": "scalar"
+    },
+    "analyze_vector_search_efficiency": {
+      "dataclass": "VectorEfficiencyReport",
+      "fields": [
+        "backend",
+        "column",
+        "findings",
+        "index_name",
+        "k",
+        "metric",
+        "pages_pruned_ratio_p50",
+        "recall_at_k_baseline",
+        "rerank_lift_curve",
+        "sample_size",
+        "schema",
+        "score_rank_correlation_kendall",
+        "score_rank_correlation_spearman",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "analyze_workload": {
+      "dataclass": "WorkloadReport",
+      "fields": [
+        "available",
+        "slow_queries"
+      ],
+      "kind": "scalar"
+    },
+    "audit_database": {
+      "dataclass": "AuditReport",
+      "fields": [
+        "categories",
+        "database",
+        "health_score",
+        "overall_health",
+        "raw_stats_snapshot",
+        "recommendations",
+        "timestamp",
+        "top_issues",
+        "version"
+      ],
+      "kind": "scalar"
+    },
+    "cancel_migration": {
+      "dataclass": "CancelResult",
+      "fields": [
+        "id",
+        "shadow_dropped"
+      ],
+      "kind": "scalar"
+    },
+    "cancel_query": {
+      "dataclass": "BackendActionResult",
+      "fields": [
+        "action",
+        "pid",
+        "succeeded"
+      ],
+      "kind": "scalar"
+    },
+    "check_database_health": {
+      "dataclass": "HealthReport",
+      "fields": [
+        "checks",
+        "status"
+      ],
+      "kind": "scalar"
+    },
+    "close_cursor": {
+      "kind": "opaque"
+    },
+    "cluster_vectors": {
+      "dataclass": "ClusterVectorsResult",
+      "fields": [
+        "assignments",
+        "available",
+        "centroids",
+        "converged",
+        "dimension",
+        "inertia",
+        "iterations",
+        "metric",
+        "sampled_rows"
+      ],
+      "kind": "scalar"
+    },
+    "compare_schemas": {
+      "dataclass": "SchemaDiff",
+      "fields": [
+        "left_schema",
+        "right_schema",
+        "tables_added",
+        "tables_changed",
+        "tables_removed"
+      ],
+      "kind": "scalar"
+    },
+    "complete_migration": {
+      "dataclass": "CompleteResult",
+      "fields": [
+        "completed_at",
+        "id",
+        "statements_run",
+        "target_schema"
+      ],
+      "kind": "scalar"
+    },
+    "copy_table_between_databases": {
+      "dataclass": "CopyTableResult",
+      "fields": [
+        "data_copied",
+        "dump_argv",
+        "dump_exit_code",
+        "dump_output_bytes",
+        "dump_stderr_tail",
+        "restore_argv",
+        "restore_exit_code",
+        "restore_output_bytes",
+        "restore_stderr_tail",
+        "schema",
+        "schema_copied",
+        "table",
+        "timed_out"
+      ],
+      "kind": "scalar"
+    },
+    "create_graph": {
+      "kind": "opaque"
+    },
+    "create_hypertable": {
+      "dataclass": "TimescaleWriteResult",
+      "fields": [
+        "available",
+        "details",
+        "function"
+      ],
+      "kind": "scalar"
+    },
+    "create_pg_search_index": {
+      "dataclass": "CreatePgSearchIndexResult",
+      "fields": [
+        "columns",
+        "completed_at",
+        "concurrently",
+        "create_sql",
+        "duration_seconds",
+        "index_name",
+        "key_field",
+        "options",
+        "schema",
+        "started_at",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "create_property_graph": {
+      "dataclass": "CreatePropertyGraphResult",
+      "fields": [
+        "created",
+        "name",
+        "schema"
+      ],
+      "kind": "scalar"
+    },
+    "create_redis_cache_server": {
+      "dataclass": "CreateRedisServerResult",
+      "fields": [
+        "address",
+        "created",
+        "database",
+        "name",
+        "port",
+        "tls"
+      ],
+      "kind": "scalar"
+    },
+    "create_redis_cache_table": {
+      "dataclass": "CreateRedisCacheTableResult",
+      "fields": [
+        "columns",
+        "created",
+        "key_type",
+        "name",
+        "schema",
+        "server"
+      ],
+      "kind": "scalar"
+    },
+    "create_redis_user_mapping": {
+      "dataclass": "CreateRedisUserMappingResult",
+      "fields": [
+        "created",
+        "secret_ref",
+        "server",
+        "user"
+      ],
+      "kind": "scalar"
+    },
+    "create_turboquant_index": {
+      "dataclass": "CreateIndexResult",
+      "fields": [
+        "column",
+        "completed_at",
+        "concurrently",
+        "create_sql",
+        "duration_seconds",
+        "index_name",
+        "metric",
+        "options",
+        "schema",
+        "started_at",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "cross_table_similarity": {
+      "dataclass": "CrossTableSimilarityResult",
+      "fields": [
+        "available",
+        "matches",
+        "source_dimension",
+        "source_embedding_found"
+      ],
+      "kind": "scalar"
+    },
+    "describe_graph": {
+      "kind": "opaque"
+    },
+    "describe_property_graph": {
+      "dataclass": "PropertyGraphInfo",
+      "fields": [
+        "edge_tables",
+        "name",
+        "schema",
+        "vertex_tables"
+      ],
+      "kind": "scalar"
+    },
+    "describe_redis_cache_table": {
+      "dataclass": "RedisCacheTableInfo",
+      "fields": [
+        "columns",
+        "key_prefix",
+        "key_type",
+        "name",
+        "options",
+        "schema",
+        "server",
+        "ttl_seconds"
+      ],
+      "kind": "scalar"
+    },
+    "describe_self": {
+      "kind": "opaque"
+    },
+    "describe_table": {
+      "dataclass": "ColumnInfo",
+      "fields": [
+        "data_type",
+        "default",
+        "name",
+        "nullable",
+        "vector_dimension"
+      ],
+      "kind": "list"
+    },
+    "detect_n_plus_one": {
+      "dataclass": "NPlusOneReport",
+      "fields": [
+        "available",
+        "candidates",
+        "thresholds"
+      ],
+      "kind": "scalar"
+    },
+    "detect_vector_outliers": {
+      "dataclass": "VectorOutlierResult",
+      "fields": [
+        "available",
+        "cluster_stats",
+        "dimension",
+        "k",
+        "metric",
+        "outliers",
+        "sampled_rows",
+        "total_outliers",
+        "zscore_threshold"
+      ],
+      "kind": "scalar"
+    },
+    "drop_graph": {
+      "kind": "opaque"
+    },
+    "drop_property_graph": {
+      "dataclass": "DropPropertyGraphResult",
+      "fields": [
+        "dropped",
+        "name",
+        "schema"
+      ],
+      "kind": "scalar"
+    },
+    "dump_database": {
+      "dataclass": "DumpResult",
+      "fields": [
+        "argv",
+        "binary",
+        "content",
+        "exit_code",
+        "output_bytes",
+        "output_truncated",
+        "stderr_tail",
+        "timed_out"
+      ],
+      "kind": "scalar"
+    },
+    "enable_extension": {
+      "dataclass": "EnableExtensionResult",
+      "fields": [
+        "enabled",
+        "name"
+      ],
+      "kind": "scalar"
+    },
+    "enable_redis_fdw": {
+      "dataclass": "EnableExtensionResult",
+      "fields": [
+        "enabled",
+        "name"
+      ],
+      "kind": "scalar"
+    },
+    "explain_query": {
+      "kind": "opaque"
+    },
+    "export_query": {
+      "dataclass": "ExportResult",
+      "fields": [
+        "content",
+        "format",
+        "row_count",
+        "truncated"
+      ],
+      "kind": "scalar"
+    },
+    "export_table": {
+      "dataclass": "ExportResult",
+      "fields": [
+        "content",
+        "format",
+        "row_count",
+        "truncated"
+      ],
+      "kind": "scalar"
+    },
+    "fetch_cursor": {
+      "kind": "opaque"
+    },
+    "find_blocking_chains": {
+      "dataclass": "BlockingPair",
+      "fields": [
+        "blocked_application_name",
+        "blocked_pid",
+        "blocked_query",
+        "blocked_wait_event",
+        "blocking_application_name",
+        "blocking_pid",
+        "blocking_query",
+        "blocking_state"
+      ],
+      "kind": "list"
+    },
+    "find_sensitive_columns": {
+      "dataclass": "SensitiveColumnsReport",
+      "fields": [
+        "columns",
+        "schema"
+      ],
+      "kind": "scalar"
+    },
+    "find_unused_objects": {
+      "dataclass": "UnusedObjectsReport",
+      "fields": [
+        "indexes",
+        "schema",
+        "tables"
+      ],
+      "kind": "scalar"
+    },
+    "full_text_search": {
+      "dataclass": "FullTextMatch",
+      "fields": [
+        "rank",
+        "value"
+      ],
+      "kind": "list"
+    },
+    "fuzzy_search": {
+      "dataclass": "FuzzySearchResult",
+      "fields": [
+        "available",
+        "matches"
+      ],
+      "kind": "scalar"
+    },
+    "generate_diesel_schema": {
+      "kind": "opaque"
+    },
+    "generate_drizzle_schema": {
+      "kind": "opaque"
+    },
+    "generate_ecto_schemas": {
+      "kind": "opaque"
+    },
+    "generate_ent_schemas": {
+      "kind": "opaque"
+    },
+    "generate_fk_cascade_graph": {
+      "kind": "opaque"
+    },
+    "generate_graph_diagram": {
+      "kind": "opaque"
+    },
+    "generate_jooq_config": {
+      "kind": "opaque"
+    },
+    "generate_prisma_schema": {
+      "kind": "opaque"
+    },
+    "generate_schema_diagram": {
+      "kind": "opaque"
+    },
+    "generate_schema_docs": {
+      "kind": "opaque"
+    },
+    "generate_sqlalchemy_models": {
+      "kind": "opaque"
+    },
+    "generate_sqlc_schema": {
+      "kind": "opaque"
+    },
+    "generate_test_data": {
+      "dataclass": "GeneratedDataset",
+      "fields": [
+        "rows_generated",
+        "schema",
+        "skipped_columns",
+        "statements",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "geo_search": {
+      "dataclass": "GeoSearchResult",
+      "fields": [
+        "available",
+        "matches"
+      ],
+      "kind": "scalar"
+    },
+    "get_compact_schema": {
+      "kind": "opaque"
+    },
+    "get_metrics_exposition": {
+      "kind": "opaque"
+    },
+    "get_pg_search_index_metadata": {
+      "dataclass": "PgSearchIndexInfo",
+      "fields": [
+        "background_layer_sizes",
+        "boolean_fields",
+        "columns",
+        "datetime_fields",
+        "index",
+        "index_options",
+        "json_fields",
+        "key_field",
+        "layer_sizes",
+        "mutable_segment_rows",
+        "numeric_fields",
+        "range_fields",
+        "schema",
+        "search_tokenizer",
+        "sort_by",
+        "table",
+        "target_segment_count",
+        "text_fields"
+      ],
+      "kind": "scalar"
+    },
+    "get_pgq_status": {
+      "dataclass": "PgqStatus",
+      "fields": [
+        "available",
+        "detail",
+        "server_version",
+        "server_version_num"
+      ],
+      "kind": "scalar"
+    },
+    "get_prewarm_extension_status": {
+      "dataclass": "PrewarmExtensionStatus",
+      "fields": [
+        "autoprewarm_libraries_present",
+        "pg_buffercache_installed",
+        "pg_prewarm_installed",
+        "shared_preload_libraries"
+      ],
+      "kind": "scalar"
+    },
+    "get_redis_cache_stats": {
+      "dataclass": "RedisCacheStats",
+      "fields": [
+        "available",
+        "detail",
+        "key_count",
+        "server",
+        "used_memory_bytes"
+      ],
+      "kind": "scalar"
+    },
+    "get_server_info": {
+      "kind": "opaque"
+    },
+    "get_turboquant_heap_stats": {
+      "dataclass": "TurboQuantHeapStats",
+      "fields": [
+        "index",
+        "raw",
+        "row_count",
+        "schema"
+      ],
+      "kind": "scalar"
+    },
+    "get_turboquant_index_metadata": {
+      "dataclass": "TurboQuantIndexInfo",
+      "fields": [
+        "access_method",
+        "capabilities",
+        "column",
+        "delta_batch_page_count",
+        "delta_enabled",
+        "delta_head_block",
+        "delta_live_count",
+        "delta_live_fraction",
+        "delta_merge_recommended",
+        "delta_merge_thresholds",
+        "delta_page_depth",
+        "delta_tail_block",
+        "heap_live_rows_estimate",
+        "heap_relation",
+        "index",
+        "index_options",
+        "input_type",
+        "opclass",
+        "operability",
+        "raw_metadata",
+        "schema",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "get_turboquant_last_scan_stats": {
+      "kind": "opaque"
+    },
+    "hybrid_bm25_vector_search": {
+      "dataclass": "HybridHit",
+      "fields": [
+        "bm25_rank",
+        "id",
+        "score",
+        "vector_rank"
+      ],
+      "kind": "list"
+    },
+    "hybrid_search": {
+      "dataclass": "HybridSearchResult",
+      "fields": [
+        "available",
+        "matches"
+      ],
+      "kind": "scalar"
+    },
+    "import_csv": {
+      "dataclass": "ImportResult",
+      "fields": [
+        "format",
+        "rows_imported",
+        "schema",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "import_json": {
+      "dataclass": "ImportResult",
+      "fields": [
+        "format",
+        "rows_imported",
+        "schema",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "import_vectors": {
+      "dataclass": "ImportResult",
+      "fields": [
+        "format",
+        "rows_imported",
+        "schema",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "lint_naming_conventions": {
+      "dataclass": "NamingReport",
+      "fields": [
+        "findings",
+        "schema",
+        "schema_majority_style"
+      ],
+      "kind": "scalar"
+    },
+    "list_active_queries": {
+      "dataclass": "ActiveQuery",
+      "fields": [
+        "application",
+        "blocked_by",
+        "duration_seconds",
+        "pid",
+        "query",
+        "state",
+        "username",
+        "wait_event"
+      ],
+      "kind": "list"
+    },
+    "list_audit_events": {
+      "dataclass": "AuditTrailEntry",
+      "fields": [
+        "arguments",
+        "error",
+        "id",
+        "occurred_at",
+        "result",
+        "status",
+        "tool"
+      ],
+      "kind": "list"
+    },
+    "list_autowarm_jobs": {
+      "dataclass": "AutowarmJob",
+      "fields": [
+        "command",
+        "jobid",
+        "jobname",
+        "schedule"
+      ],
+      "kind": "list"
+    },
+    "list_available_extensions": {
+      "dataclass": "AvailableExtension",
+      "fields": [
+        "default_version",
+        "installed",
+        "installed_version",
+        "name"
+      ],
+      "kind": "list"
+    },
+    "list_chunks": {
+      "dataclass": "ChunkListResult",
+      "fields": [
+        "available",
+        "chunks"
+      ],
+      "kind": "scalar"
+    },
+    "list_composite_types": {
+      "dataclass": "CompositeTypeInfo",
+      "fields": [
+        "attributes",
+        "name"
+      ],
+      "kind": "list"
+    },
+    "list_constraints": {
+      "dataclass": "ConstraintInfo",
+      "fields": [
+        "definition",
+        "name",
+        "type"
+      ],
+      "kind": "list"
+    },
+    "list_cron_jobs": {
+      "dataclass": "CronJob",
+      "fields": [
+        "active",
+        "command",
+        "database",
+        "jobid",
+        "jobname",
+        "schedule",
+        "username"
+      ],
+      "kind": "list"
+    },
+    "list_cursors": {
+      "kind": "opaque"
+    },
+    "list_domains": {
+      "dataclass": "DomainInfo",
+      "fields": [
+        "base_type",
+        "constraints",
+        "default",
+        "name",
+        "nullable"
+      ],
+      "kind": "list"
+    },
+    "list_enums": {
+      "dataclass": "EnumInfo",
+      "fields": [
+        "name",
+        "values"
+      ],
+      "kind": "list"
+    },
+    "list_extensions": {
+      "dataclass": "ExtensionInfo",
+      "fields": [
+        "name",
+        "version"
+      ],
+      "kind": "list"
+    },
+    "list_foreign_data_wrappers": {
+      "dataclass": "ForeignDataWrapperInfo",
+      "fields": [
+        "handler",
+        "name",
+        "options",
+        "validator"
+      ],
+      "kind": "list"
+    },
+    "list_foreign_keys": {
+      "dataclass": "ForeignKeyInfo",
+      "fields": [
+        "from_columns",
+        "from_table",
+        "name",
+        "to_columns",
+        "to_schema",
+        "to_table"
+      ],
+      "kind": "list"
+    },
+    "list_foreign_servers": {
+      "dataclass": "ForeignServerInfo",
+      "fields": [
+        "name",
+        "options",
+        "type",
+        "version",
+        "wrapper"
+      ],
+      "kind": "list"
+    },
+    "list_foreign_tables": {
+      "dataclass": "ForeignTableInfo",
+      "fields": [
+        "name",
+        "options",
+        "server"
+      ],
+      "kind": "list"
+    },
+    "list_functions": {
+      "dataclass": "FunctionInfo",
+      "fields": [
+        "arguments",
+        "kind",
+        "language",
+        "name",
+        "returns"
+      ],
+      "kind": "list"
+    },
+    "list_generated_columns": {
+      "dataclass": "GeneratedColumnInfo",
+      "fields": [
+        "column",
+        "data_type",
+        "expression",
+        "kind",
+        "schema",
+        "table"
+      ],
+      "kind": "list"
+    },
+    "list_grants": {
+      "dataclass": "GrantInfo",
+      "fields": [
+        "grantable",
+        "grantee",
+        "grantor",
+        "privilege"
+      ],
+      "kind": "list"
+    },
+    "list_graphs": {
+      "kind": "opaque"
+    },
+    "list_hypertables": {
+      "dataclass": "HypertableListResult",
+      "fields": [
+        "available",
+        "hypertables"
+      ],
+      "kind": "scalar"
+    },
+    "list_indexes": {
+      "dataclass": "IndexInfo",
+      "fields": [
+        "definition",
+        "method",
+        "name",
+        "partitioned"
+      ],
+      "kind": "list"
+    },
+    "list_locks": {
+      "dataclass": "LockInfo",
+      "fields": [
+        "application_name",
+        "granted",
+        "locktype",
+        "mode",
+        "pid",
+        "query",
+        "relation",
+        "state",
+        "transactionid",
+        "virtualxid",
+        "wait_event",
+        "wait_event_type"
+      ],
+      "kind": "list"
+    },
+    "list_notification_subscriptions": {
+      "kind": "opaque"
+    },
+    "list_partitions": {
+      "dataclass": "PartitionSet",
+      "fields": [
+        "partitioned",
+        "partitions",
+        "strategy"
+      ],
+      "kind": "scalar"
+    },
+    "list_pending_migrations": {
+      "dataclass": "MigrationRecord",
+      "fields": [
+        "candidate_sql",
+        "completed_at",
+        "id",
+        "prepared_at",
+        "shadow_schema",
+        "status",
+        "target_schema",
+        "ttl_expires_at"
+      ],
+      "kind": "list"
+    },
+    "list_pg_search_indexes": {
+      "dataclass": "PgSearchIndexInfo",
+      "fields": [
+        "background_layer_sizes",
+        "boolean_fields",
+        "columns",
+        "datetime_fields",
+        "index",
+        "index_options",
+        "json_fields",
+        "key_field",
+        "layer_sizes",
+        "mutable_segment_rows",
+        "numeric_fields",
+        "range_fields",
+        "schema",
+        "search_tokenizer",
+        "sort_by",
+        "table",
+        "target_segment_count",
+        "text_fields"
+      ],
+      "kind": "list"
+    },
+    "list_policies": {
+      "dataclass": "PolicySet",
+      "fields": [
+        "policies",
+        "rls_enabled"
+      ],
+      "kind": "scalar"
+    },
+    "list_prewarmed_relations": {
+      "dataclass": "PrewarmedRelation",
+      "fields": [
+        "blocks_cached",
+        "dirty_blocks",
+        "pct_cached",
+        "schema",
+        "table",
+        "total_blocks"
+      ],
+      "kind": "list"
+    },
+    "list_property_graphs": {
+      "dataclass": "PropertyGraphInfo",
+      "fields": [
+        "edge_tables",
+        "name",
+        "schema",
+        "vertex_tables"
+      ],
+      "kind": "list"
+    },
+    "list_publications": {
+      "dataclass": "PublicationInfo",
+      "fields": [
+        "all_tables",
+        "name",
+        "owner",
+        "publishes_delete",
+        "publishes_insert",
+        "publishes_truncate",
+        "publishes_update",
+        "tables"
+      ],
+      "kind": "list"
+    },
+    "list_redis_foreign_servers": {
+      "dataclass": "RedisForeignServer",
+      "fields": [
+        "address",
+        "database",
+        "name",
+        "options",
+        "password_configured",
+        "port",
+        "tls"
+      ],
+      "kind": "list"
+    },
+    "list_replicas": {
+      "kind": "opaque"
+    },
+    "list_roles": {
+      "dataclass": "RoleInfo",
+      "fields": [
+        "bypass_rls",
+        "can_login",
+        "connection_limit",
+        "create_db",
+        "create_role",
+        "member_of",
+        "name",
+        "replication",
+        "superuser"
+      ],
+      "kind": "list"
+    },
+    "list_schemas": {
+      "dataclass": "SchemaInfo",
+      "fields": [
+        "name"
+      ],
+      "kind": "list"
+    },
+    "list_sequences": {
+      "dataclass": "SequenceInfo",
+      "fields": [
+        "cycle",
+        "data_type",
+        "increment",
+        "last_value",
+        "max_value",
+        "min_value",
+        "name",
+        "start_value"
+      ],
+      "kind": "list"
+    },
+    "list_subscriptions": {
+      "dataclass": "SubscriptionInfo",
+      "fields": [
+        "connection",
+        "enabled",
+        "name",
+        "owner",
+        "publications"
+      ],
+      "kind": "list"
+    },
+    "list_tables": {
+      "dataclass": "TableInfo",
+      "fields": [
+        "is_partition",
+        "name",
+        "partitioned",
+        "type"
+      ],
+      "kind": "list"
+    },
+    "list_triggers": {
+      "dataclass": "TriggerInfo",
+      "fields": [
+        "definition",
+        "function",
+        "name"
+      ],
+      "kind": "list"
+    },
+    "list_turboquant_indexes": {
+      "dataclass": "TurboQuantIndexInfo",
+      "fields": [
+        "access_method",
+        "capabilities",
+        "column",
+        "delta_batch_page_count",
+        "delta_enabled",
+        "delta_head_block",
+        "delta_live_count",
+        "delta_live_fraction",
+        "delta_merge_recommended",
+        "delta_merge_thresholds",
+        "delta_page_depth",
+        "delta_tail_block",
+        "heap_live_rows_estimate",
+        "heap_relation",
+        "index",
+        "index_options",
+        "input_type",
+        "opclass",
+        "operability",
+        "raw_metadata",
+        "schema",
+        "table"
+      ],
+      "kind": "list"
+    },
+    "list_unapplied_migration_scripts": {
+      "kind": "opaque"
+    },
+    "list_user_mappings": {
+      "dataclass": "UserMappingInfo",
+      "fields": [
+        "options",
+        "server",
+        "user"
+      ],
+      "kind": "list"
+    },
+    "list_views": {
+      "dataclass": "ViewInfo",
+      "fields": [
+        "definition",
+        "materialized",
+        "name"
+      ],
+      "kind": "list"
+    },
+    "log_rerank_event": {
+      "dataclass": "LogRerankEventResult",
+      "fields": [
+        "event_id"
+      ],
+      "kind": "scalar"
+    },
+    "maintain_turboquant_index": {
+      "dataclass": "MaintenanceResult",
+      "fields": [
+        "completed_at",
+        "delta_merge_performed",
+        "duration_seconds",
+        "index",
+        "merged_delta_count",
+        "raw",
+        "recycled_delta_page_count",
+        "schema",
+        "started_at"
+      ],
+      "kind": "scalar"
+    },
+    "migrate_vector_to_halfvec": {
+      "dataclass": "HalfvecMigrationPlan",
+      "fields": [
+        "already_halfvec",
+        "available",
+        "column_type",
+        "dimension",
+        "estimated_bytes_per_row_after",
+        "estimated_bytes_per_row_before",
+        "estimated_total_bytes_saved",
+        "indexes",
+        "migration_sql",
+        "notes",
+        "rollback_sql",
+        "row_count"
+      ],
+      "kind": "scalar"
+    },
+    "mmr_search": {
+      "dataclass": "MmrSearchResult",
+      "fields": [
+        "available",
+        "matches"
+      ],
+      "kind": "scalar"
+    },
+    "monitor_embedding_drift": {
+      "dataclass": "EmbeddingDriftReport",
+      "fields": [
+        "available",
+        "baseline",
+        "centroid_cosine_distance",
+        "current",
+        "dimension",
+        "drift_detected",
+        "drift_threshold",
+        "insufficient_data",
+        "norm_mean_relative_change",
+        "norm_std_relative_change",
+        "notes"
+      ],
+      "kind": "scalar"
+    },
+    "monitor_index_build": {
+      "dataclass": "IndexBuildProgress",
+      "fields": [
+        "blocks_done",
+        "blocks_total",
+        "command",
+        "index_name",
+        "partitions_done",
+        "partitions_total",
+        "phase",
+        "pid",
+        "progress_pct",
+        "relation",
+        "schema",
+        "tuples_done",
+        "tuples_total"
+      ],
+      "kind": "list"
+    },
+    "open_cursor": {
+      "kind": "opaque"
+    },
+    "optimize_query": {
+      "dataclass": "OptimizationResult",
+      "fields": [
+        "explain_summary",
+        "findings",
+        "optimized_sql",
+        "original_sql",
+        "rationale"
+      ],
+      "kind": "scalar"
+    },
+    "partman_create_parent": {
+      "dataclass": "PartmanResult",
+      "fields": [
+        "detail",
+        "parent_table"
+      ],
+      "kind": "scalar"
+    },
+    "partman_drop_partition": {
+      "kind": "opaque"
+    },
+    "partman_run_maintenance": {
+      "dataclass": "PartmanResult",
+      "fields": [
+        "detail",
+        "parent_table"
+      ],
+      "kind": "scalar"
+    },
+    "pg_search_more_like_this": {
+      "dataclass": "PgSearchHit",
+      "fields": [
+        "id",
+        "score",
+        "snippets"
+      ],
+      "kind": "list"
+    },
+    "pg_search_parse_query": {
+      "dataclass": "PgSearchParsedQuery",
+      "fields": [
+        "parsed"
+      ],
+      "kind": "scalar"
+    },
+    "pg_search_run": {
+      "dataclass": "PgSearchHit",
+      "fields": [
+        "id",
+        "score",
+        "snippets"
+      ],
+      "kind": "list"
+    },
+    "poll_notifications": {
+      "kind": "opaque"
+    },
+    "prepare_migration": {
+      "dataclass": "PrepareResult",
+      "fields": [
+        "diff",
+        "id",
+        "shadow_schema",
+        "target_schema",
+        "ttl_expires_at"
+      ],
+      "kind": "scalar"
+    },
+    "prewarm_recommended": {
+      "dataclass": "BulkPrewarmResult",
+      "fields": [
+        "dry_run",
+        "outcomes",
+        "total_blocks"
+      ],
+      "kind": "scalar"
+    },
+    "prewarm_relation": {
+      "dataclass": "PrewarmResult",
+      "fields": [
+        "blocks_prewarmed",
+        "mode",
+        "relation",
+        "schema"
+      ],
+      "kind": "scalar"
+    },
+    "prune_audit_events": {
+      "dataclass": "PruneResult",
+      "fields": [
+        "cutoff",
+        "deleted",
+        "remaining"
+      ],
+      "kind": "scalar"
+    },
+    "read_migration_history": {
+      "dataclass": "MigrationHistoryReport",
+      "fields": [
+        "alembic",
+        "diesel",
+        "django",
+        "flyway",
+        "golang_migrate",
+        "goose",
+        "prisma",
+        "sequelize"
+      ],
+      "kind": "scalar"
+    },
+    "read_pg_buffercache_relations": {
+      "dataclass": "BufferCacheRelationsReport",
+      "fields": [
+        "available",
+        "relations"
+      ],
+      "kind": "scalar"
+    },
+    "read_pg_buffercache_summary": {
+      "dataclass": "BufferCacheSummaryReport",
+      "fields": [
+        "available",
+        "average_usage_count",
+        "dirty_buffers",
+        "free_buffers",
+        "total_buffers",
+        "used_buffers"
+      ],
+      "kind": "scalar"
+    },
+    "read_pg_stat_io": {
+      "dataclass": "IOStatsReport",
+      "fields": [
+        "available",
+        "rows",
+        "server_version"
+      ],
+      "kind": "scalar"
+    },
+    "read_pg_wal_records": {
+      "dataclass": "WalRecordsReport",
+      "fields": [
+        "available",
+        "records"
+      ],
+      "kind": "scalar"
+    },
+    "read_pg_wal_stats": {
+      "dataclass": "WalStatsReport",
+      "fields": [
+        "available",
+        "stats"
+      ],
+      "kind": "scalar"
+    },
+    "recommend_efficiency_thresholds": {
+      "dataclass": "EfficiencyThresholds",
+      "fields": [
+        "baseline_recall_low",
+        "baseline_recall_low_adapted",
+        "corpus_size",
+        "derived_from_corpus",
+        "pruning_ineffective",
+        "pruning_ineffective_adapted",
+        "ranking_degraded_recall",
+        "ranking_degraded_spearman",
+        "ranking_degraded_spearman_adapted",
+        "rerank_lift_flat_delta",
+        "rerank_lift_steep_high",
+        "rerank_lift_steep_low"
+      ],
+      "kind": "scalar"
+    },
+    "recommend_index_drops": {
+      "dataclass": "IndexDropCandidate",
+      "fields": [
+        "definition",
+        "drop_sql",
+        "idx_scan",
+        "idx_tup_fetch",
+        "index",
+        "rationale",
+        "reason_code",
+        "schema",
+        "size_bytes",
+        "table",
+        "table_idx_scan",
+        "table_seq_scan"
+      ],
+      "kind": "list"
+    },
+    "recommend_indexes": {
+      "dataclass": "IndexRecommendation",
+      "fields": [
+        "live_tuples",
+        "partitioned",
+        "reason",
+        "schema",
+        "seq_scans",
+        "suggestions",
+        "table"
+      ],
+      "kind": "list"
+    },
+    "recommend_pg_search_maintenance": {
+      "dataclass": "PgSearchAdvisorFinding",
+      "fields": [
+        "code",
+        "evidence",
+        "index",
+        "schema",
+        "severity",
+        "suggested_action"
+      ],
+      "kind": "list"
+    },
+    "recommend_prewarm_targets": {
+      "dataclass": "RecommendPrewarmTargetsResult",
+      "fields": [
+        "budget_blocks",
+        "candidates",
+        "shared_buffers_blocks",
+        "total_cost_blocks"
+      ],
+      "kind": "scalar"
+    },
+    "recommend_redis_cache_targets": {
+      "dataclass": "RecommendRedisCacheTargetsResult",
+      "fields": [
+        "candidates",
+        "server"
+      ],
+      "kind": "scalar"
+    },
+    "recommend_rerank_strategy": {
+      "dataclass": "RerankRecommendation",
+      "fields": [
+        "findings",
+        "retrieval_index",
+        "summary",
+        "window_days"
+      ],
+      "kind": "scalar"
+    },
+    "recommend_turboquant_maintenance": {
+      "dataclass": "TurboQuantAdvisorFinding",
+      "fields": [
+        "code",
+        "evidence",
+        "index",
+        "schema",
+        "severity",
+        "suggested_action"
+      ],
+      "kind": "list"
+    },
+    "recommend_turboquant_query_knobs": {
+      "dataclass": "TurboQuantQueryKnobs",
+      "fields": [
+        "max_visited_codes",
+        "max_visited_pages",
+        "oversample_factor",
+        "probes"
+      ],
+      "kind": "scalar"
+    },
+    "recommend_vector_quantization": {
+      "dataclass": "QuantizationRecommendation",
+      "fields": [
+        "column",
+        "current_bytes",
+        "current_type",
+        "dimension",
+        "rationale",
+        "row_count",
+        "savings_ratio",
+        "schema",
+        "suggested_bytes",
+        "suggested_type",
+        "table"
+      ],
+      "kind": "list"
+    },
+    "record_efficiency_observation": {
+      "dataclass": "RecordEfficiencyObservationResult",
+      "fields": [
+        "observation_id"
+      ],
+      "kind": "scalar"
+    },
+    "reindex_pg_search_index": {
+      "dataclass": "ReindexPgSearchResult",
+      "fields": [
+        "completed_at",
+        "concurrently",
+        "duration_seconds",
+        "index",
+        "reindex_sql",
+        "schema",
+        "started_at"
+      ],
+      "kind": "scalar"
+    },
+    "reindex_turboquant_index": {
+      "dataclass": "ReindexResult",
+      "fields": [
+        "completed_at",
+        "concurrently",
+        "duration_seconds",
+        "index",
+        "reindex_sql",
+        "schema",
+        "started_at"
+      ],
+      "kind": "scalar"
+    },
+    "restore_database": {
+      "dataclass": "RestoreResult",
+      "fields": [
+        "argv",
+        "binary",
+        "exit_code",
+        "output_bytes",
+        "output_truncated",
+        "stderr_tail",
+        "timed_out"
+      ],
+      "kind": "scalar"
+    },
+    "run_advisors": {
+      "dataclass": "AdvisorReport",
+      "fields": [
+        "findings",
+        "rules_run",
+        "schema"
+      ],
+      "kind": "scalar"
+    },
+    "run_cypher": {
+      "kind": "opaque"
+    },
+    "run_ddl": {
+      "dataclass": "WriteResult",
+      "fields": [
+        "row_count",
+        "rows",
+        "schema_diff"
+      ],
+      "kind": "scalar"
+    },
+    "run_maintenance": {
+      "dataclass": "MaintenanceResult",
+      "fields": [
+        "maintenance_sql",
+        "operation",
+        "target"
+      ],
+      "kind": "scalar"
+    },
+    "run_pgq": {
+      "dataclass": "PgqRunResult",
+      "fields": [
+        "columns",
+        "row_count",
+        "rows",
+        "truncated"
+      ],
+      "kind": "scalar"
+    },
+    "run_select": {
+      "kind": "opaque"
+    },
+    "run_select_parallel": {
+      "kind": "opaque"
+    },
+    "run_write": {
+      "dataclass": "WriteResult",
+      "fields": [
+        "row_count",
+        "rows",
+        "schema_diff"
+      ],
+      "kind": "scalar"
+    },
+    "schedule_autowarm": {
+      "dataclass": "ScheduleAutowarmResult",
+      "fields": [
+        "jobid",
+        "name",
+        "schedule"
+      ],
+      "kind": "scalar"
+    },
+    "schedule_cron_job": {
+      "dataclass": "ScheduleResult",
+      "fields": [
+        "jobid",
+        "name"
+      ],
+      "kind": "scalar"
+    },
+    "schedule_logical_backup": {
+      "dataclass": "ScheduleResult",
+      "fields": [
+        "jobid",
+        "name"
+      ],
+      "kind": "scalar"
+    },
+    "seed_table_with_sample_data": {
+      "dataclass": "SeedResult",
+      "fields": [
+        "rows_seeded",
+        "schema",
+        "skipped_columns",
+        "statements_executed",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "setup_efficiency_observations": {
+      "dataclass": "EfficiencyObservationsSetupResult",
+      "fields": [
+        "indexes_created",
+        "schema_created",
+        "setup_sql",
+        "table_created"
+      ],
+      "kind": "scalar"
+    },
+    "setup_rag_telemetry": {
+      "dataclass": "RagTelemetrySetupResult",
+      "fields": [
+        "indexes_created",
+        "schema_created",
+        "setup_sql",
+        "table_created"
+      ],
+      "kind": "scalar"
+    },
+    "subscribe_channel": {
+      "kind": "opaque"
+    },
+    "summarize_table": {
+      "dataclass": "TableSummary",
+      "fields": [
+        "columns",
+        "constraints",
+        "foreign_keys",
+        "indexes",
+        "primary_key",
+        "sample_rows",
+        "schema",
+        "stats",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "terminate_backend": {
+      "dataclass": "BackendActionResult",
+      "fields": [
+        "action",
+        "pid",
+        "succeeded"
+      ],
+      "kind": "scalar"
+    },
+    "test_rls_for_role": {
+      "dataclass": "RLSTestResult",
+      "fields": [
+        "active_policies",
+        "columns",
+        "rls_enabled",
+        "role",
+        "rows_visible",
+        "sample",
+        "schema",
+        "table"
+      ],
+      "kind": "scalar"
+    },
+    "translate_nl_to_sql": {
+      "dataclass": "TranslationResult",
+      "fields": [
+        "columns",
+        "error",
+        "executed",
+        "explanation",
+        "model",
+        "provider",
+        "row_count",
+        "rows",
+        "sql"
+      ],
+      "kind": "scalar"
+    },
+    "tune_vector_index": {
+      "dataclass": "TuningRecommendation",
+      "fields": [
+        "create_index_sql",
+        "dimension",
+        "index_type",
+        "parameters",
+        "rationale",
+        "row_count"
+      ],
+      "kind": "scalar"
+    },
+    "turboquant_approx_candidates": {
+      "dataclass": "TurboQuantCandidate",
+      "fields": [
+        "approximate_distance",
+        "approximate_rank",
+        "candidate_id"
+      ],
+      "kind": "list"
+    },
+    "turboquant_rerank_candidates": {
+      "dataclass": "TurboQuantRerankedCandidate",
+      "fields": [
+        "approximate_distance",
+        "approximate_rank",
+        "candidate_id",
+        "exact_distance",
+        "exact_rank"
+      ],
+      "kind": "list"
+    },
+    "unschedule_autowarm": {
+      "dataclass": "UnscheduleAutowarmResult",
+      "fields": [
+        "name",
+        "removed"
+      ],
+      "kind": "scalar"
+    },
+    "unschedule_cron_job": {
+      "kind": "opaque"
+    },
+    "unsubscribe_channel": {
+      "kind": "opaque"
+    },
+    "validate_migration": {
+      "dataclass": "ValidationResult",
+      "fields": [
+        "candidate_applied",
+        "error",
+        "sample_rows_per_table",
+        "table_stats",
+        "tables_sampled",
+        "target_schema"
+      ],
+      "kind": "scalar"
+    },
+    "validate_migration_schema": {
+      "dataclass": "MigrationSchemaValidationResult",
+      "fields": [
+        "applied",
+        "diff",
+        "error",
+        "reference_schema",
+        "target_schema"
+      ],
+      "kind": "scalar"
+    },
+    "vector_range_search": {
+      "dataclass": "VectorSearchResult",
+      "fields": [
+        "available",
+        "matches"
+      ],
+      "kind": "scalar"
+    },
+    "vector_recall_at_k": {
+      "dataclass": "RecallReport",
+      "fields": [
+        "k",
+        "mean_recall",
+        "metric",
+        "sample_size"
+      ],
+      "kind": "scalar"
+    },
+    "vector_search": {
+      "dataclass": "VectorSearchResult",
+      "fields": [
+        "available",
+        "matches"
+      ],
+      "kind": "scalar"
+    },
+    "verify_audit_chain": {
+      "kind": "opaque"
+    },
+    "verify_connection_encryption": {
+      "dataclass": "ConnectionEncryption",
+      "fields": [
+        "bits",
+        "cipher",
+        "encrypted_connections",
+        "ssl",
+        "total_connections",
+        "unencrypted_connections",
+        "version"
+      ],
+      "kind": "scalar"
+    },
+    "walk_blocking_chains": {
+      "dataclass": "BlockingGraphReport",
+      "fields": [
+        "cycles",
+        "mermaid",
+        "nodes",
+        "paths",
+        "roots"
+      ],
+      "kind": "scalar"
+    },
+    "why_is_this_slow": {
+      "dataclass": "SlowQueryDiagnosis",
+      "fields": [
+        "active_queries",
+        "blocking_locks",
+        "cache_hit_ratio",
+        "explain_plan",
+        "plan_summary",
+        "sql",
+        "suggestions"
+      ],
+      "kind": "scalar"
+    }
+  }
+}
