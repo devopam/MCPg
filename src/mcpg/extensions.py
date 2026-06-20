@@ -36,6 +36,7 @@ ENABLEABLE_EXTENSIONS = frozenset(
         "earthdistance",
         "postgis",
         "postgres_fdw",
+        "redis_fdw",
         "pg_cron",
         "pg_partman",
         "pg_buffercache",

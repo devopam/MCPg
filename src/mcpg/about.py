@@ -285,6 +285,35 @@ CAPABILITIES: tuple[Capability, ...] = (
         ),
     ),
     Capability(
+        id="cache_and_foreign_data",
+        name="Cache and foreign data",
+        summary=(
+            "Foreign-data-wrapper coverage for cache-style data sources — "
+            "currently Redis via redis_fdw, with FDW catalog introspection "
+            "shared with the schema-introspection bucket."
+        ),
+        detail=(
+            "`list_redis_foreign_servers`, `describe_redis_cache_table`, and "
+            "`get_redis_cache_stats` filter the foreign-data catalog to the "
+            "redis_fdw subset. `create_redis_cache_server`, "
+            "`create_redis_user_mapping`, and `create_redis_cache_table` wrap "
+            "the DDL with identifier validation, secrets-backend credential "
+            "plumbing, and TLS-by-default. `recommend_redis_cache_targets` "
+            "analyses pg_stat_user_tables for read-heavy tables that would "
+            "benefit from a Redis cache layer. The generic FDW catalog tools "
+            "(`list_foreign_data_wrappers`, `list_foreign_servers`, "
+            "`list_foreign_tables`, `list_user_mappings`) live in the "
+            "schema-introspection bucket."
+        ),
+        headline_tools=(
+            "list_redis_foreign_servers",
+            "describe_redis_cache_table",
+            "recommend_redis_cache_targets",
+            "create_redis_cache_server",
+            "create_redis_cache_table",
+        ),
+    ),
+    Capability(
         id="diagrams_and_codegen",
         name="Diagrams and ORM codegen",
         summary=(
@@ -541,6 +570,15 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "compare_schemas": "schema_introspection",
     "summarize_table": "schema_introspection",
     "get_compact_schema": "schema_introspection",
+    # redis_fdw — every redis-prefixed surface is the new cache bucket.
+    "list_redis_foreign_servers": "cache_and_foreign_data",
+    "describe_redis_cache_table": "cache_and_foreign_data",
+    "get_redis_cache_stats": "cache_and_foreign_data",
+    "recommend_redis_cache_targets": "cache_and_foreign_data",
+    "enable_redis_fdw": "cache_and_foreign_data",
+    "create_redis_cache_server": "cache_and_foreign_data",
+    "create_redis_user_mapping": "cache_and_foreign_data",
+    "create_redis_cache_table": "cache_and_foreign_data",
 }
 
 

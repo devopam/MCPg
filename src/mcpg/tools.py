@@ -52,6 +52,7 @@ from mcpg import (
     query,
     rag_efficiency,
     rag_telemetry,
+    redis_fdw,
     rls,
     schema_diff,
     schema_docs,
@@ -3750,6 +3751,254 @@ def _register_pg_search_ddl(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_redis_fdw_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="list_redis_foreign_servers",
+        description=_with_example(
+            "List the foreign servers backed by ``redis_fdw`` — the FDW that "
+            "exposes a Redis instance as SQL-queryable foreign tables. "
+            "Reports each server's connection address, port, database, TLS "
+            "posture, and whether a user mapping (credential) is configured. "
+            "Returns an empty list when the redis_fdw extension is not installed. "
+            "Returns a list of objects with `name`, `address`, `port`, "
+            "`database`, `tls` (bool), `password_configured` (bool), and "
+            "`options` (the full server-options dict).",
+            "list_redis_foreign_servers()",
+        ),
+    )
+    async def list_redis_foreign_servers(ctx: _Ctx) -> list[dict[str, Any]]:
+        async def _run() -> list[dict[str, Any]]:
+            servers = await redis_fdw.list_redis_foreign_servers(_driver(ctx))
+            return [asdict(s) for s in servers]
+
+        return await _cached_call(ctx, "list_redis_foreign_servers", _run)
+
+    @server.tool(
+        name="describe_redis_cache_table",
+        description=_with_example(
+            "Describe one foreign table backed by ``redis_fdw``: which server "
+            "it's mapped to, the Redis-side key structure (`hash` / `list` / "
+            "`string` / `set` / `zset`), key-prefix, TTL, and SQL-side column "
+            "shape. Raises an error when the table doesn't exist or isn't "
+            "backed by redis_fdw. "
+            "Returns an object with `schema`, `name`, `server`, `key_type`, "
+            "`key_prefix`, `ttl_seconds`, `columns` (list of `{name, data_type}`), "
+            "and `options` (the full foreign-table options dict).",
+            "describe_redis_cache_table(schema='public', table='sessions_cache')",
+        ),
+    )
+    async def describe_redis_cache_table(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            info = await redis_fdw.describe_redis_cache_table(_driver(ctx), schema, table)
+            return asdict(info)
+
+        return await _cached_call(ctx, "describe_redis_cache_table", _run, schema, table)
+
+    @server.tool(
+        name="get_redis_cache_stats",
+        description=_with_example(
+            "Best-effort cache metrics for a redis_fdw server. redis_fdw does "
+            "not ship a uniform stats SQL surface across versions, so the tool "
+            "validates that the server exists and otherwise reports "
+            "`available=false` with a diagnostic. Operators wanting live "
+            "metrics should query Redis directly (INFO / DBSIZE). "
+            "Returns an object with `server`, `available` (bool), `key_count`, "
+            "`used_memory_bytes`, and `detail` (a human-readable note).",
+            "get_redis_cache_stats(server='redis_primary')",
+        ),
+    )
+    async def get_redis_cache_stats(ctx: _Ctx, server: str) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            stats = await redis_fdw.get_redis_cache_stats(_driver(ctx), server)
+            return asdict(stats)
+
+        return await _cached_call(ctx, "get_redis_cache_stats", _run, server)
+
+    @server.tool(
+        name="recommend_redis_cache_targets",
+        description=_with_example(
+            "Recommend tables that would benefit from a Redis cache layer. "
+            "Inspects ``pg_stat_user_tables`` for read-heavy, low-write "
+            "relations whose working set fits comfortably in Redis "
+            "(default: read/write ratio ≥ 10, ≥ 1000 reads, ≤ 1M rows). "
+            "When ``server`` is provided the generated ``ready_to_run_sql`` "
+            "stub targets that server name; otherwise the stub uses a "
+            "placeholder operators must substitute. Advisor is read-only — "
+            "never touches Redis itself. "
+            "Returns an object with `server` and `candidates` — a list of "
+            "objects with `schema`, `table`, `reads`, `writes`, "
+            "`read_write_ratio`, `estimated_row_count`, `reason` "
+            "(`read_only_lookup_table` / `small_hot_relation` / "
+            "`read_heavy_low_write` / `moderate_read_dominant`), and "
+            "`ready_to_run_sql` (a CREATE FOREIGN TABLE stub).",
+            "recommend_redis_cache_targets(server='redis_primary', limit=10)",
+        ),
+    )
+    async def recommend_redis_cache_targets(
+        ctx: _Ctx,
+        server: str | None = None,
+        min_read_write_ratio: float = 10.0,
+        min_reads_per_day: int = 1000,
+        max_rows: int = 1_000_000,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            result = await redis_fdw.recommend_redis_cache_targets(
+                _driver(ctx),
+                server=server,
+                min_read_write_ratio=min_read_write_ratio,
+                min_reads_per_day=min_reads_per_day,
+                max_rows=max_rows,
+                limit=limit,
+            )
+            return asdict(result)
+
+        return await _cached_call(
+            ctx,
+            "recommend_redis_cache_targets",
+            _run,
+            server,
+            min_read_write_ratio,
+            min_reads_per_day,
+            max_rows,
+            limit,
+        )
+
+
+def _register_redis_fdw_ddl(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="enable_redis_fdw",
+        description=_with_example(
+            "Install the ``redis_fdw`` extension. Thin wrapper over "
+            "``enable_extension('redis_fdw')`` — convenient for agents that "
+            "have located the cache-and-foreign-data bucket but haven't found "
+            "the generic extension installer. redis_fdw runs in-process inside "
+            "Postgres; operators should be aware of that operational "
+            "implication before installing. Requires DDL mode. "
+            "Returns an object with `name='redis_fdw'` and `enabled=true`.",
+            "enable_redis_fdw()",
+        ),
+    )
+    async def enable_redis_fdw(ctx: _Ctx) -> dict[str, Any]:
+        result = await extensions.enable_extension(_driver(ctx), "redis_fdw")
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="create_redis_cache_server",
+        description=_with_example(
+            "Create a foreign server backed by ``redis_fdw`` "
+            "(``CREATE SERVER … FOREIGN DATA WRAPPER redis_fdw OPTIONS (…)``). "
+            "TLS is enabled by default; the tool refuses ``tls=false`` against "
+            "a non-loopback Redis host unless ``allow_insecure_tls=true`` is "
+            "passed explicitly. ``name`` must be a valid unquoted SQL "
+            "identifier. Idempotent via ``IF NOT EXISTS``. Requires DDL mode. "
+            "Returns an object with `name`, `address`, `port`, `database`, "
+            "`tls`, and `created=true`.",
+            "create_redis_cache_server(name='redis_primary', address='redis.internal', port=6379)",
+        ),
+    )
+    async def create_redis_cache_server(
+        ctx: _Ctx,
+        name: str,
+        address: str,
+        port: int = 6379,
+        database: int = 0,
+        tls: bool = True,
+        allow_insecure_tls: bool = False,
+    ) -> dict[str, Any]:
+        result = await redis_fdw.create_redis_cache_server(
+            _driver(ctx),
+            name=name,
+            address=address,
+            port=port,
+            database=database,
+            tls=tls,
+            allow_insecure_tls=allow_insecure_tls,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="create_redis_user_mapping",
+        description=_with_example(
+            "Create a user mapping for a redis_fdw foreign server. The Redis "
+            "password is never accepted as a tool argument — pass "
+            "``secret_ref`` (the name of a secret in the configured "
+            "``MCPG_SECRETS_BACKEND``) and the tool resolves it before "
+            "interpolating into the OPTIONS clause. ``user='public'`` creates "
+            "a PUBLIC mapping; otherwise the user name must be a valid "
+            "unquoted SQL identifier. Idempotent via ``IF NOT EXISTS``. "
+            "Requires DDL mode. "
+            "Returns an object with `server`, `user`, `secret_ref` (echoed by "
+            "name, not value), and `created=true`.",
+            "create_redis_user_mapping(server='redis_primary', user='public', secret_ref='REDIS_PASSWORD')",
+        ),
+    )
+    async def create_redis_user_mapping(
+        ctx: _Ctx,
+        server: str,
+        user: str,
+        secret_ref: str,
+    ) -> dict[str, Any]:
+        import os
+
+        from mcpg.secrets import build_secrets_provider
+
+        secrets_provider, _backend = build_secrets_provider(os.environ)
+        result = await redis_fdw.create_redis_user_mapping(
+            _driver(ctx),
+            server=server,
+            user=user,
+            secret_ref=secret_ref,
+            secrets=secrets_provider,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="create_redis_cache_table",
+        description=_with_example(
+            "Create a foreign table backed by ``redis_fdw``. ``key_type`` is "
+            "the Redis-side structure (one of ``hash`` / ``list`` / ``string`` "
+            "/ ``set`` / ``zset``). ``columns`` is a list of "
+            "``{name, type}`` dicts — every name must be a valid unquoted SQL "
+            "identifier and every type a bare Postgres type. Optional "
+            "``key_prefix`` and ``ttl_seconds`` are passed through as "
+            "redis_fdw options. Idempotent via ``IF NOT EXISTS``. Requires "
+            "DDL mode. "
+            "Returns an object with `schema`, `name`, `server`, `key_type`, "
+            "`columns` (tuple of column names), and `created=true`.",
+            "create_redis_cache_table(schema='public', name='sessions_cache', "
+            "server='redis_primary', key_type='hash', "
+            "columns=[{'name': 'key', 'type': 'text'}, {'name': 'value', 'type': 'text'}], "
+            "key_prefix='session:', ttl_seconds=3600)",
+        ),
+    )
+    async def create_redis_cache_table(
+        ctx: _Ctx,
+        schema: str,
+        name: str,
+        server: str,
+        key_type: str,
+        columns: list[dict[str, str]],
+        key_prefix: str | None = None,
+        ttl_seconds: int | None = None,
+    ) -> dict[str, Any]:
+        result = await redis_fdw.create_redis_cache_table(
+            _driver(ctx),
+            schema=schema,
+            name=name,
+            server=server,
+            key_type=key_type,
+            columns=columns,
+            key_prefix=key_prefix,
+            ttl_seconds=ttl_seconds,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_cron_write(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="schedule_cron_job",
@@ -4164,6 +4413,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_pg_search_reads(server)
         _register_timescaledb_reads(server)
         _register_graphs_reads(server)
+        _register_redis_fdw_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -4180,6 +4430,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_rag_telemetry_ddl(server)
         _register_timescaledb_writes(server)
         _register_graphs_writes(server)
+        _register_redis_fdw_ddl(server)
     if is_permitted(settings.access_mode, Capability.MIGRATE) and settings.allow_ddl:
         _register_migrations(server)
     if is_permitted(settings.access_mode, Capability.SHELL) and settings.allow_shell:

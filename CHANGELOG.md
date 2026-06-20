@@ -6,6 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`redis_fdw` cache-and-foreign-data coverage** (`mcpg.redis_fdw`).
+  Eight new tools across read + DDL surfaces:
+  `list_redis_foreign_servers`, `describe_redis_cache_table`,
+  `get_redis_cache_stats`, `recommend_redis_cache_targets`,
+  `enable_redis_fdw`, `create_redis_cache_server`,
+  `create_redis_user_mapping`, `create_redis_cache_table`.
+
+  The advisor — `recommend_redis_cache_targets` — inspects
+  `pg_stat_user_tables` for read-heavy, low-write relations whose
+  working set fits comfortably in Redis (defaults: read/write ratio ≥
+  10, ≥ 1000 reads, ≤ 1M rows) and emits ready-to-run
+  `CREATE FOREIGN TABLE` stubs.
+
+  Security posture:
+  - Identifier allowlist on every DDL surface (server / table / user
+    / column names).
+  - TLS-on by default; refuses `tls=False` against non-loopback Redis
+    hosts unless `allow_insecure_tls=True` is set explicitly.
+  - `create_redis_user_mapping` never accepts a raw password —
+    callers pass `secret_ref`, resolved through `MCPG_SECRETS_BACKEND`.
+
+  New `cache_and_foreign_data` capability bucket in `mcpg.about` so
+  `describe_self` advertises the coverage cleanly. `redis_fdw` added
+  to `ENABLEABLE_EXTENSIONS`. Closes #118.
+
 ## [0.6.2] - 2026-06-17
 
 ### Added
