@@ -19,84 +19,203 @@ Tracking document for MCPg's PG 19 readiness work. Spawned by issue #120.
 
 PostGIS is intentionally omitted from the PG 19 image — no `postgresql-19-postgis-3` apt package is published yet. Tests that require PostGIS will fail under PG 19; failures are non-blocking via the `continue-on-error` matrix entry.
 
-## Phase 2 — feature audit
+## Phase 2 — comprehensive Beta 1 sweep (PO lens)
 
-Walking each highlighted PG 19 Beta 1 feature against MCPg's existing tool surface. Each row carries:
+Re-swept against the official Beta 1 release announcement. Organised by domain, then re-prioritised through a product-owner lens — personas, business value, demo-ability, marketing surface, and strategic moat — rather than implementation cost alone.
 
-- **Spec link** — upstream commit / release notes
-- **Existing surface affected** — MCPg modules and tools touched
-- **Decision** — expose via new tool / extend existing tool / defer
-- **Test plan** — what we'd assert against PG 19 specifically
+### Personas this work serves
 
-| PG 19 feature | MCPg surface | Decision | Status |
-|---|---|---|---|
-| Asynchronous I/O subsystem (`io_method` GUC, new `pg_stat_io` columns) | `mcpg.io_stats.read_pg_stat_io`; new advisor `recommend_io_method` | **extend + add tool** | TODO |
-| OAuth-based authentication (`pg_hba.conf` extension) | None today; auth lives outside MCPg | **defer** (doc only) | TODO |
-| MERGE … RETURNING improvements | `mcpg.write.run_write` allow-list / safety driver | **verify** (no new tool, characterization test) | TODO |
-| GIN OR-of-AND filtering optimisations | Planner-only; no MCPg surface | **defer** (perf bench only) | TODO |
-| Skip scans for B-tree indexes | `mcpg.advisors.recommend_indexes` heuristic | **extend** (factor in skip-scan eligibility) | TODO |
-| Partition expression-based bounds | `mcpg.introspection.list_partitions`, `mcpg.partman.*`, `mcpg.schema_diff.compare_schemas` | **verify** (characterization tests) | TODO |
-| CHECK constraints NOT VALID + validation | DDL surface | **add tool** `validate_check_constraint` | TODO |
-| Logical replication: per-table progress | Replication tooling | **add tool** `read_logical_replication_progress` | TODO |
-| New `pg_stat_*` columns (vacuum I/O timing, etc) | `mcpg.health.audit_database`, `mcpg.health.check_database_health`, `mcpg.advisors.run_advisors` | **extend** | TODO |
-| `pg_get_acl()` SQL function | `mcpg.introspection.list_grants` | **extend** (faster, more accurate) | TODO |
-| Hash function for `interval` type | `mcpg.partman.partman_create_parent` | **verify** (hash partitioning over interval) | TODO |
-| VACUUM: opportunistic freeze + faster pages | `mcpg.maintenance.run_maintenance` | **extend** (update tool description) | TODO |
-| Sequence: per-sequence access methods | DDL surface | **defer** (no user demand) | TODO |
+| Persona | Day-to-day | What they need from MCPg |
+|---|---|---|
+| **Dana the DBA** | Runs production PG clusters; on-call for incidents | Operational visibility, advisors, runbook automation, safe-by-default DDL |
+| **Ari the App developer** | Building product features against PG | Schema introspection, NL→SQL, ORM codegen, validation tools |
+| **Riya the RAG engineer** | Tunes retrieval pipelines and embedding workflows | Vector ops, telemetry, rerank analytics, advisor recommendations |
+| **Sam the SRE** | Reliability / observability / cost | Health checks, alerting hooks, online maintenance, cost-aware advisors |
+| **Aiden the AI agent** | LLM acting on behalf of any of the above | Discoverable, well-described, safe tool surface |
 
-## Phase 2 — prioritised list (MCPg view)
+### Inventory — every Beta 1 feature, mapped
 
-Each candidate is scored along four axes; the headline column **PR weight** is what an implementer needs to read first.
+Reference: <https://www.postgresql.org/about/news/postgresql-19-beta-1-released-3313/>.
 
-**Scoring axes**
+#### 1. SQL standards & developer experience
 
-- **Agent value (1-5)** — how often will an LLM-driven workflow hit this surface? 5 = ubiquitous (every DBA session); 1 = niche.
-- **Impl. cost** — `S` (one module + tests, ≤ ~500 lines), `M` (advisor + multi-tool, ~1000 lines), `L` (cross-module refactor).
-- **Differentiation (1-3)** — does exposing this give MCPg a unique value vs `psql` + `pg_stat_*` views? 3 = yes (advisor or autowarm-style automation); 1 = thin wrapper.
-- **PG 19 dependence** — `hard` (only works on PG 19; needs feature-detection shim), `soft` (PG 19 makes existing surface better, no shim needed), `compat` (just shape-compat work to keep PG 14-18 green).
+| Feature | User story | Personas | MCPg surface | Demo? |
+|---|---|---|---|---|
+| **SQL/PGQ — property graph queries** (`GRAPH_TABLE`, `MATCH`) | "As Ari/Riya, I want to run Cypher-like graph queries in SQL so I don't need an external graph DB" | Ari, Riya, Aiden | New module `mcpg.pgq`; coexists with the existing AGE-style `graph_operations` bucket. Big strategic decision: replace AGE? offer both? | **Yes — huge.** "Cypher in SQL" is a release-blog headline. |
+| **GROUP BY ALL** | "As Ari, I want SQL ergonomics that match Snowflake/DuckDB" | Ari, Aiden | `nl2sql.translate_nl_to_sql` (the translator can emit it); `run_select` accepts it natively (no MCPg change). | Low |
+| **Temporal UPDATE/DELETE FOR PORTION OF** | "As Ari, I want SQL-standard temporal updates" | Ari | `run_write` allowlist check; characterisation test | Medium |
+| **INSERT … ON CONFLICT DO SELECT** | "As Ari, I want upsert to return the conflicting row" | Ari | `run_write` shape change; new tool `upsert_select_returning` (optional) | Medium |
+| **JSONPath string functions** (`lower`, `upper`, `initcap`, `replace`, `split_part`, `trim`) | "As Ari/Riya, I want richer jsonpath" | Ari, Riya | None directly; doc update on jsonpath helpers | Low |
+| **Random date/timestamp generation** | "As Ari, I want one-call test data" | Ari | `mcpg.test_data.generate_test_data` extension | Low |
 
-**PR weight = `agent_value * differentiation / impl_cost_weight`** (S = 1, M = 2, L = 3), rounded for ordering.
+#### 2. Performance & query execution
 
-| # | Feature | Surface change | Agent value | Cost | Diff. | Dep. | PR weight | Notes |
-|---|---|---|---:|:---:|---:|---|---:|---|
-| 1 | **Async I/O advisor (`recommend_io_method`)** | New advisor + extend `read_pg_stat_io` with new columns | 5 | M | 3 | hard | 7.5 | The headline PG 19 differentiator. Operators don't know whether `io_uring` / `worker` / `sync` is right; advisor reads workload from `pg_stat_io` + `pg_stat_database` and recommends. |
-| 2 | **Skip-scan-aware `recommend_indexes`** | Extend existing advisor — add a heuristic that prefers indexes where skip-scan would help | 5 | S | 3 | soft | 15.0 | Highest leverage: improves the most-used advisor without a new tool surface. Cheap because the heuristic plugs into existing scoring. |
-| 3 | **CHECK constraint validation tool (`validate_check_constraint`)** | New DDL tool wrapping `ALTER TABLE ... VALIDATE CONSTRAINT` | 4 | S | 3 | hard | 12.0 | DBAs ship `NOT VALID` constraints all the time; the validate step is often forgotten. A dedicated tool closes the loop. |
-| 4 | **`pg_get_acl()` migration in `list_grants`** | Replace the catalogue-walking query with `pg_get_acl(class, oid)` | 4 | S | 2 | soft | 8.0 | Faster, more accurate, fewer corner cases. Drop-in compat — wraps with a version-detect fallback for PG ≤ 18. |
-| 5 | **Per-relation logical replication progress (`read_logical_replication_progress`)** | New read tool reading from new `pg_stat_subscription_stats` columns | 4 | S | 2 | hard | 8.0 | Replication observability today reads cluster-wide LSN lag; per-relation breakdown is genuinely new. |
-| 6 | **VACUUM `pg_stat` enrichments (`run_advisors`, `check_database_health`)** | Extend existing advisors with new I/O-timing columns | 3 | S | 2 | soft | 6.0 | Quietly improves several advisors. No new tools. |
-| 7 | **Async I/O metrics in observability (`read_pg_stat_io`)** | Pull new columns through to the existing read | 3 | S | 1 | soft | 3.0 | Strictly needed for (1) to work; can land standalone or as part of (1). |
-| 8 | **Partition expression characterisation tests** | No tool change; assert `list_partitions` / `compare_schemas` handle expression-bound partitions | 3 | S | 1 | compat | 3.0 | Defensive — surfaces drift before a user hits it. |
-| 9 | **MERGE … RETURNING characterisation tests** | No tool change; verify `run_write` accepts the new syntax | 3 | S | 1 | compat | 3.0 | Same shape as (8). |
-| 10 | **Hash-on-`interval` partitioning verification** | No tool change; verify `partman_create_parent` accepts interval-hash partition key | 2 | S | 1 | compat | 2.0 | Niche; fits in the same "PG 19 characterisation" PR as (8) + (9). |
-| 11 | **OAuth `pg_hba.conf` documentation** | Docs only — `docs/security.md` callout | 2 | S | 1 | hard | 2.0 | No tool surface; document the operator pattern. |
-| 12 | **GIN OR-of-AND perf bench** | Optional `benchmarks/` script | 1 | S | 1 | soft | 1.0 | Nice to have for the release blog post; not a tool. |
-| 13 | **Per-sequence access methods** | DDL surface | 1 | M | 1 | hard | 0.5 | Defer until concrete user demand. |
+| Feature | User story | Personas | MCPg surface | Demo? |
+|---|---|---|---|---|
+| **Async I/O scaling** (`io_min_workers`, `io_max_workers`, auto-scale) | "As Dana/Sam, I want guidance on the new AIO tuning knobs" | Dana, Sam | **New advisor** `recommend_io_method` + extend `read_pg_stat_io` with new columns; `EXPLAIN ANALYZE (IO)` capture | **Yes — headline.** AIO is THE PG 19 story. |
+| **Eager aggregation** (`enable_eager_aggregate` GUC) | "As Dana, I want to know if this helps my workload" | Dana | Extend `analyze_query_plan` to surface the new node type | Medium |
+| **Anti-join optimizations** | "As Dana, I want my anti-join queries faster" | Dana | Planner-only; characterisation test | Low |
+| **Incremental sort expansion** | Planner-only | Dana | Characterisation test | Low |
+| **Foreign-key insert performance (2x)** | "As Ari, I get faster bulk inserts" | Ari | None | Low |
+| **Parallel sequential scans (faster)** | Planner-only | Dana | None | Low |
+| **LISTEN/NOTIFY scalability** | "As Ari/Sam, I want a more responsive event surface" | Ari, Sam | `mcpg.listen.poll_notifications` characterisation test | Low |
 
-### Recommended landing order (Phase 3)
+#### 3. Partitioning
 
-The bigger-than-it-looks rule: weight ordering is the rough guide, but related items batch into the same PR.
+| Feature | User story | Personas | MCPg surface | Demo? |
+|---|---|---|---|---|
+| **MERGE PARTITIONS** | "As Dana, I want to consolidate partitions without rewriting data" | Dana | **New tool** `merge_partitions`; integrate with `partman_*` lifecycle | **Yes — strong.** |
+| **SPLIT PARTITIONS** | "As Dana, I want to split a hot partition without downtime" | Dana | **New tool** `split_partition`; integrate with `partman_*` lifecycle | **Yes — strong.** |
 
-1. **PR A — "Skip-scan-aware `recommend_indexes`"** (weight 15.0). Highest leverage, lowest cost. Single advisor extension, full test coverage. Lands first because it doesn't depend on PG 19 — it just becomes more accurate when PG 19 is available.
-2. **PR B — "PG 19 characterisation tests"** (rows 8, 9, 10). Single PR that pins behaviour for partition expressions, MERGE … RETURNING, and interval-hash partitioning. Defensive; lands second so all other Phase 3 PRs branch off a known-good PG 19 baseline.
-3. **PR C — "`validate_check_constraint` tool"** (weight 12.0). New tool with full module / tool / bucket / test treatment per the `mcpg-add-tool` skill. The first net-new tool of Phase 3.
-4. **PR D — "Async I/O advisor"** (weight 7.5; bundles rows 1 + 7). The headline PG 19 differentiator. New module, new advisor, extends `read_pg_stat_io`. Largest single PR of Phase 3.
-5. **PR E — "`pg_get_acl()` upgrade in `list_grants`"** (weight 8.0). Drop-in upgrade with PG ≤ 18 fallback.
-6. **PR F — "Per-relation logical replication progress"** (weight 8.0). Read-only tool over new columns.
-7. **PR G — "VACUUM + autovacuum advisor enrichments"** (weight 6.0). Quiet pass over `run_advisors` + `check_database_health`.
-8. **PR H — "OAuth pg_hba documentation"** (weight 2.0). Doc-only.
+#### 4. Vacuum & maintenance
 
-After PR D lands, MCPg has covered every PG 19 feature with meaningful operational impact. Items 12 + 13 stay in the queue with no commitment.
+| Feature | User story | Personas | MCPg surface | Demo? |
+|---|---|---|---|---|
+| **REPACK / REPACK CONCURRENTLY** | "As Dana, I want a built-in replacement for pg_repack with online rebuild" | Dana, Sam | **New tool** `repack_table` (blocking + concurrent variants); deprecate the pg_repack shell-out path | **Yes — huge.** This is a top-3 PG 19 win for ops teams. |
+| **Parallel autovacuum** (`autovacuum_max_parallel_workers`) | "As Dana, I want sane defaults for the new parallel autovacuum knobs" | Dana | Extend `run_advisors` with a parallel-autovacuum recommendation | Medium |
+| **Autovacuum scoring system** | "As Dana, I want to know which tables autovacuum will prioritise" | Dana | New read tool `read_autovacuum_priority` | Medium |
+| **Visibility marking strategy** | Internal optimisation | — | None | Low |
 
-### Decision rule
+#### 5. Replication & federation
 
-A row is **GO** for the current cycle when:
+| Feature | User story | Personas | MCPg surface | Demo? |
+|---|---|---|---|---|
+| **Sequence replication** | "As Ari/Dana, I want my logical-replica sequences to stay in sync" | Ari, Dana | `mcpg.replication.list_sequences_replicated` (new) | Medium |
+| **CREATE PUBLICATION … EXCEPT** | "As Dana, I want to publish everything except one table" | Dana | Extend `create_publication`-style tool (does not exist yet); land alongside | Medium |
+| **CREATE SUBSCRIPTION … SERVER** | "As Dana, I want subscriptions to ride foreign-server definitions" | Dana | Same as above | Medium |
+| **On-demand logical replication** (no restart) | "As Dana, I want to turn on logical replication without a restart" | Dana, Sam | **New tool** `enable_logical_replication_on_demand` | **Yes — strong.** Avoiding restarts is a chart-topping DBA complaint. |
+| **effective_wal_level** (preset) | "As Dana, I want to know if my cluster is actually at the WAL level I asked for" | Dana | Extend `get_server_info` to include this | Low |
+| **WAIT FOR LSN** | "As Ari, I want read-your-writes consistency in a hot-standby read pool" | Ari, Sam | **New tool** `wait_for_lsn`; integrate with `read_replica_lag` advisor | **Yes — strong.** RYW consistency is a hard problem; making it a one-call MCP tool is differentiation. |
+| **postgres_fdw pushdowns** (array ops, statistics) | "As Ari, I want better cross-cluster query perf" | Ari | `list_foreign_data_wrappers` doc update; characterisation test | Low |
 
-- weight ≥ 5, **or**
-- it batches with another GO row (same PR), **or**
-- it's a characterisation test that defends an already-shipped surface against PG 19 shape changes.
+#### 6. Security & auth
 
-Everything else stays in the audit table until evidence of demand.
+| Feature | User story | Personas | MCPg surface | Demo? |
+|---|---|---|---|---|
+| **Server-side SNI** (`pg_hosts.conf`) | "As Sam, I want hostname-routed TLS certs" | Sam, Dana | Doc only; `verify_connection_encryption` can surface SNI status | Low |
+| **Password expiration warnings** | "As Dana, I want to nudge users before their password expires" | Dana, Sam | **New tool** `list_password_expirations` + extend `audit_database` | Medium |
+| **MD5 auth deprecation warnings** | "As Dana, I want a heads-up about MD5 users" | Dana | Extend `audit_database` | Medium |
+
+#### 7. Observability & monitoring
+
+| Feature | User story | Personas | MCPg surface | Demo? |
+|---|---|---|---|---|
+| **`pg_stat_lock`** (new view) | "As Dana, I want per-lock-type statistics" | Dana, Sam | **New tool** `read_pg_stat_lock`; integrate with `find_blocking_chains` | **Yes — strong.** |
+| **`pg_stat_recovery`** (new view) | "As Sam, I want visibility into recovery operations" | Sam | **New tool** `read_pg_stat_recovery` | Medium |
+| **`stats_reset` column** in many `pg_stat_*` views | "As Dana, I want to know when my counters were last reset" | Dana | Extend every `read_pg_stat_*` family member | Low |
+| **`pg_stat_progress_vacuum.started_by` + `.mode`** | "As Dana, I want to know who launched the vacuum and what flavour" | Dana | Extend `read_vacuum_progress` (or add tool if missing) | Low |
+| **`pg_stat_progress_analyze.started_by`** | Same as above for ANALYZE | Dana | Same | Low |
+| **`EXPLAIN ANALYZE (IO)`** | "As Dana/Ari, I want to see AIO costs in a plan" | Dana, Ari | Extend `analyze_query_plan` / `explain_query` with an `io=true` option | Medium |
+| **Per-process log levels** (`log_min_messages` per process) | "As Sam, I want to tune log verbosity per worker class" | Sam | Doc only | Low |
+| **WAL full-page-write reporting** in VACUUM/ANALYZE logs | "As Dana, I want to know how much WAL my maintenance produces" | Dana | Extend `run_maintenance` description; integrate with cost reporting | Low |
+
+#### 8. DDL & schema management
+
+| Feature | User story | Personas | MCPg surface | Demo? |
+|---|---|---|---|---|
+| **`pg_get_*` DDL functions** (roles, tablespaces, databases) | "As Ari/Dana, I want to dump role/db DDL without shelling out to pg_dumpall" | Ari, Dana | **New tool** `get_role_ddl` / `get_database_ddl` / `get_tablespace_ddl`; extend `generate_*` codegen tools | Medium |
+
+#### 9. Operational improvements
+
+| Feature | User story | Personas | MCPg surface | Demo? |
+|---|---|---|---|---|
+| **Online data checksums** (enable/disable without restart) | "As Dana, I want to turn on data checksums without a restart window" | Dana, Sam | **New tool** `enable_data_checksums` / `disable_data_checksums` | **Yes — strong.** |
+| **JIT off by default** | "As Dana, I want to know if this regresses my workload" | Dana | Doc only | Low |
+| **LZ4 default TOAST compression** | "As Dana, I get smaller tables out of the box" | Dana | Doc only | Low |
+| **RADIUS auth removal** | Breaking | Dana | **Verify** `verify_connection_encryption` doesn't assume RADIUS | Low |
+| **PL/Python event triggers** | "As Ari, I want event triggers in Python" | Ari | Niche; doc only | Low |
+
+### Strategic positioning matrix
+
+Scoring each candidate on five axes (each 1-5; higher = more strategic):
+
+- **Value** — how often the persona will use the tool
+- **Moat** — how hard it is to replicate without MCPg (advisor / automation logic adds moat; thin wrappers don't)
+- **Demo** — can we show it in a 60-second screen-share
+- **Marketing** — does this earn a release-blog headline
+- **PG 19 dependence** — does PG 19 unlock genuinely new value or just thin polish
+
+**PO score = value + 2 * moat + demo + marketing + PG 19 dependence** (max 25).
+
+| # | Feature | Value | Moat | Demo | Marketing | PG 19 dep. | **PO score** | Notes |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| 1 | **SQL/PGQ — property graph queries** | 5 | 3 | 5 | 5 | 5 | **26** | Top of the list per user request. Strategic question: replace AGE, or run both? See sidebar below. |
+| 2 | **REPACK / REPACK CONCURRENTLY tool** | 5 | 3 | 4 | 5 | 5 | **25** | Replaces pg_repack shell-out path. Huge ops win. |
+| 3 | **Async I/O advisor (`recommend_io_method`)** | 5 | 3 | 4 | 5 | 5 | **25** | Headline PG 19 differentiator. |
+| 4 | **MERGE / SPLIT partitions tools** | 5 | 2 | 5 | 4 | 5 | **23** | Two tools, single PR. Pair with the existing `partman_*` lifecycle. |
+| 5 | **`pg_stat_lock` advisor integration** | 5 | 3 | 4 | 3 | 5 | **23** | Extends `find_blocking_chains` into per-lock-type analysis. |
+| 6 | **Online data checksums tool** | 4 | 2 | 5 | 4 | 5 | **22** | Turn on checksums without a restart — high-impact, single-call. |
+| 7 | **WAIT FOR LSN tool + RYW advisor** | 4 | 3 | 4 | 3 | 5 | **22** | Read-your-writes on hot standbys, made one-call. |
+| 8 | **On-demand logical replication** | 4 | 2 | 4 | 4 | 5 | **21** | Avoid restart = pure DBA delight. |
+| 9 | **Skip-scan-aware `recommend_indexes`** | 5 | 3 | 2 | 3 | 4 | **20** | Quiet win but lifts the most-used advisor across the board. |
+| 10 | **`validate_check_constraint` tool** | 4 | 2 | 3 | 2 | 4 | **17** | Closes the `NOT VALID` loop. |
+| 11 | **`pg_get_*` DDL tool family** | 4 | 2 | 3 | 2 | 4 | **17** | Cleaner than the pg_dumpall shell-out. |
+| 12 | **`pg_stat_recovery` tool** | 3 | 2 | 2 | 2 | 5 | **15** | Read-only observability tool. |
+| 13 | **Password expiration / MD5 advisor enrichment** | 3 | 2 | 2 | 2 | 4 | **14** | Quiet `audit_database` extension. |
+| 14 | **Autovacuum scoring read tool** | 3 | 2 | 2 | 2 | 4 | **14** | New read tool over the new scoring view. |
+| 15 | **EXPLAIN ANALYZE (IO) capture** | 3 | 1 | 3 | 2 | 4 | **12** | Extension on existing tool. |
+| 16 | **`stats_reset` column propagation** | 2 | 1 | 1 | 1 | 3 | **8** | Defensive — propagate the new column through every read. |
+| 17 | **PG 19 characterisation tests** | 2 | 1 | 1 | 1 | 3 | **8** | Defensive batch (partition expressions, MERGE … RETURNING, interval-hash). |
+| 18 | **GROUP BY ALL / temporal UPDATE / ON CONFLICT DO SELECT** | 2 | 1 | 1 | 1 | 3 | **8** | NL→SQL surface + `run_write` shape pass-through. |
+| 19 | **`effective_wal_level` exposure in `get_server_info`** | 2 | 1 | 1 | 1 | 3 | **8** | Tiny but cheap. |
+| 20 | **`postgres_fdw` pushdown coverage doc + tests** | 2 | 1 | 1 | 1 | 3 | **8** | Doc + characterisation test. |
+| 21 | **`pg_get_acl()` migration in `list_grants`** | 3 | 1 | 1 | 1 | 2 | **8** | Drop-in upgrade with PG ≤ 18 fallback. |
+| 22 | **Per-process log levels doc** | 2 | 1 | 1 | 1 | 3 | **8** | Doc only. |
+| 23 | **OAuth `pg_hba.conf` doc** | 2 | 1 | 1 | 1 | 3 | **8** | Doc only. |
+
+### Strategic sidebar — SQL/PGQ vs AGE
+
+MCPg already exposes a `graph_operations` bucket built on Apache AGE-style schema. PG 19's SQL/PGQ is the upstream-standard alternative. Three viable paths:
+
+1. **Coexist** — keep AGE-style `run_cypher`, add SQL/PGQ as `run_pgq`. Easy migration story; longer-term maintenance burden. **Recommended for the first PR.**
+2. **Replace** — deprecate AGE on PG 19+; users on PG ≤ 18 keep AGE; users on PG 19+ get SQL/PGQ as the default. Cleaner long term; breaks existing users.
+3. **Bridge** — keep one MCP tool surface (`run_graph_query`) that detects PG version and dispatches. Hides the choice from the agent. Most agent-friendly. Highest implementation cost.
+
+PO recommendation: ship (1) first to get SQL/PGQ in users' hands fast, then evaluate (3) as a follow-up once we have telemetry on which surface agents actually use.
+
+### Re-ordered landing plan (PO view)
+
+Sequenced by PO score, with bundling where related items share a PR. Each row carries a tagline for the release blog.
+
+| Order | PR | Bundles rows | PO score (sum) | Blog tagline |
+|---|---|---|---:|---|
+| **PR-1** | **SQL/PGQ MVP** | #1 | 26 | "Cypher-in-SQL on PG 19, end-to-end via one MCP call." |
+| **PR-2** | **REPACK tools** | #2 | 25 | "Online table rebuild without pg_repack — one tool, one transaction." |
+| **PR-3** | **Async I/O advisor** | #3 + #15 | 25 + 12 = 37 | "Tell me which `io_method` is right for this workload." |
+| **PR-4** | **Lock + blocking-chain refresh** | #5 + #12 | 23 + 15 = 38 | "Per-lock-type analytics + recovery progress, exposed to your agent." |
+| **PR-5** | **Partition reorganisation** | #4 | 23 | "MERGE / SPLIT partitions through the same advisor that already runs partman." |
+| **PR-6** | **Online checksums + on-demand logical replication** | #6 + #8 | 22 + 21 = 43 | "Two restart-free toggles your DBA will actually use." |
+| **PR-7** | **WAIT FOR LSN + RYW advisor** | #7 | 22 | "Read-your-writes from any hot standby, in one MCP call." |
+| **PR-8** | **Skip-scan-aware `recommend_indexes`** | #9 | 20 | "PG 19 makes index recommendations strictly better — automatically." |
+| **PR-9** | **`validate_check_constraint` + `pg_get_*` DDL family** | #10 + #11 | 17 + 17 = 34 | "Validate-and-ship constraints; dump role/db DDL without pg_dumpall." |
+| **PR-10** | **PG 19 small-tools batch** | #13 + #14 + #18 + #19 + #21 | ~46 sum | "All the small things — autovacuum scoring, password warnings, ACL upgrade, …" |
+| **PR-11** | **PG 19 characterisation tests** | #16 + #17 + #20 | ~24 sum | "Defensive — keeps PG 14-18 green while PG 19 lands." |
+| **PR-12** | **Docs sweep** | #22 + #23 + JSONpath, JIT, LZ4, RADIUS | — | "PG 19 operations playbook updates." |
+
+### Sequencing — PO rationale
+
+- **PR-1 first (SQL/PGQ)** — the marketable headline; gets agent telemetry early; lets us validate the coexist-vs-replace decision before committing the bigger refactor.
+- **PR-2 and PR-3 next** — both are "Yes / huge" demos. We can run the release blog as a three-part series.
+- **PR-4 / PR-5 / PR-6** — bundle related ops surface so the agent gets coherent batches.
+- **PR-7 onwards** — depth fills, each one ships in its own week.
+- **PR-11 always lands behind a feature batch** so characterisation tests anchor the latest behaviour.
+- **PR-12** is the "polish" PR — defer until other PRs are in.
+
+### Cost ladder (rough)
+
+| Effort tier | PRs | Per-PR scope |
+|---|---|---|
+| S (≤ 500 LOC + tests) | PR-2, PR-5, PR-6, PR-7, PR-8, PR-9, PR-12 | One module + tool family + 15-25 tests |
+| M (≤ 1000 LOC + tests + module) | PR-3, PR-4, PR-10, PR-11 | Module + advisor + cross-bucket touches |
+| L (multi-module) | PR-1 | New `mcpg.pgq` module + agent-friendly bridge + AGE coexistence semantics |
+
+### Personas' MoSCoW for the next quarter
+
+- **Dana the DBA** — MUST: PR-2, PR-3, PR-4, PR-6. SHOULD: PR-5, PR-7. COULD: PR-10, PR-12.
+- **Ari the App developer** — MUST: PR-1, PR-7. SHOULD: PR-9. COULD: PR-12.
+- **Riya the RAG engineer** — MUST: PR-1 (graph for retrieval), PR-3 (AIO under vector workloads). SHOULD: PR-8.
+- **Sam the SRE** — MUST: PR-4, PR-6. SHOULD: PR-7, PR-13.
+- **Aiden the AI agent** — MUST: PR-1 (richer graph surface); benefits from every readability gain.
 
 ## Phase 3 — incremental landing plan
 
