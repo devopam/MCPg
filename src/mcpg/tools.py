@@ -240,7 +240,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="list_schemas",
         description=_with_example(
-            "List database schemas, excluding PostgreSQL's own schemas unless include_system is true.",
+            "List database schemas, excluding PostgreSQL's own schemas unless include_system is true. "
+            "Returns a list of objects with `name`.",
             "list_schemas(include_system=false)",
         ),
     )
@@ -254,7 +255,9 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="list_tables",
         description=_with_example(
-            "List the tables and views in a schema, flagging partitioned tables and partitions.",
+            "List the tables and views in a schema, flagging partitioned tables and partitions. "
+            "Returns a list of objects with `name`, `type` ('table' or 'view'), `partitioned`, "
+            "`is_partition`.",
             "list_tables(schema='public')",
         ),
     )
@@ -268,7 +271,9 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="describe_table",
         description=_with_example(
-            "Describe the columns of a table, in ordinal order.",
+            "Describe the columns of a table, in ordinal order. "
+            "Returns a list of objects with `name`, `data_type`, `nullable`, `default`, "
+            "and `vector_dimension` (set only for pgvector `vector(N)` columns).",
             "describe_table(schema='public', table='users')",
         ),
     )
@@ -282,7 +287,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="list_indexes",
         description=_with_example(
-            "List the indexes defined on a table.",
+            "List the indexes defined on a table. "
+            "Returns a list of objects with `name`, `method` (btree / gin / gist / brin / hash / "
+            "spgist / hnsw / ivfflat / …), `definition` (the CREATE INDEX statement), "
+            "and `partitioned`.",
             "list_indexes(schema='public', table='users')",
         ),
     )
@@ -296,7 +304,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="list_constraints",
         description=_with_example(
-            "List a table's constraints — primary/foreign keys, unique, check, exclusion.",
+            "List a table's constraints — primary/foreign keys, unique, check, exclusion. "
+            "Returns a list of objects with `name`, `type`, and `definition` (the constraint SQL).",
             "list_constraints(schema='public', table='orders')",
         ),
     )
@@ -310,7 +319,9 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="list_foreign_keys",
         description=_with_example(
-            "List foreign keys in a schema, resolved to columns and referenced table.",
+            "List foreign keys in a schema, resolved to columns and referenced table. "
+            "Returns a list of objects with `name`, `from_table`, `from_columns`, `to_schema`, "
+            "`to_table`, `to_columns`.",
             "list_foreign_keys(schema='public')",
         ),
     )
@@ -323,7 +334,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_views",
-        description="List the views and materialized views in a schema, with their definitions.",
+        description=(
+            "List the views and materialized views in a schema, with their definitions. "
+            "Returns a list of objects with `name`, `materialized` (bool), and `definition` "
+            "(the SELECT SQL)."
+        ),
     )
     async def list_views(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -334,7 +349,12 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_functions",
-        description="List the functions and procedures defined in a schema.",
+        description=(
+            "List the functions and procedures defined in a schema. "
+            "Returns a list of objects with `name`, `kind` ('function' or 'procedure'), "
+            "`arguments` (signature string), `returns` (return-type string), and `language` "
+            "(plpgsql / sql / c / etc.)."
+        ),
     )
     async def list_functions(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -345,7 +365,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_triggers",
-        description="List the user-defined triggers on a table.",
+        description=(
+            "List the user-defined triggers on a table. "
+            "Returns a list of objects with `name`, `function` (the called function's "
+            "qualified name), and `definition` (the CREATE TRIGGER SQL)."
+        ),
     )
     async def list_triggers(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -356,7 +380,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_partitions",
-        description="Describe how a table is partitioned (strategy and bounds) and list its partitions.",
+        description=(
+            "Describe how a table is partitioned (strategy and bounds) and list its partitions. "
+            "Returns an object with `partitioned` (bool), `strategy` ('range' / 'list' / 'hash' "
+            "or null), and `partitions` (a list of `{name, bounds}` for each partition)."
+        ),
     )
     async def list_partitions(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
         async def _run() -> dict[str, Any]:
@@ -367,8 +395,12 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_roles",
-        description="List the database roles and their attributes, excluding PostgreSQL's own roles "
-        "unless include_system is true.",
+        description=(
+            "List the database roles and their attributes, excluding PostgreSQL's own roles "
+            "unless include_system is true. "
+            "Returns a list of objects with `name`, `superuser`, `create_role`, `create_db`, "
+            "`can_login`, `replication`, `bypass_rls`, `connection_limit`, `member_of`."
+        ),
     )
     async def list_roles(ctx: _Ctx, include_system: bool = False) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -379,7 +411,12 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_grants",
-        description="List the privileges granted on a table — who may do what to it.",
+        description=(
+            "List the privileges granted on a table — who may do what to it. "
+            "Returns a list of objects with `grantee`, `privilege` (SELECT / INSERT / UPDATE "
+            "/ DELETE / TRUNCATE / REFERENCES / TRIGGER), `grantable` (bool — may the grantee "
+            "regrant), and `grantor`."
+        ),
     )
     async def list_grants(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -390,7 +427,12 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_policies",
-        description="List the Row-Level-Security policies on a table, and whether row security is enabled.",
+        description=(
+            "List the Row-Level-Security policies on a table, and whether row security is enabled. "
+            "Returns an object with `rls_enabled` (bool) and `policies` — a list of "
+            "`{name, command (SELECT/INSERT/UPDATE/DELETE/ALL), permissive (bool), roles, "
+            "using_expression, check_expression}`."
+        ),
     )
     async def list_policies(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
         async def _run() -> dict[str, Any]:
@@ -401,7 +443,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_sequences",
-        description="List the sequences defined in a schema, with their range, increment, and last value.",
+        description=(
+            "List the sequences defined in a schema, with their range, increment, and last value. "
+            "Returns a list of objects with `name`, `data_type`, `start_value`, `min_value`, "
+            "`max_value`, `increment`, `cycle` (bool), `last_value`."
+        ),
     )
     async def list_sequences(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -412,7 +458,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_enums",
-        description="List the enum types in a schema, with their labels in sort order.",
+        description=(
+            "List the enum types in a schema, with their labels in sort order. "
+            "Returns a list of objects with `name` and `values` (list of label strings, in "
+            "the order defined)."
+        ),
     )
     async def list_enums(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -423,7 +473,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_domains",
-        description="List the domain types in a schema, with base type, default, and check constraints.",
+        description=(
+            "List the domain types in a schema, with base type, default, and check constraints. "
+            "Returns a list of objects with `name`, `base_type`, `nullable`, `default`, and "
+            "`constraints` (list of CHECK clauses)."
+        ),
     )
     async def list_domains(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -434,7 +488,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_composite_types",
-        description="List the standalone composite types in a schema with their attributes.",
+        description=(
+            "List the standalone composite types in a schema with their attributes. "
+            "Returns a list of objects with `name` and `attributes` (list of "
+            "`{name, data_type}` for each field)."
+        ),
     )
     async def list_composite_types(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -445,7 +503,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_foreign_data_wrappers",
-        description="List the foreign-data wrappers installed in the database.",
+        description=(
+            "List the foreign-data wrappers installed in the database. "
+            "Returns a list of objects with `name`, `handler` (qualified function name), "
+            "`validator`, and `options` (dict of wrapper-specific options)."
+        ),
     )
     async def list_foreign_data_wrappers(ctx: _Ctx) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -456,7 +518,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_foreign_servers",
-        description="List the foreign servers defined in the database, with their FDW and options.",
+        description=(
+            "List the foreign servers defined in the database, with their FDW and options. "
+            "Returns a list of objects with `name`, `wrapper` (foreign-data wrapper name), "
+            "`type`, `version`, and `options` (dict of server options)."
+        ),
     )
     async def list_foreign_servers(ctx: _Ctx) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -467,7 +533,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_foreign_tables",
-        description="List the foreign tables in a schema, with their server and options.",
+        description=(
+            "List the foreign tables in a schema, with their server and options. "
+            "Returns a list of objects with `name`, `server` (foreign-server name), "
+            "and `options` (dict of per-table options)."
+        ),
     )
     async def list_foreign_tables(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -478,7 +548,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_user_mappings",
-        description="List role-to-foreign-server mappings; the catch-all appears as user='public'.",
+        description=(
+            "List role-to-foreign-server mappings; the catch-all appears as user='public'. "
+            "Returns a list of objects with `user` (role name or 'public'), `server` "
+            "(foreign-server name), and `options` (dict of mapping options, e.g. credentials)."
+        ),
     )
     async def list_user_mappings(ctx: _Ctx) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -489,7 +563,12 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_publications",
-        description="List logical-replication publications with the tables and operations they include.",
+        description=(
+            "List logical-replication publications with the tables and operations they include. "
+            "Returns a list of objects with `name`, `owner`, `all_tables` (bool), "
+            "`publishes_insert` / `publishes_update` / `publishes_delete` / `publishes_truncate` "
+            "(bools), and `tables` (list of `schema.table` strings)."
+        ),
     )
     async def list_publications(ctx: _Ctx) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -509,7 +588,12 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
         return await _cached_call(ctx, "list_subscriptions", _run)
 
-    @server.tool(name="list_extensions", description="List the extensions installed in the database.")
+    @server.tool(
+        name="list_extensions",
+        description=(
+            "List the extensions installed in the database. Returns a list of objects with `name` and `version`."
+        ),
+    )
     async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
             extensions = await introspection.list_extensions(_driver(ctx))
@@ -519,7 +603,11 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="list_available_extensions",
-        description="List every extension available to the database, with whether it is installed.",
+        description=(
+            "List every extension available to the database, with whether it is installed. "
+            "Returns a list of objects with `name`, `default_version`, `installed_version` "
+            "(null when not installed), and `installed` (bool)."
+        ),
     )
     async def list_available_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
         async def _run() -> list[dict[str, Any]]:
@@ -535,7 +623,9 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "with its data type, the underlying expression, and whether it's "
             "stored or virtual. PostgreSQL today supports only the stored "
             "form; the kind field is reported anyway so the response shape "
-            "is forward-compatible when PG adds virtual columns."
+            "is forward-compatible when PG adds virtual columns. "
+            "Returns a list of objects with `schema`, `table`, `column`, `data_type`, "
+            "`expression`, `kind` ('stored' today; reserved for 'virtual')."
         ),
     )
     async def list_generated_columns(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
@@ -578,7 +668,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         description=(
             "Walk and reconstruct the lock-wait graph of the database. Detects deadlock cycles, "
             "traces linear blocking paths to their root blockers, and renders a Mermaid flowchart "
-            "representing the lock dependency graph. Read-only."
+            "representing the lock dependency graph. Read-only. "
+            "Returns an object with `cycles` (list of detected cycle PID lists), `paths` (linear "
+            "blocking paths as PID lists), `roots` (root blocker PIDs), `nodes` (dict keyed by PID "
+            "with per-backend lock detail), and `mermaid` (the pre-rendered flowchart string)."
         ),
     )
     async def walk_blocking_chains(ctx: _Ctx, limit: int = locks.DEFAULT_BLOCKING_LIMIT) -> dict[str, Any]:
@@ -680,7 +773,12 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         description=(
             "Query and summarize historical migrations applied to the database by popular migration "
             "frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). "
-            "Allows filtering by schema."
+            "Allows filtering by schema. "
+            "Returns an object with one optional list per detected framework: "
+            "`alembic`, `flyway`, `diesel`, `django`, `prisma`, `golang_migrate`, `goose`, "
+            "`sequelize`. Each entry is null when the framework's table isn't present; "
+            "otherwise it carries the framework-specific row shape (e.g. alembic has "
+            "`{version_num}`; flyway has `{installed_rank, version, description, type, ...}`)."
         ),
     )
     async def read_migration_history(ctx: _Ctx, schema: str | None = None) -> dict[str, Any]:
@@ -694,7 +792,8 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
         description=_with_example(
             "Render a Mermaid ER diagram for a schema. Views and foreign tables are "
             "excluded; partitions are excluded by default — pass include_partitions=true "
-            "to draw each partition as its own entity.",
+            "to draw each partition as its own entity. "
+            "Returns the Mermaid `erDiagram` as a string ready to paste into a Markdown block.",
             "generate_schema_diagram(schema='public', include_partitions=false)",
         ),
     )
@@ -717,7 +816,8 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
             "those are the ones that produce a write blast radius. Pass "
             "include_all=true to include NO ACTION / RESTRICT FKs too "
             "(full FK topology view). Cross-schema FK targets are "
-            "rendered as separate nodes prefixed with their schema."
+            "rendered as separate nodes prefixed with their schema. "
+            "Returns the Mermaid `graph LR` diagram as a string."
         ),
     )
     async def generate_fk_cascade_graph(ctx: _Ctx, schema: str, include_all: bool = False) -> str:
@@ -734,7 +834,8 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
             "Generate a detailed Markdown reference of a schema's "
             "tables, columns, constraints, indexes, views, foreign tables, "
             "and custom enums along with comments / descriptions. Optional "
-            "include_samples fetches a few distinct, non-null values for each column.",
+            "include_samples fetches a few distinct, non-null values for each column. "
+            "Returns a single Markdown document as a string.",
             "generate_schema_docs(schema='public', include_samples=true)",
         ),
     )
@@ -867,7 +968,10 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
             "window plus the top-decile share. Surfaces ``score_clustering`` "
             "(WARNING) when the reranker isn't discriminating (more than "
             "half of scores land in the top decile of the range). Reads "
-            "from mcpg_rag.rerank_events."
+            "from mcpg_rag.rerank_events. "
+            "Returns an object with `window_days`, `event_count`, `histogram` "
+            "(list of counts), `bucket_edges` (list of bucket boundaries), "
+            "`top_decile_share`, and `findings` (list of advisory findings)."
         ),
     )
     async def analyze_rerank_score_distribution(
@@ -1024,7 +1128,9 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         description=(
             "Sweeps ef_search values to measure the latency and recall trade-off curve "
             "for a given pgvector query vector against exact brute-force ground truth. "
-            "Requires the vector extension."
+            "Requires the vector extension. "
+            "Returns a list of objects with `ef_search`, `recall_at_k`, `mean_latency_ms`, "
+            "and `p95_latency_ms` — one row per ef_search value tested."
         ),
     )
     async def analyze_hnsw_recall(
@@ -1285,7 +1391,8 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
             "(mirrors `prisma db pull`). Covers tables, columns, primary/foreign keys, "
             "unique constraints, indexes, and enums. Views, foreign tables, partitions, "
             "triggers, functions, and policies are out of scope; unmappable types fall "
-            'back to `Unsupported("...")`.'
+            'back to `Unsupported("...")`. '
+            "Returns the rendered `schema.prisma` source as a single string."
         ),
     )
     async def generate_prisma_schema(ctx: _Ctx, schema: str) -> str:
@@ -1299,7 +1406,8 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
             "types, primary/foreign keys, unique constraints, indexes, defaults, "
             "and enums. Single-column FKs emit column-level .references(); "
             "composite FKs are a documented v1 gap. Views, foreign tables, "
-            "partitions, triggers, and functions are out of scope."
+            "partitions, triggers, and functions are out of scope. "
+            "Returns the rendered TypeScript `schema.ts` source as a single string."
         ),
     )
     async def generate_drizzle_schema(ctx: _Ctx, schema: str) -> str:
@@ -1386,7 +1494,8 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
             "sqlalchemy.dialects.postgresql.JSONB), primary keys, single-column "
             "FKs via ForeignKey(), unique constraints (column-level + composite "
             "via __table_args__), defaults, and enums (emitted as Python "
-            "enum.Enum classes). Composite FKs are a documented v1 gap."
+            "enum.Enum classes). Composite FKs are a documented v1 gap. "
+            "Returns the rendered Python `models.py` source as a single string."
         ),
     )
     async def generate_sqlalchemy_models(ctx: _Ctx, schema: str) -> str:
@@ -1401,7 +1510,8 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
             "CONSTRAINT (PK / unique / check / foreign key in that order), "
             "then CREATE INDEX for non-constraint indexes. The file replays "
             "cleanly against an empty database so FKs land after all "
-            "referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed."
+            "referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed. "
+            "Returns the rendered `schema.sql` text as a single string."
         ),
     )
     async def generate_sqlc_schema(ctx: _Ctx, schema: str) -> str:
@@ -1436,7 +1546,9 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "count; indexes report size and definition. Excludes PRIMARY KEY "
             "and UNIQUE indexes (PG needs those regardless of scans). Run "
             "this after the database has been hot for a meaningful period — "
-            "fresh stats produce false positives."
+            "fresh stats produce false positives. "
+            "Returns an object with `tables` (list of candidate tables with their stats) "
+            "and `indexes` (list of candidate indexes with size and definition)."
         ),
     )
     async def find_unused_objects(ctx: _Ctx, schema: str) -> dict[str, Any]:
@@ -1459,7 +1571,9 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "confidence (high / medium / low) so an agent can filter for "
             "a first review pass. Treat as a SIGNAL, not a verdict — "
             "a column named email_template_id matches the email pattern "
-            "but isn't itself an email address."
+            "but isn't itself an email address. "
+            "Returns an object with `findings` (list of `{schema, table, column, data_type, "
+            "category, confidence, matched_pattern}`) and `summary` counts by category."
         ),
     )
     async def find_sensitive_columns(ctx: _Ctx, schema: str) -> dict[str, Any]:
@@ -1481,7 +1595,10 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "not start with a conventional prefix (idx_, ix_, pk_, "
             "uq_, fk_ by default). Findings carry the offender's style "
             "and the detected majority — agents can use the style "
-            "field to filter for renames vs accept-as-is. Pure read."
+            "field to filter for renames vs accept-as-is. Pure read. "
+            "Returns an object with `schema_style` (detected majority), `findings` "
+            "(list of style outliers), and `index_prefix_findings` (indexes with "
+            "non-conventional prefixes)."
         ),
     )
     async def lint_naming_conventions(ctx: _Ctx, schema: str) -> dict[str, Any]:
@@ -1612,7 +1729,9 @@ def _register_data_movement(server: FastMCP[AppContext]) -> None:
         name="export_table",
         description=(
             "Serialise every row in schema.table (up to `limit`) to CSV or JSON. "
-            "Schema and table names must be plain identifiers."
+            "Schema and table names must be plain identifiers. "
+            "Returns an object with `format`, `row_count`, `truncated` (bool — true when "
+            "the row count hit `limit`), and `content` (the serialised payload as a string)."
         ),
     )
     async def export_table(
@@ -1918,7 +2037,9 @@ def _register_timescaledb_reads(server: FastMCP[AppContext]) -> None:
             "List every TimescaleDB hypertable visible to the current "
             "role, with chunk count, compression flag, and total size. "
             "Reports available=false when the timescaledb extension is "
-            "not installed."
+            "not installed. "
+            "Returns an object with `available` (bool) and `hypertables` "
+            "(list of `{schema, table, num_chunks, compression_enabled, total_size_bytes}`)."
         ),
     )
     async def list_hypertables(ctx: _Ctx) -> dict[str, Any]:
@@ -1930,7 +2051,9 @@ def _register_timescaledb_reads(server: FastMCP[AppContext]) -> None:
         description=(
             "List the chunks of a TimescaleDB hypertable with each chunk's "
             "range_start / range_end and whether it has been compressed. "
-            "Empty list when the table is not a hypertable."
+            "Empty list when the table is not a hypertable. "
+            "Returns an object with `available` (bool) and `chunks` "
+            "(list of `{chunk_name, range_start, range_end, is_compressed, total_size_bytes}`)."
         ),
     )
     async def list_chunks(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
@@ -1946,7 +2069,9 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
             "`time_column`. Validates schema / table / column names against "
             "the plain-identifier allowlist and the chunk interval against "
             "a TimescaleDB-style pattern (e.g. '7 days', '1 hour'). "
-            "Requires unrestricted mode + MCPG_ALLOW_DDL."
+            "Requires unrestricted mode + MCPG_ALLOW_DDL. "
+            "Returns an object with `available` (bool), `function` ('create_hypertable'), "
+            "and `details` (the create_hypertable return text or an extension-missing note)."
         ),
     )
     async def create_hypertable(
@@ -1974,7 +2099,10 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
             "Enable TimescaleDB column-store compression on a hypertable and "
             "schedule a policy that compresses chunks older than "
             "`compress_after` (e.g. '7 days'). Requires unrestricted mode "
-            "+ MCPG_ALLOW_DDL."
+            "+ MCPG_ALLOW_DDL. "
+            "Returns an object with `available` (bool), `function` "
+            "('add_compression_policy'), and `details` (the scheduled job id or "
+            "an extension-missing note)."
         ),
     )
     async def add_compression_policy(
@@ -2049,7 +2177,8 @@ def _register_listen(server: FastMCP[AppContext]) -> None:
         description=(
             "List active LISTEN subscriptions in this server process as "
             "{subscription_id, channel} pairs. Subscriptions are process-local "
-            "and lost on restart."
+            "and lost on restart. "
+            "Returns a list of objects with `subscription_id` and `channel`."
         ),
     )
     async def list_notification_subscriptions(ctx: _Ctx) -> list[dict[str, str]]:
@@ -2090,7 +2219,9 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             "ON_ERROR_STOP; `custom`/`tar` base64-decode `content` and pipe the "
             "bytes through pg_restore. Credentials pass through libpq env vars, "
             "never on the command line. Performs subprocess execution — requires "
-            "unrestricted mode + MCPG_ALLOW_SHELL."
+            "unrestricted mode + MCPG_ALLOW_SHELL. "
+            "Returns an object with `succeeded` (bool), `stdout`, `stderr`, "
+            "`exit_code`, `timed_out` (bool), and `output_truncated` (bool)."
         ),
     )
     async def restore_database(ctx: _Ctx, content: str, format: str = "plain") -> dict[str, Any]:
@@ -2160,7 +2291,12 @@ def _register_audit_trail(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="verify_audit_chain",
-        description="Verify the HMAC-SHA256 signature chain of persisted audit events in mcpg_audit.events.",
+        description=(
+            "Verify the HMAC-SHA256 signature chain of persisted audit events in mcpg_audit.events. "
+            "Returns an object with `verified` (bool), `events_checked` (int), the `first_event_id` "
+            "and `last_event_id` covered by the walk, and (on failure) `error` and `first_invalid_id` "
+            "pointing at where the chain broke."
+        ),
     )
     async def verify_audit_chain(ctx: _Ctx) -> dict[str, Any]:
         from mcpg.audit_integrity import verify_audit_chain as vac
@@ -2354,7 +2490,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         name="check_database_health",
         description=_with_example(
             "Run database health checks: connection utilisation, buffer cache "
-            "hit ratio, tables needing vacuum, and invalid indexes.",
+            "hit ratio, tables needing vacuum, and invalid indexes. "
+            "Returns an object with `status` ('ok' / 'warning' / 'critical') and "
+            "`checks` (a list of `{name, status, detail}` per check).",
             "check_database_health()",
         ),
     )
@@ -2368,7 +2506,10 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "Run a deep, comprehensive DBA-level database performance, logs, "
             "and health audit over the specified schema. Scans memory, checkpoints, "
             "temp file spills, contention locks, dead tuple cleanliness, and "
-            "optionally scans custom logging tables."
+            "optionally scans custom logging tables. "
+            "Returns an object with `timestamp`, `database`, `version`, `overall_health` "
+            "('GOOD' / 'WARNING' / 'CRITICAL'), `health_score` (int), `categories` "
+            "(per-area results), `top_issues`, `recommendations`, and `raw_stats_snapshot`."
         ),
     )
     async def audit_database(ctx: _Ctx, schema: str, log_table: str | None = None) -> dict[str, Any]:
@@ -2437,7 +2578,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="recommend_indexes",
         description=_with_example(
-            "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan.",
+            "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan. "
+            "Returns a list of objects with `schema`, `table`, `live_tuples`, `sequential_scans`, "
+            "`index_scans`, and a `reason` explaining why the table is a candidate.",
             "recommend_indexes(min_live_tuples=10000)",
         ),
     )
@@ -2499,7 +2642,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "Rank a text column's values by pg_trgm trigram similarity to a "
             "search term. mode='word' (default) matches fragments within "
             "longer text; mode='full' compares whole strings. Reports "
-            "available=false if pg_trgm is not installed.",
+            "available=false if pg_trgm is not installed. "
+            "Returns an object with `available` (bool), `matches` (list of "
+            "`{value, similarity}` ranked by similarity descending), and `mode`.",
             "fuzzy_search(schema='public', table='users', column='name', term='janne', mode='word')",
         ),
     )
@@ -2523,7 +2668,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         description=_with_example(
             "Rank a text column's documents against a full-text query using "
             "PostgreSQL's built-in tsvector/tsquery. The query accepts "
-            "web-search syntax (quoted phrases, or, - exclusion).",
+            "web-search syntax (quoted phrases, or, - exclusion). "
+            "Returns a list of objects with the matched row's primary key columns "
+            "plus `rank` (ts_rank score, higher = better match).",
             "full_text_search(schema='public', table='articles', column='body', search_query='\"new york\" OR -draft')",
         ),
     )
@@ -2726,7 +2873,10 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
         name="list_active_queries",
         description=(
             "List the queries currently running on the server, with each "
-            "backend's wait event, duration, and the PIDs blocking it."
+            "backend's wait event, duration, and the PIDs blocking it. "
+            "Returns a list of objects with `pid`, `username`, `application`, `state`, "
+            "`wait_event` (null when not waiting), `duration_seconds`, `query`, and "
+            "`blocked_by` (list of PIDs holding locks this backend is waiting on)."
         ),
     )
     async def list_active_queries(ctx: _Ctx) -> list[dict[str, Any]]:
@@ -2758,7 +2908,10 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
             "and a computed progress_pct (blocks first, tuples as "
             "fallback, null when neither phase reports a denominator). "
             "Useful next to list_active_queries when an HNSW / IVFFlat "
-            "build on a big table is taking longer than expected."
+            "build on a big table is taking longer than expected. "
+            "Returns a list of objects with `pid`, `schema`, `relation`, `index_name`, "
+            "`command`, `phase`, `blocks_done`, `blocks_total`, `tuples_done`, "
+            "`tuples_total`, and `progress_pct` (null when no denominator is reported)."
         ),
     )
     async def monitor_index_build(ctx: _Ctx) -> list[dict[str, Any]]:
@@ -2818,7 +2971,11 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             "attributes; the full upstream payload is preserved in "
             "``raw_metadata`` so advisors can reach unanticipated fields. "
             "Raises when the extension is not installed or no turboquant "
-            "index by that name exists."
+            "index by that name exists. "
+            "Returns an object with `schema`, `index`, `algorithm_version`, "
+            "`quantizer_family`, `residual_sketch_kind`, `fast_path_eligible`, "
+            "`capability_flags`, `delta_state`, `maintenance_recommended`, and "
+            "`raw_metadata` (full upstream payload)."
         ),
     )
     async def get_turboquant_index_metadata(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
@@ -2878,7 +3035,9 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             "text). ``half_precision=True`` switches to the halfvec overload. "
             "``probes`` / ``oversample_factor`` are optional per-query knobs "
             "(consider calling ``recommend_turboquant_query_knobs`` first). "
-            "Requires the pg_turboquant extension."
+            "Requires the pg_turboquant extension. "
+            "Returns a list of candidate objects with `candidate_id`, "
+            "`approximate_distance`, and `approximate_rank`."
         ),
     )
     async def turboquant_approx_candidates(
@@ -3010,7 +3169,9 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
             "``list_pg_search_indexes`` — typed accessors for the 13 "
             "documented options plus the raw ``index_options`` dict. "
             "Raises when the extension is not installed or no BM25 "
-            "index by that name exists."
+            "index by that name exists. "
+            "Returns an object with `schema`, `index`, the typed option fields, "
+            "and `index_options` (raw reloptions dict for forward-compat)."
         ),
     )
     async def get_pg_search_index_metadata(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
@@ -3249,7 +3410,8 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
             "free-form dict serialised as jsonb (caller-specific fields: "
             "latency_ms, variant tag, user_id, etc). Available only in "
             "unrestricted mode; the table must be created first via "
-            "``setup_rag_telemetry``."
+            "``setup_rag_telemetry``. "
+            "Returns an object with `event_id` (the new mcpg_rag.rerank_events row id)."
         ),
     )
     async def log_rerank_event(
@@ -3299,7 +3461,9 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
             "correspond to VectorEfficiencyReport.recall_at_k_baseline / "
             "score_rank_correlation_spearman / score_rank_correlation_kendall "
             "respectively. Available only in unrestricted mode; the table "
-            "must be created first via setup_efficiency_observations."
+            "must be created first via setup_efficiency_observations. "
+            "Returns an object with `observation_id` "
+            "(the new mcpg_rag.efficiency_observations row id)."
         ),
     )
     async def record_efficiency_observation(
@@ -3396,7 +3560,12 @@ def _register_rag_telemetry_efficiency_read(server: FastMCP[AppContext]) -> None
             "'what's normal for HNSW+cosine+k=10 in this deployment' vs "
             "'what's normal globally'. Falls back to defaults (with "
             "``derived_from_corpus=false``) when the corpus is smaller "
-            "than the minimum required."
+            "than the minimum required. "
+            "Returns an object with `corpus_size`, `derived_from_corpus` (bool), and "
+            "the threshold fields (`baseline_recall_low`, `baseline_recall_low_adapted`, "
+            "`ranking_degraded_spearman`, `ranking_degraded_spearman_adapted`, "
+            "`pruning_ineffective`, `pruning_ineffective_adapted`, `rerank_lift_flat_delta`, "
+            "`rerank_lift_steep_low`, `rerank_lift_steep_high`, and `ranking_degraded_recall`)."
         ),
     )
     async def recommend_efficiency_thresholds(
@@ -3470,7 +3639,9 @@ def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
             "pg_am) before running. ``concurrently=True`` is the default "
             "and runs on autocommit since REINDEX CONCURRENTLY can't "
             "run inside a transaction. Performs DDL — requires "
-            "unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed."
+            "unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed. "
+            "Returns an object with `schema`, `index`, `concurrently` (bool), "
+            "and `reindex_sql` (the rendered REINDEX statement that ran)."
         ),
     )
     async def reindex_turboquant_index(
@@ -3562,7 +3733,9 @@ def _register_pg_search_ddl(server: FastMCP[AppContext]) -> None:
             "the default and runs on autocommit since REINDEX "
             "CONCURRENTLY can't run inside a transaction. Performs DDL "
             "— requires unrestricted mode + MCPG_ALLOW_DDL; pg_search "
-            "installed."
+            "installed. "
+            "Returns an object with `schema`, `index`, `concurrently` (bool), "
+            "and `reindex_sql` (the rendered REINDEX statement that ran)."
         ),
     )
     async def reindex_pg_search_index(
@@ -3583,7 +3756,9 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
         description=(
             "Register a pg_cron job. ``schedule`` is a cron expression or "
             "pg_cron interval shortcut (e.g. '30 seconds'). Available only "
-            "in unrestricted mode; requires pg_cron installed."
+            "in unrestricted mode; requires pg_cron installed. "
+            "Returns an object with `jobid` (the pg_cron job id), `name`, "
+            "and `schedule`."
         ),
     )
     async def schedule_cron_job(ctx: _Ctx, name: str, schedule: str, command: str) -> dict[str, Any]:
@@ -3656,7 +3831,9 @@ def _register_partman(server: FastMCP[AppContext]) -> None:
         description=(
             "Register a partitioned table with pg_partman. ``partition_type`` "
             "must be 'range', 'list', or 'native'. Performs DDL — requires "
-            "unrestricted mode + MCPG_ALLOW_DDL; pg_partman installed."
+            "unrestricted mode + MCPG_ALLOW_DDL; pg_partman installed. "
+            "Returns an object with `parent_table` and `detail` (the partman "
+            "registration status string)."
         ),
     )
     async def partman_create_parent(
@@ -3682,7 +3859,9 @@ def _register_partman(server: FastMCP[AppContext]) -> None:
             "Run pg_partman maintenance — add forward partitions and drop "
             "retired ones. Pass parent_table to scope to one parent; omit "
             "to run for every managed parent. Performs DDL — requires "
-            "unrestricted mode + MCPG_ALLOW_DDL."
+            "unrestricted mode + MCPG_ALLOW_DDL. "
+            "Returns an object with `parent_table` (the scoped name or '*' for "
+            "all) and `detail` (maintenance summary string)."
         ),
     )
     async def partman_run_maintenance(ctx: _Ctx, parent_table: str | None = None) -> dict[str, Any]:
@@ -3766,7 +3945,9 @@ def _register_maintenance(server: FastMCP[AppContext]) -> None:
         name="run_maintenance",
         description=(
             "Run VACUUM or ANALYZE against one table (operation: vacuum, "
-            "analyze, or vacuum_analyze). Available only in unrestricted mode."
+            "analyze, or vacuum_analyze). Available only in unrestricted mode. "
+            "Returns an object with `operation`, `target` (the qualified table name), "
+            "and `maintenance_sql` (the rendered DDL that actually ran)."
         ),
     )
     async def run_maintenance(ctx: _Ctx, operation: str, schema: str, table: str) -> dict[str, Any]:
@@ -3801,7 +3982,8 @@ def _register_backend_control(server: FastMCP[AppContext]) -> None:
         name="cancel_query",
         description=(
             "Cancel the query running on a backend PID (pg_cancel_backend); "
-            "the connection stays open. Available only in unrestricted mode."
+            "the connection stays open. Available only in unrestricted mode. "
+            "Returns an object with `pid`, `action` ('cancel'), and `succeeded` (bool)."
         ),
     )
     async def cancel_query(ctx: _Ctx, pid: int) -> dict[str, Any]:
@@ -3812,7 +3994,8 @@ def _register_backend_control(server: FastMCP[AppContext]) -> None:
         name="terminate_backend",
         description=(
             "Terminate a backend PID (pg_terminate_backend), closing its "
-            "connection. Available only in unrestricted mode."
+            "connection. Available only in unrestricted mode. "
+            "Returns an object with `pid`, `action` ('terminate'), and `succeeded` (bool)."
         ),
     )
     async def terminate_backend(ctx: _Ctx, pid: int) -> dict[str, Any]:
@@ -3849,7 +4032,8 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
         description=(
             "Enable a known PostgreSQL extension (CREATE EXTENSION IF NOT "
             "EXISTS). Only allowlisted extensions may be enabled. Available "
-            "only in unrestricted access mode with MCPG_ALLOW_DDL enabled."
+            "only in unrestricted access mode with MCPG_ALLOW_DDL enabled. "
+            "Returns an object with `name` and `enabled` (bool)."
         ),
     )
     async def enable_extension(ctx: _Ctx, name: str) -> dict[str, Any]:
@@ -3861,7 +4045,10 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
 def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="list_graphs",
-        description="List all active Apache AGE property graphs in the database.",
+        description=(
+            "List all active Apache AGE property graphs in the database. "
+            "Returns a list of objects with `name` (graph name) and `oid`."
+        ),
     )
     async def list_graphs(ctx: _Ctx) -> list[dict[str, Any]]:
         app = ctx.request_context.lifespan_context
@@ -3870,7 +4057,10 @@ def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
 
     @server.tool(
         name="describe_graph",
-        description=("Describe the schema structure, vertex labels, and edge labels of a specific property graph."),
+        description=(
+            "Describe the schema structure, vertex labels, and edge labels of a specific property graph. "
+            "Returns an object with `graph_name`, `vertex_labels`, and `edge_labels`."
+        ),
     )
     async def describe_graph(ctx: _Ctx, graph_name: str) -> dict[str, Any]:
         app = ctx.request_context.lifespan_context
@@ -3882,7 +4072,9 @@ def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
         description=(
             "Execute an openCypher query on a specific graph database. "
             "Supports read queries (MATCH) and write/modifying queries "
-            "(CREATE, SET, DELETE, MERGE, REMOVE)."
+            "(CREATE, SET, DELETE, MERGE, REMOVE). "
+            "Returns an object with `columns` (list of result column names) and "
+            "`rows` (list of result rows as dicts keyed by column)."
         ),
     )
     async def run_cypher(
@@ -3898,7 +4090,8 @@ def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
         name="generate_graph_diagram",
         description=(
             "Generate a Mermaid flowchart diagram representing nodes and "
-            "relationships in a property graph to visualize its schema and topology."
+            "relationships in a property graph to visualize its schema and topology. "
+            "Returns the Mermaid flowchart as a string."
         ),
     )
     async def generate_graph_diagram(ctx: _Ctx, graph_name: str, limit: int = 50) -> str:
@@ -3917,7 +4110,8 @@ def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
         name="create_graph",
         description=(
             "Create a new Apache AGE property graph space in the database. "
-            "Performs DDL — requires DDL permission enabled."
+            "Performs DDL — requires DDL permission enabled. "
+            "Returns an object with `graph_name` and `created` (bool)."
         ),
     )
     async def create_graph(ctx: _Ctx, graph_name: str) -> dict[str, Any]:
@@ -3930,7 +4124,8 @@ def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
         name="drop_graph",
         description=(
             "Delete an Apache AGE property graph space, dropping all its nodes, "
-            "edges, and backing tables. Performs DDL — requires DDL permission enabled."
+            "edges, and backing tables. Performs DDL — requires DDL permission enabled. "
+            "Returns an object with `graph_name` and `dropped` (bool)."
         ),
     )
     async def drop_graph(ctx: _Ctx, graph_name: str, cascade: bool = True) -> dict[str, Any]:

@@ -5,7 +5,7 @@
   },
   "tools": [
     {
-      "description": "Enable TimescaleDB column-store compression on a hypertable and schedule a policy that compresses chunks older than `compress_after` (e.g. '7 days'). Requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "description": "Enable TimescaleDB column-store compression on a hypertable and schedule a policy that compresses chunks older than `compress_after` (e.g. '7 days'). Requires unrestricted mode + MCPG_ALLOW_DDL. Returns an object with `available` (bool), `function` ('add_compression_policy'), and `details` (the scheduled job id or an extension-missing note).",
       "inputSchema": {
         "properties": {
           "compress_after": {
@@ -91,7 +91,7 @@
       "name": "analyze_distance_metric"
     },
     {
-      "description": "Sweeps ef_search values to measure the latency and recall trade-off curve for a given pgvector query vector against exact brute-force ground truth. Requires the vector extension.",
+      "description": "Sweeps ef_search values to measure the latency and recall trade-off curve for a given pgvector query vector against exact brute-force ground truth. Requires the vector extension. Returns a list of objects with `ef_search`, `recall_at_k`, `mean_latency_ms`, and `p95_latency_ms` — one row per ef_search value tested.",
       "inputSchema": {
         "properties": {
           "column": {
@@ -204,7 +204,7 @@
       "name": "analyze_rerank_ndcg"
     },
     {
-      "description": "Equal-width histogram of cross_encoder_score values over the window plus the top-decile share. Surfaces ``score_clustering`` (WARNING) when the reranker isn't discriminating (more than half of scores land in the top decile of the range). Reads from mcpg_rag.rerank_events.",
+      "description": "Equal-width histogram of cross_encoder_score values over the window plus the top-decile share. Surfaces ``score_clustering`` (WARNING) when the reranker isn't discriminating (more than half of scores land in the top decile of the range). Reads from mcpg_rag.rerank_events. Returns an object with `window_days`, `event_count`, `histogram` (list of counts), `bucket_edges` (list of bucket boundaries), `top_decile_share`, and `findings` (list of advisory findings).",
       "inputSchema": {
         "properties": {
           "days": {
@@ -420,7 +420,7 @@
       "name": "analyze_workload"
     },
     {
-      "description": "Run a deep, comprehensive DBA-level database performance, logs, and health audit over the specified schema. Scans memory, checkpoints, temp file spills, contention locks, dead tuple cleanliness, and optionally scans custom logging tables.",
+      "description": "Run a deep, comprehensive DBA-level database performance, logs, and health audit over the specified schema. Scans memory, checkpoints, temp file spills, contention locks, dead tuple cleanliness, and optionally scans custom logging tables. Returns an object with `timestamp`, `database`, `version`, `overall_health` ('GOOD' / 'WARNING' / 'CRITICAL'), `health_score` (int), `categories` (per-area results), `top_issues`, `recommendations`, and `raw_stats_snapshot`.",
       "inputSchema": {
         "properties": {
           "log_table": {
@@ -466,7 +466,7 @@
       "name": "cancel_migration"
     },
     {
-      "description": "Cancel the query running on a backend PID (pg_cancel_backend); the connection stays open. Available only in unrestricted mode.",
+      "description": "Cancel the query running on a backend PID (pg_cancel_backend); the connection stays open. Available only in unrestricted mode. Returns an object with `pid`, `action` ('cancel'), and `succeeded` (bool).",
       "inputSchema": {
         "properties": {
           "pid": {
@@ -483,7 +483,7 @@
       "name": "cancel_query"
     },
     {
-      "description": "Run database health checks: connection utilisation, buffer cache hit ratio, tables needing vacuum, and invalid indexes.\n\nExample: `check_database_health()`",
+      "description": "Run database health checks: connection utilisation, buffer cache hit ratio, tables needing vacuum, and invalid indexes. Returns an object with `status` ('ok' / 'warning' / 'critical') and `checks` (a list of `{name, status, detail}` per check).\n\nExample: `check_database_health()`",
       "inputSchema": {
         "properties": {},
         "title": "check_database_healthArguments",
@@ -649,7 +649,7 @@
       "name": "copy_table_between_databases"
     },
     {
-      "description": "Create a new Apache AGE property graph space in the database. Performs DDL — requires DDL permission enabled.",
+      "description": "Create a new Apache AGE property graph space in the database. Performs DDL — requires DDL permission enabled. Returns an object with `graph_name` and `created` (bool).",
       "inputSchema": {
         "properties": {
           "graph_name": {
@@ -666,7 +666,7 @@
       "name": "create_graph"
     },
     {
-      "description": "Convert an existing table into a TimescaleDB hypertable on `time_column`. Validates schema / table / column names against the plain-identifier allowlist and the chunk interval against a TimescaleDB-style pattern (e.g. '7 days', '1 hour'). Requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "description": "Convert an existing table into a TimescaleDB hypertable on `time_column`. Validates schema / table / column names against the plain-identifier allowlist and the chunk interval against a TimescaleDB-style pattern (e.g. '7 days', '1 hour'). Requires unrestricted mode + MCPG_ALLOW_DDL. Returns an object with `available` (bool), `function` ('create_hypertable'), and `details` (the create_hypertable return text or an extension-missing note).",
       "inputSchema": {
         "properties": {
           "chunk_time_interval": {
@@ -1050,7 +1050,7 @@
       "name": "cross_table_similarity"
     },
     {
-      "description": "Describe the schema structure, vertex labels, and edge labels of a specific property graph.",
+      "description": "Describe the schema structure, vertex labels, and edge labels of a specific property graph. Returns an object with `graph_name`, `vertex_labels`, and `edge_labels`.",
       "inputSchema": {
         "properties": {
           "graph_name": {
@@ -1076,7 +1076,7 @@
       "name": "describe_self"
     },
     {
-      "description": "Describe the columns of a table, in ordinal order.\n\nExample: `describe_table(schema='public', table='users')`",
+      "description": "Describe the columns of a table, in ordinal order. Returns a list of objects with `name`, `data_type`, `nullable`, `default`, and `vector_dimension` (set only for pgvector `vector(N)` columns).\n\nExample: `describe_table(schema='public', table='users')`",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -1202,7 +1202,7 @@
       "name": "detect_vector_outliers"
     },
     {
-      "description": "Delete an Apache AGE property graph space, dropping all its nodes, edges, and backing tables. Performs DDL — requires DDL permission enabled.",
+      "description": "Delete an Apache AGE property graph space, dropping all its nodes, edges, and backing tables. Performs DDL — requires DDL permission enabled. Returns an object with `graph_name` and `dropped` (bool).",
       "inputSchema": {
         "properties": {
           "cascade": {
@@ -1244,7 +1244,7 @@
       "name": "dump_database"
     },
     {
-      "description": "Enable a known PostgreSQL extension (CREATE EXTENSION IF NOT EXISTS). Only allowlisted extensions may be enabled. Available only in unrestricted access mode with MCPG_ALLOW_DDL enabled.",
+      "description": "Enable a known PostgreSQL extension (CREATE EXTENSION IF NOT EXISTS). Only allowlisted extensions may be enabled. Available only in unrestricted access mode with MCPG_ALLOW_DDL enabled. Returns an object with `name` and `enabled` (bool).",
       "inputSchema": {
         "properties": {
           "name": {
@@ -1305,7 +1305,7 @@
       "name": "export_query"
     },
     {
-      "description": "Serialise every row in schema.table (up to `limit`) to CSV or JSON. Schema and table names must be plain identifiers.",
+      "description": "Serialise every row in schema.table (up to `limit`) to CSV or JSON. Schema and table names must be plain identifiers. Returns an object with `format`, `row_count`, `truncated` (bool — true when the row count hit `limit`), and `content` (the serialised payload as a string).",
       "inputSchema": {
         "properties": {
           "format": {
@@ -1374,7 +1374,7 @@
       "name": "find_blocking_chains"
     },
     {
-      "description": "Flag columns whose names or types look like they hold sensitive data (passwords, tokens, PII, financial info, health records). Pure heuristic — no row sampling, no value introspection. Categories: credential, financial, contact, identifier, health, government_id, location. Each finding carries a confidence (high / medium / low) so an agent can filter for a first review pass. Treat as a SIGNAL, not a verdict — a column named email_template_id matches the email pattern but isn't itself an email address.",
+      "description": "Flag columns whose names or types look like they hold sensitive data (passwords, tokens, PII, financial info, health records). Pure heuristic — no row sampling, no value introspection. Categories: credential, financial, contact, identifier, health, government_id, location. Each finding carries a confidence (high / medium / low) so an agent can filter for a first review pass. Treat as a SIGNAL, not a verdict — a column named email_template_id matches the email pattern but isn't itself an email address. Returns an object with `findings` (list of `{schema, table, column, data_type, category, confidence, matched_pattern}`) and `summary` counts by category.",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -1391,7 +1391,7 @@
       "name": "find_sensitive_columns"
     },
     {
-      "description": "Find tables and indexes with zero scans since pg_stat was last reset — a strong signal of dead code, but NOT a verdict. Tables report seq+idx scan counts, write counts, and estimated row count; indexes report size and definition. Excludes PRIMARY KEY and UNIQUE indexes (PG needs those regardless of scans). Run this after the database has been hot for a meaningful period — fresh stats produce false positives.",
+      "description": "Find tables and indexes with zero scans since pg_stat was last reset — a strong signal of dead code, but NOT a verdict. Tables report seq+idx scan counts, write counts, and estimated row count; indexes report size and definition. Excludes PRIMARY KEY and UNIQUE indexes (PG needs those regardless of scans). Run this after the database has been hot for a meaningful period — fresh stats produce false positives. Returns an object with `tables` (list of candidate tables with their stats) and `indexes` (list of candidate indexes with size and definition).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -1408,7 +1408,7 @@
       "name": "find_unused_objects"
     },
     {
-      "description": "Rank a text column's documents against a full-text query using PostgreSQL's built-in tsvector/tsquery. The query accepts web-search syntax (quoted phrases, or, - exclusion).\n\nExample: `full_text_search(schema='public', table='articles', column='body', search_query='\"new york\" OR -draft')`",
+      "description": "Rank a text column's documents against a full-text query using PostgreSQL's built-in tsvector/tsquery. The query accepts web-search syntax (quoted phrases, or, - exclusion). Returns a list of objects with the matched row's primary key columns plus `rank` (ts_rank score, higher = better match).\n\nExample: `full_text_search(schema='public', table='articles', column='body', search_query='\"new york\" OR -draft')`",
       "inputSchema": {
         "properties": {
           "column": {
@@ -1450,7 +1450,7 @@
       "name": "full_text_search"
     },
     {
-      "description": "Rank a text column's values by pg_trgm trigram similarity to a search term. mode='word' (default) matches fragments within longer text; mode='full' compares whole strings. Reports available=false if pg_trgm is not installed.\n\nExample: `fuzzy_search(schema='public', table='users', column='name', term='janne', mode='word')`",
+      "description": "Rank a text column's values by pg_trgm trigram similarity to a search term. mode='word' (default) matches fragments within longer text; mode='full' compares whole strings. Reports available=false if pg_trgm is not installed. Returns an object with `available` (bool), `matches` (list of `{value, similarity}` ranked by similarity descending), and `mode`.\n\nExample: `fuzzy_search(schema='public', table='users', column='name', term='janne', mode='word')`",
       "inputSchema": {
         "properties": {
           "column": {
@@ -1514,7 +1514,7 @@
       "name": "generate_diesel_schema"
     },
     {
-      "description": "Read a PostgreSQL schema and emit a Drizzle ORM TypeScript schema string (drizzle-orm/pg-core). Covers tables, columns with PG-native types, primary/foreign keys, unique constraints, indexes, defaults, and enums. Single-column FKs emit column-level .references(); composite FKs are a documented v1 gap. Views, foreign tables, partitions, triggers, and functions are out of scope.",
+      "description": "Read a PostgreSQL schema and emit a Drizzle ORM TypeScript schema string (drizzle-orm/pg-core). Covers tables, columns with PG-native types, primary/foreign keys, unique constraints, indexes, defaults, and enums. Single-column FKs emit column-level .references(); composite FKs are a documented v1 gap. Views, foreign tables, partitions, triggers, and functions are out of scope. Returns the rendered TypeScript `schema.ts` source as a single string.",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -1570,7 +1570,7 @@
       "name": "generate_ent_schemas"
     },
     {
-      "description": "Build a Mermaid graph LR of foreign-key cascade chains in a schema. Each edge runs from the referencing table to the referenced table, labelled with the cascade action(s) on DELETE / UPDATE. By default only FKs with at least one CASCADE / SET NULL / SET DEFAULT action are included — those are the ones that produce a write blast radius. Pass include_all=true to include NO ACTION / RESTRICT FKs too (full FK topology view). Cross-schema FK targets are rendered as separate nodes prefixed with their schema.",
+      "description": "Build a Mermaid graph LR of foreign-key cascade chains in a schema. Each edge runs from the referencing table to the referenced table, labelled with the cascade action(s) on DELETE / UPDATE. By default only FKs with at least one CASCADE / SET NULL / SET DEFAULT action are included — those are the ones that produce a write blast radius. Pass include_all=true to include NO ACTION / RESTRICT FKs too (full FK topology view). Cross-schema FK targets are rendered as separate nodes prefixed with their schema. Returns the Mermaid `graph LR` diagram as a string.",
       "inputSchema": {
         "properties": {
           "include_all": {
@@ -1592,7 +1592,7 @@
       "name": "generate_fk_cascade_graph"
     },
     {
-      "description": "Generate a Mermaid flowchart diagram representing nodes and relationships in a property graph to visualize its schema and topology.",
+      "description": "Generate a Mermaid flowchart diagram representing nodes and relationships in a property graph to visualize its schema and topology. Returns the Mermaid flowchart as a string.",
       "inputSchema": {
         "properties": {
           "graph_name": {
@@ -1641,7 +1641,7 @@
       "name": "generate_jooq_config"
     },
     {
-      "description": "Read a PostgreSQL schema and emit a valid Prisma `.prisma` schema string (mirrors `prisma db pull`). Covers tables, columns, primary/foreign keys, unique constraints, indexes, and enums. Views, foreign tables, partitions, triggers, functions, and policies are out of scope; unmappable types fall back to `Unsupported(\"...\")`.",
+      "description": "Read a PostgreSQL schema and emit a valid Prisma `.prisma` schema string (mirrors `prisma db pull`). Covers tables, columns, primary/foreign keys, unique constraints, indexes, and enums. Views, foreign tables, partitions, triggers, functions, and policies are out of scope; unmappable types fall back to `Unsupported(\"...\")`. Returns the rendered `schema.prisma` source as a single string.",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -1658,7 +1658,7 @@
       "name": "generate_prisma_schema"
     },
     {
-      "description": "Render a Mermaid ER diagram for a schema. Views and foreign tables are excluded; partitions are excluded by default — pass include_partitions=true to draw each partition as its own entity.\n\nExample: `generate_schema_diagram(schema='public', include_partitions=false)`",
+      "description": "Render a Mermaid ER diagram for a schema. Views and foreign tables are excluded; partitions are excluded by default — pass include_partitions=true to draw each partition as its own entity. Returns the Mermaid `erDiagram` as a string ready to paste into a Markdown block.\n\nExample: `generate_schema_diagram(schema='public', include_partitions=false)`",
       "inputSchema": {
         "properties": {
           "include_partitions": {
@@ -1680,7 +1680,7 @@
       "name": "generate_schema_diagram"
     },
     {
-      "description": "Generate a detailed Markdown reference of a schema's tables, columns, constraints, indexes, views, foreign tables, and custom enums along with comments / descriptions. Optional include_samples fetches a few distinct, non-null values for each column.\n\nExample: `generate_schema_docs(schema='public', include_samples=true)`",
+      "description": "Generate a detailed Markdown reference of a schema's tables, columns, constraints, indexes, views, foreign tables, and custom enums along with comments / descriptions. Optional include_samples fetches a few distinct, non-null values for each column. Returns a single Markdown document as a string.\n\nExample: `generate_schema_docs(schema='public', include_samples=true)`",
       "inputSchema": {
         "properties": {
           "include_samples": {
@@ -1702,7 +1702,7 @@
       "name": "generate_schema_docs"
     },
     {
-      "description": "Read a PostgreSQL schema and emit a SQLAlchemy 2.0 declarative models file (DeclarativeBase + Mapped[T] + mapped_column). Covers tables, columns with PG-native types (incl. jsonb via sqlalchemy.dialects.postgresql.JSONB), primary keys, single-column FKs via ForeignKey(), unique constraints (column-level + composite via __table_args__), defaults, and enums (emitted as Python enum.Enum classes). Composite FKs are a documented v1 gap.",
+      "description": "Read a PostgreSQL schema and emit a SQLAlchemy 2.0 declarative models file (DeclarativeBase + Mapped[T] + mapped_column). Covers tables, columns with PG-native types (incl. jsonb via sqlalchemy.dialects.postgresql.JSONB), primary keys, single-column FKs via ForeignKey(), unique constraints (column-level + composite via __table_args__), defaults, and enums (emitted as Python enum.Enum classes). Composite FKs are a documented v1 gap. Returns the rendered Python `models.py` source as a single string.",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -1719,7 +1719,7 @@
       "name": "generate_sqlalchemy_models"
     },
     {
-      "description": "Read a PostgreSQL schema and emit a sqlc-friendly schema.sql (plain DDL). Order: CREATE SCHEMA, CREATE TYPE for each enum, CREATE TABLE statements (columns only), ALTER TABLE ADD CONSTRAINT (PK / unique / check / foreign key in that order), then CREATE INDEX for non-constraint indexes. The file replays cleanly against an empty database so FKs land after all referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed.",
+      "description": "Read a PostgreSQL schema and emit a sqlc-friendly schema.sql (plain DDL). Order: CREATE SCHEMA, CREATE TYPE for each enum, CREATE TABLE statements (columns only), ALTER TABLE ADD CONSTRAINT (PK / unique / check / foreign key in that order), then CREATE INDEX for non-constraint indexes. The file replays cleanly against an empty database so FKs land after all referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed. Returns the rendered `schema.sql` text as a single string.",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -1843,7 +1843,7 @@
       "name": "get_metrics_exposition"
     },
     {
-      "description": "Fetch the parsed reloptions for a single BM25 index (schema.index). Same shape as one entry of ``list_pg_search_indexes`` — typed accessors for the 13 documented options plus the raw ``index_options`` dict. Raises when the extension is not installed or no BM25 index by that name exists.",
+      "description": "Fetch the parsed reloptions for a single BM25 index (schema.index). Same shape as one entry of ``list_pg_search_indexes`` — typed accessors for the 13 documented options plus the raw ``index_options`` dict. Raises when the extension is not installed or no BM25 index by that name exists. Returns an object with `schema`, `index`, the typed option fields, and `index_options` (raw reloptions dict for forward-compat).",
       "inputSchema": {
         "properties": {
           "index": {
@@ -1896,7 +1896,7 @@
       "name": "get_turboquant_heap_stats"
     },
     {
-      "description": "Fetch the tq_index_metadata payload for a single turboquant index (schema.index). Documented fields are surfaced as typed attributes; the full upstream payload is preserved in ``raw_metadata`` so advisors can reach unanticipated fields. Raises when the extension is not installed or no turboquant index by that name exists.",
+      "description": "Fetch the tq_index_metadata payload for a single turboquant index (schema.index). Documented fields are surfaced as typed attributes; the full upstream payload is preserved in ``raw_metadata`` so advisors can reach unanticipated fields. Raises when the extension is not installed or no turboquant index by that name exists. Returns an object with `schema`, `index`, `algorithm_version`, `quantizer_family`, `residual_sketch_kind`, `fast_path_eligible`, `capability_flags`, `delta_state`, `maintenance_recommended`, and `raw_metadata` (full upstream payload).",
       "inputSchema": {
         "properties": {
           "index": {
@@ -2232,7 +2232,7 @@
       "name": "import_vectors"
     },
     {
-      "description": "Lint table / column / index naming in a schema. Detects the majority case style (snake_case / camelCase / PascalCase / SCREAMING_SNAKE) per schema and per table, then flags outliers. Also flags indexes whose names do not start with a conventional prefix (idx_, ix_, pk_, uq_, fk_ by default). Findings carry the offender's style and the detected majority — agents can use the style field to filter for renames vs accept-as-is. Pure read.",
+      "description": "Lint table / column / index naming in a schema. Detects the majority case style (snake_case / camelCase / PascalCase / SCREAMING_SNAKE) per schema and per table, then flags outliers. Also flags indexes whose names do not start with a conventional prefix (idx_, ix_, pk_, uq_, fk_ by default). Findings carry the offender's style and the detected majority — agents can use the style field to filter for renames vs accept-as-is. Pure read. Returns an object with `schema_style` (detected majority), `findings` (list of style outliers), and `index_prefix_findings` (indexes with non-conventional prefixes).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2249,7 +2249,7 @@
       "name": "lint_naming_conventions"
     },
     {
-      "description": "List the queries currently running on the server, with each backend's wait event, duration, and the PIDs blocking it.",
+      "description": "List the queries currently running on the server, with each backend's wait event, duration, and the PIDs blocking it. Returns a list of objects with `pid`, `username`, `application`, `state`, `wait_event` (null when not waiting), `duration_seconds`, `query`, and `blocked_by` (list of PIDs holding locks this backend is waiting on).",
       "inputSchema": {
         "properties": {},
         "title": "list_active_queriesArguments",
@@ -2285,7 +2285,7 @@
       "name": "list_audit_events"
     },
     {
-      "description": "List every extension available to the database, with whether it is installed.",
+      "description": "List every extension available to the database, with whether it is installed. Returns a list of objects with `name`, `default_version`, `installed_version` (null when not installed), and `installed` (bool).",
       "inputSchema": {
         "properties": {},
         "title": "list_available_extensionsArguments",
@@ -2294,7 +2294,7 @@
       "name": "list_available_extensions"
     },
     {
-      "description": "List the chunks of a TimescaleDB hypertable with each chunk's range_start / range_end and whether it has been compressed. Empty list when the table is not a hypertable.",
+      "description": "List the chunks of a TimescaleDB hypertable with each chunk's range_start / range_end and whether it has been compressed. Empty list when the table is not a hypertable. Returns an object with `available` (bool) and `chunks` (list of `{chunk_name, range_start, range_end, is_compressed, total_size_bytes}`).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2316,7 +2316,7 @@
       "name": "list_chunks"
     },
     {
-      "description": "List the standalone composite types in a schema with their attributes.",
+      "description": "List the standalone composite types in a schema with their attributes. Returns a list of objects with `name` and `attributes` (list of `{name, data_type}` for each field).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2333,7 +2333,7 @@
       "name": "list_composite_types"
     },
     {
-      "description": "List a table's constraints — primary/foreign keys, unique, check, exclusion.\n\nExample: `list_constraints(schema='public', table='orders')`",
+      "description": "List a table's constraints — primary/foreign keys, unique, check, exclusion. Returns a list of objects with `name`, `type`, and `definition` (the constraint SQL).\n\nExample: `list_constraints(schema='public', table='orders')`",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2373,7 +2373,7 @@
       "name": "list_cursors"
     },
     {
-      "description": "List the domain types in a schema, with base type, default, and check constraints.",
+      "description": "List the domain types in a schema, with base type, default, and check constraints. Returns a list of objects with `name`, `base_type`, `nullable`, `default`, and `constraints` (list of CHECK clauses).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2390,7 +2390,7 @@
       "name": "list_domains"
     },
     {
-      "description": "List the enum types in a schema, with their labels in sort order.",
+      "description": "List the enum types in a schema, with their labels in sort order. Returns a list of objects with `name` and `values` (list of label strings, in the order defined).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2407,7 +2407,7 @@
       "name": "list_enums"
     },
     {
-      "description": "List the extensions installed in the database.",
+      "description": "List the extensions installed in the database. Returns a list of objects with `name` and `version`.",
       "inputSchema": {
         "properties": {},
         "title": "list_extensionsArguments",
@@ -2416,7 +2416,7 @@
       "name": "list_extensions"
     },
     {
-      "description": "List the foreign-data wrappers installed in the database.",
+      "description": "List the foreign-data wrappers installed in the database. Returns a list of objects with `name`, `handler` (qualified function name), `validator`, and `options` (dict of wrapper-specific options).",
       "inputSchema": {
         "properties": {},
         "title": "list_foreign_data_wrappersArguments",
@@ -2425,7 +2425,7 @@
       "name": "list_foreign_data_wrappers"
     },
     {
-      "description": "List foreign keys in a schema, resolved to columns and referenced table.\n\nExample: `list_foreign_keys(schema='public')`",
+      "description": "List foreign keys in a schema, resolved to columns and referenced table. Returns a list of objects with `name`, `from_table`, `from_columns`, `to_schema`, `to_table`, `to_columns`.\n\nExample: `list_foreign_keys(schema='public')`",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2442,7 +2442,7 @@
       "name": "list_foreign_keys"
     },
     {
-      "description": "List the foreign servers defined in the database, with their FDW and options.",
+      "description": "List the foreign servers defined in the database, with their FDW and options. Returns a list of objects with `name`, `wrapper` (foreign-data wrapper name), `type`, `version`, and `options` (dict of server options).",
       "inputSchema": {
         "properties": {},
         "title": "list_foreign_serversArguments",
@@ -2451,7 +2451,7 @@
       "name": "list_foreign_servers"
     },
     {
-      "description": "List the foreign tables in a schema, with their server and options.",
+      "description": "List the foreign tables in a schema, with their server and options. Returns a list of objects with `name`, `server` (foreign-server name), and `options` (dict of per-table options).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2468,7 +2468,7 @@
       "name": "list_foreign_tables"
     },
     {
-      "description": "List the functions and procedures defined in a schema.",
+      "description": "List the functions and procedures defined in a schema. Returns a list of objects with `name`, `kind` ('function' or 'procedure'), `arguments` (signature string), `returns` (return-type string), and `language` (plpgsql / sql / c / etc.).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2485,7 +2485,7 @@
       "name": "list_functions"
     },
     {
-      "description": "List every GENERATED ALWAYS AS (...) STORED column in a schema, with its data type, the underlying expression, and whether it's stored or virtual. PostgreSQL today supports only the stored form; the kind field is reported anyway so the response shape is forward-compatible when PG adds virtual columns.",
+      "description": "List every GENERATED ALWAYS AS (...) STORED column in a schema, with its data type, the underlying expression, and whether it's stored or virtual. PostgreSQL today supports only the stored form; the kind field is reported anyway so the response shape is forward-compatible when PG adds virtual columns. Returns a list of objects with `schema`, `table`, `column`, `data_type`, `expression`, `kind` ('stored' today; reserved for 'virtual').",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2502,7 +2502,7 @@
       "name": "list_generated_columns"
     },
     {
-      "description": "List the privileges granted on a table — who may do what to it.",
+      "description": "List the privileges granted on a table — who may do what to it. Returns a list of objects with `grantee`, `privilege` (SELECT / INSERT / UPDATE / DELETE / TRUNCATE / REFERENCES / TRIGGER), `grantable` (bool — may the grantee regrant), and `grantor`.",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2524,7 +2524,7 @@
       "name": "list_grants"
     },
     {
-      "description": "List all active Apache AGE property graphs in the database.",
+      "description": "List all active Apache AGE property graphs in the database. Returns a list of objects with `name` (graph name) and `oid`.",
       "inputSchema": {
         "properties": {},
         "title": "list_graphsArguments",
@@ -2533,7 +2533,7 @@
       "name": "list_graphs"
     },
     {
-      "description": "List every TimescaleDB hypertable visible to the current role, with chunk count, compression flag, and total size. Reports available=false when the timescaledb extension is not installed.",
+      "description": "List every TimescaleDB hypertable visible to the current role, with chunk count, compression flag, and total size. Reports available=false when the timescaledb extension is not installed. Returns an object with `available` (bool) and `hypertables` (list of `{schema, table, num_chunks, compression_enabled, total_size_bytes}`).",
       "inputSchema": {
         "properties": {},
         "title": "list_hypertablesArguments",
@@ -2542,7 +2542,7 @@
       "name": "list_hypertables"
     },
     {
-      "description": "List the indexes defined on a table.\n\nExample: `list_indexes(schema='public', table='users')`",
+      "description": "List the indexes defined on a table. Returns a list of objects with `name`, `method` (btree / gin / gist / brin / hash / spgist / hnsw / ivfflat / …), `definition` (the CREATE INDEX statement), and `partitioned`.\n\nExample: `list_indexes(schema='public', table='users')`",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2579,7 +2579,7 @@
       "name": "list_locks"
     },
     {
-      "description": "List active LISTEN subscriptions in this server process as {subscription_id, channel} pairs. Subscriptions are process-local and lost on restart.",
+      "description": "List active LISTEN subscriptions in this server process as {subscription_id, channel} pairs. Subscriptions are process-local and lost on restart. Returns a list of objects with `subscription_id` and `channel`.",
       "inputSchema": {
         "properties": {},
         "title": "list_notification_subscriptionsArguments",
@@ -2588,7 +2588,7 @@
       "name": "list_notification_subscriptions"
     },
     {
-      "description": "Describe how a table is partitioned (strategy and bounds) and list its partitions.",
+      "description": "Describe how a table is partitioned (strategy and bounds) and list its partitions. Returns an object with `partitioned` (bool), `strategy` ('range' / 'list' / 'hash' or null), and `partitions` (a list of `{name, bounds}` for each partition).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2628,7 +2628,7 @@
       "name": "list_pg_search_indexes"
     },
     {
-      "description": "List the Row-Level-Security policies on a table, and whether row security is enabled.",
+      "description": "List the Row-Level-Security policies on a table, and whether row security is enabled. Returns an object with `rls_enabled` (bool) and `policies` — a list of `{name, command (SELECT/INSERT/UPDATE/DELETE/ALL), permissive (bool), roles, using_expression, check_expression}`.",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2650,7 +2650,7 @@
       "name": "list_policies"
     },
     {
-      "description": "List logical-replication publications with the tables and operations they include.",
+      "description": "List logical-replication publications with the tables and operations they include. Returns a list of objects with `name`, `owner`, `all_tables` (bool), `publishes_insert` / `publishes_update` / `publishes_delete` / `publishes_truncate` (bools), and `tables` (list of `schema.table` strings).",
       "inputSchema": {
         "properties": {},
         "title": "list_publicationsArguments",
@@ -2668,7 +2668,7 @@
       "name": "list_replicas"
     },
     {
-      "description": "List the database roles and their attributes, excluding PostgreSQL's own roles unless include_system is true.",
+      "description": "List the database roles and their attributes, excluding PostgreSQL's own roles unless include_system is true. Returns a list of objects with `name`, `superuser`, `create_role`, `create_db`, `can_login`, `replication`, `bypass_rls`, `connection_limit`, `member_of`.",
       "inputSchema": {
         "properties": {
           "include_system": {
@@ -2683,7 +2683,7 @@
       "name": "list_roles"
     },
     {
-      "description": "List database schemas, excluding PostgreSQL's own schemas unless include_system is true.\n\nExample: `list_schemas(include_system=false)`",
+      "description": "List database schemas, excluding PostgreSQL's own schemas unless include_system is true. Returns a list of objects with `name`.\n\nExample: `list_schemas(include_system=false)`",
       "inputSchema": {
         "properties": {
           "include_system": {
@@ -2698,7 +2698,7 @@
       "name": "list_schemas"
     },
     {
-      "description": "List the sequences defined in a schema, with their range, increment, and last value.",
+      "description": "List the sequences defined in a schema, with their range, increment, and last value. Returns a list of objects with `name`, `data_type`, `start_value`, `min_value`, `max_value`, `increment`, `cycle` (bool), `last_value`.",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2724,7 +2724,7 @@
       "name": "list_subscriptions"
     },
     {
-      "description": "List the tables and views in a schema, flagging partitioned tables and partitions.\n\nExample: `list_tables(schema='public')`",
+      "description": "List the tables and views in a schema, flagging partitioned tables and partitions. Returns a list of objects with `name`, `type` ('table' or 'view'), `partitioned`, `is_partition`.\n\nExample: `list_tables(schema='public')`",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2741,7 +2741,7 @@
       "name": "list_tables"
     },
     {
-      "description": "List the user-defined triggers on a table.",
+      "description": "List the user-defined triggers on a table. Returns a list of objects with `name`, `function` (the called function's qualified name), and `definition` (the CREATE TRIGGER SQL).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2806,7 +2806,7 @@
       "name": "list_unapplied_migration_scripts"
     },
     {
-      "description": "List role-to-foreign-server mappings; the catch-all appears as user='public'.",
+      "description": "List role-to-foreign-server mappings; the catch-all appears as user='public'. Returns a list of objects with `user` (role name or 'public'), `server` (foreign-server name), and `options` (dict of mapping options, e.g. credentials).",
       "inputSchema": {
         "properties": {},
         "title": "list_user_mappingsArguments",
@@ -2815,7 +2815,7 @@
       "name": "list_user_mappings"
     },
     {
-      "description": "List the views and materialized views in a schema, with their definitions.",
+      "description": "List the views and materialized views in a schema, with their definitions. Returns a list of objects with `name`, `materialized` (bool), and `definition` (the SELECT SQL).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -2832,7 +2832,7 @@
       "name": "list_views"
     },
     {
-      "description": "Insert one row into mcpg_rag.rerank_events — one (query, candidate) pair from a RAG reranker step. ``query_hash`` is the caller-computed join key (raw bytes; SHA-256 is conventional but not required). ``bi_encoder_score`` may be null (some retrieval paths don't expose a score); ``cross_encoder_score`` is required. ``extra`` is a free-form dict serialised as jsonb (caller-specific fields: latency_ms, variant tag, user_id, etc). Available only in unrestricted mode; the table must be created first via ``setup_rag_telemetry``.",
+      "description": "Insert one row into mcpg_rag.rerank_events — one (query, candidate) pair from a RAG reranker step. ``query_hash`` is the caller-computed join key (raw bytes; SHA-256 is conventional but not required). ``bi_encoder_score`` may be null (some retrieval paths don't expose a score); ``cross_encoder_score`` is required. ``extra`` is a free-form dict serialised as jsonb (caller-specific fields: latency_ms, variant tag, user_id, etc). Available only in unrestricted mode; the table must be created first via ``setup_rag_telemetry``. Returns an object with `event_id` (the new mcpg_rag.rerank_events row id).",
       "inputSchema": {
         "properties": {
           "bi_encoder_rank": {
@@ -3100,7 +3100,7 @@
       "name": "monitor_embedding_drift"
     },
     {
-      "description": "Surface every active CREATE INDEX and its progress from pg_stat_progress_create_index (PG12+, no extension). One row per build with pid, schema.relation.index_name, the command, phase label, blocks_done/total, tuples_done/total, and a computed progress_pct (blocks first, tuples as fallback, null when neither phase reports a denominator). Useful next to list_active_queries when an HNSW / IVFFlat build on a big table is taking longer than expected.",
+      "description": "Surface every active CREATE INDEX and its progress from pg_stat_progress_create_index (PG12+, no extension). One row per build with pid, schema.relation.index_name, the command, phase label, blocks_done/total, tuples_done/total, and a computed progress_pct (blocks first, tuples as fallback, null when neither phase reports a denominator). Useful next to list_active_queries when an HNSW / IVFFlat build on a big table is taking longer than expected. Returns a list of objects with `pid`, `schema`, `relation`, `index_name`, `command`, `phase`, `blocks_done`, `blocks_total`, `tuples_done`, `tuples_total`, and `progress_pct` (null when no denominator is reported).",
       "inputSchema": {
         "properties": {},
         "title": "monitor_index_buildArguments",
@@ -3143,7 +3143,7 @@
       "name": "optimize_query"
     },
     {
-      "description": "Register a partitioned table with pg_partman. ``partition_type`` must be 'range', 'list', or 'native'. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_partman installed.",
+      "description": "Register a partitioned table with pg_partman. ``partition_type`` must be 'range', 'list', or 'native'. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_partman installed. Returns an object with `parent_table` and `detail` (the partman registration status string).",
       "inputSchema": {
         "properties": {
           "control_column": {
@@ -3202,7 +3202,7 @@
       "name": "partman_drop_partition"
     },
     {
-      "description": "Run pg_partman maintenance — add forward partitions and drop retired ones. Pass parent_table to scope to one parent; omit to run for every managed parent. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL.",
+      "description": "Run pg_partman maintenance — add forward partitions and drop retired ones. Pass parent_table to scope to one parent; omit to run for every managed parent. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL. Returns an object with `parent_table` (the scoped name or '*' for all) and `detail` (maintenance summary string).",
       "inputSchema": {
         "properties": {
           "parent_table": {
@@ -3559,7 +3559,7 @@
       "name": "prune_audit_events"
     },
     {
-      "description": "Query and summarize historical migrations applied to the database by popular migration frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). Allows filtering by schema.",
+      "description": "Query and summarize historical migrations applied to the database by popular migration frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). Allows filtering by schema. Returns an object with one optional list per detected framework: `alembic`, `flyway`, `diesel`, `django`, `prisma`, `golang_migrate`, `goose`, `sequelize`. Each entry is null when the framework's table isn't present; otherwise it carries the framework-specific row shape (e.g. alembic has `{version_num}`; flyway has `{installed_rank, version, description, type, ...}`).",
       "inputSchema": {
         "properties": {
           "schema": {
@@ -3694,7 +3694,7 @@
       "name": "read_pg_wal_stats"
     },
     {
-      "description": "Compute corpus-percentile thresholds from accumulated ``mcpg_rag.efficiency_observations`` history. Phase E currently adapts three thresholds: ``baseline_recall_low`` (p10 of recall_baseline), ``ranking_degraded_spearman`` (p10 of spearman), and ``pruning_ineffective`` (p10 of pages_pruned_ratio_p50). The remaining four thresholds stay at their hardcoded defaults. Filters by ``days`` window + optional ``backend`` / ``metric`` / ``k`` so callers can ask 'what's normal for HNSW+cosine+k=10 in this deployment' vs 'what's normal globally'. Falls back to defaults (with ``derived_from_corpus=false``) when the corpus is smaller than the minimum required.",
+      "description": "Compute corpus-percentile thresholds from accumulated ``mcpg_rag.efficiency_observations`` history. Phase E currently adapts three thresholds: ``baseline_recall_low`` (p10 of recall_baseline), ``ranking_degraded_spearman`` (p10 of spearman), and ``pruning_ineffective`` (p10 of pages_pruned_ratio_p50). The remaining four thresholds stay at their hardcoded defaults. Filters by ``days`` window + optional ``backend`` / ``metric`` / ``k`` so callers can ask 'what's normal for HNSW+cosine+k=10 in this deployment' vs 'what's normal globally'. Falls back to defaults (with ``derived_from_corpus=false``) when the corpus is smaller than the minimum required. Returns an object with `corpus_size`, `derived_from_corpus` (bool), and the threshold fields (`baseline_recall_low`, `baseline_recall_low_adapted`, `ranking_degraded_spearman`, `ranking_degraded_spearman_adapted`, `pruning_ineffective`, `pruning_ineffective_adapted`, `rerank_lift_flat_delta`, `rerank_lift_steep_low`, `rerank_lift_steep_high`, and `ranking_degraded_recall`).",
       "inputSchema": {
         "properties": {
           "backend": {
@@ -3777,7 +3777,7 @@
       "name": "recommend_index_drops"
     },
     {
-      "description": "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan.\n\nExample: `recommend_indexes(min_live_tuples=10000)`",
+      "description": "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan. Returns a list of objects with `schema`, `table`, `live_tuples`, `sequential_scans`, `index_scans`, and a `reason` explaining why the table is a candidate.\n\nExample: `recommend_indexes(min_live_tuples=10000)`",
       "inputSchema": {
         "properties": {
           "min_live_tuples": {
@@ -3919,7 +3919,7 @@
       "name": "recommend_vector_quantization"
     },
     {
-      "description": "Insert one row into mcpg_rag.efficiency_observations - one observation per analyze_vector_search_efficiency run. Fields mirror VectorEfficiencyReport one-to-one; pass the report's schema_name / table_name / column_name / index_name / backend / metric / k / sample_size / recall_baseline / rerank_lift_curve (as list[dict]) / spearman / kendall / pages_pruned_ratio_p50 / duration_seconds + optional extra dict. Tool arguments recall_baseline / spearman / kendall correspond to VectorEfficiencyReport.recall_at_k_baseline / score_rank_correlation_spearman / score_rank_correlation_kendall respectively. Available only in unrestricted mode; the table must be created first via setup_efficiency_observations.",
+      "description": "Insert one row into mcpg_rag.efficiency_observations - one observation per analyze_vector_search_efficiency run. Fields mirror VectorEfficiencyReport one-to-one; pass the report's schema_name / table_name / column_name / index_name / backend / metric / k / sample_size / recall_baseline / rerank_lift_curve (as list[dict]) / spearman / kendall / pages_pruned_ratio_p50 / duration_seconds + optional extra dict. Tool arguments recall_baseline / spearman / kendall correspond to VectorEfficiencyReport.recall_at_k_baseline / score_rank_correlation_spearman / score_rank_correlation_kendall respectively. Available only in unrestricted mode; the table must be created first via setup_efficiency_observations. Returns an object with `observation_id` (the new mcpg_rag.efficiency_observations row id).",
       "inputSchema": {
         "properties": {
           "backend": {
@@ -4060,7 +4060,7 @@
       "name": "record_efficiency_observation"
     },
     {
-      "description": "REINDEX a pg_search BM25 index. Pre-flight confirms the named index actually uses the bm25 access method (catalog lookup on pg_am) before running. ``concurrently=True`` is the default and runs on autocommit since REINDEX CONCURRENTLY can't run inside a transaction. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_search installed.",
+      "description": "REINDEX a pg_search BM25 index. Pre-flight confirms the named index actually uses the bm25 access method (catalog lookup on pg_am) before running. ``concurrently=True`` is the default and runs on autocommit since REINDEX CONCURRENTLY can't run inside a transaction. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_search installed. Returns an object with `schema`, `index`, `concurrently` (bool), and `reindex_sql` (the rendered REINDEX statement that ran).",
       "inputSchema": {
         "properties": {
           "concurrently": {
@@ -4087,7 +4087,7 @@
       "name": "reindex_pg_search_index"
     },
     {
-      "description": "REINDEX a turboquant index. Pre-flight confirms the named index is actually a turboquant index (catalog lookup on pg_am) before running. ``concurrently=True`` is the default and runs on autocommit since REINDEX CONCURRENTLY can't run inside a transaction. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed.",
+      "description": "REINDEX a turboquant index. Pre-flight confirms the named index is actually a turboquant index (catalog lookup on pg_am) before running. ``concurrently=True`` is the default and runs on autocommit since REINDEX CONCURRENTLY can't run inside a transaction. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed. Returns an object with `schema`, `index`, `concurrently` (bool), and `reindex_sql` (the rendered REINDEX statement that ran).",
       "inputSchema": {
         "properties": {
           "concurrently": {
@@ -4114,7 +4114,7 @@
       "name": "reindex_turboquant_index"
     },
     {
-      "description": "Restore a dump into the connected database. `format='plain'` pipes the SQL text in `content` through psql with --single-transaction + ON_ERROR_STOP; `custom`/`tar` base64-decode `content` and pipe the bytes through pg_restore. Credentials pass through libpq env vars, never on the command line. Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL.",
+      "description": "Restore a dump into the connected database. `format='plain'` pipes the SQL text in `content` through psql with --single-transaction + ON_ERROR_STOP; `custom`/`tar` base64-decode `content` and pipe the bytes through pg_restore. Credentials pass through libpq env vars, never on the command line. Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL. Returns an object with `succeeded` (bool), `stdout`, `stderr`, `exit_code`, `timed_out` (bool), and `output_truncated` (bool).",
       "inputSchema": {
         "properties": {
           "content": {
@@ -4153,7 +4153,7 @@
       "name": "run_advisors"
     },
     {
-      "description": "Execute an openCypher query on a specific graph database. Supports read queries (MATCH) and write/modifying queries (CREATE, SET, DELETE, MERGE, REMOVE).",
+      "description": "Execute an openCypher query on a specific graph database. Supports read queries (MATCH) and write/modifying queries (CREATE, SET, DELETE, MERGE, REMOVE). Returns an object with `columns` (list of result column names) and `rows` (list of result rows as dicts keyed by column).",
       "inputSchema": {
         "properties": {
           "cypher_query": {
@@ -4216,7 +4216,7 @@
       "name": "run_ddl"
     },
     {
-      "description": "Run VACUUM or ANALYZE against one table (operation: vacuum, analyze, or vacuum_analyze). Available only in unrestricted mode.",
+      "description": "Run VACUUM or ANALYZE against one table (operation: vacuum, analyze, or vacuum_analyze). Available only in unrestricted mode. Returns an object with `operation`, `target` (the qualified table name), and `maintenance_sql` (the rendered DDL that actually ran).",
       "inputSchema": {
         "properties": {
           "operation": {
@@ -4312,7 +4312,7 @@
       "name": "run_write"
     },
     {
-      "description": "Register a pg_cron job. ``schedule`` is a cron expression or pg_cron interval shortcut (e.g. '30 seconds'). Available only in unrestricted mode; requires pg_cron installed.",
+      "description": "Register a pg_cron job. ``schedule`` is a cron expression or pg_cron interval shortcut (e.g. '30 seconds'). Available only in unrestricted mode; requires pg_cron installed. Returns an object with `jobid` (the pg_cron job id), `name`, and `schedule`.",
       "inputSchema": {
         "properties": {
           "command": {
@@ -4497,7 +4497,7 @@
       "name": "summarize_table"
     },
     {
-      "description": "Terminate a backend PID (pg_terminate_backend), closing its connection. Available only in unrestricted mode.",
+      "description": "Terminate a backend PID (pg_terminate_backend), closing its connection. Available only in unrestricted mode. Returns an object with `pid`, `action` ('terminate'), and `succeeded` (bool).",
       "inputSchema": {
         "properties": {
           "pid": {
@@ -4642,7 +4642,7 @@
       "name": "tune_vector_index"
     },
     {
-      "description": "Run tq_approx_candidates against a turboquant index — approximate k-NN retrieval, no exact rerank. ``metric`` is 'cosine' | 'inner_product' | 'l2' (mapped to upstream's runtime metric text). ``half_precision=True`` switches to the halfvec overload. ``probes`` / ``oversample_factor`` are optional per-query knobs (consider calling ``recommend_turboquant_query_knobs`` first). Requires the pg_turboquant extension.",
+      "description": "Run tq_approx_candidates against a turboquant index — approximate k-NN retrieval, no exact rerank. ``metric`` is 'cosine' | 'inner_product' | 'l2' (mapped to upstream's runtime metric text). ``half_precision=True`` switches to the halfvec overload. ``probes`` / ``oversample_factor`` are optional per-query knobs (consider calling ``recommend_turboquant_query_knobs`` first). Requires the pg_turboquant extension. Returns a list of candidate objects with `candidate_id`, `approximate_distance`, and `approximate_rank`.",
       "inputSchema": {
         "properties": {
           "candidate_limit": {
@@ -5049,7 +5049,7 @@
       "name": "vector_search"
     },
     {
-      "description": "Verify the HMAC-SHA256 signature chain of persisted audit events in mcpg_audit.events.",
+      "description": "Verify the HMAC-SHA256 signature chain of persisted audit events in mcpg_audit.events. Returns an object with `verified` (bool), `events_checked` (int), the `first_event_id` and `last_event_id` covered by the walk, and (on failure) `error` and `first_invalid_id` pointing at where the chain broke.",
       "inputSchema": {
         "properties": {},
         "title": "verify_audit_chainArguments",
@@ -5067,7 +5067,7 @@
       "name": "verify_connection_encryption"
     },
     {
-      "description": "Walk and reconstruct the lock-wait graph of the database. Detects deadlock cycles, traces linear blocking paths to their root blockers, and renders a Mermaid flowchart representing the lock dependency graph. Read-only.",
+      "description": "Walk and reconstruct the lock-wait graph of the database. Detects deadlock cycles, traces linear blocking paths to their root blockers, and renders a Mermaid flowchart representing the lock dependency graph. Read-only. Returns an object with `cycles` (list of detected cycle PID lists), `paths` (linear blocking paths as PID lists), `roots` (root blocker PIDs), `nodes` (dict keyed by PID with per-backend lock detail), and `mermaid` (the pre-rendered flowchart string).",
       "inputSchema": {
         "properties": {
           "limit": {
