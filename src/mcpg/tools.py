@@ -55,6 +55,7 @@ from mcpg import (
     rag_efficiency,
     rag_telemetry,
     redis_fdw,
+    repack,
     rls,
     schema_diff,
     schema_docs,
@@ -4447,6 +4448,65 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_repack_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_repack_status",
+        description=_with_example(
+            "Report whether PG 19's in-server `REPACK` command is usable. "
+            "On PG < 19 returns `available=false` with a diagnostic pointing "
+            "the agent at the long-standing pg_repack extension shell-out "
+            "path so the fallback is clear. The in-server `REPACK "
+            "CONCURRENTLY` is the headline PG 19 operational win — "
+            "online table rebuild with no blocking writers. "
+            "Returns an object with `available` (bool), `server_version_num` "
+            "(int), `server_version` (the human-readable string), and "
+            "`detail` (a guidance string the agent can surface to the user).",
+            "get_repack_status()",
+        ),
+    )
+    async def get_repack_status(ctx: _Ctx) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            status = await repack.get_repack_status(_driver(ctx))
+            return asdict(status)
+
+        return await _cached_call(ctx, "get_repack_status", _run)
+
+
+def _register_repack_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="repack_table",
+        description=_with_example(
+            "Rebuild a table using PG 19's in-server `REPACK` command. "
+            "Defaults to `concurrently=true` — the non-blocking variant is "
+            "the common ops choice. Cannot run inside a transaction block "
+            "(same constraint as `VACUUM`); runs on an autocommit "
+            "connection via `Database.run_unmanaged`. Requires PG 19+; "
+            "raises an error otherwise (pair with `get_repack_status` to "
+            "feature-detect, or fall back to pg_repack on PG ≤ 18). "
+            "Returns an object with `schema`, `table`, `concurrently` "
+            "(bool), and `repack_sql` (the rendered DDL that actually "
+            "executed — same audit-friendly shape as `maintenance_sql` on "
+            "`run_maintenance`).",
+            "repack_table(schema='public', table='orders', concurrently=True)",
+        ),
+    )
+    async def repack_table(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        concurrently: bool = True,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await repack.repack_table(
+            database,
+            schema=schema,
+            table=table,
+            concurrently=concurrently,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_partman(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="partman_create_parent",
@@ -4789,6 +4849,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_redis_fdw_reads(server)
         _register_pg_prewarm_reads(server)
         _register_pgq_reads(server)
+        _register_repack_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -4798,6 +4859,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_rag_telemetry_write(server)
         _register_data_movement_writes(server)
         _register_pg_prewarm_writes(server)
+        _register_repack_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 196
+    "tool_count": 198
   },
   "tools": [
     {
@@ -2141,6 +2141,15 @@
         "type": "object"
       },
       "name": "get_redis_cache_stats"
+    },
+    {
+      "description": "Report whether PG 19's in-server `REPACK` command is usable. On PG < 19 returns `available=false` with a diagnostic pointing the agent at the long-standing pg_repack extension shell-out path so the fallback is clear. The in-server `REPACK CONCURRENTLY` is the headline PG 19 operational win — online table rebuild with no blocking writers. Returns an object with `available` (bool), `server_version_num` (int), `server_version` (the human-readable string), and `detail` (a guidance string the agent can surface to the user).\n\nExample: `get_repack_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_repack_statusArguments",
+        "type": "object"
+      },
+      "name": "get_repack_status"
     },
     {
       "description": "Return the MCPg server version, access mode, transport, and database connection status.",
@@ -4578,6 +4587,33 @@
         "type": "object"
       },
       "name": "reindex_turboquant_index"
+    },
+    {
+      "description": "Rebuild a table using PG 19's in-server `REPACK` command. Defaults to `concurrently=true` — the non-blocking variant is the common ops choice. Cannot run inside a transaction block (same constraint as `VACUUM`); runs on an autocommit connection via `Database.run_unmanaged`. Requires PG 19+; raises an error otherwise (pair with `get_repack_status` to feature-detect, or fall back to pg_repack on PG ≤ 18). Returns an object with `schema`, `table`, `concurrently` (bool), and `repack_sql` (the rendered DDL that actually executed — same audit-friendly shape as `maintenance_sql` on `run_maintenance`).\n\nExample: `repack_table(schema='public', table='orders', concurrently=True)`",
+      "inputSchema": {
+        "properties": {
+          "concurrently": {
+            "default": true,
+            "title": "Concurrently",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "repack_tableArguments",
+        "type": "object"
+      },
+      "name": "repack_table"
     },
     {
       "description": "Restore a dump into the connected database. `format='plain'` pipes the SQL text in `content` through psql with --single-transaction + ON_ERROR_STOP; `custom`/`tar` base64-decode `content` and pipe the bytes through pg_restore. Credentials pass through libpq env vars, never on the command line. Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL. Returns an object with `succeeded` (bool), `stdout`, `stderr`, `exit_code`, `timed_out` (bool), and `output_truncated` (bool).",
