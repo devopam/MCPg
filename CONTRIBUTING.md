@@ -47,9 +47,16 @@ with a new name; let agents pick via a status probe (`get_pgq_status`-style).
 Deprecation is a separate conversation, gated on telemetry, and would land
 behind its own SemVer-major release.
 
-The `tests/contract/test_tool_surface_snapshot.py` contract test is the
-operational guard — any tool removal trips it. PG 19 readiness work is
-explicitly **additive only**; see
+Two contract tests in `tests/contract/` are the operational guards:
+
+- `test_tool_surface_snapshot.py` — pins every tool's name, description,
+  and JSON input schema; trips on any removal or signature change.
+- `test_tool_return_shapes.py` — auto-derives every tool's underlying
+  dataclass field set by AST-walking `src/mcpg/tools.py`, and pins the
+  field names in a sibling snapshot; trips on any rename or removal of
+  a field on the helper-module dataclass.
+
+PG 19 readiness work is explicitly **additive only**; see
 [`docs/plans/pg19-readiness.md`](docs/plans/pg19-readiness.md) for the
 end-to-end policy.
 

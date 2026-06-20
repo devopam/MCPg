@@ -14,7 +14,7 @@ Concretely when writing a PR:
 
 - **Don't delete a tool** — the `tests/contract/test_tool_surface_snapshot.py` contract test will trip if you do.
 - **Don't rename a tool** — bind the new behaviour to a new name.
-- **Don't change a tool's return shape** — add new fields with safe defaults; never remove or rename existing ones.
+- **Don't change a tool's return shape** — add new fields with safe defaults; never remove or rename existing ones. The `tests/contract/test_tool_return_shapes.py` snapshot pins the dataclass field set per tool, so any rename / removal lights up red in CI.
 - **Version-detect inside the tool when a faster PG ≥ 19 path is available** — keep the PG ≤ 18 fallback in the same function, e.g. `if server_version_num >= 190000: use pg_get_acl() else: use the catalogue-walking query`. The result shape doesn't change; only the SQL underneath does.
 
 The end-to-end PG 19 readiness policy lives in [`docs/plans/pg19-readiness.md`](../plans/pg19-readiness.md).
@@ -363,21 +363,30 @@ Aim for 20-30 tests per medium-sized module (redis_fdw shipped 25, pg_prewarm sh
 
 `# type: ignore[arg-type]` after passing a fake driver is the existing convention — mypy doesn't follow our SqlDriver protocol perfectly, but mypy runs only on `src/mcpg` in CI so the unused-ignore warnings on tests don't gate anything.
 
-## 8. Snapshot regen + contract test
+## 8. Snapshot regen + contract tests
 
-After registering tools, regenerate the snapshot:
+Two contract snapshots live in `tests/contract/`. Regenerate **both** when adding or changing a tool, and commit both diffs alongside the source change.
 
 ```bash
+# Surface snapshot — name / description / inputSchema for every tool.
 MCPG_REGENERATE_TOOL_SNAPSHOT=1 python -m pytest tests/contract/test_tool_surface_snapshot.py
+
+# Return-shape snapshot — dataclass field set for every tool the AST walk
+# can classify. Regenerate whenever a dataclass field set changes (added
+# field, renamed field, etc) — the no-deprecation rule still applies, so
+# renames / removals should be deliberate and reviewed.
+MCPG_REGENERATE_TOOL_RETURN_SHAPES=1 python -m pytest tests/contract/test_tool_return_shapes.py
 ```
 
-Then run the contract test without regen to confirm a clean diff:
+Then run all contract tests without regen to confirm a clean diff:
 
 ```bash
 python -m pytest tests/contract/ tests/unit/test_about.py
 ```
 
 If `test_tool_surface_matches_snapshot` fails after a Gemini review suggestion edited `src/mcpg/tools.py`, regenerate again — the pattern from PR #121.
+
+The return-shape snapshot is the operational guard for the no-deprecation rule on dataclasses: rename or remove a field on `RepackResult` (say) and the snapshot diff makes it visible in review. The auto-derivation works whenever the tool handler follows the standard pattern (`asdict(<module>.<helper>(...))` for scalars, `[asdict(i) for i in <module>.<helper>(...)]` for lists). For ad-hoc-dict handlers, the snapshot records `"opaque"` — that's fine for the handful of code-emitting tools (ORM generators, `describe_self`, etc.) but **stick to the asdict pattern by default** so the new tool is covered by the guard.
 
 ## 9. Quality gate before every commit
 
