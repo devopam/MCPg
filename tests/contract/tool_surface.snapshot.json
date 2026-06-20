@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 182
+    "tool_count": 190
   },
   "tools": [
     {
@@ -2032,6 +2032,15 @@
       "name": "get_pg_search_index_metadata"
     },
     {
+      "description": "Report whether ``pg_prewarm`` (and the supporting ``pg_buffercache``) are installed, and whether ``pg_prewarm`` is listed in ``shared_preload_libraries`` (the autoprewarm worker requires it). Returns an object with `pg_prewarm_installed` (bool), `pg_buffercache_installed` (bool), `autoprewarm_libraries_present` (bool), and `shared_preload_libraries` (the raw setting).\n\nExample: `get_prewarm_extension_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_prewarm_extension_statusArguments",
+        "type": "object"
+      },
+      "name": "get_prewarm_extension_status"
+    },
+    {
       "description": "Best-effort cache metrics for a redis_fdw server. redis_fdw does not ship a uniform stats SQL surface across versions, so the tool validates that the server exists and otherwise reports `available=false` with a diagnostic. Operators wanting live metrics should query Redis directly (INFO / DBSIZE). Returns an object with `server`, `available` (bool), `key_count`, `used_memory_bytes`, and `detail` (a human-readable note).\n\nExample: `get_redis_cache_stats(server='redis_primary')`",
       "inputSchema": {
         "properties": {
@@ -2469,6 +2478,15 @@
       "name": "list_audit_events"
     },
     {
+      "description": "List the pg_cron jobs MCPg registered for autowarm (``jobname LIKE 'mcpg_autowarm%'``). Returns an empty list when ``pg_cron`` is not installed. Returns a list of objects with `jobid`, `jobname`, `schedule` (the cron expression), and `command` (the SELECT the job runs).\n\nExample: `list_autowarm_jobs()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_autowarm_jobsArguments",
+        "type": "object"
+      },
+      "name": "list_autowarm_jobs"
+    },
+    {
       "description": "List every extension available to the database, with whether it is installed. Returns a list of objects with `name`, `default_version`, `installed_version` (null when not installed), and `installed` (bool).",
       "inputSchema": {
         "properties": {},
@@ -2832,6 +2850,33 @@
         "type": "object"
       },
       "name": "list_policies"
+    },
+    {
+      "description": "Report current shared-buffer residency per relation, ranked by blocks-cached descending. Requires the ``pg_buffercache`` extension; returns an empty list when it's missing. Returns a list of objects with `schema`, `table`, `blocks_cached` (8 KiB pages currently in shared buffers), `total_blocks` (the relation's on-disk size in the same unit), `pct_cached` (the residency ratio rounded to 2 decimals), and `dirty_blocks` (pages with pending writes).\n\nExample: `list_prewarmed_relations(schema='public', limit=50)`",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 100,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema"
+          }
+        },
+        "title": "list_prewarmed_relationsArguments",
+        "type": "object"
+      },
+      "name": "list_prewarmed_relations"
     },
     {
       "description": "List logical-replication publications with the tables and operations they include. Returns a list of objects with `name`, `owner`, `all_tables` (bool), `publishes_insert` / `publishes_update` / `publishes_delete` / `publishes_truncate` (bools), and `tables` (list of `schema.table` strings).",
@@ -3735,6 +3780,68 @@
       "name": "prepare_migration"
     },
     {
+      "description": "Invoke ``recommend_prewarm_targets`` and prewarm every recommendation in order. ``dry_run=true`` reports what would be prewarmed without invoking pg_prewarm. Per-relation errors are captured and reported in the ``outcomes`` list so one bad relation doesn't fail the whole bulk pass. Returns an object with `dry_run` (bool), `total_blocks` (sum of blocks_prewarmed across successful outcomes), and `outcomes` — a list of objects with `schema`, `relation`, `mode`, `blocks_prewarmed`, and `error` (null on success).\n\nExample: `prewarm_recommended(shared_buffers_budget_pct=60.0, dry_run=False)`",
+      "inputSchema": {
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 20,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "min_heap_blks_read": {
+            "default": 1000,
+            "title": "Min Heap Blks Read",
+            "type": "integer"
+          },
+          "prewarm_mode": {
+            "default": "buffer",
+            "title": "Prewarm Mode",
+            "type": "string"
+          },
+          "shared_buffers_budget_pct": {
+            "default": 60.0,
+            "title": "Shared Buffers Budget Pct",
+            "type": "number"
+          }
+        },
+        "title": "prewarm_recommendedArguments",
+        "type": "object"
+      },
+      "name": "prewarm_recommended"
+    },
+    {
+      "description": "Run ``SELECT pg_prewarm('schema.relation'::regclass, mode)`` once. ``mode`` is one of ``buffer`` (load into shared buffers), ``prefetch`` (OS page cache), or ``read`` (blocking read). Requires pg_prewarm installed. Returns an object with `schema`, `relation`, `mode`, and `blocks_prewarmed`.\n\nExample: `prewarm_relation(schema='public', relation='orders', mode='buffer')`",
+      "inputSchema": {
+        "properties": {
+          "mode": {
+            "default": "buffer",
+            "title": "Mode",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "relation"
+        ],
+        "title": "prewarm_relationArguments",
+        "type": "object"
+      },
+      "name": "prewarm_relation"
+    },
+    {
       "description": "Delete persisted audit events older than older_than_days from mcpg_audit.events — a cron-friendly retention helper for the otherwise-unbounded audit table. Returns the number deleted, the cutoff timestamp, and the rows remaining. Refuses to run when MCPG_AUDIT_INTEGRITY is enabled (pruning would break the HMAC signature chain). Available only in unrestricted mode.",
       "inputSchema": {
         "properties": {
@@ -3992,6 +4099,36 @@
         "type": "object"
       },
       "name": "recommend_pg_search_maintenance"
+    },
+    {
+      "description": "Recommend relations whose first-query latency would benefit from ``pg_prewarm``. Inspects ``pg_stat_user_tables`` + ``pg_statio_user_tables`` to find high cold-miss-rate / seq_scan-dominant relations, and caps the cumulative cost at ``shared_buffers_budget_pct`` * ``shared_buffers`` so the recommendation never silently exceeds shared_buffers. The advisor is read-only — never invokes pg_prewarm itself. Returns an object with `shared_buffers_blocks` (configured shared_buffers in 8 KiB pages), `budget_blocks` (the cap), `total_cost_blocks` (sum of recommendations actually returned), and `candidates` — a list of objects with `schema`, `relation`, `reason` (`seq_scan_dominant` / `high_cold_miss_rate` / `small_hot_relation_uncached` / `index_in_critical_path`), `prewarm_mode`, `estimated_buffer_cost`, `heap_blks_read`, `heap_blks_hit`, `cache_miss_ratio`, and `ready_to_run_sql`.\n\nExample: `recommend_prewarm_targets(shared_buffers_budget_pct=60.0, limit=10)`",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 20,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "min_heap_blks_read": {
+            "default": 1000,
+            "title": "Min Heap Blks Read",
+            "type": "integer"
+          },
+          "prewarm_mode": {
+            "default": "buffer",
+            "title": "Prewarm Mode",
+            "type": "string"
+          },
+          "shared_buffers_budget_pct": {
+            "default": 60.0,
+            "title": "Shared Buffers Budget Pct",
+            "type": "number"
+          }
+        },
+        "title": "recommend_prewarm_targetsArguments",
+        "type": "object"
+      },
+      "name": "recommend_prewarm_targets"
     },
     {
       "description": "Recommend tables that would benefit from a Redis cache layer. Inspects ``pg_stat_user_tables`` for read-heavy, low-write relations whose working set fits comfortably in Redis (default: read/write ratio ≥ 10, ≥ 1000 reads, ≤ 1M rows). When ``server`` is provided the generated ``ready_to_run_sql`` stub targets that server name; otherwise the stub uses a placeholder operators must substitute. Advisor is read-only — never touches Redis itself. Returns an object with `server` and `candidates` — a list of objects with `schema`, `table`, `reads`, `writes`, `read_write_ratio`, `estimated_row_count`, `reason` (`read_only_lookup_table` / `small_hot_relation` / `read_heavy_low_write` / `moderate_read_dominant`), and `ready_to_run_sql` (a CREATE FOREIGN TABLE stub).\n\nExample: `recommend_redis_cache_targets(server='redis_primary', limit=10)`",
@@ -4547,6 +4684,46 @@
       "name": "run_write"
     },
     {
+      "description": "Register a pg_cron job that calls the bulk prewarm helper at ``schedule``. Default schedule is ``@reboot`` — the canonical 'warm after restart' loop. Requires pg_cron installed. The cron command embeds the budget / limit / mode arguments and calls a `mcpg.prewarm_recommended_cron(...)` SQL function the operator must install separately (template in ``docs/plans/pg-prewarm-advisor.md``). Returns an object with `jobid`, `name`, and `schedule`.\n\nExample: `schedule_autowarm(name='mcpg_autowarm', schedule='@reboot')`",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 20,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "min_heap_blks_read": {
+            "default": 1000,
+            "title": "Min Heap Blks Read",
+            "type": "integer"
+          },
+          "name": {
+            "default": "mcpg_autowarm",
+            "title": "Name",
+            "type": "string"
+          },
+          "prewarm_mode": {
+            "default": "buffer",
+            "title": "Prewarm Mode",
+            "type": "string"
+          },
+          "schedule": {
+            "default": "@reboot",
+            "title": "Schedule",
+            "type": "string"
+          },
+          "shared_buffers_budget_pct": {
+            "default": 60.0,
+            "title": "Shared Buffers Budget Pct",
+            "type": "number"
+          }
+        },
+        "title": "schedule_autowarmArguments",
+        "type": "object"
+      },
+      "name": "schedule_autowarm"
+    },
+    {
       "description": "Register a pg_cron job. ``schedule`` is a cron expression or pg_cron interval shortcut (e.g. '30 seconds'). Available only in unrestricted mode; requires pg_cron installed. Returns an object with `jobid` (the pg_cron job id), `name`, and `schedule`.",
       "inputSchema": {
         "properties": {
@@ -5052,6 +5229,21 @@
         "type": "object"
       },
       "name": "turboquant_rerank_candidates"
+    },
+    {
+      "description": "Remove an autowarm pg_cron job by name. Idempotent — returns ``removed=false`` when the job didn't exist (or pg_cron isn't installed). Returns an object with `name` and `removed` (bool).\n\nExample: `unschedule_autowarm(name='mcpg_autowarm')`",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "default": "mcpg_autowarm",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "title": "unschedule_autowarmArguments",
+        "type": "object"
+      },
+      "name": "unschedule_autowarm"
     },
     {
       "description": "Unschedule a pg_cron job by name. Returns ``removed=true`` when the job existed. Available only in unrestricted mode.",

@@ -22,6 +22,19 @@ uv run mypy src/mcpg       # type-check
 
 Install the git hooks once: `uv run pre-commit install`.
 
+## Adding new tools / capabilities
+
+The canonical playbook for adding a new MCPg capability — module layout, naming
+conventions, validation patterns, tool registration, capability bucket, tests,
+snapshot regen, commit cadence — lives in
+[`docs/contributing/adding-tools.md`](docs/contributing/adding-tools.md). Read
+it before opening a PR that touches `src/mcpg/tools.py` or adds a new module
+under `src/mcpg/`.
+
+Claude Code users: the same playbook is installed as a `mcpg-add-tool` skill
+and auto-triggers when you ask to add a new tool or expose a new extension's
+surface.
+
 ## Test-Driven Development
 
 MCPg is a TDD project. For all **authored** code:

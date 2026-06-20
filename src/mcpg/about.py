@@ -314,6 +314,33 @@ CAPABILITIES: tuple[Capability, ...] = (
         ),
     ),
     Capability(
+        id="cache_warming",
+        name="Cache warming and pg_prewarm",
+        summary=(
+            "Inspect shared-buffer residency, recommend prewarm targets "
+            "against a shared_buffers budget, and schedule pg_cron-backed "
+            "autowarm jobs."
+        ),
+        detail=(
+            "`get_prewarm_extension_status` reports whether ``pg_prewarm`` "
+            "and ``pg_buffercache`` are installed and whether pg_prewarm is "
+            "registered in shared_preload_libraries. `list_prewarmed_relations` "
+            "surfaces current shared-buffer residency. The headline advisor "
+            "`recommend_prewarm_targets` ranks relations by miss-volume and "
+            "caps the cumulative cost at a shared_buffers budget. Pair with "
+            "`prewarm_recommended` to act on its output. "
+            "`schedule_autowarm` / `unschedule_autowarm` / `list_autowarm_jobs` "
+            "drive a pg_cron-backed loop for the 'warm after restart' pattern."
+        ),
+        headline_tools=(
+            "recommend_prewarm_targets",
+            "prewarm_recommended",
+            "list_prewarmed_relations",
+            "schedule_autowarm",
+            "get_prewarm_extension_status",
+        ),
+    ),
+    Capability(
         id="diagrams_and_codegen",
         name="Diagrams and ORM codegen",
         summary=(
@@ -570,7 +597,7 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "compare_schemas": "schema_introspection",
     "summarize_table": "schema_introspection",
     "get_compact_schema": "schema_introspection",
-    # redis_fdw — every redis-prefixed surface is the new cache bucket.
+    # redis_fdw — every redis-prefixed surface is the cache_and_foreign_data bucket.
     "list_redis_foreign_servers": "cache_and_foreign_data",
     "describe_redis_cache_table": "cache_and_foreign_data",
     "get_redis_cache_stats": "cache_and_foreign_data",
@@ -579,6 +606,15 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "create_redis_cache_server": "cache_and_foreign_data",
     "create_redis_user_mapping": "cache_and_foreign_data",
     "create_redis_cache_table": "cache_and_foreign_data",
+    # pg_prewarm — every prewarm / autowarm surface is the cache_warming bucket.
+    "get_prewarm_extension_status": "cache_warming",
+    "list_prewarmed_relations": "cache_warming",
+    "recommend_prewarm_targets": "cache_warming",
+    "prewarm_relation": "cache_warming",
+    "prewarm_recommended": "cache_warming",
+    "schedule_autowarm": "cache_warming",
+    "unschedule_autowarm": "cache_warming",
+    "list_autowarm_jobs": "cache_warming",
 }
 
 

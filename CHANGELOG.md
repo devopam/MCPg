@@ -8,6 +8,37 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`pg_prewarm` cache-warming coverage** (`mcpg.pg_prewarm`). Eight
+  new tools: `get_prewarm_extension_status`,
+  `list_prewarmed_relations`, `recommend_prewarm_targets`,
+  `prewarm_relation`, `prewarm_recommended`, `schedule_autowarm`,
+  `unschedule_autowarm`, `list_autowarm_jobs`.
+
+  The headline advisor — `recommend_prewarm_targets` — inspects
+  `pg_stat_user_tables` + `pg_statio_user_tables` for relations whose
+  first-query latency would benefit from pg_prewarm. Caps the cumulative
+  cost at `shared_buffers_budget_pct` * `shared_buffers` (default 60%)
+  so the recommendation never silently exceeds the buffer pool. Ranks
+  candidates by miss-volume descending and emits stable reason codes
+  (`seq_scan_dominant` / `high_cold_miss_rate` /
+  `small_hot_relation_uncached` / `index_in_critical_path`) plus a
+  ready-to-run `SELECT pg_prewarm(...)` stub per row.
+
+  `schedule_autowarm` / `unschedule_autowarm` drive a pg_cron-backed
+  "warm after restart" loop — the canonical missing piece for DBAs
+  running clusters with frequent restarts.
+
+  `pg_prewarm` added to `ENABLEABLE_EXTENSIONS`. New `cache_warming`
+  capability bucket in `mcpg.about`. Closes #119.
+
+- **Contributing playbook for new tools**
+  (`docs/contributing/adding-tools.md`). Captures the consistent
+  end-to-end shape every new MCPg capability follows: module layout,
+  identifier validation, tool registration, description conventions
+  (the "Returns ..." sentence), naming conventions, capability bucket
+  overrides, test patterns, snapshot regen, quality gates, commit
+  cadence. Also installed as a `mcpg-add-tool` Claude Code skill.
+
 - **`redis_fdw` cache-and-foreign-data coverage** (`mcpg.redis_fdw`).
   Eight new tools across read + DDL surfaces:
   `list_redis_foreign_servers`, `describe_redis_cache_table`,

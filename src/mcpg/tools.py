@@ -47,6 +47,7 @@ from mcpg import (
     naming,
     nl2sql,
     partman,
+    pg_prewarm,
     pg_search,
     prisma,
     query,
@@ -4074,6 +4075,227 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_pg_prewarm_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_prewarm_extension_status",
+        description=_with_example(
+            "Report whether ``pg_prewarm`` (and the supporting "
+            "``pg_buffercache``) are installed, and whether ``pg_prewarm`` is "
+            "listed in ``shared_preload_libraries`` (the autoprewarm worker "
+            "requires it). "
+            "Returns an object with `pg_prewarm_installed` (bool), "
+            "`pg_buffercache_installed` (bool), `autoprewarm_libraries_present` "
+            "(bool), and `shared_preload_libraries` (the raw setting).",
+            "get_prewarm_extension_status()",
+        ),
+    )
+    async def get_prewarm_extension_status(ctx: _Ctx) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            status = await pg_prewarm.get_prewarm_extension_status(_driver(ctx))
+            return asdict(status)
+
+        return await _cached_call(ctx, "get_prewarm_extension_status", _run)
+
+    @server.tool(
+        name="list_prewarmed_relations",
+        description=_with_example(
+            "Report current shared-buffer residency per relation, ranked by "
+            "blocks-cached descending. Requires the ``pg_buffercache`` "
+            "extension; returns an empty list when it's missing. "
+            "Returns a list of objects with `schema`, `table`, "
+            "`blocks_cached` (8 KiB pages currently in shared buffers), "
+            "`total_blocks` (the relation's on-disk size in the same unit), "
+            "`pct_cached` (the residency ratio rounded to 2 decimals), and "
+            "`dirty_blocks` (pages with pending writes).",
+            "list_prewarmed_relations(schema='public', limit=50)",
+        ),
+    )
+    async def list_prewarmed_relations(
+        ctx: _Ctx,
+        schema: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        async def _run() -> list[dict[str, Any]]:
+            relations = await pg_prewarm.list_prewarmed_relations(_driver(ctx), schema=schema, limit=limit)
+            return [asdict(r) for r in relations]
+
+        return await _cached_call(ctx, "list_prewarmed_relations", _run, schema, limit)
+
+    @server.tool(
+        name="recommend_prewarm_targets",
+        description=_with_example(
+            "Recommend relations whose first-query latency would benefit from "
+            "``pg_prewarm``. Inspects ``pg_stat_user_tables`` + "
+            "``pg_statio_user_tables`` to find high cold-miss-rate / "
+            "seq_scan-dominant relations, and caps the cumulative cost at "
+            "``shared_buffers_budget_pct`` * ``shared_buffers`` so the "
+            "recommendation never silently exceeds shared_buffers. The "
+            "advisor is read-only — never invokes pg_prewarm itself. "
+            "Returns an object with `shared_buffers_blocks` (configured "
+            "shared_buffers in 8 KiB pages), `budget_blocks` (the cap), "
+            "`total_cost_blocks` (sum of recommendations actually returned), "
+            "and `candidates` — a list of objects with `schema`, `relation`, "
+            "`reason` (`seq_scan_dominant` / `high_cold_miss_rate` / "
+            "`small_hot_relation_uncached` / `index_in_critical_path`), "
+            "`prewarm_mode`, `estimated_buffer_cost`, `heap_blks_read`, "
+            "`heap_blks_hit`, `cache_miss_ratio`, and `ready_to_run_sql`.",
+            "recommend_prewarm_targets(shared_buffers_budget_pct=60.0, limit=10)",
+        ),
+    )
+    async def recommend_prewarm_targets(
+        ctx: _Ctx,
+        shared_buffers_budget_pct: float = 60.0,
+        min_heap_blks_read: int = 1000,
+        limit: int = 20,
+        prewarm_mode: str = "buffer",
+    ) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            result = await pg_prewarm.recommend_prewarm_targets(
+                _driver(ctx),
+                shared_buffers_budget_pct=shared_buffers_budget_pct,
+                min_heap_blks_read=min_heap_blks_read,
+                limit=limit,
+                prewarm_mode=prewarm_mode,
+            )
+            return asdict(result)
+
+        return await _cached_call(
+            ctx,
+            "recommend_prewarm_targets",
+            _run,
+            shared_buffers_budget_pct,
+            min_heap_blks_read,
+            limit,
+            prewarm_mode,
+        )
+
+    @server.tool(
+        name="list_autowarm_jobs",
+        description=_with_example(
+            "List the pg_cron jobs MCPg registered for autowarm "
+            "(``jobname LIKE 'mcpg_autowarm%'``). Returns an empty list when "
+            "``pg_cron`` is not installed. "
+            "Returns a list of objects with `jobid`, `jobname`, `schedule` "
+            "(the cron expression), and `command` (the SELECT the job runs).",
+            "list_autowarm_jobs()",
+        ),
+    )
+    async def list_autowarm_jobs(ctx: _Ctx) -> list[dict[str, Any]]:
+        async def _run() -> list[dict[str, Any]]:
+            jobs = await pg_prewarm.list_autowarm_jobs(_driver(ctx))
+            return [asdict(j) for j in jobs]
+
+        return await _cached_call(ctx, "list_autowarm_jobs", _run)
+
+
+def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="prewarm_relation",
+        description=_with_example(
+            "Run ``SELECT pg_prewarm('schema.relation'::regclass, mode)`` "
+            "once. ``mode`` is one of ``buffer`` (load into shared buffers), "
+            "``prefetch`` (OS page cache), or ``read`` (blocking read). "
+            "Requires pg_prewarm installed. "
+            "Returns an object with `schema`, `relation`, `mode`, and "
+            "`blocks_prewarmed`.",
+            "prewarm_relation(schema='public', relation='orders', mode='buffer')",
+        ),
+    )
+    async def prewarm_relation(
+        ctx: _Ctx,
+        schema: str,
+        relation: str,
+        mode: str = "buffer",
+    ) -> dict[str, Any]:
+        result = await pg_prewarm.prewarm_relation(_driver(ctx), schema=schema, relation=relation, mode=mode)
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="prewarm_recommended",
+        description=_with_example(
+            "Invoke ``recommend_prewarm_targets`` and prewarm every "
+            "recommendation in order. ``dry_run=true`` reports what would be "
+            "prewarmed without invoking pg_prewarm. Per-relation errors are "
+            "captured and reported in the ``outcomes`` list so one bad "
+            "relation doesn't fail the whole bulk pass. "
+            "Returns an object with `dry_run` (bool), `total_blocks` (sum of "
+            "blocks_prewarmed across successful outcomes), and `outcomes` — "
+            "a list of objects with `schema`, `relation`, `mode`, "
+            "`blocks_prewarmed`, and `error` (null on success).",
+            "prewarm_recommended(shared_buffers_budget_pct=60.0, dry_run=False)",
+        ),
+    )
+    async def prewarm_recommended(
+        ctx: _Ctx,
+        shared_buffers_budget_pct: float = 60.0,
+        min_heap_blks_read: int = 1000,
+        limit: int = 20,
+        prewarm_mode: str = "buffer",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        result = await pg_prewarm.prewarm_recommended(
+            _driver(ctx),
+            shared_buffers_budget_pct=shared_buffers_budget_pct,
+            min_heap_blks_read=min_heap_blks_read,
+            limit=limit,
+            prewarm_mode=prewarm_mode,
+            dry_run=dry_run,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="schedule_autowarm",
+        description=_with_example(
+            "Register a pg_cron job that calls the bulk prewarm helper at "
+            "``schedule``. Default schedule is ``@reboot`` — the canonical "
+            "'warm after restart' loop. Requires pg_cron installed. The "
+            "cron command embeds the budget / limit / mode arguments and "
+            "calls a `mcpg.prewarm_recommended_cron(...)` SQL function the "
+            "operator must install separately (template in "
+            "``docs/plans/pg-prewarm-advisor.md``). "
+            "Returns an object with `jobid`, `name`, and `schedule`.",
+            "schedule_autowarm(name='mcpg_autowarm', schedule='@reboot')",
+        ),
+    )
+    async def schedule_autowarm(
+        ctx: _Ctx,
+        name: str = "mcpg_autowarm",
+        schedule: str = "@reboot",
+        shared_buffers_budget_pct: float = 60.0,
+        min_heap_blks_read: int = 1000,
+        limit: int = 20,
+        prewarm_mode: str = "buffer",
+    ) -> dict[str, Any]:
+        result = await pg_prewarm.schedule_autowarm(
+            _driver(ctx),
+            name=name,
+            schedule=schedule,
+            shared_buffers_budget_pct=shared_buffers_budget_pct,
+            min_heap_blks_read=min_heap_blks_read,
+            limit=limit,
+            prewarm_mode=prewarm_mode,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="unschedule_autowarm",
+        description=_with_example(
+            "Remove an autowarm pg_cron job by name. Idempotent — returns "
+            "``removed=false`` when the job didn't exist (or pg_cron isn't "
+            "installed). "
+            "Returns an object with `name` and `removed` (bool).",
+            "unschedule_autowarm(name='mcpg_autowarm')",
+        ),
+    )
+    async def unschedule_autowarm(ctx: _Ctx, name: str = "mcpg_autowarm") -> dict[str, Any]:
+        result = await pg_prewarm.unschedule_autowarm(_driver(ctx), name=name)
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_partman(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="partman_create_parent",
@@ -4414,6 +4636,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_timescaledb_reads(server)
         _register_graphs_reads(server)
         _register_redis_fdw_reads(server)
+        _register_pg_prewarm_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -4422,6 +4645,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_turboquant_writes(server)
         _register_rag_telemetry_write(server)
         _register_data_movement_writes(server)
+        _register_pg_prewarm_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)
