@@ -260,7 +260,10 @@ Sequenced by PO score, with bundling where related items share a PR. Each row ca
 | Now (Beta 1) | CI matrix + Phase 1 compat shims | This PR |
 | Beta 2/3 | Feature-specific PRs based on Phase 2 audit | ~5-10 PRs |
 | RC | Final pass; promote PG 19 to a required CI job (drop `continue-on-error`) | One PR |
+| **GA day-0** | **Full tool-surface verification sweep against an actual PG 19 server.** Spin up `postgres:19` (no longer beta) locally and in CI, run the complete unit + integration suite with each Phase 3 tool exercised end-to-end — `recommend_io_method` against a real workload, `repack_table` against a real table, `run_pgq` against a real `CREATE PROPERTY GRAPH`, `validate_check_constraint`, etc. Confirm every recommendation / DDL we emit is accepted by the GA server unmodified. File any drift fixes as same-day patch PRs before flipping the PyPI classifier. | One verification PR (per Phase 3 tool family) |
 | GA + 1 week | Release advertising PG 19 support in README + PyPI classifiers | Release PR |
+
+> **GA-verification note** (user direction, captured 2026-06-20): once PG 19 hits GA we re-run **every** Phase 3 tool end-to-end against the real release — not just the version probe; we exercise the advisor heuristics, the DDL paths, and any SQL syntax we compose. Any tool whose generated `ready_to_run_sql` or recommendation doesn't behave as designed on the GA build gets fixed in a same-day patch PR before the README / classifier bump. Items 12 + 13 from the Phase 2 audit (GIN OR-of-AND perf bench, per-sequence access methods) get re-evaluated for prioritisation at the same time.
 
 ## Why bother now
 
