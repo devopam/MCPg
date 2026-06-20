@@ -341,6 +341,34 @@ CAPABILITIES: tuple[Capability, ...] = (
         ),
     ),
     Capability(
+        id="property_graph_queries",
+        name="SQL/PGQ property graphs",
+        summary=(
+            "PG 19 SQL/PGQ — define property graphs over existing tables "
+            "and query them with `GRAPH_TABLE(...)` / `MATCH` patterns."
+        ),
+        detail=(
+            "`get_pgq_status` reports availability (requires PG 19+); on "
+            "older servers it points the agent at the AGE-style "
+            "`graph_operations` bucket as a fallback. "
+            "`list_property_graphs` / `describe_property_graph` enumerate "
+            "what's defined. `run_pgq` executes "
+            "`SELECT ... FROM GRAPH_TABLE(...)` queries with a "
+            "single-statement / GRAPH_TABLE-required guard. "
+            "`create_property_graph` / `drop_property_graph` handle the "
+            "DDL with identifier validation. SQL/PGQ coexists with the "
+            "AGE-style `graph_operations` bucket — pick by `get_pgq_status` "
+            "(SQL/PGQ on PG 19+) or by personal preference."
+        ),
+        headline_tools=(
+            "get_pgq_status",
+            "list_property_graphs",
+            "run_pgq",
+            "create_property_graph",
+            "describe_property_graph",
+        ),
+    ),
+    Capability(
         id="diagrams_and_codegen",
         name="Diagrams and ORM codegen",
         summary=(
@@ -615,6 +643,14 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "schedule_autowarm": "cache_warming",
     "unschedule_autowarm": "cache_warming",
     "list_autowarm_jobs": "cache_warming",
+    # SQL/PGQ — every pgq-related tool routes to the new bucket. Coexists
+    # with the AGE-style graph_operations bucket (`run_cypher`, etc).
+    "get_pgq_status": "property_graph_queries",
+    "list_property_graphs": "property_graph_queries",
+    "describe_property_graph": "property_graph_queries",
+    "run_pgq": "property_graph_queries",
+    "create_property_graph": "property_graph_queries",
+    "drop_property_graph": "property_graph_queries",
 }
 
 

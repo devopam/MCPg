@@ -8,6 +8,31 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **SQL/PGQ property graph queries coverage** (`mcpg.pgq`). PG 19's
+  built-in SQL standard for property-graph queries (`GRAPH_TABLE(...)` /
+  `MATCH` patterns) lands as six new MCPg tools, side-by-side with the
+  existing AGE-style `graph_operations` bucket:
+
+  - `get_pgq_status` — version probe; never raises. Returns
+    `available=false` on PG < 19 with a diagnostic pointing the agent
+    at the AGE-style `run_cypher` surface.
+  - `list_property_graphs`, `describe_property_graph` — catalog reads
+    over `information_schema.sql_property_graphs`. Empty on early Beta
+    builds where the view isn't populated yet.
+  - `run_pgq` — executes `SELECT ... GRAPH_TABLE` queries. Refuses
+    non-SELECT, missing-GRAPH_TABLE, and chained statements at the
+    boundary; `max_rows` caps result size.
+  - `create_property_graph` — DDL where the tool composes the
+    `CREATE PROPERTY GRAPH "schema"."name"` header and the caller
+    supplies the `VERTEX TABLES (...)` body (validated to begin with
+    that clause and rejected if it contains `;`).
+  - `drop_property_graph` — DDL with `IF EXISTS` idempotency.
+
+  New `property_graph_queries` capability bucket in `mcpg.about`. Both
+  surfaces (SQL/PGQ on PG 19+; AGE-style Cypher everywhere) coexist —
+  agents choose by calling `get_pgq_status` first. PR-1 of the PG 19
+  Phase 3 plan; advances #120.
+
 - **PostgreSQL 19 readiness — Phase 1 (CI matrix + Beta scaffold)**.
   PG 19 Beta added as an experimental matrix entry on the test job
   (`continue-on-error: true` until GA — failures don't block PRs).
