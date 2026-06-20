@@ -52,7 +52,7 @@ _VALID_KEY_TYPES = frozenset({"hash", "list", "string", "set", "zset"})
 
 # Loopback families: TLS may be disabled here without the explicit
 # ``allow_insecure_tls`` flag. Everything else must pass through TLS.
-_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0"})
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 # Identifier validator — Postgres unquoted identifier shape. We use this
 # pattern (vs psycopg's Identifier escaping) because foreign-server /
