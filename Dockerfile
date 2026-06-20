@@ -9,7 +9,7 @@ COPY src ./src
 RUN uv sync --frozen --no-dev
 
 # --- Stage 2: Runtime environment ---
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm AS runtime
 
 WORKDIR /app
 
