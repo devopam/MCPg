@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 200
+    "tool_count": 204
   },
   "tools": [
     {
@@ -141,6 +141,15 @@
         "type": "object"
       },
       "name": "analyze_hnsw_recall"
+    },
+    {
+      "description": "Rank PG 19 `pg_stat_lock` rows by wait dominance and surface stable reason codes. Read-only — never modifies state. Pair with `find_blocking_chains` for the active culprits on a specific hot lock_type. Returns an object with `available` (bool), `server_version_num`, `detail`, and `hotspots` — a list of objects with `lock_type`, `waits`, `wait_time_us`, `reason` (one of `contention_dominant` / `high_wait_time` / `high_wait_count` / `low_contention`), and `suggested_followup` (a human-readable next-step string).\n\nExample: `analyze_lock_hotspots()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "analyze_lock_hotspotsArguments",
+        "type": "object"
+      },
+      "name": "analyze_lock_hotspots"
     },
     {
       "description": "Summarise a query's execution plan: total estimated cost, estimated rows, node types used, and any sequentially-scanned tables.\n\nExample: `analyze_query_plan(sql='SELECT * FROM orders WHERE customer_id = 42')`",
@@ -2095,6 +2104,15 @@
       "name": "get_metrics_exposition"
     },
     {
+      "description": "Report whether PG 19's `pg_stat_lock` and `pg_stat_recovery` views are usable on this server. Never raises — driver-level errors surface as `available=false`. On PG < 19 returns `available=false` with a diagnostic pointing the agent at `find_blocking_chains` / `pg_stat_replication`. Returns an object with `available` (bool), `server_version_num` (int), `server_version`, `has_pg_stat_lock` (bool), `has_pg_stat_recovery` (bool), and `detail` (guidance string).\n\nExample: `get_pg19_stats_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_pg19_stats_statusArguments",
+        "type": "object"
+      },
+      "name": "get_pg19_stats_status"
+    },
+    {
       "description": "Fetch the parsed reloptions for a single BM25 index (schema.index). Same shape as one entry of ``list_pg_search_indexes`` — typed accessors for the 13 documented options plus the raw ``index_options`` dict. Raises when the extension is not installed or no BM25 index by that name exists. Returns an object with `schema`, `index`, the typed option fields, and `index_options` (raw reloptions dict for forward-compat).",
       "inputSchema": {
         "properties": {
@@ -4036,6 +4054,24 @@
         "type": "object"
       },
       "name": "read_pg_stat_io"
+    },
+    {
+      "description": "Return every row from PG 19's `pg_stat_lock` view (per-lock-type acquire / wait / wait-time counters since the most recent `pg_stat_reset`). Empty list on PG < 19 or when the view isn't present. Returns a list of objects with `lock_type` (relation / page / tuple / xid / virtualxid / advisory / ...), `acquires`, `waits`, and `wait_time_us`.\n\nExample: `read_pg_stat_lock()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "read_pg_stat_lockArguments",
+        "type": "object"
+      },
+      "name": "read_pg_stat_lock"
+    },
+    {
+      "description": "Return rows from PG 19's `pg_stat_recovery` view — replay progress, lag, and startup state for a standby. Empty list on PG < 19, when the view isn't present, or when the server isn't in recovery (a primary running standalone returns no rows). Returns a list of objects with `replay_lsn`, `replay_lag_seconds`, `last_replayed_at`, and `startup_state` (any of which may be null when not applicable).\n\nExample: `read_pg_stat_recovery()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "read_pg_stat_recoveryArguments",
+        "type": "object"
+      },
+      "name": "read_pg_stat_recovery"
     },
     {
       "description": "Read Write-Ahead Log (WAL) records information over a specified LSN range. Requires the pg_walinspect extension. If not installed, returns available=false.",

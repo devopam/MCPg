@@ -48,6 +48,7 @@ from mcpg import (
     naming,
     nl2sql,
     partman,
+    pg19_stats,
     pg_prewarm,
     pg_search,
     pgq,
@@ -4449,6 +4450,93 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_pg19_stats_status",
+        description=_with_example(
+            "Report whether PG 19's `pg_stat_lock` and `pg_stat_recovery` "
+            "views are usable on this server. Never raises — driver-level "
+            "errors surface as `available=false`. On PG < 19 returns "
+            "`available=false` with a diagnostic pointing the agent at "
+            "`find_blocking_chains` / `pg_stat_replication`. "
+            "Returns an object with `available` (bool), `server_version_num` "
+            "(int), `server_version`, `has_pg_stat_lock` (bool), "
+            "`has_pg_stat_recovery` (bool), and `detail` (guidance string).",
+            "get_pg19_stats_status()",
+        ),
+    )
+    async def get_pg19_stats_status(ctx: _Ctx) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            status = await pg19_stats.get_pg19_stats_status(_driver(ctx))
+            return asdict(status)
+
+        return await _cached_call(ctx, "get_pg19_stats_status", _run)
+
+    @server.tool(
+        name="read_pg_stat_lock",
+        description=_with_example(
+            "Return every row from PG 19's `pg_stat_lock` view "
+            "(per-lock-type acquire / wait / wait-time counters since the "
+            "most recent `pg_stat_reset`). Empty list on PG < 19 or when "
+            "the view isn't present. "
+            "Returns a list of objects with `lock_type` (relation / page / "
+            "tuple / xid / virtualxid / advisory / ...), `acquires`, "
+            "`waits`, and `wait_time_us`.",
+            "read_pg_stat_lock()",
+        ),
+    )
+    async def read_pg_stat_lock(ctx: _Ctx) -> list[dict[str, Any]]:
+        async def _run() -> list[dict[str, Any]]:
+            rows = await pg19_stats.read_pg_stat_lock(_driver(ctx))
+            return [asdict(r) for r in rows]
+
+        return await _cached_call(ctx, "read_pg_stat_lock", _run)
+
+    @server.tool(
+        name="read_pg_stat_recovery",
+        description=_with_example(
+            "Return rows from PG 19's `pg_stat_recovery` view — replay "
+            "progress, lag, and startup state for a standby. Empty list "
+            "on PG < 19, when the view isn't present, or when the server "
+            "isn't in recovery (a primary running standalone returns no "
+            "rows). "
+            "Returns a list of objects with `replay_lsn`, "
+            "`replay_lag_seconds`, `last_replayed_at`, and `startup_state` "
+            "(any of which may be null when not applicable).",
+            "read_pg_stat_recovery()",
+        ),
+    )
+    async def read_pg_stat_recovery(ctx: _Ctx) -> list[dict[str, Any]]:
+        async def _run() -> list[dict[str, Any]]:
+            rows = await pg19_stats.read_pg_stat_recovery(_driver(ctx))
+            return [asdict(r) for r in rows]
+
+        return await _cached_call(ctx, "read_pg_stat_recovery", _run)
+
+    @server.tool(
+        name="analyze_lock_hotspots",
+        description=_with_example(
+            "Rank PG 19 `pg_stat_lock` rows by wait dominance and surface "
+            "stable reason codes. Read-only — never modifies state. Pair "
+            "with `find_blocking_chains` for the active culprits on a "
+            "specific hot lock_type. "
+            "Returns an object with `available` (bool), "
+            "`server_version_num`, `detail`, and `hotspots` — a list of "
+            "objects with `lock_type`, `waits`, `wait_time_us`, `reason` "
+            "(one of `contention_dominant` / `high_wait_time` / "
+            "`high_wait_count` / `low_contention`), and "
+            "`suggested_followup` (a human-readable next-step string).",
+            "analyze_lock_hotspots()",
+        ),
+    )
+    async def analyze_lock_hotspots(ctx: _Ctx) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            result = await pg19_stats.analyze_lock_hotspots(_driver(ctx))
+            return asdict(result)
+
+        return await _cached_call(ctx, "analyze_lock_hotspots", _run)
+
+
 def _register_aio_reads(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="get_aio_status",
@@ -4905,6 +4993,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_pgq_reads(server)
         _register_repack_reads(server)
         _register_aio_reads(server)
+        _register_pg19_stats_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)

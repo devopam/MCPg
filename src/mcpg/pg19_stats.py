@@ -157,8 +157,7 @@ class LockHotspotsResult:
 async def _server_version(driver: SqlDriver) -> tuple[int, str]:
     """Return ``(server_version_num, server_version)`` in one round trip."""
     rows = await driver.execute_query(
-        "SELECT current_setting('server_version_num')::int AS ver_num, "
-        "current_setting('server_version') AS ver",
+        "SELECT current_setting('server_version_num')::int AS ver_num, current_setting('server_version') AS ver",
         force_readonly=True,
     )
     if not rows:
@@ -231,10 +230,7 @@ async def get_pg19_stats_status(driver: SqlDriver) -> Pg19StatsStatus:
             server_version=ver,
             has_pg_stat_lock=False,
             has_pg_stat_recovery=False,
-            detail=(
-                f"PG 19 reachable but view-presence probe failed: {exc}. "
-                "Re-run after the server is back online."
-            ),
+            detail=(f"PG 19 reachable but view-presence probe failed: {exc}. Re-run after the server is back online."),
         )
     available = has_lock or has_recovery
     if not available:
@@ -245,9 +241,7 @@ async def get_pg19_stats_status(driver: SqlDriver) -> Pg19StatsStatus:
             "pg_stat_replication."
         )
     else:
-        present = ", ".join(
-            v for v, ok in (("pg_stat_lock", has_lock), ("pg_stat_recovery", has_recovery)) if ok
-        )
+        present = ", ".join(v for v, ok in (("pg_stat_lock", has_lock), ("pg_stat_recovery", has_recovery)) if ok)
         detail = (
             f"PG 19 lock + recovery views available: {present}. "
             "Use read_pg_stat_lock / read_pg_stat_recovery for raw rows, "
@@ -327,9 +321,7 @@ async def read_pg_stat_recovery(driver: SqlDriver) -> list[RecoveryStatRow]:
         RecoveryStatRow(
             replay_lsn=row.cells.get("replay_lsn"),
             replay_lag_seconds=(
-                float(row.cells["replay_lag_seconds"])
-                if row.cells.get("replay_lag_seconds") is not None
-                else None
+                float(row.cells["replay_lag_seconds"]) if row.cells.get("replay_lag_seconds") is not None else None
             ),
             last_replayed_at=row.cells.get("last_replayed_at"),
             startup_state=row.cells.get("startup_state"),
@@ -357,14 +349,12 @@ def _classify_lock(*, waits: int, wait_time_us: int) -> tuple[str, str]:
     if high_time and high_count:
         return (
             "contention_dominant",
-            "Investigate the workload generating these waits — check "
-            "find_blocking_chains for the active culprits.",
+            "Investigate the workload generating these waits — check find_blocking_chains for the active culprits.",
         )
     if high_time:
         return (
             "high_wait_time",
-            "Few but long waits — look for a long-running transaction "
-            "holding the lock (pg_stat_activity.xact_start).",
+            "Few but long waits — look for a long-running transaction holding the lock (pg_stat_activity.xact_start).",
         )
     if high_count:
         return (
@@ -447,10 +437,7 @@ async def analyze_lock_hotspots(driver: SqlDriver) -> LockHotspotsResult:
                 waits=top.waits,
                 wait_time_us=top.wait_time_us,
                 reason="low_contention",
-                suggested_followup=(
-                    "Cluster-wide lock waits are within healthy bounds; "
-                    "no action needed."
-                ),
+                suggested_followup=("Cluster-wide lock waits are within healthy bounds; no action needed."),
             )
         )
         detail = (

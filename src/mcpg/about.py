@@ -659,6 +659,12 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     # operations_and_health bucket next to read_pg_stat_io.
     "get_aio_status": "operations_and_health",
     "recommend_io_method": "operations_and_health",
+    # PG 19 lock + recovery analytics — sits next to find_blocking_chains
+    # / walk_blocking_chains in the operations_and_health bucket.
+    "get_pg19_stats_status": "operations_and_health",
+    "read_pg_stat_lock": "operations_and_health",
+    "read_pg_stat_recovery": "operations_and_health",
+    "analyze_lock_hotspots": "operations_and_health",
 }
 
 
