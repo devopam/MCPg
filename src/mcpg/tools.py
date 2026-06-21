@@ -4486,11 +4486,11 @@ def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def read_pg_stat_lock(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
-            rows = await pg19_stats.read_pg_stat_lock(_driver(ctx))
-            return [asdict(r) for r in rows]
-
-        return await _cached_call(ctx, "read_pg_stat_lock", _run)
+        # Live counters — never cache (matches find_blocking_chains /
+        # read_pg_stat_io pattern). Caching would return stale waits
+        # during real-time incident response (gemini review on PR #141).
+        rows = await pg19_stats.read_pg_stat_lock(_driver(ctx))
+        return [asdict(r) for r in rows]
 
     @server.tool(
         name="read_pg_stat_recovery",
@@ -4507,11 +4507,10 @@ def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def read_pg_stat_recovery(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
-            rows = await pg19_stats.read_pg_stat_recovery(_driver(ctx))
-            return [asdict(r) for r in rows]
-
-        return await _cached_call(ctx, "read_pg_stat_recovery", _run)
+        # Live replay state — never cache. Stale lag readings during
+        # standby triage are worse than useless (gemini review on PR #141).
+        rows = await pg19_stats.read_pg_stat_recovery(_driver(ctx))
+        return [asdict(r) for r in rows]
 
     @server.tool(
         name="analyze_lock_hotspots",
@@ -4530,11 +4529,11 @@ def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def analyze_lock_hotspots(ctx: _Ctx) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
-            result = await pg19_stats.analyze_lock_hotspots(_driver(ctx))
-            return asdict(result)
-
-        return await _cached_call(ctx, "analyze_lock_hotspots", _run)
+        # Live advisor over live counters — never cache. Incident-response
+        # callers need the current snapshot, not what we saw 60s ago
+        # (gemini review on PR #141).
+        result = await pg19_stats.analyze_lock_hotspots(_driver(ctx))
+        return asdict(result)
 
 
 def _register_aio_reads(server: FastMCP[AppContext]) -> None:
