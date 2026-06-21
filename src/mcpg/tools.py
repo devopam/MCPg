@@ -48,6 +48,7 @@ from mcpg import (
     naming,
     nl2sql,
     partman,
+    pg19_runtime,
     pg19_stats,
     pg_prewarm,
     pg_search,
@@ -4450,6 +4451,113 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_pg19_runtime_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_data_checksums_status",
+        description=_with_example(
+            "Report whether PG 19's online `data_checksums` toggle is "
+            "usable + the current setting. Never raises — driver-level "
+            "errors surface as `available=false`. On PG ≤ 18 reports "
+            "`available=false` but still surfaces the current state "
+            "(set at initdb time) so the agent has context, and points "
+            "at the offline `pg_checksums` fallback. "
+            "Returns an object with `available` (bool), `server_version_num` "
+            "(int), `server_version`, `enabled` (bool / null), and "
+            "`detail` (guidance string).",
+            "get_data_checksums_status()",
+        ),
+    )
+    async def get_data_checksums_status(ctx: _Ctx) -> dict[str, Any]:
+        # Live cluster setting — never cache (gemini-review pattern from
+        # PR #141): an agent toggling checksums needs to see the
+        # post-toggle state on the next probe.
+        status = await pg19_runtime.get_data_checksums_status(_driver(ctx))
+        return asdict(status)
+
+    @server.tool(
+        name="get_logical_replication_status",
+        description=_with_example(
+            "Report whether PG 19's on-demand wal_level flip is usable, "
+            "plus the configured `wal_level`, the new PG 19 "
+            "`effective_wal_level` preset GUC, and `max_replication_slots`. "
+            "When configured and effective diverge the agent can tell that "
+            "an `ALTER SYSTEM` has been done but a reload is still pending. "
+            "Never raises. "
+            "Returns an object with `available` (bool), `server_version_num`, "
+            "`server_version`, `wal_level`, `effective_wal_level`, "
+            "`max_replication_slots`, and `detail`.",
+            "get_logical_replication_status()",
+        ),
+    )
+    async def get_logical_replication_status(ctx: _Ctx) -> dict[str, Any]:
+        # Live setting — never cache; status reflects post-toggle state.
+        status = await pg19_runtime.get_logical_replication_status(_driver(ctx))
+        return asdict(status)
+
+
+def _register_pg19_runtime_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="enable_data_checksums",
+        description=_with_example(
+            "Turn `data_checksums` on without restarting the cluster. "
+            "Calls PG 19's `pg_enable_data_checksums()` SQL function; the "
+            "rewrite of affected pages happens in the background via the "
+            "new `data_checksum_worker`. No-op (`changed=false`) when "
+            "checksums are already on. Requires PG 19+; raises an error "
+            "on older servers (pair with `get_data_checksums_status` to "
+            "feature-detect, or fall back to the offline `pg_checksums` "
+            "tool on PG ≤ 18). "
+            "Returns an object with `was_enabled` (bool / null), "
+            "`now_enabled` (bool), `changed` (bool), and `toggle_sql` "
+            "(the rendered SQL that actually executed).",
+            "enable_data_checksums()",
+        ),
+    )
+    async def enable_data_checksums(ctx: _Ctx) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await pg19_runtime.enable_data_checksums(database)
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="disable_data_checksums",
+        description=_with_example(
+            "Turn `data_checksums` off without restarting the cluster. "
+            "Calls PG 19's `pg_disable_data_checksums()` SQL function. "
+            "No-op (`changed=false`) when checksums are already off. "
+            "Requires PG 19+. "
+            "Returns an object with `was_enabled`, `now_enabled` "
+            "(`false`), `changed`, and `toggle_sql`.",
+            "disable_data_checksums()",
+        ),
+    )
+    async def disable_data_checksums(ctx: _Ctx) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await pg19_runtime.disable_data_checksums(database)
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="enable_logical_replication_on_demand",
+        description=_with_example(
+            "Flip `wal_level` to `'logical'` without restarting the "
+            "cluster. Issues `ALTER SYSTEM SET wal_level = 'logical'` "
+            "followed by `pg_reload_conf()`; on PG 19+ the change takes "
+            "effect for new WAL traffic immediately. No-op when "
+            "`wal_level` is already `'logical'`. Requires PG 19+; raises "
+            "on older servers where the flip still needs a planned restart. "
+            "Returns an object with `previous_wal_level` (str / null), "
+            "`new_wal_level` (str), `requires_restart` (bool), and `detail`.",
+            "enable_logical_replication_on_demand()",
+        ),
+    )
+    async def enable_logical_replication_on_demand(ctx: _Ctx) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await pg19_runtime.enable_logical_replication_on_demand(database)
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="get_pg19_stats_status",
@@ -4993,6 +5101,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_repack_reads(server)
         _register_aio_reads(server)
         _register_pg19_stats_reads(server)
+        _register_pg19_runtime_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -5003,6 +5112,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_data_movement_writes(server)
         _register_pg_prewarm_writes(server)
         _register_repack_writes(server)
+        _register_pg19_runtime_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)

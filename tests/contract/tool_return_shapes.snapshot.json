@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 204
+    "tool_count": 209
   },
   "tools": {
     "add_compression_policy": {
@@ -395,6 +395,9 @@
       ],
       "kind": "scalar"
     },
+    "disable_data_checksums": {
+      "kind": "opaque"
+    },
     "drop_graph": {
       "kind": "opaque"
     },
@@ -421,6 +424,9 @@
       ],
       "kind": "scalar"
     },
+    "enable_data_checksums": {
+      "kind": "opaque"
+    },
     "enable_extension": {
       "dataclass": "EnableExtensionResult",
       "fields": [
@@ -428,6 +434,9 @@
         "name"
       ],
       "kind": "scalar"
+    },
+    "enable_logical_replication_on_demand": {
+      "kind": "opaque"
     },
     "enable_redis_fdw": {
       "dataclass": "EnableExtensionResult",
@@ -569,6 +578,12 @@
       "kind": "opaque"
     },
     "get_compact_schema": {
+      "kind": "opaque"
+    },
+    "get_data_checksums_status": {
+      "kind": "opaque"
+    },
+    "get_logical_replication_status": {
       "kind": "opaque"
     },
     "get_metrics_exposition": {

@@ -8,6 +8,32 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **PG 19 runtime toggles** (`mcpg.pg19_runtime`). Five new tools that
+  flip cluster-wide settings without a restart — previously
+  "plan a maintenance window" tasks. Online checksums:
+  `get_data_checksums_status`, `enable_data_checksums`,
+  `disable_data_checksums` wrap PG 19's `pg_enable_data_checksums()` /
+  `pg_disable_data_checksums()` SQL functions. On-demand logical
+  replication: `get_logical_replication_status`,
+  `enable_logical_replication_on_demand` flip `wal_level = 'logical'`
+  via `ALTER SYSTEM` + `pg_reload_conf()` (PG 19 makes that change
+  effective without a restart). The status probe surfaces both the
+  configured `wal_level` and the new PG 19 `effective_wal_level`
+  preset GUC, so an agent can tell when an `ALTER SYSTEM` has been
+  done but a reload is still pending.
+
+  PR-6 of the PG 19 Phase 3 plan (bundles PO matrix rows #6 + #8,
+  combined PO score 43 — highest remaining). All five tools route
+  to the existing `operations_and_health` capability bucket.
+
+  Per the no-deprecation rule, the offline `pg_checksums` shell-out
+  and the documented postgresql.conf-edit-and-restart wal_level path
+  stay valid on PG ≤ 18 — both status probes return `available=false`
+  with diagnostics pointing at them. Both write surfaces raise
+  `Pg19RuntimeError` on older servers with the same fallback guidance
+  in the message, and wrap `run_unmanaged` failures preserving
+  `__cause__` (consistent with REPACK / AIO). Advances #120.
+
 - **PG 19 lock + recovery analytics** (`mcpg.pg19_stats`). Four new
   read tools: `get_pg19_stats_status` (per-view presence probe; never
   raises), `read_pg_stat_lock` (per-lock-type acquire / wait /

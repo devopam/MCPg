@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 204
+    "tool_count": 209
   },
   "tools": [
     {
@@ -1418,6 +1418,15 @@
       "name": "detect_vector_outliers"
     },
     {
+      "description": "Turn `data_checksums` off without restarting the cluster. Calls PG 19's `pg_disable_data_checksums()` SQL function. No-op (`changed=false`) when checksums are already off. Requires PG 19+. Returns an object with `was_enabled`, `now_enabled` (`false`), `changed`, and `toggle_sql`.\n\nExample: `disable_data_checksums()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "disable_data_checksumsArguments",
+        "type": "object"
+      },
+      "name": "disable_data_checksums"
+    },
+    {
       "description": "Delete an Apache AGE property graph space, dropping all its nodes, edges, and backing tables. Performs DDL — requires DDL permission enabled. Returns an object with `graph_name` and `dropped` (bool).",
       "inputSchema": {
         "properties": {
@@ -1487,6 +1496,15 @@
       "name": "dump_database"
     },
     {
+      "description": "Turn `data_checksums` on without restarting the cluster. Calls PG 19's `pg_enable_data_checksums()` SQL function; the rewrite of affected pages happens in the background via the new `data_checksum_worker`. No-op (`changed=false`) when checksums are already on. Requires PG 19+; raises an error on older servers (pair with `get_data_checksums_status` to feature-detect, or fall back to the offline `pg_checksums` tool on PG ≤ 18). Returns an object with `was_enabled` (bool / null), `now_enabled` (bool), `changed` (bool), and `toggle_sql` (the rendered SQL that actually executed).\n\nExample: `enable_data_checksums()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "enable_data_checksumsArguments",
+        "type": "object"
+      },
+      "name": "enable_data_checksums"
+    },
+    {
       "description": "Enable a known PostgreSQL extension (CREATE EXTENSION IF NOT EXISTS). Only allowlisted extensions may be enabled. Available only in unrestricted access mode with MCPG_ALLOW_DDL enabled. Returns an object with `name` and `enabled` (bool).",
       "inputSchema": {
         "properties": {
@@ -1502,6 +1520,15 @@
         "type": "object"
       },
       "name": "enable_extension"
+    },
+    {
+      "description": "Flip `wal_level` to `'logical'` without restarting the cluster. Issues `ALTER SYSTEM SET wal_level = 'logical'` followed by `pg_reload_conf()`; on PG 19+ the change takes effect for new WAL traffic immediately. No-op when `wal_level` is already `'logical'`. Requires PG 19+; raises on older servers where the flip still needs a planned restart. Returns an object with `previous_wal_level` (str / null), `new_wal_level` (str), `requires_restart` (bool), and `detail`.\n\nExample: `enable_logical_replication_on_demand()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "enable_logical_replication_on_demandArguments",
+        "type": "object"
+      },
+      "name": "enable_logical_replication_on_demand"
     },
     {
       "description": "Install the ``redis_fdw`` extension. Thin wrapper over ``enable_extension('redis_fdw')`` — convenient for agents that have located the cache-and-foreign-data bucket but haven't found the generic extension installer. redis_fdw runs in-process inside Postgres; operators should be aware of that operational implication before installing. Requires DDL mode. Returns an object with `name='redis_fdw'` and `enabled=true`.\n\nExample: `enable_redis_fdw()`",
@@ -2093,6 +2120,24 @@
         "type": "object"
       },
       "name": "get_compact_schema"
+    },
+    {
+      "description": "Report whether PG 19's online `data_checksums` toggle is usable + the current setting. Never raises — driver-level errors surface as `available=false`. On PG ≤ 18 reports `available=false` but still surfaces the current state (set at initdb time) so the agent has context, and points at the offline `pg_checksums` fallback. Returns an object with `available` (bool), `server_version_num` (int), `server_version`, `enabled` (bool / null), and `detail` (guidance string).\n\nExample: `get_data_checksums_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_data_checksums_statusArguments",
+        "type": "object"
+      },
+      "name": "get_data_checksums_status"
+    },
+    {
+      "description": "Report whether PG 19's on-demand wal_level flip is usable, plus the configured `wal_level`, the new PG 19 `effective_wal_level` preset GUC, and `max_replication_slots`. When configured and effective diverge the agent can tell that an `ALTER SYSTEM` has been done but a reload is still pending. Never raises. Returns an object with `available` (bool), `server_version_num`, `server_version`, `wal_level`, `effective_wal_level`, `max_replication_slots`, and `detail`.\n\nExample: `get_logical_replication_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_logical_replication_statusArguments",
+        "type": "object"
+      },
+      "name": "get_logical_replication_status"
     },
     {
       "description": "Return the in-process Prometheus-format metrics for this MCPg server. Three series: mcpg_tool_calls_total (counter by tool / status), mcpg_tool_duration_seconds (histogram by tool with sum and count). Useful when the HTTP transport's /metrics endpoint is unreachable (e.g. running over stdio) or to fetch via the MCP protocol itself.",
