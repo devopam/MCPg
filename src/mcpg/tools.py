@@ -48,6 +48,7 @@ from mcpg import (
     naming,
     nl2sql,
     partman,
+    pg19_ddl,
     pg19_runtime,
     pg19_stats,
     pg_prewarm,
@@ -4558,6 +4559,116 @@ def _register_pg19_runtime_writes(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_pg19_ddl_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_pg19_ddl_status",
+        description=_with_example(
+            "Report whether PG 19's `pg_get_roledef()` / `pg_get_databasedef()` "
+            "/ `pg_get_tablespacedef()` DDL-dump functions are usable on this "
+            "server. Never raises — driver-level errors surface as "
+            "`available=false`. On PG ≤ 18 reports `available=false` and "
+            "points the agent at `pg_dumpall --roles-only` / `--globals-only` "
+            "/ `--tablespaces-only` as the fallback. "
+            "Returns an object with `available` (bool), `server_version_num` "
+            "(int), `server_version`, `has_pg_get_roledef` (bool), "
+            "`has_pg_get_databasedef` (bool), `has_pg_get_tablespacedef` "
+            "(bool), and `detail` (guidance string).",
+            "get_pg19_ddl_status()",
+        ),
+    )
+    async def get_pg19_ddl_status(ctx: _Ctx) -> dict[str, Any]:
+        # Catalog probe — never cache: an extension install / build flip
+        # mid-session needs to be visible on the next call.
+        status = await pg19_ddl.get_pg19_ddl_status(_driver(ctx))
+        return asdict(status)
+
+    @server.tool(
+        name="get_role_ddl",
+        description=_with_example(
+            "Return the `CREATE ROLE` DDL for a named role using PG 19's "
+            "`pg_get_roledef(oid)` function — no shell-out to `pg_dumpall "
+            "--roles-only` required. Returns `found=false` with an empty "
+            "`ddl` when the role doesn't exist. Requires PG 19+; raises "
+            "on older servers (pair with `get_pg19_ddl_status` to "
+            "feature-detect). "
+            "Returns an object with `object_type` (`'role'`), `object_name`, "
+            "`found` (bool), and `ddl` (the verbatim CREATE statement).",
+            "get_role_ddl(role_name='app_user')",
+        ),
+    )
+    async def get_role_ddl(ctx: _Ctx, role_name: str) -> dict[str, Any]:
+        result = await pg19_ddl.get_role_ddl(_driver(ctx), role_name)
+        return asdict(result)
+
+    @server.tool(
+        name="get_database_ddl",
+        description=_with_example(
+            "Return the `CREATE DATABASE` DDL for a named database using "
+            "PG 19's `pg_get_databasedef(oid)` function. Returns "
+            "`found=false` with an empty `ddl` when the database doesn't "
+            "exist. Requires PG 19+. "
+            "Returns an object with `object_type` (`'database'`), "
+            "`object_name`, `found`, and `ddl`.",
+            "get_database_ddl(database_name='analytics')",
+        ),
+    )
+    async def get_database_ddl(ctx: _Ctx, database_name: str) -> dict[str, Any]:
+        result = await pg19_ddl.get_database_ddl(_driver(ctx), database_name)
+        return asdict(result)
+
+    @server.tool(
+        name="get_tablespace_ddl",
+        description=_with_example(
+            "Return the `CREATE TABLESPACE` DDL for a named tablespace using "
+            "PG 19's `pg_get_tablespacedef(oid)` function. Returns "
+            "`found=false` with an empty `ddl` when the tablespace doesn't "
+            "exist. Requires PG 19+. "
+            "Returns an object with `object_type` (`'tablespace'`), "
+            "`object_name`, `found`, and `ddl`.",
+            "get_tablespace_ddl(tablespace_name='fast_ssd')",
+        ),
+    )
+    async def get_tablespace_ddl(ctx: _Ctx, tablespace_name: str) -> dict[str, Any]:
+        result = await pg19_ddl.get_tablespace_ddl(_driver(ctx), tablespace_name)
+        return asdict(result)
+
+
+def _register_pg19_ddl_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="validate_check_constraint",
+        description=_with_example(
+            "Run `ALTER TABLE schema.table VALIDATE CONSTRAINT name` to "
+            "validate a constraint that was originally added with "
+            "`NOT VALID`. Idempotent — when the constraint is already "
+            "validated, returns `changed=false` and emits no DDL. Works "
+            "on every supported PG version (the SQL has been around "
+            "since 9.x); ships in the PG 19 DDL helpers module because "
+            "it closes the create-NOT-VALID / validate-later loop on "
+            "the agent surface. "
+            "Returns an object with `schema`, `table`, `constraint_name`, "
+            "`was_valid` (bool / null), `now_valid` (bool), `changed` "
+            "(bool), and `validate_sql` (the rendered DDL that actually "
+            "executed, or a `-- no-op` comment when nothing was needed).",
+            "validate_check_constraint(schema='public', table='orders', constraint_name='orders_total_nonneg')",
+        ),
+    )
+    async def validate_check_constraint(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        constraint_name: str,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await pg19_ddl.validate_check_constraint(
+            database,
+            schema=schema,
+            table=table,
+            constraint_name=constraint_name,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="get_pg19_stats_status",
@@ -5102,6 +5213,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_aio_reads(server)
         _register_pg19_stats_reads(server)
         _register_pg19_runtime_reads(server)
+        _register_pg19_ddl_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -5113,6 +5225,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_pg_prewarm_writes(server)
         _register_repack_writes(server)
         _register_pg19_runtime_writes(server)
+        _register_pg19_ddl_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)

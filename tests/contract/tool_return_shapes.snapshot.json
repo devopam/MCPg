@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 209
+    "tool_count": 214
   },
   "tools": {
     "add_compression_policy": {
@@ -40,7 +40,14 @@
       "kind": "opaque"
     },
     "analyze_lock_hotspots": {
-      "kind": "opaque"
+      "dataclass": "LockHotspotsResult",
+      "fields": [
+        "available",
+        "detail",
+        "hotspots",
+        "server_version_num"
+      ],
+      "kind": "scalar"
     },
     "analyze_query_plan": {
       "kind": "opaque"
@@ -396,7 +403,14 @@
       "kind": "scalar"
     },
     "disable_data_checksums": {
-      "kind": "opaque"
+      "dataclass": "ToggleDataChecksumsResult",
+      "fields": [
+        "changed",
+        "now_enabled",
+        "toggle_sql",
+        "was_enabled"
+      ],
+      "kind": "scalar"
     },
     "drop_graph": {
       "kind": "opaque"
@@ -425,7 +439,14 @@
       "kind": "scalar"
     },
     "enable_data_checksums": {
-      "kind": "opaque"
+      "dataclass": "ToggleDataChecksumsResult",
+      "fields": [
+        "changed",
+        "now_enabled",
+        "toggle_sql",
+        "was_enabled"
+      ],
+      "kind": "scalar"
     },
     "enable_extension": {
       "dataclass": "EnableExtensionResult",
@@ -436,7 +457,14 @@
       "kind": "scalar"
     },
     "enable_logical_replication_on_demand": {
-      "kind": "opaque"
+      "dataclass": "EnableLogicalReplicationOnDemandResult",
+      "fields": [
+        "detail",
+        "new_wal_level",
+        "previous_wal_level",
+        "requires_restart"
+      ],
+      "kind": "scalar"
     },
     "enable_redis_fdw": {
       "dataclass": "EnableExtensionResult",
@@ -575,22 +603,82 @@
       "kind": "scalar"
     },
     "get_aio_status": {
-      "kind": "opaque"
+      "dataclass": "AioStatus",
+      "fields": [
+        "available",
+        "detail",
+        "io_max_workers",
+        "io_method",
+        "io_min_workers",
+        "server_version",
+        "server_version_num"
+      ],
+      "kind": "scalar"
     },
     "get_compact_schema": {
       "kind": "opaque"
     },
     "get_data_checksums_status": {
-      "kind": "opaque"
+      "dataclass": "DataChecksumsStatus",
+      "fields": [
+        "available",
+        "detail",
+        "enabled",
+        "server_version",
+        "server_version_num"
+      ],
+      "kind": "scalar"
+    },
+    "get_database_ddl": {
+      "dataclass": "ObjectDdlResult",
+      "fields": [
+        "ddl",
+        "found",
+        "object_name",
+        "object_type"
+      ],
+      "kind": "scalar"
     },
     "get_logical_replication_status": {
-      "kind": "opaque"
+      "dataclass": "LogicalReplicationStatus",
+      "fields": [
+        "available",
+        "detail",
+        "effective_wal_level",
+        "max_replication_slots",
+        "server_version",
+        "server_version_num",
+        "wal_level"
+      ],
+      "kind": "scalar"
     },
     "get_metrics_exposition": {
       "kind": "opaque"
     },
+    "get_pg19_ddl_status": {
+      "dataclass": "Pg19DdlStatus",
+      "fields": [
+        "available",
+        "detail",
+        "has_pg_get_databasedef",
+        "has_pg_get_roledef",
+        "has_pg_get_tablespacedef",
+        "server_version",
+        "server_version_num"
+      ],
+      "kind": "scalar"
+    },
     "get_pg19_stats_status": {
-      "kind": "opaque"
+      "dataclass": "Pg19StatsStatus",
+      "fields": [
+        "available",
+        "detail",
+        "has_pg_stat_lock",
+        "has_pg_stat_recovery",
+        "server_version",
+        "server_version_num"
+      ],
+      "kind": "scalar"
     },
     "get_pg_search_index_metadata": {
       "dataclass": "PgSearchIndexInfo",
@@ -657,8 +745,28 @@
       ],
       "kind": "scalar"
     },
+    "get_role_ddl": {
+      "dataclass": "ObjectDdlResult",
+      "fields": [
+        "ddl",
+        "found",
+        "object_name",
+        "object_type"
+      ],
+      "kind": "scalar"
+    },
     "get_server_info": {
       "kind": "opaque"
+    },
+    "get_tablespace_ddl": {
+      "dataclass": "ObjectDdlResult",
+      "fields": [
+        "ddl",
+        "found",
+        "object_name",
+        "object_type"
+      ],
+      "kind": "scalar"
     },
     "get_turboquant_heap_stats": {
       "dataclass": "TurboQuantHeapStats",
@@ -1440,10 +1548,24 @@
       "kind": "scalar"
     },
     "read_pg_stat_lock": {
-      "kind": "opaque"
+      "dataclass": "LockStatRow",
+      "fields": [
+        "acquires",
+        "lock_type",
+        "wait_time_us",
+        "waits"
+      ],
+      "kind": "list"
     },
     "read_pg_stat_recovery": {
-      "kind": "opaque"
+      "dataclass": "RecoveryStatRow",
+      "fields": [
+        "last_replayed_at",
+        "replay_lag_seconds",
+        "replay_lsn",
+        "startup_state"
+      ],
+      "kind": "list"
     },
     "read_pg_wal_records": {
       "dataclass": "WalRecordsReport",
@@ -1511,7 +1633,14 @@
       "kind": "list"
     },
     "recommend_io_method": {
-      "kind": "opaque"
+      "dataclass": "RecommendIoMethodResult",
+      "fields": [
+        "available",
+        "detail",
+        "recommendations",
+        "server_version_num"
+      ],
+      "kind": "scalar"
     },
     "recommend_pg_search_maintenance": {
       "dataclass": "PgSearchAdvisorFinding",
@@ -1860,6 +1989,19 @@
     },
     "unsubscribe_channel": {
       "kind": "opaque"
+    },
+    "validate_check_constraint": {
+      "dataclass": "ValidateCheckConstraintResult",
+      "fields": [
+        "changed",
+        "constraint_name",
+        "now_valid",
+        "schema",
+        "table",
+        "validate_sql",
+        "was_valid"
+      ],
+      "kind": "scalar"
     },
     "validate_migration": {
       "dataclass": "ValidationResult",
