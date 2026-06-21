@@ -298,6 +298,15 @@ async def split_partition(
         )
     qualified_parent = f"{_quote_identifier(parent_schema)}.{_quote_identifier(parent_table)}"
     quoted_source = _quote_identifier(source_partition)
+    # Defensive: PG-libpq truncates queries at NUL bytes — a caller-supplied
+    # for_values_clause carrying \x00 could silently chop off the trailing
+    # partitions and emit a partial DDL. Reject early so the failure is
+    # explicit (gemini-review critical on PR #145).
+    for spec in new_partitions:
+        if "\x00" in spec.for_values_clause:
+            raise Pg19PartitionsError(
+                f"invalid for_values_clause for partition {spec.name!r}: contains NUL byte"
+            )
     new_parts_sql = ", ".join(
         f"PARTITION {_quote_identifier(spec.name)} FOR VALUES {spec.for_values_clause}" for spec in new_partitions
     )

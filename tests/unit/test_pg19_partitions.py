@@ -221,6 +221,26 @@ async def test_split_partition_wraps_unmanaged_failure() -> None:
         )
 
 
+async def test_split_partition_rejects_nul_in_for_values_clause() -> None:
+    """NUL bytes in a for_values_clause would truncate the libpq query —
+    surface as an explicit error rather than silently emitting partial DDL
+    (gemini critical on PR #145)."""
+    db = _pg19_database()
+    specs = [
+        SplitPartitionSpec(name="a", for_values_clause="FROM (1) TO (2)"),
+        SplitPartitionSpec(name="b", for_values_clause="FROM (2) TO (3)\x00 DROP TABLE evil"),
+    ]
+    with pytest.raises(Pg19PartitionsError, match="NUL byte"):
+        await split_partition(
+            db,  # type: ignore[arg-type]
+            parent_schema="public",
+            parent_table="measurement",
+            source_partition="src",
+            new_partitions=specs,
+        )
+    assert db.unmanaged == []
+
+
 async def test_split_partition_quotes_new_partition_names() -> None:
     db = _pg19_database()
     specs = [
