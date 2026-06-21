@@ -5225,10 +5225,10 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_pg_prewarm_writes(server)
         _register_repack_writes(server)
         _register_pg19_runtime_writes(server)
-        _register_pg19_ddl_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_partman(server)
+        _register_pg19_ddl_writes(server)
         _register_turboquant_ddl(server)
         _register_pg_search_ddl(server)
         _register_rag_telemetry_ddl(server)
