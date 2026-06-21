@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **PG 19 lock + recovery analytics** (`mcpg.pg19_stats`). Four new
+  read tools: `get_pg19_stats_status` (per-view presence probe; never
+  raises), `read_pg_stat_lock` (per-lock-type acquire / wait /
+  wait_time counters from the new PG 19 view), `read_pg_stat_recovery`
+  (replay LSN + lag + startup state on standbys), and
+  `analyze_lock_hotspots` (read-only advisor classifying each lock
+  type by wait dominance with stable reason codes:
+  `contention_dominant`, `high_wait_time`, `high_wait_count`,
+  `low_contention`).
+
+  PR-4 of the PG 19 Phase 3 plan (bundles PO matrix rows #5 + #12,
+  combined PO score 38). Routes all four tools to the existing
+  `operations_and_health` capability bucket so `describe_self`
+  groups them next to `find_blocking_chains` / `walk_blocking_chains` /
+  `read_pg_stat_io`. Per the no-deprecation rule, the existing
+  `find_blocking_chains` / `list_locks` tools in `mcpg.locks` are
+  untouched and the advisor diagnostics on PG ≤ 18 point operators
+  at them as the fallback path. Advances #120.
+
 - **PG 19 async-I/O advisor** (`mcpg.aio`). Two new tools:
   `get_aio_status` (version probe + current `io_method` /
   `io_min_workers` / `io_max_workers` GUCs; never raises) and

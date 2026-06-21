@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 200
+    "tool_count": 204
   },
   "tools": {
     "add_compression_policy": {
@@ -37,6 +37,9 @@
       "kind": "scalar"
     },
     "analyze_hnsw_recall": {
+      "kind": "opaque"
+    },
+    "analyze_lock_hotspots": {
       "kind": "opaque"
     },
     "analyze_query_plan": {
@@ -569,6 +572,9 @@
       "kind": "opaque"
     },
     "get_metrics_exposition": {
+      "kind": "opaque"
+    },
+    "get_pg19_stats_status": {
       "kind": "opaque"
     },
     "get_pg_search_index_metadata": {
@@ -1417,6 +1423,12 @@
         "server_version"
       ],
       "kind": "scalar"
+    },
+    "read_pg_stat_lock": {
+      "kind": "opaque"
+    },
+    "read_pg_stat_recovery": {
+      "kind": "opaque"
     },
     "read_pg_wal_records": {
       "dataclass": "WalRecordsReport",
