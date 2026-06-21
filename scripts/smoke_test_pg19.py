@@ -75,7 +75,7 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
     phase can decide which writes to attempt based on per-feature
     availability.
     """
-    from mcpg import aio, pg19_ddl, pg19_runtime, pg19_stats, pgq, repack
+    from mcpg import aio, pg19_ddl, pg19_partitions, pg19_runtime, pg19_stats, pgq, repack
 
     driver = database.driver()
     results: dict[str, dict[str, Any]] = {}
@@ -91,6 +91,7 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
             pg19_runtime.get_logical_replication_status(driver),
         ),
         ("get_pg19_ddl_status", pg19_ddl.get_pg19_ddl_status(driver)),
+        ("get_pg19_partitions_status", pg19_partitions.get_pg19_partitions_status(driver)),
     ):
         result = await _safe(label, helper)
         if result is not None:
@@ -179,15 +180,22 @@ async def _exercise_safe_writes(database: Database, probes: dict[str, dict[str, 
             {"skipped": ("status reports unavailable or already enabled — skipping to keep the smoke read-mostly")},
         )
 
-    # validate_check_constraint exercises ALTER TABLE on a caller-supplied
-    # constraint — there's no stock NOT VALID constraint in a fresh PG 19
-    # cluster, so we'd need to seed one. Round-tripping create-table +
-    # add-NOT-VALID + validate + drop here would blur the "what does
-    # MCPg do" report; skip with a note and rely on the unit tests
-    # (tests/unit/test_pg19_ddl.py) for behavioural coverage.
+    # validate_check_constraint / merge_partitions / split_partition all
+    # require pre-seeded objects (a NOT VALID constraint, a partitioned
+    # table with the right shape). Round-tripping create + populate +
+    # exercise + drop would blur the "what does MCPg do" report — skip
+    # with notes and rely on the unit tests for behavioural coverage.
     _emit(
         "validate_check_constraint",
-        {"skipped": ("requires a pre-seeded NOT VALID constraint — see tests/unit/test_pg19_ddl.py")},
+        {"skipped": "requires a pre-seeded NOT VALID constraint — see tests/unit/test_pg19_ddl.py"},
+    )
+    _emit(
+        "merge_partitions",
+        {"skipped": "requires a pre-seeded partitioned table — see tests/unit/test_pg19_partitions.py"},
+    )
+    _emit(
+        "split_partition",
+        {"skipped": "requires a pre-seeded partitioned table — see tests/unit/test_pg19_partitions.py"},
     )
 
 

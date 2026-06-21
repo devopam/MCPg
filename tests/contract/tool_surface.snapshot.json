@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 214
+    "tool_count": 217
   },
   "tools": [
     {
@@ -2175,6 +2175,15 @@
       "name": "get_pg19_ddl_status"
     },
     {
+      "description": "Report whether PG 19's `ALTER TABLE … MERGE PARTITIONS` and `ALTER TABLE … SPLIT PARTITION` forms are usable on this server. Never raises — driver-level errors surface as `available=false`. On PG ≤ 18 reports `available=false` and points the agent at the detach / create / attach fallback path. Returns an object with `available` (bool), `server_version_num` (int), `server_version`, and `detail` (guidance string).\n\nExample: `get_pg19_partitions_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_pg19_partitions_statusArguments",
+        "type": "object"
+      },
+      "name": "get_pg19_partitions_status"
+    },
+    {
       "description": "Report whether PG 19's `pg_stat_lock` and `pg_stat_recovery` views are usable on this server. Never raises — driver-level errors surface as `available=false`. On PG < 19 returns `available=false` with a diagnostic pointing the agent at `find_blocking_chains` / `pg_stat_replication`. Returns an object with `available` (bool), `server_version_num` (int), `server_version`, `has_pg_stat_lock` (bool), `has_pg_stat_recovery` (bool), and `detail` (guidance string).\n\nExample: `get_pg19_stats_status()`",
       "inputSchema": {
         "properties": {},
@@ -3420,6 +3429,41 @@
         "type": "object"
       },
       "name": "maintain_turboquant_index"
+    },
+    {
+      "description": "Consolidate two or more partitions into a single new partition using PG 19's `ALTER TABLE … MERGE PARTITIONS (p1, p2, …) INTO new`. Reuses the existing partition data files — no row-by-row copy. PG validates that the source partition bounds are contiguous; non-adjacent ranges are rejected by the server. Requires PG 19+; raises on older versions with the detach / create / attach fallback in the message. Returns an object with `parent_schema`, `parent_table`, `source_partitions` (list of strings), `target_partition`, and `merge_sql` (the rendered DDL that actually executed).\n\nExample: `merge_partitions(parent_schema='public', parent_table='measurement', source_partitions=['measurement_y2024_q1', 'measurement_y2024_q2'], target_partition_name='measurement_y2024_h1')`",
+      "inputSchema": {
+        "properties": {
+          "parent_schema": {
+            "title": "Parent Schema",
+            "type": "string"
+          },
+          "parent_table": {
+            "title": "Parent Table",
+            "type": "string"
+          },
+          "source_partitions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Partitions",
+            "type": "array"
+          },
+          "target_partition_name": {
+            "title": "Target Partition Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_schema",
+          "parent_table",
+          "source_partitions",
+          "target_partition_name"
+        ],
+        "title": "merge_partitionsArguments",
+        "type": "object"
+      },
+      "name": "merge_partitions"
     },
     {
       "description": "Generate a DDL plan that converts a pgvector vector(N) column to halfvec(N) — halving per-element storage (4 → 2 bytes) with typically negligible recall impact at d ≥ 768. Reads the column's current type + dimension from the catalog, finds every index on the column, and emits an ordered `migration_sql` plan: DROP each affected index, ALTER COLUMN to halfvec(N) via a `USING` cast, then recreate each index with its halfvec opclass. Also returns a mirror `rollback_sql` that restores the original vector(N) type plus the original index definitions. Nothing is executed — feed the plan through the shadow-migration workflow (`prepare_migration` / `validate_migration_schema`) before applying. Returns `already_halfvec=true` (and an empty plan) when the column is already halfvec, and refuses any index whose opclass has no halfvec sibling rather than rewriting it incorrectly. Requires the vector extension.",
@@ -5174,6 +5218,44 @@
         "type": "object"
       },
       "name": "setup_rag_telemetry"
+    },
+    {
+      "description": "Split one partition into two or more new partitions using PG 19's `ALTER TABLE … SPLIT PARTITION existing INTO (PARTITION new1 FOR VALUES …, PARTITION new2 FOR VALUES …)`. `new_partitions` is a list of `{name, for_values_clause}` objects — the `name` is quoted as an identifier; the `for_values_clause` is embedded verbatim (DDL grammar can't parameter-bind partition bounds — caller composes safe fragments from validated values). Example RANGE form: `\"FROM ('2024-01-01') TO ('2024-04-01')\"`. Requires PG 19+. Returns an object with `parent_schema`, `parent_table`, `source_partition`, `new_partitions` (the new names), and `split_sql`.\n\nExample: `split_partition(parent_schema='public', parent_table='measurement', source_partition='measurement_y2024', new_partitions=[{'name': 'measurement_y2024_h1', 'for_values_clause': \"FROM ('2024-01-01') TO ('2024-07-01')\"}, {'name': 'measurement_y2024_h2', 'for_values_clause': \"FROM ('2024-07-01') TO ('2025-01-01')\"}])`",
+      "inputSchema": {
+        "properties": {
+          "new_partitions": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "New Partitions",
+            "type": "array"
+          },
+          "parent_schema": {
+            "title": "Parent Schema",
+            "type": "string"
+          },
+          "parent_table": {
+            "title": "Parent Table",
+            "type": "string"
+          },
+          "source_partition": {
+            "title": "Source Partition",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_schema",
+          "parent_table",
+          "source_partition",
+          "new_partitions"
+        ],
+        "title": "split_partitionArguments",
+        "type": "object"
+      },
+      "name": "split_partition"
     },
     {
       "description": "Open a PostgreSQL LISTEN on `channel` and return a subscription id. Notifications buffer in process memory; poll for them via poll_notifications. Channel name must match [A-Za-z_][A-Za-z0-9_]*. Subscriptions are lost on server restart. Requires unrestricted mode + MCPG_ALLOW_LISTEN.",

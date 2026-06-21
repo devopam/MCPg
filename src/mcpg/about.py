@@ -680,6 +680,11 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "get_database_ddl": "schema_introspection",
     "get_tablespace_ddl": "schema_introspection",
     "validate_check_constraint": "operations_and_health",
+    # PG 19 partition reorganisation — MERGE / SPLIT PARTITION live in
+    # the same bucket as the partman_* lifecycle tools.
+    "get_pg19_partitions_status": "timeseries_partitioning",
+    "merge_partitions": "timeseries_partitioning",
+    "split_partition": "timeseries_partitioning",
 }
 
 

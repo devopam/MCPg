@@ -38,6 +38,32 @@ adheres to [Semantic Versioning](https://semver.org/).
   contributes its dataclass field set to the snapshot rather than
   appearing as `opaque`.
 
+- **PG 19 partition reorganisation** (`mcpg.pg19_partitions`). Three
+  new tools that finally make partition boundaries reshapable without
+  the detach / create / copy / attach dance. `get_pg19_partitions_status`
+  is the version probe (never raises). `merge_partitions` issues
+  `ALTER TABLE … MERGE PARTITIONS (p1, p2, …) INTO new`; reuses the
+  existing partition data files. `split_partition` issues
+  `ALTER TABLE … SPLIT PARTITION existing INTO (PARTITION new1 FOR
+  VALUES …, PARTITION new2 FOR VALUES …)`; takes a list of `{name,
+  for_values_clause}` specs because PG's DDL grammar can't
+  parameter-bind partition bounds (we quote the `name` identifier;
+  the `for_values_clause` is embedded verbatim under the existing
+  `Capability.DDL` + `allow_ddl` trust gate, same model as `run_ddl`).
+
+  PR-5 of the PG 19 Phase 3 plan (PO matrix row #4, PO score 23 —
+  next-highest after the PR-9 bundle). All three tools route to the
+  existing `timeseries_partitioning` capability bucket next to the
+  `partman_*` lifecycle.
+
+  Per the no-deprecation rule, the detach / create / attach fallback
+  path stays valid on PG ≤ 18 — `get_pg19_partitions_status` returns
+  `available=false` with the fallback in `detail`, and both write
+  surfaces raise `Pg19PartitionsError` on older servers with the
+  same hint in the message. Both writes dispatch through
+  `Database.run_unmanaged` (cannot run inside a transaction block,
+  same constraint as VACUUM / REPACK). Advances #120.
+
 - **PG 19 runtime toggles** (`mcpg.pg19_runtime`). Five new tools that
   flip cluster-wide settings without a restart — previously
   "plan a maintenance window" tasks. Online checksums:
