@@ -274,6 +274,29 @@ Sequenced by PO score, with bundling where related items share a PR. Each row ca
 
 ## Local testing
 
+### One-command smoke harness (recommended)
+
+```bash
+# Build PG 19 image, spin up a container, exercise every Phase 3 tool
+# end-to-end, tear down. Idempotent — re-run anytime.
+scripts/smoke_test_pg19.sh
+
+# Want to leave the container running for manual poking afterwards:
+scripts/smoke_test_pg19.sh --keep
+
+# Tear down a leftover container:
+scripts/smoke_test_pg19.sh --down
+```
+
+The harness prints a capability matrix (each Phase 3 status probe →
+available / unavailable) followed by per-tool JSON output. Use it as
+the "what does MCPg actually do on PG 19" demo, and as the
+verification gate for every Phase 3 PR before merge. The launcher is
+in `scripts/smoke_test_pg19.sh`; extend the per-tool exercises in
+`scripts/smoke_test_pg19.py`.
+
+### Manual setup (if you don't want the harness)
+
 ```bash
 # Build the PG 19 image locally:
 docker build -f .github/ci-postgres-pg19.Dockerfile -t mcpg-pg19 .
