@@ -47,12 +47,31 @@ down() {
   fi
 }
 
+# Pre-flight: if the Docker daemon isn't reachable, bail with a
+# friendly message rather than letting `set -e` blow up inside `down`
+# (gemini review on PR #143).
+if ! docker info >/dev/null 2>&1; then
+  echo "!!! Docker daemon is not reachable. Start Docker Desktop / your" >&2
+  echo "    daemon, then re-run this script." >&2
+  exit 1
+fi
+
 case "${1:-}" in
   --down) down; exit 0 ;;
 esac
 
 KEEP=0
 [[ "${1:-}" == "--keep" ]] && KEEP=1
+
+# Cleanup trap so a failure mid-run (image build, Python smoke crash,
+# etc.) still tears the container down — unless --keep was passed.
+# Idempotent: `down` itself is a no-op when nothing's running.
+cleanup_on_exit() {
+  if [[ "${KEEP}" -eq 0 ]]; then
+    down
+  fi
+}
+trap cleanup_on_exit EXIT
 
 down  # idempotent — remove any prior container
 
@@ -90,6 +109,6 @@ MCPG_TEST_DATABASE_URL="${DB_URL}" \
 if [[ "${KEEP}" -eq 1 ]]; then
   echo ">>> --keep set; leaving ${CONTAINER} running at ${DB_URL}"
   echo "    Tear down with: scripts/smoke_test_pg19.sh --down"
-else
-  down
 fi
+# Tear-down on the no-keep path is handled by the EXIT trap above —
+# no explicit down call here keeps the cleanup path single-entry.

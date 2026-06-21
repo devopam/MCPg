@@ -182,8 +182,10 @@ async def main() -> int:
         }
     )
     database = Database(settings)
-    await database.connect()
     try:
+        # connect() inside the try block so a connection failure still
+        # routes through the finally cleanup (gemini review on PR #143).
+        await database.connect()
         print(">>> Connected to", url)
         probes = await _exercise_status_probes(database)
         _print_capability_matrix(probes)
