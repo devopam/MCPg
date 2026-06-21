@@ -665,6 +665,13 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "read_pg_stat_lock": "operations_and_health",
     "read_pg_stat_recovery": "operations_and_health",
     "analyze_lock_hotspots": "operations_and_health",
+    # PG 19 runtime toggles — online data_checksums + on-demand
+    # logical replication. Operations + maintenance surface.
+    "get_data_checksums_status": "operations_and_health",
+    "enable_data_checksums": "operations_and_health",
+    "disable_data_checksums": "operations_and_health",
+    "get_logical_replication_status": "operations_and_health",
+    "enable_logical_replication_on_demand": "operations_and_health",
 }
 
 
