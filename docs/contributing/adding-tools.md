@@ -160,12 +160,37 @@ Two or three functions per feature:
 
 ### Tool decoration shape
 
+There are two shapes — pick the **typed-return** shape for any new tool you write, so the auto-derived MCP `outputSchema` becomes available to LangChain / LangGraph / typed-state agent clients. The legacy `dict[str, Any]` shape stays valid for existing tools until we sweep them over.
+
+**Typed-return shape (preferred for new tools):**
+
+```python
+@server.tool(
+    name="get_<thing>",
+    description=_with_example(
+        "<One-paragraph description ending with the wire shape — "
+        "Returns an object with `field_a` (description), `field_b` (description), ...>",
+        "get_<thing>(arg='value')",
+    ),
+)
+async def get_<thing>(ctx: _Ctx, arg: str) -> <feature>.ThingResult:
+    # Returns the dataclass directly — FastMCP auto-derives the
+    # outputSchema from the type annotation. Don't call asdict().
+    return await <feature>.get_<thing>(_driver(ctx), arg)
+```
+
+Two rules for the dataclass that the tool returns:
+
+- **No `slots=True`** on the dataclass — the slot descriptors leak into Pydantic's introspection and FastMCP falls back to `outputSchema = None`. Use `@dataclass(frozen=True)` only.
+- **Avoid Pydantic-reserved field names** — at minimum: `schema`, `model_*`, `copy`, `dict`, `parse_obj`. If your domain field is named `schema` (a SQL schema identifier, for example), rename to `table_schema` and document the rename in the tool's `Returns an object with …` sentence. The contract test at `tests/contract/test_tool_output_schemas.py` catches the shadow warning.
+
+**Legacy `dict[str, Any]` shape (existing tools — sweep when convenient):**
+
 ```python
 @server.tool(
     name="list_<thing>",
     description=_with_example(
-        "<One-paragraph description of what the tool does. End with: "
-        "Returns a list of objects with `field_a` (description), `field_b` (description), ...>",
+        "<…description…> Returns a list of objects with `field_a` …",
         "list_<thing>(arg='value')",
     ),
 )
@@ -175,6 +200,15 @@ async def list_<thing>(ctx: _Ctx, arg: str) -> list[dict[str, Any]]:
         return [asdict(i) for i in items]
     return await _cached_call(ctx, "list_<thing>", _run, arg)
 ```
+
+When sweeping a legacy tool onto the typed-return shape:
+
+1. Drop `slots=True` from the dataclass.
+2. Change the handler's return annotation to the dataclass type.
+3. Replace `return asdict(result)` with `return result`.
+4. Add the tool's name + expected field set to the manifest in `tests/contract/test_tool_output_schemas.py`.
+5. Regenerate the surface + return-shape snapshots (`MCPG_REGENERATE_TOOL_SNAPSHOT=1` / `MCPG_REGENERATE_TOOL_RETURN_SHAPES=1`).
+6. Bump the `_FLOOR` constant in `test_tool_output_schemas.py::test_converted_tool_count_grows_monotonically`.
 
 Write/DDL tools clear the cache after running:
 

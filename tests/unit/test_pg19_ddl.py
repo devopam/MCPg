@@ -247,7 +247,7 @@ def test_dataclass_shapes() -> None:
     )
     assert status.available is True
     vc = ValidateCheckConstraintResult(
-        schema="public",
+        table_schema="public",
         table="t",
         constraint_name="c",
         was_valid=False,
