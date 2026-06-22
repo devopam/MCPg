@@ -83,8 +83,19 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           # PG 19 client packages are published under `postgresql-client-19`
-          # by the pgdg repo even while the server is in beta.
-          sudo apt-get install -y "postgresql-client-${{ matrix.postgres }}"
+          # by the pgdg repo as soon as the server enters beta — but during
+          # the beta window the package can be temporarily absent from the
+          # noble suite (observed mid-Beta-1, 2026-06-22). Probe apt-cache
+          # before installing so a not-yet-published client doesn't trip
+          # the step (and emit a check-run-failed webhook to every open PR);
+          # the matrix entry is already `continue-on-error: true` for the
+          # `Tests (PG 19)` job, this just stops the noise at the step level.
+          # See roadmap 14.1 in docs/feature-shortlist.md.
+          if apt-cache show "postgresql-client-${{ matrix.postgres }}" >/dev/null 2>&1; then
+            sudo apt-get install -y "postgresql-client-${{ matrix.postgres }}"
+          else
+            echo "::warning::postgresql-client-${{ matrix.postgres }} not yet in apt cache — skipping. Tests that shell out to pg_dump will be limited to what the runner's default client provides."
+          fi
       # A custom image (pgvector + PostGIS) so the integration suite can test
       # vector and geospatial features against a real database. It is built
       # and run as a step because GitHub `services:` cannot build images.
