@@ -75,7 +75,7 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
     phase can decide which writes to attempt based on per-feature
     availability.
     """
-    from mcpg import aio, pg19_runtime, pg19_stats, pgq, repack
+    from mcpg import aio, pg19_ddl, pg19_runtime, pg19_stats, pgq, repack
 
     driver = database.driver()
     results: dict[str, dict[str, Any]] = {}
@@ -90,6 +90,7 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
             "get_logical_replication_status",
             pg19_runtime.get_logical_replication_status(driver),
         ),
+        ("get_pg19_ddl_status", pg19_ddl.get_pg19_ddl_status(driver)),
     ):
         result = await _safe(label, helper)
         if result is not None:
@@ -99,7 +100,7 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
 
 async def _exercise_advisors(database: Database) -> None:
     """Phase 2 — read-only advisors that are safe to call on any cluster."""
-    from mcpg import aio, pg19_stats
+    from mcpg import aio, pg19_ddl, pg19_stats
 
     driver = database.driver()
     await _safe("recommend_io_method", aio.recommend_io_method(driver))
@@ -107,6 +108,19 @@ async def _exercise_advisors(database: Database) -> None:
     await _safe("read_pg_stat_lock", pg19_stats.read_pg_stat_lock(driver))
     await _safe("read_pg_stat_recovery", pg19_stats.read_pg_stat_recovery(driver))
     await _safe("list_property_graphs", pgq_list_safely(driver))
+    # PG 19 DDL dumps — exercise on stock-cluster objects that always
+    # exist (the bootstrap superuser, the connected database, the
+    # default tablespace). Each tool raises on PG ≤ 18; _safe captures
+    # the error so the smoke run keeps moving.
+    await _safe("get_role_ddl(postgres)", pg19_ddl.get_role_ddl(driver, "postgres"))
+    await _safe(
+        "get_database_ddl(postgres)",
+        pg19_ddl.get_database_ddl(driver, "postgres"),
+    )
+    await _safe(
+        "get_tablespace_ddl(pg_default)",
+        pg19_ddl.get_tablespace_ddl(driver, "pg_default"),
+    )
 
 
 async def pgq_list_safely(driver: Any) -> Any:
@@ -164,6 +178,17 @@ async def _exercise_safe_writes(database: Database, probes: dict[str, dict[str, 
             "enable_data_checksums",
             {"skipped": ("status reports unavailable or already enabled — skipping to keep the smoke read-mostly")},
         )
+
+    # validate_check_constraint exercises ALTER TABLE on a caller-supplied
+    # constraint — there's no stock NOT VALID constraint in a fresh PG 19
+    # cluster, so we'd need to seed one. Round-tripping create-table +
+    # add-NOT-VALID + validate + drop here would blur the "what does
+    # MCPg do" report; skip with a note and rely on the unit tests
+    # (tests/unit/test_pg19_ddl.py) for behavioural coverage.
+    _emit(
+        "validate_check_constraint",
+        {"skipped": ("requires a pre-seeded NOT VALID constraint — see tests/unit/test_pg19_ddl.py")},
+    )
 
 
 async def main() -> int:

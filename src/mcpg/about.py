@@ -672,6 +672,14 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "disable_data_checksums": "operations_and_health",
     "get_logical_replication_status": "operations_and_health",
     "enable_logical_replication_on_demand": "operations_and_health",
+    # PG 19 DDL helpers — pg_get_*def() reads route to schema_introspection
+    # (cluster-level CREATE-statement dumps); validate_check_constraint is
+    # a maintenance op that touches data validation, not schema shape.
+    "get_pg19_ddl_status": "schema_introspection",
+    "get_role_ddl": "schema_introspection",
+    "get_database_ddl": "schema_introspection",
+    "get_tablespace_ddl": "schema_introspection",
+    "validate_check_constraint": "operations_and_health",
 }
 
 

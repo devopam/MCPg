@@ -8,6 +8,36 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **PG 19 DDL helpers** (`mcpg.pg19_ddl`). Five new tools that close
+  the "validate-and-ship constraints, dump cluster-level DDL without
+  pg_dumpall" gap on the agent surface. `validate_check_constraint`
+  issues `ALTER TABLE … VALIDATE CONSTRAINT` for a constraint
+  originally added with `NOT VALID` — idempotent (returns
+  `changed=false` when the constraint is already validated) and
+  works on every supported PG version (the SQL has been around
+  since 9.x). Three PG 19+ DDL-dump tools wrap the new
+  `pg_get_roledef(oid)` / `pg_get_databasedef(oid)` /
+  `pg_get_tablespacedef(oid)` SQL functions: `get_role_ddl`,
+  `get_database_ddl`, `get_tablespace_ddl`. `get_pg19_ddl_status` is
+  the per-function presence probe; never raises.
+
+  PR-9 of the PG 19 Phase 3 plan (bundles PO matrix rows #10 + #11,
+  combined PO score 34). The four read tools route to the
+  `schema_introspection` capability bucket; `validate_check_constraint`
+  sits in `operations_and_health` next to `run_maintenance`.
+
+  Per the no-deprecation rule, the `pg_dumpall --roles-only` /
+  `--globals-only` / `--tablespaces-only` shell-out paths stay valid
+  on PG ≤ 18 — `get_pg19_ddl_status` returns `available=false` with
+  a pointer at the fallback, and the per-object DDL tools raise
+  `Pg19DdlError` with the same hint in the message. Advances #120.
+
+  Side win: the return-shape contract test now also recognises
+  `mcpg.aio`, `mcpg.pg19_runtime`, `mcpg.pg19_stats`, and
+  `mcpg.pg19_ddl` as helper modules, so every Phase 3 PG 19 tool
+  contributes its dataclass field set to the snapshot rather than
+  appearing as `opaque`.
+
 - **PG 19 runtime toggles** (`mcpg.pg19_runtime`). Five new tools that
   flip cluster-wide settings without a restart — previously
   "plan a maintenance window" tasks. Online checksums:

@@ -56,6 +56,7 @@ _SNAPSHOT_PATH = Path(__file__).parent / "tool_return_shapes.snapshot.json"
 # isn't strictly needed — kept here only as documentation for the reviewer.
 _KNOWN_HELPER_MODULES = (
     "advisors",
+    "aio",
     "audit",
     "audit_trail",
     "composite",
@@ -80,6 +81,9 @@ _KNOWN_HELPER_MODULES = (
     "naming",
     "nl2sql",
     "partman",
+    "pg19_ddl",
+    "pg19_runtime",
+    "pg19_stats",
     "pg_prewarm",
     "pg_search",
     "pgq",

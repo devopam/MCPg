@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 209
+    "tool_count": 214
   },
   "tools": [
     {
@@ -2131,6 +2131,23 @@
       "name": "get_data_checksums_status"
     },
     {
+      "description": "Return the `CREATE DATABASE` DDL for a named database using PG 19's `pg_get_databasedef(oid)` function. Returns `found=false` with an empty `ddl` when the database doesn't exist. Requires PG 19+. Returns an object with `object_type` (`'database'`), `object_name`, `found`, and `ddl`.\n\nExample: `get_database_ddl(database_name='analytics')`",
+      "inputSchema": {
+        "properties": {
+          "database_name": {
+            "title": "Database Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "database_name"
+        ],
+        "title": "get_database_ddlArguments",
+        "type": "object"
+      },
+      "name": "get_database_ddl"
+    },
+    {
       "description": "Report whether PG 19's on-demand wal_level flip is usable, plus the configured `wal_level`, the new PG 19 `effective_wal_level` preset GUC, and `max_replication_slots`. When configured and effective diverge the agent can tell that an `ALTER SYSTEM` has been done but a reload is still pending. Never raises. Returns an object with `available` (bool), `server_version_num`, `server_version`, `wal_level`, `effective_wal_level`, `max_replication_slots`, and `detail`.\n\nExample: `get_logical_replication_status()`",
       "inputSchema": {
         "properties": {},
@@ -2147,6 +2164,15 @@
         "type": "object"
       },
       "name": "get_metrics_exposition"
+    },
+    {
+      "description": "Report whether PG 19's `pg_get_roledef()` / `pg_get_databasedef()` / `pg_get_tablespacedef()` DDL-dump functions are usable on this server. Never raises — driver-level errors surface as `available=false`. On PG ≤ 18 reports `available=false` and points the agent at `pg_dumpall --roles-only` / `--globals-only` / `--tablespaces-only` as the fallback. Returns an object with `available` (bool), `server_version_num` (int), `server_version`, `has_pg_get_roledef` (bool), `has_pg_get_databasedef` (bool), `has_pg_get_tablespacedef` (bool), and `detail` (guidance string).\n\nExample: `get_pg19_ddl_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_pg19_ddl_statusArguments",
+        "type": "object"
+      },
+      "name": "get_pg19_ddl_status"
     },
     {
       "description": "Report whether PG 19's `pg_stat_lock` and `pg_stat_recovery` views are usable on this server. Never raises — driver-level errors surface as `available=false`. On PG < 19 returns `available=false` with a diagnostic pointing the agent at `find_blocking_chains` / `pg_stat_replication`. Returns an object with `available` (bool), `server_version_num` (int), `server_version`, `has_pg_stat_lock` (bool), `has_pg_stat_recovery` (bool), and `detail` (guidance string).\n\nExample: `get_pg19_stats_status()`",
@@ -2224,6 +2250,23 @@
       "name": "get_repack_status"
     },
     {
+      "description": "Return the `CREATE ROLE` DDL for a named role using PG 19's `pg_get_roledef(oid)` function — no shell-out to `pg_dumpall --roles-only` required. Returns `found=false` with an empty `ddl` when the role doesn't exist. Requires PG 19+; raises on older servers (pair with `get_pg19_ddl_status` to feature-detect). Returns an object with `object_type` (`'role'`), `object_name`, `found` (bool), and `ddl` (the verbatim CREATE statement).\n\nExample: `get_role_ddl(role_name='app_user')`",
+      "inputSchema": {
+        "properties": {
+          "role_name": {
+            "title": "Role Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role_name"
+        ],
+        "title": "get_role_ddlArguments",
+        "type": "object"
+      },
+      "name": "get_role_ddl"
+    },
+    {
       "description": "Return the MCPg server version, access mode, transport, and database connection status.",
       "inputSchema": {
         "properties": {},
@@ -2231,6 +2274,23 @@
         "type": "object"
       },
       "name": "get_server_info"
+    },
+    {
+      "description": "Return the `CREATE TABLESPACE` DDL for a named tablespace using PG 19's `pg_get_tablespacedef(oid)` function. Returns `found=false` with an empty `ddl` when the tablespace doesn't exist. Requires PG 19+. Returns an object with `object_type` (`'tablespace'`), `object_name`, `found`, and `ddl`.\n\nExample: `get_tablespace_ddl(tablespace_name='fast_ssd')`",
+      "inputSchema": {
+        "properties": {
+          "tablespace_name": {
+            "title": "Tablespace Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tablespace_name"
+        ],
+        "title": "get_tablespace_ddlArguments",
+        "type": "object"
+      },
+      "name": "get_tablespace_ddl"
     },
     {
       "description": "Return the exact heap row count tq_index_heap_stats() reports for a single turboquant index (schema.index). The raw upstream payload is preserved in ``raw`` for any extra counters upstream may add. Requires the pg_turboquant extension.",
@@ -5529,6 +5589,33 @@
         "type": "object"
       },
       "name": "unsubscribe_channel"
+    },
+    {
+      "description": "Run `ALTER TABLE schema.table VALIDATE CONSTRAINT name` to validate a constraint that was originally added with `NOT VALID`. Idempotent — when the constraint is already validated, returns `changed=false` and emits no DDL. Works on every supported PG version (the SQL has been around since 9.x); ships in the PG 19 DDL helpers module because it closes the create-NOT-VALID / validate-later loop on the agent surface. Returns an object with `schema`, `table`, `constraint_name`, `was_valid` (bool / null), `now_valid` (bool), `changed` (bool), and `validate_sql` (the rendered DDL that actually executed, or a `-- no-op` comment when nothing was needed).\n\nExample: `validate_check_constraint(schema='public', table='orders', constraint_name='orders_total_nonneg')`",
+      "inputSchema": {
+        "properties": {
+          "constraint_name": {
+            "title": "Constraint Name",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "constraint_name"
+        ],
+        "title": "validate_check_constraintArguments",
+        "type": "object"
+      },
+      "name": "validate_check_constraint"
     },
     {
       "description": "Apply candidate_sql to a TRANSIENT shadow of target_schema that's pre-populated with up to sample_rows_per_table rows copied from each base table. The shadow is dropped before returning regardless of outcome. Catches failure modes a pure structural diff misses: NOT NULL added to a column with existing NULLs, CHECK constraints violated by live rows, type narrowings that fail on real values, triggers that error against actual data. Reports per-table rows_before / rows_after so the effect of a DELETE-shaped candidate is visible. error is non-null iff the candidate raised. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL.",
