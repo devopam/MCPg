@@ -685,6 +685,10 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "get_pg19_partitions_status": "timeseries_partitioning",
     "merge_partitions": "timeseries_partitioning",
     "split_partition": "timeseries_partitioning",
+    # PG 19 skip-scan advisor — sibling of recommend_indexes /
+    # recommend_index_drops; routes to the advisors bucket.
+    "get_skip_scan_status": "advisors",
+    "recommend_skip_scan_indexes": "advisors",
 }
 
 

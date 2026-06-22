@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 217
+    "tool_count": 219
   },
   "tools": {
     "add_compression_policy": {
@@ -767,6 +767,16 @@
     },
     "get_server_info": {
       "kind": "opaque"
+    },
+    "get_skip_scan_status": {
+      "dataclass": "SkipScanStatus",
+      "fields": [
+        "available",
+        "detail",
+        "server_version",
+        "server_version_num"
+      ],
+      "kind": "scalar"
     },
     "get_tablespace_ddl": {
       "dataclass": "ObjectDdlResult",
@@ -1702,6 +1712,19 @@
         "window_days"
       ],
       "kind": "scalar"
+    },
+    "recommend_skip_scan_indexes": {
+      "dataclass": "SkipScanCandidate",
+      "fields": [
+        "estimated_leading_ndv",
+        "index_name",
+        "leading_column",
+        "rationale",
+        "schema",
+        "table",
+        "trailing_columns"
+      ],
+      "kind": "list"
     },
     "recommend_turboquant_maintenance": {
       "dataclass": "TurboQuantAdvisorFinding",

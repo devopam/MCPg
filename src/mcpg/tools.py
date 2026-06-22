@@ -51,6 +51,7 @@ from mcpg import (
     pg19_ddl,
     pg19_partitions,
     pg19_runtime,
+    pg19_skip_scan,
     pg19_stats,
     pg_prewarm,
     pg_search,
@@ -4673,6 +4674,56 @@ def _register_pg19_ddl_writes(server: FastMCP[AppContext]) -> None:
         return result
 
 
+def _register_pg19_skip_scan_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_skip_scan_status",
+        description=_with_example(
+            "Report whether PG 19's B-tree skip-scan optimisation is "
+            "the planner default on this server. Never raises — "
+            "driver-level errors surface as `available=false`. On "
+            "PG ≤ 18 reports `available=false` and points the agent at "
+            "the standard 'add a dedicated single-column index' "
+            "fallback. "
+            "Returns an object with `available` (bool), "
+            "`server_version_num` (int), `server_version`, and "
+            "`detail` (guidance string).",
+            "get_skip_scan_status()",
+        ),
+    )
+    async def get_skip_scan_status(ctx: _Ctx) -> dict[str, Any]:
+        # Live version probe — never cache. A server upgrade mid-session
+        # needs to flip availability on the next call.
+        status = await pg19_skip_scan.get_skip_scan_status(_driver(ctx))
+        return asdict(status)
+
+    @server.tool(
+        name="recommend_skip_scan_indexes",
+        description=_with_example(
+            "Find composite B-tree indexes whose leading column has "
+            "low NDV — these are the ones PG 19's skip-scan optimisation "
+            "unlocks. Each candidate's trailing columns can now be "
+            "served by the composite index alone, so any dedicated "
+            "single-column indexes on those trailing columns become "
+            "review candidates for `recommend_index_drops`. Returns an "
+            "empty list on PG ≤ 18 or driver failure — pair with "
+            "`get_skip_scan_status` for the diagnostic. "
+            "`max_leading_ndv` (default 1000) caps the leading-column "
+            "NDV that's considered low enough for skip-scan to be "
+            "profitable. "
+            "Returns a list of objects with `schema`, `table`, "
+            "`index_name`, `leading_column`, `trailing_columns` "
+            "(list of strings), `estimated_leading_ndv` (int), and "
+            "`rationale` (human-readable explanation).",
+            "recommend_skip_scan_indexes()",
+        ),
+    )
+    async def recommend_skip_scan_indexes(ctx: _Ctx, max_leading_ndv: int = 1000) -> list[dict[str, Any]]:
+        # Live catalog + stats walk — never cache. ANALYZE / index DDL
+        # changes need to be visible on the next call.
+        candidates = await pg19_skip_scan.recommend_skip_scan_indexes(_driver(ctx), max_leading_ndv=max_leading_ndv)
+        return [asdict(c) for c in candidates]
+
+
 def _register_pg19_partitions_reads(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="get_pg19_partitions_status",
@@ -5335,6 +5386,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_pg19_runtime_reads(server)
         _register_pg19_ddl_reads(server)
         _register_pg19_partitions_reads(server)
+        _register_pg19_skip_scan_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
