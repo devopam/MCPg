@@ -11,6 +11,14 @@ here — for what shipped when, see
 security-hardening items specifically, see
 [`security-hardening.md`](security-hardening.md).
 
+> **Observation loop.** Gaps surfaced during PR reviews / Phase
+> retrospectives land here as their own numbered row (under the
+> section that best matches the area) with the date and source of
+> the observation in the Notes column. New observations always
+> get a row — we never lose a gap to a chat thread. Pick items
+> off the list deliberately; mark with ✅ Shipped when the PR
+> merges.
+
 Effort scale (rough, single-session yardstick):
 
 - **S** — 1 module, 1 PR, ≤ 1 day equivalent
@@ -27,6 +35,7 @@ Effort scale (rough, single-session yardstick):
 | 1.1 | ✅ **Shipped.** OpenTelemetry tracing — one span per `call_tool` invocation behind the `mcpg[otel]` extra. Spans live on the `mcpg.tools` tracer and carry `mcp.tool.name`, `mcp.tool.argument_count`, `mcp.tool.status`, plus `error.type` / `error.message` on failure. Raw argument values are deliberately not attached (PII / secrets). Standard `OTEL_*` env vars (endpoint, headers, sampler) take precedence; `MCPG_OTEL_SERVICE_NAME` is the only project-specific knob. Lives in `mcpg.otel_tracing`. | M | Medium-High | One span per `call_tool` + child spans for the actual query / subprocess. |
 | 1.2 | Structured JSON logging output toggle | S | Medium | Wraps the existing `mcpg.audit` logger. |
 | 1.3 | ✅ **Shipped.** Slow-call logging from the MCP layer | S | Low | Per-tool latency log to flag slow MCPg-side calls (the existing `analyze_workload` covers PG-side timings). |
+| 1.4 | **Tool-bucket usage telemetry.** OpenTelemetry counter per `about.py` capability bucket so we get real data on which buckets agents actually exercise. Drives `describe_self` ordering empirically instead of by guess. | S | Medium | Surfaced 2026-06-22 during Phase 3 retrospective — currently every bucket order is hand-curated. |
 
 ## 2. PostgreSQL feature coverage
 
@@ -36,6 +45,8 @@ Effort scale (rough, single-session yardstick):
 | 2.2 | ✅ **Shipped.** `pg_buffercache` integration (cache hit analysis at the buffer level) | S | Low-Medium | Niche. |
 | 2.3 | ✅ **Shipped.** WAL inspection (`pg_walinspect`) | S | Low | Niche but useful for replication debugging. |
 | 2.4 | ✅ **Shipped.** Deeper `pg_locks` walker — deadlock-cycle reconstruction beyond the current `find_blocking_chains` pair list | S-M | Medium | Live-ops complement. |
+| 2.5 | **PG 19 PR-10 — small-tools batch.** Audit-row #14 autovacuum scoring read (`read_autovacuum_priority`), #13 password-expiration + MD5 warnings extension to `audit_database`, #21 `pg_get_acl()` migration in `list_grants` with PG ≤ 18 fallback, #18 NL→SQL emission patterns for `GROUP BY ALL` / temporal `UPDATE` / `ON CONFLICT DO SELECT`, #19 `effective_wal_level` exposure in `get_server_info`. Each item is small; bundled as PR-10 in the Phase 3 plan. Combined PO score ~46 across the audit. | M | Medium | Tracking under [`pg19-readiness.md`](plans/pg19-readiness.md) — five sub-items, each landable in its own PR. |
+| 2.6 | **PG 19 PR-3 #15 — `EXPLAIN ANALYZE (IO)` capture.** Extend `analyze_query_plan` / `explain_query` with an `io=true` option that surfaces the new AIO cost breakdown in the plan output. Flagged in the Phase 2 audit, never PRed. | S | Medium | Pairs with the already-shipped `recommend_io_method` for closing the AIO observability loop. |
 
 ## 3. Developer experience
 
@@ -43,6 +54,8 @@ Effort scale (rough, single-session yardstick):
 |---|---|---|---|---|
 | 3.1 | ✅ **Shipped (first wave).** Auto-generated tool examples in MCP tool descriptions — the `_with_example(description, example)` helper in `mcpg.tools` wraps every wrapped description with a canonical pseudo-Python invocation hint (``Example: `tool(arg=value)```). ~25 high-traffic tools across introspection / query / composite / health / search / diagrams / schema-diff / vector analytics / migrations / data movement now ship examples. The helper is the contract for new tools. | S | Low-Medium | Helps agents pick the right tool. |
 | 3.2 | ✅ **Shipped.** Sample-data generator that writes (`seed_table_with_sample_data`) | M | Medium | Sibling of the current `generate_test_data` (synthetic INSERT statements; does not execute). Gated under WRITE. |
+| 3.3 | **Benchmark harness — `scripts/benchmark_pg19.py`.** Sibling of `scripts/smoke_test_pg19.sh`; runs a fixture workload and emits actual numbers for the PG 19 wins we claim (REPACK CONCURRENTLY vs pg_repack, AIO `io_uring` vs `worker`, skip-scan vs two-index, LZ4 vs pglz TOAST). Without it, every "PG 19 is better" claim in the playbook is unverified marketing. | M | Medium-High | Maps to the GA-day-0 verification milestone in `pg19-readiness.md`. |
+| 3.4 | **PG 19 PR-11 — characterisation tests.** Defensive coverage that asserts the SQL each Phase 3 tool emits actually parses on PG 14-18 + PG 19. Today's unit tests use mocked drivers so a syntax-level drift could slip through. The existing smoke harness covers PG 19 only and only the live-cluster paths. | M | Medium | Bundles audit rows #16, #17, #20. Catches drift between the assumed PG 19 grammar and the real one. |
 
 ## 4. Security & compliance
 
@@ -88,6 +101,12 @@ not covered there:
 |---|---|---|---|---|
 | 8.1 | Test-data factory using catalog + heuristics (`generate_test_row_for(schema, table)`) | M | Medium-High | Pairs with the shadow-migration workflow. |
 | 8.2 | ✅ **Shipped.** Schema-documentation generator (Markdown table reference from catalog) | S | Medium | Sibling of `generate_schema_diagram`. |
+| 8.3 | **MCP resources (`mcpg://…`).** Expose preload-on-connect resources: `mcpg://capabilities/<bucket>`, `mcpg://schema/<name>`, `mcpg://about/index`. Today agents have to call `describe_self` / `list_tables` / `get_compact_schema` as tools, burning call budget. The `about.py` docstring still flags resources as the original unfilled gap. | M | High | First substantive use of MCP resources in MCPg. Pairs with PR-13 (`outputSchema`). |
+| 8.4 | **MCP prompts (`mcpg://prompt/…`).** Templated interrogation prompts (`diagnose-slow-query`, `bisect-slow-migration`, `review-rls-policy`). Each one pre-loads the symptom-gathering questions an agent should ask the user before reaching for tools. Companion to 8.3. | M | High | Lets us ship pre-built workflows agents can pick up by reference instead of reconstructing each session. |
+| 8.5 | **`describe_tool(name)`.** Runtime introspection for an agent that hit a tool error and wants the schema / preconditions without re-walking the full `describe_self` payload. Returns the same shape that `tools/list` would expose for one tool, but as a tool itself (handy when the MCP client transport only surfaces tool calls, not `tools/list`). | S | Medium | Closes the agent self-recovery loop. |
+| 8.6 | **`outputSchema` sweep — remaining ~200 tools.** PR-13 landed the typed-return pattern + manifest infra on the PG 19 DDL family (5 tools). Each remaining module is a mechanical sweep per the checklist in `docs/contributing/adding-tools.md`. Order by module size: `pg19_partitions` / `pg19_runtime` / `pg19_stats` / `pg19_skip_scan` / `wait_for_lsn` / `repack` / `aio` / `pgq` first (one PR each); then the long-tail introspection / advisor / data-movement families. | L | Medium-High | The headline LangChain / LangGraph integration story — every sweep PR moves the floor in `test_tool_output_schemas.py`. |
+| 8.7 | **Session-scope cost advisor.** "You've called `list_tables` 47 times this session — one `get_compact_schema` would have sufficed." Reads the audit log within the session and surfaces hot-path inefficiencies. Real money for token-conscious deployments. | M | Medium-High | New advisor on the existing `mcpg_audit.events` table. |
+| 8.8 | **Session-intent handshake (`begin_session(intent='migration')`).** Lets the agent declare its high-level goal at connect time; we narrow the tool surface to the relevant capability buckets. Big prompt-injection resilience win — a "look up a user record" agent can't be tricked into calling `drop_database` because that tool isn't on the wire at all. | M | High | New MCP-level primitive; pairs with 8.3 / 8.4. |
 
 ## 9. pgvector extensions
 
@@ -160,6 +179,21 @@ documented return conditions.
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
 | 13.1 | One MCPg server, multiple `MCPG_DATABASE_URL`s — tool-level db selector | L | Medium | Today: one server = one DSN. Multi-DB means a per-tool param, a pool-per-DB, and rethinking gates. Big lift; no concrete demand yet. |
+
+## 14. Release engineering & hygiene
+
+Operational papercuts surfaced during Phase 3 — none feature-shaped,
+all worth a tiny PR each so they stop generating noise on every
+in-flight PR.
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 14.1 | **PG 19 CI matrix apt-package noise.** The `postgresql-client-19` install in the `Tests (PG 19)` job has failed `apt-package` lookup on every Phase 3 PR (~15 webhook events in 24h). Fix: either build the client inside `.github/ci-postgres-pg19.Dockerfile` (where pgvector already builds from source), suffix the apt install with `|| true`, or gate the install behind the matrix entry's `continue-on-error` so it stops emitting failure webhooks. | S | Low (but high noise) | Surfaced 2026-06-22 on PRs #144 / #145 / #146 / #148 / #149 / #150. |
+| 14.2 | **CHANGELOG `[Unreleased]` bloat.** Section now spans 7 Phase-3 PRs and growing. Split into a `### PG 19 readiness` heading inside `[Unreleased]` so the eventual v0.7.0 release notes write themselves. | S | Low | Pairs with the v0.7.0 release-cut PR (14.5). |
+| 14.3 | **Sourcery review rate-limit noise.** Sourcery has been weekly-rate-limited on every Phase 3 PR for two days — every "review left" webhook is a rate-limit notice we still inspect per the PR-watcher SOP. Either move sourcery to a once-weekly cron, gate it behind a label, or drop it from the rotation entirely until the quota is sorted. | S | Low | Surfaced 2026-06-22. |
+| 14.4 | **`describe_self` count drift.** The `mcpg.about.build_capability_summary()` payload uses live tool counts but the curated `headline_tools` list per bucket is hand-maintained. As we add tools, headline_tools should auto-include the most-used ones (top-N by 1.4 telemetry once that ships). | S | Low | Couples to 1.4. |
+| 14.5 | **v0.7.0-pg19-ready release-cut PR.** Snapshots the current `[Unreleased]` block into a tagged release notes file, bumps the version, flips the PyPI classifier to mention PG 19. Acts as the anchor for GA-day-0 verification work. | S | High | Maps to the GA-day-0 milestone in `pg19-readiness.md`. |
+| 14.6 | **Roadmap-item linkage from PRs.** Every Phase 3 PR could cite the matching roadmap row in its body (e.g. "advances 8.6"); the contract review at merge time then explicitly clears the row. Today the linkage is implicit. | S | Low-Medium | Process change, not code. |
 
 ---
 
