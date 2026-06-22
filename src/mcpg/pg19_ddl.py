@@ -54,7 +54,7 @@ class Pg19DdlError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Pg19DdlStatus:
     """Reports whether PG 19's `pg_get_*def()` DDL functions are usable.
 
@@ -73,7 +73,7 @@ class Pg19DdlStatus:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ValidateCheckConstraintResult:
     """Outcome of `validate_check_constraint`.
 
@@ -81,9 +81,14 @@ class ValidateCheckConstraintResult:
     state; ``now_valid`` reflects the post-call state. When the
     constraint was already valid ``changed=False`` and no DDL is
     emitted. ``validate_sql`` is the rendered ``ALTER TABLE`` text.
+
+    The schema identifier lives on ``table_schema`` (not ``schema``)
+    so Pydantic's structured-output machinery doesn't trip over the
+    ``BaseModel.schema()`` method name shadow when FastMCP auto-builds
+    the tool's outputSchema.
     """
 
-    schema: str
+    table_schema: str
     table: str
     constraint_name: str
     was_valid: bool | None
@@ -92,7 +97,7 @@ class ValidateCheckConstraintResult:
     validate_sql: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ObjectDdlResult:
     """The DDL text for a cluster-level object (role / database / tablespace).
 
@@ -296,7 +301,7 @@ async def validate_check_constraint(
     validate_sql = f"ALTER TABLE {qualified} VALIDATE CONSTRAINT {_quote_identifier(constraint_name)}"
     if was_valid:
         return ValidateCheckConstraintResult(
-            schema=schema,
+            table_schema=schema,
             table=table,
             constraint_name=constraint_name,
             was_valid=True,
@@ -309,7 +314,7 @@ async def validate_check_constraint(
     except Exception as exc:
         raise Pg19DdlError(f"VALIDATE CONSTRAINT {constraint_name} on {schema}.{table} failed: {exc}") from exc
     return ValidateCheckConstraintResult(
-        schema=schema,
+        table_schema=schema,
         table=table,
         constraint_name=constraint_name,
         was_valid=False,

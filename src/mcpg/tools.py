@@ -4577,11 +4577,14 @@ def _register_pg19_ddl_reads(server: FastMCP[AppContext]) -> None:
             "get_pg19_ddl_status()",
         ),
     )
-    async def get_pg19_ddl_status(ctx: _Ctx) -> dict[str, Any]:
+    async def get_pg19_ddl_status(ctx: _Ctx) -> pg19_ddl.Pg19DdlStatus:
         # Catalog probe — never cache: an extension install / build flip
         # mid-session needs to be visible on the next call.
-        status = await pg19_ddl.get_pg19_ddl_status(_driver(ctx))
-        return asdict(status)
+        # Returns the dataclass directly — FastMCP auto-derives the
+        # outputSchema from the type annotation (PR-13: structured
+        # tool outputs so LangChain / LangGraph clients can validate
+        # responses against a Pydantic model).
+        return await pg19_ddl.get_pg19_ddl_status(_driver(ctx))
 
     @server.tool(
         name="get_role_ddl",
@@ -4597,9 +4600,8 @@ def _register_pg19_ddl_reads(server: FastMCP[AppContext]) -> None:
             "get_role_ddl(role_name='app_user')",
         ),
     )
-    async def get_role_ddl(ctx: _Ctx, role_name: str) -> dict[str, Any]:
-        result = await pg19_ddl.get_role_ddl(_driver(ctx), role_name)
-        return asdict(result)
+    async def get_role_ddl(ctx: _Ctx, role_name: str) -> pg19_ddl.ObjectDdlResult:
+        return await pg19_ddl.get_role_ddl(_driver(ctx), role_name)
 
     @server.tool(
         name="get_database_ddl",
@@ -4613,9 +4615,8 @@ def _register_pg19_ddl_reads(server: FastMCP[AppContext]) -> None:
             "get_database_ddl(database_name='analytics')",
         ),
     )
-    async def get_database_ddl(ctx: _Ctx, database_name: str) -> dict[str, Any]:
-        result = await pg19_ddl.get_database_ddl(_driver(ctx), database_name)
-        return asdict(result)
+    async def get_database_ddl(ctx: _Ctx, database_name: str) -> pg19_ddl.ObjectDdlResult:
+        return await pg19_ddl.get_database_ddl(_driver(ctx), database_name)
 
     @server.tool(
         name="get_tablespace_ddl",
@@ -4629,9 +4630,8 @@ def _register_pg19_ddl_reads(server: FastMCP[AppContext]) -> None:
             "get_tablespace_ddl(tablespace_name='fast_ssd')",
         ),
     )
-    async def get_tablespace_ddl(ctx: _Ctx, tablespace_name: str) -> dict[str, Any]:
-        result = await pg19_ddl.get_tablespace_ddl(_driver(ctx), tablespace_name)
-        return asdict(result)
+    async def get_tablespace_ddl(ctx: _Ctx, tablespace_name: str) -> pg19_ddl.ObjectDdlResult:
+        return await pg19_ddl.get_tablespace_ddl(_driver(ctx), tablespace_name)
 
 
 def _register_pg19_ddl_writes(server: FastMCP[AppContext]) -> None:
@@ -4646,10 +4646,13 @@ def _register_pg19_ddl_writes(server: FastMCP[AppContext]) -> None:
             "since 9.x); ships in the PG 19 DDL helpers module because "
             "it closes the create-NOT-VALID / validate-later loop on "
             "the agent surface. "
-            "Returns an object with `schema`, `table`, `constraint_name`, "
-            "`was_valid` (bool / null), `now_valid` (bool), `changed` "
-            "(bool), and `validate_sql` (the rendered DDL that actually "
-            "executed, or a `-- no-op` comment when nothing was needed).",
+            "Returns an object with `table_schema`, `table`, "
+            "`constraint_name`, `was_valid` (bool / null), `now_valid` "
+            "(bool), `changed` (bool), and `validate_sql` (the rendered "
+            "DDL that actually executed, or a `-- no-op` comment when "
+            "nothing was needed). The field is named `table_schema` (not "
+            "`schema`) to avoid colliding with Pydantic's reserved name "
+            "in the auto-derived outputSchema.",
             "validate_check_constraint(schema='public', table='orders', constraint_name='orders_total_nonneg')",
         ),
     )
@@ -4658,7 +4661,7 @@ def _register_pg19_ddl_writes(server: FastMCP[AppContext]) -> None:
         schema: str,
         table: str,
         constraint_name: str,
-    ) -> dict[str, Any]:
+    ) -> pg19_ddl.ValidateCheckConstraintResult:
         database = ctx.request_context.lifespan_context.database
         result = await pg19_ddl.validate_check_constraint(
             database,
@@ -4667,7 +4670,7 @@ def _register_pg19_ddl_writes(server: FastMCP[AppContext]) -> None:
             constraint_name=constraint_name,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_pg19_partitions_reads(server: FastMCP[AppContext]) -> None:

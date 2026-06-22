@@ -22,6 +22,38 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Structured MCP tool outputs** (`outputSchema` on the wire). New
+  contract surface for LangChain / LangGraph / typed-state agent
+  clients: every tool with a typed return annotation now exposes a
+  populated JSON Schema via MCP's `outputSchema` field. FastMCP
+  auto-derives the schema from the function's dataclass return type,
+  so a LangGraph node can wire its state model directly against the
+  tool's output without any hand-coded translation.
+
+  PR-13 (first sweep). Converts the PG 19 DDL helpers family
+  (`get_pg19_ddl_status`, `get_role_ddl`, `get_database_ddl`,
+  `get_tablespace_ddl`, `validate_check_constraint`) from
+  `dict[str, Any]` returns to typed dataclass returns. Drops
+  `slots=True` from the affected dataclasses (slot descriptors
+  leak into Pydantic's introspection and break schema generation).
+  Renames `ValidateCheckConstraintResult.schema` →
+  `.table_schema` to avoid Pydantic's reserved-name shadow on
+  `BaseModel.schema()`.
+
+  New contract test `tests/contract/test_tool_output_schemas.py`
+  pins the per-tool field set + locks in a monotonic-growth floor
+  so the manifest never silently shrinks. The
+  `docs/contributing/adding-tools.md` skill is updated with the
+  typed-return pattern + sweep checklist for the remaining
+  ~200 legacy `dict[str, Any]` tools.
+
+  Wire-format note: existing clients reading the `content` array
+  continue to work unchanged (FastMCP emits both the legacy text
+  payload and the new `structuredContent`). Only the
+  `validate_check_constraint` field rename (`schema` →
+  `table_schema`) is a breaking shape change — the tool was added
+  in #144 yesterday, no external consumers to migrate.
+
 - **Roadmap observation loop.** Extended `docs/feature-shortlist.md`
   with 14 new entries capturing gaps surfaced during the Phase 3
   retrospective: tool-bucket usage telemetry (1.4), PG 19 PR-10
