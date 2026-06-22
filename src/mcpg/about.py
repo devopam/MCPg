@@ -689,6 +689,13 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     # recommend_index_drops; routes to the advisors bucket.
     "get_skip_scan_status": "advisors",
     "recommend_skip_scan_indexes": "advisors",
+    # PG 19 WAIT FOR LSN — read-your-writes consistency on standbys.
+    # Operational concern (replica lag + RYW pattern) — sits next to
+    # replication / replica advisors.
+    "get_wait_for_lsn_status": "operations_and_health",
+    "get_current_wal_lsn": "operations_and_health",
+    "wait_for_lsn": "operations_and_health",
+    "recommend_read_your_writes": "operations_and_health",
 }
 
 

@@ -75,7 +75,17 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
     phase can decide which writes to attempt based on per-feature
     availability.
     """
-    from mcpg import aio, pg19_ddl, pg19_partitions, pg19_runtime, pg19_skip_scan, pg19_stats, pgq, repack
+    from mcpg import (
+        aio,
+        pg19_ddl,
+        pg19_partitions,
+        pg19_runtime,
+        pg19_skip_scan,
+        pg19_stats,
+        pgq,
+        repack,
+        wait_for_lsn,
+    )
 
     driver = database.driver()
     results: dict[str, dict[str, Any]] = {}
@@ -93,6 +103,7 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
         ("get_pg19_ddl_status", pg19_ddl.get_pg19_ddl_status(driver)),
         ("get_pg19_partitions_status", pg19_partitions.get_pg19_partitions_status(driver)),
         ("get_skip_scan_status", pg19_skip_scan.get_skip_scan_status(driver)),
+        ("get_wait_for_lsn_status", wait_for_lsn.get_wait_for_lsn_status(driver)),
     ):
         result = await _safe(label, helper)
         if result is not None:
@@ -102,7 +113,7 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
 
 async def _exercise_advisors(database: Database) -> None:
     """Phase 2 — read-only advisors that are safe to call on any cluster."""
-    from mcpg import aio, pg19_ddl, pg19_skip_scan, pg19_stats
+    from mcpg import aio, pg19_ddl, pg19_skip_scan, pg19_stats, wait_for_lsn
 
     driver = database.driver()
     await _safe("recommend_io_method", aio.recommend_io_method(driver))
@@ -131,6 +142,12 @@ async def _exercise_advisors(database: Database) -> None:
         "recommend_skip_scan_indexes",
         pg19_skip_scan.recommend_skip_scan_indexes(driver),
     )
+    # WAIT FOR LSN — exercise the advisor + the LSN snapshot. The actual
+    # wait_for_lsn() call is skipped: on the smoke harness the container
+    # is a single primary (no standby), so the wait would trivially
+    # return; behavioural coverage lives in tests/unit/test_wait_for_lsn.py.
+    await _safe("recommend_read_your_writes", wait_for_lsn.recommend_read_your_writes(driver))
+    await _safe("get_current_wal_lsn", wait_for_lsn.get_current_wal_lsn(driver))
 
 
 async def pgq_list_safely(driver: Any) -> Any:

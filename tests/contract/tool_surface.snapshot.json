@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 219
+    "tool_count": 223
   },
   "tools": [
     {
@@ -2122,6 +2122,15 @@
       "name": "get_compact_schema"
     },
     {
+      "description": "Return the current WAL LSN — write-side on a primary (`pg_current_wal_lsn()`) or replay-side on a standby (`pg_last_wal_replay_lsn()`). Natural pairing for the read-your-writes workflow: capture on the primary right after a write, then pass to `wait_for_lsn` on the standby session before the follow-up read. Works on every supported PG version. Returns an object with `role` (`'primary'` or `'standby'`) and `lsn` (PostgreSQL LSN literal, e.g. `'0/1234ABCD'`).\n\nExample: `get_current_wal_lsn()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_current_wal_lsnArguments",
+        "type": "object"
+      },
+      "name": "get_current_wal_lsn"
+    },
+    {
       "description": "Report whether PG 19's online `data_checksums` toggle is usable + the current setting. Never raises — driver-level errors surface as `available=false`. On PG ≤ 18 reports `available=false` but still surfaces the current state (set at initdb time) so the agent has context, and points at the offline `pg_checksums` fallback. Returns an object with `available` (bool), `server_version_num` (int), `server_version`, `enabled` (bool / null), and `detail` (guidance string).\n\nExample: `get_data_checksums_status()`",
       "inputSchema": {
         "properties": {},
@@ -2362,6 +2371,15 @@
         "type": "object"
       },
       "name": "get_turboquant_last_scan_stats"
+    },
+    {
+      "description": "Report whether PG 19's `WAIT FOR LSN` is usable on this server. Also reports whether the current backend is a standby (the only context where the wait does meaningful work). Never raises. On PG ≤ 18 returns `available=false` and points at the poll-loop fallback. Returns an object with `available` (bool), `server_version_num` (int), `server_version`, `is_in_recovery` (bool), and `detail`.\n\nExample: `get_wait_for_lsn_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_wait_for_lsn_statusArguments",
+        "type": "object"
+      },
+      "name": "get_wait_for_lsn_status"
     },
     {
       "description": "Combine a BM25 search and a pgvector search via Reciprocal Rank Fusion — the canonical v2 pattern ParadeDB documents in the 2025-10-22 'Hybrid Search Missing Manual' blog post. Returns hits as {id, score, bm25_rank, vector_rank}. ``score`` is the summed ``sum(weight * 1.0 / (k + rank))`` across both legs; per-leg ranks are surfaced for transparency (either can be NULL if a row only appeared in one leg's top-K). ``distance_op`` is the pgvector operator ('<=>'/'<->'/'<#>' — RRF is operator-agnostic). ``bm25_columns=None`` searches the whole BM25 index; ``bm25_columns=[\"col\"]`` restricts the BM25 leg to a single field. Defaults mirror upstream's demonstrated form (cosine, k=60, equal weights, per_leg_limit=20). Requires the pg_search and pgvector extensions.",
@@ -4446,6 +4464,15 @@
       "name": "recommend_prewarm_targets"
     },
     {
+      "description": "Advise whether the caller should use `WAIT FOR LSN` for read-your-writes consistency. Combines server role (primary vs standby), replay lag, and PG version into a structured recommendation. Never raises. `reason` is one of `primary_no_wait_needed`, `standby_no_lag`, `standby_lag_unknown`, `standby_with_lag`, `standby_pg18_or_older`, `unavailable`. Returns an object with `recommend_use` (bool), `reason`, `is_in_recovery`, `server_version_num`, `current_lag_bytes` (int / null), and `detail`.\n\nExample: `recommend_read_your_writes()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "recommend_read_your_writesArguments",
+        "type": "object"
+      },
+      "name": "recommend_read_your_writes"
+    },
+    {
       "description": "Recommend tables that would benefit from a Redis cache layer. Inspects ``pg_stat_user_tables`` for read-heavy, low-write relations whose working set fits comfortably in Redis (default: read/write ratio ≥ 10, ≥ 1000 reads, ≤ 1M rows). When ``server`` is provided the generated ``ready_to_run_sql`` stub targets that server name; otherwise the stub uses a placeholder operators must substitute. Advisor is read-only — never touches Redis itself. Returns an object with `server` and `candidates` — a list of objects with `schema`, `table`, `reads`, `writes`, `read_write_ratio`, `estimated_row_count`, `reason` (`read_only_lookup_table` / `small_hot_relation` / `read_heavy_low_write` / `moderate_read_dominant`), and `ready_to_run_sql` (a CREATE FOREIGN TABLE stub).\n\nExample: `recommend_redis_cache_targets(server='redis_primary', limit=10)`",
       "inputSchema": {
         "properties": {
@@ -5936,6 +5963,28 @@
         "type": "object"
       },
       "name": "verify_connection_encryption"
+    },
+    {
+      "description": "Issue `WAIT FOR LSN '<lsn>' TIMEOUT <ms>` and block until WAL replay catches up on the connected backend. `timeout_ms` defaults to 0 (wait indefinitely); a positive value bounds the wait — on timeout the helper returns `timed_out=true` rather than raising so the caller can decide whether to retry or fall through. LSN format is strictly validated (`hex/hex`) before any SQL is composed. Requires PG 19+; raises on older servers with the poll-loop fallback in the message. Returns an object with `lsn`, `timeout_ms` (int), `timed_out` (bool), and `wait_sql` (the rendered statement).\n\nExample: `wait_for_lsn(lsn='0/1234ABCD', timeout_ms=5000)`",
+      "inputSchema": {
+        "properties": {
+          "lsn": {
+            "title": "Lsn",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 0,
+            "title": "Timeout Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lsn"
+        ],
+        "title": "wait_for_lsn_toolArguments",
+        "type": "object"
+      },
+      "name": "wait_for_lsn"
     },
     {
       "description": "Walk and reconstruct the lock-wait graph of the database. Detects deadlock cycles, traces linear blocking paths to their root blockers, and renders a Mermaid flowchart representing the lock dependency graph. Read-only. Returns an object with `cycles` (list of detected cycle PID lists), `paths` (linear blocking paths as PID lists), `roots` (root blocker PIDs), `nodes` (dict keyed by PID with per-backend lock detail), and `mermaid` (the pre-rendered flowchart string).",

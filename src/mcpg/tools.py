@@ -75,6 +75,7 @@ from mcpg import (
     vector_ops,
     vector_tuner_advanced,
     vector_tuning,
+    wait_for_lsn,
     walinspect,
     workload,
     write,
@@ -4840,6 +4841,93 @@ def _register_pg19_partitions_writes(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_wait_for_lsn_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_wait_for_lsn_status",
+        description=_with_example(
+            "Report whether PG 19's `WAIT FOR LSN` is usable on this server. "
+            "Also reports whether the current backend is a standby (the only "
+            "context where the wait does meaningful work). Never raises. "
+            "On PG ≤ 18 returns `available=false` and points at the poll-loop "
+            "fallback. "
+            "Returns an object with `available` (bool), `server_version_num` "
+            "(int), `server_version`, `is_in_recovery` (bool), and `detail`.",
+            "get_wait_for_lsn_status()",
+        ),
+    )
+    async def get_wait_for_lsn_status(ctx: _Ctx) -> dict[str, Any]:
+        # Live cluster state — never cache. is_in_recovery flips on
+        # promotion / demotion and the agent needs to see the new
+        # state on the next call.
+        status = await wait_for_lsn.get_wait_for_lsn_status(_driver(ctx))
+        return asdict(status)
+
+    @server.tool(
+        name="get_current_wal_lsn",
+        description=_with_example(
+            "Return the current WAL LSN — write-side on a primary "
+            "(`pg_current_wal_lsn()`) or replay-side on a standby "
+            "(`pg_last_wal_replay_lsn()`). Natural pairing for the "
+            "read-your-writes workflow: capture on the primary right "
+            "after a write, then pass to `wait_for_lsn` on the standby "
+            "session before the follow-up read. Works on every "
+            "supported PG version. "
+            "Returns an object with `role` (`'primary'` or `'standby'`) "
+            "and `lsn` (PostgreSQL LSN literal, e.g. `'0/1234ABCD'`).",
+            "get_current_wal_lsn()",
+        ),
+    )
+    async def get_current_wal_lsn(ctx: _Ctx) -> dict[str, Any]:
+        # Snapshot — never cache; the LSN advances monotonically with
+        # every WAL-emitting transaction.
+        result = await wait_for_lsn.get_current_wal_lsn(_driver(ctx))
+        return asdict(result)
+
+    @server.tool(
+        name="recommend_read_your_writes",
+        description=_with_example(
+            "Advise whether the caller should use `WAIT FOR LSN` for "
+            "read-your-writes consistency. Combines server role "
+            "(primary vs standby), replay lag, and PG version into a "
+            "structured recommendation. Never raises. `reason` is one "
+            "of `primary_no_wait_needed`, `standby_no_lag`, "
+            "`standby_lag_unknown`, `standby_with_lag`, "
+            "`standby_pg18_or_older`, `unavailable`. "
+            "Returns an object with `recommend_use` (bool), `reason`, "
+            "`is_in_recovery`, `server_version_num`, `current_lag_bytes` "
+            "(int / null), and `detail`.",
+            "recommend_read_your_writes()",
+        ),
+    )
+    async def recommend_read_your_writes(ctx: _Ctx) -> dict[str, Any]:
+        # Live advisor — never cache. Lag and role change in real time.
+        result = await wait_for_lsn.recommend_read_your_writes(_driver(ctx))
+        return asdict(result)
+
+
+def _register_wait_for_lsn_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="wait_for_lsn",
+        description=_with_example(
+            "Issue `WAIT FOR LSN '<lsn>' TIMEOUT <ms>` and block until "
+            "WAL replay catches up on the connected backend. `timeout_ms` "
+            "defaults to 0 (wait indefinitely); a positive value bounds "
+            "the wait — on timeout the helper returns `timed_out=true` "
+            "rather than raising so the caller can decide whether to "
+            "retry or fall through. LSN format is strictly validated "
+            "(`hex/hex`) before any SQL is composed. Requires PG 19+; "
+            "raises on older servers with the poll-loop fallback in "
+            "the message. "
+            "Returns an object with `lsn`, `timeout_ms` (int), `timed_out` "
+            "(bool), and `wait_sql` (the rendered statement).",
+            "wait_for_lsn(lsn='0/1234ABCD', timeout_ms=5000)",
+        ),
+    )
+    async def wait_for_lsn_tool(ctx: _Ctx, lsn: str, timeout_ms: int = 0) -> dict[str, Any]:
+        result = await wait_for_lsn.wait_for_lsn(_driver(ctx), lsn=lsn, timeout_ms=timeout_ms)
+        return asdict(result)
+
+
 def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="get_pg19_stats_status",
@@ -5387,6 +5475,8 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_pg19_ddl_reads(server)
         _register_pg19_partitions_reads(server)
         _register_pg19_skip_scan_reads(server)
+        _register_wait_for_lsn_reads(server)
+        _register_wait_for_lsn_writes(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
