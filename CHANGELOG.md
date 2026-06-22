@@ -36,6 +36,16 @@ adheres to [Semantic Versioning](https://semver.org/).
   **observation loop** convention so gaps always land as a numbered
   row, never as a chat-thread orphan.
 
+- **PG 19 operations playbook** (`docs/plans/pg19-operations-playbook.md`).
+  Operator-side reference for the PG 19 behaviour changes that
+  *aren't* primary MCPg tool surfaces — JIT-off-by-default, LZ4
+  TOAST compression, RADIUS removal, `pg_hba.conf` OAuth method,
+  MD5 deprecation warnings, per-process log levels, jsonpath
+  string functions. Companion to `pg19-readiness.md`, which tracks
+  the MCPg-side tool work. PR-12 of the PG 19 Phase 3 plan (docs
+  sweep; bundles audit rows #22, #23, plus the JSONpath / JIT /
+  LZ4 / RADIUS doc-only entries). Advances #120.
+
 - **PG 19 DDL helpers** (`mcpg.pg19_ddl`). Five new tools that close
   the "validate-and-ship constraints, dump cluster-level DDL without
   pg_dumpall" gap on the agent surface. `validate_check_constraint`
