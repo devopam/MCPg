@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`Tests (PG 19)` CI step now succeeds gracefully when the pgdg
+  apt repo hasn't yet republished `postgresql-client-19`.** Probes
+  `apt-cache show` before installing; emits a workflow
+  `::warning::` instead of a fatal exit when the package is
+  missing. The matrix entry is already `continue-on-error: true`
+  so the *job* never blocked merge, but the *step* failure was
+  emitting a check-run-failed webhook on every push to every
+  open PR (~15 unnecessary notifications per day during Phase 3).
+  This change stops the noise at the step level without changing
+  the matrix-entry semantics — once the package is republished
+  the install runs normally. Realises roadmap row 14.1.
+
 ### Added
 
 - **Roadmap observation loop.** Extended `docs/feature-shortlist.md`
