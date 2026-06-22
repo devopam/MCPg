@@ -1,5 +1,9 @@
 # PostgreSQL 19 operations playbook
 
+> Listed under **Operate** on [the docs index](../index.md) — start
+> there for the wider operator-side reference set (security
+> hardening, scaling, release process).
+
 Behavioural changes shipped in PostgreSQL 19 that operators of an
 MCPg-managed cluster will want to know about — even when MCPg itself
 isn't the surface that exposes them. Companion to
@@ -77,9 +81,14 @@ deprecated for several releases; PG 19 finalises the removal.
 
 **What to do.**
 
-- Audit `pg_hba.conf` for `radius` entries before the upgrade.
-  `grep -n radius /etc/postgresql/*/main/pg_hba.conf` is the
-  one-liner.
+- Audit `pg_hba.conf` for `radius` entries before the upgrade. The
+  file's location varies by distro / packaging: Debian / Ubuntu
+  ships it under `/etc/postgresql/<version>/main/pg_hba.conf`;
+  RHEL / Fedora under `/var/lib/pgsql/<version>/data/pg_hba.conf`;
+  Homebrew + macOS under the path returned by `pg_config --sysconfdir`.
+  When in doubt, ask the server itself:
+  `psql -c "SHOW hba_file;"`. Then:
+  `grep -nE '^[^#]*\bradius\b' "$(psql -tAc 'SHOW hba_file;')"`.
 - Replace with a supported method — `ldap`, `cert`, `scram-sha-256`,
   or the new OAuth flow (below) depending on what the RADIUS server
   was federating.
@@ -150,9 +159,17 @@ without a fire-hose of every NOTICE in the cluster".
 - The new GUCs follow the pattern
   `log_min_messages.<process_class>` — see the PG 19 docs for the
   full list of classes.
-- For dev / staging clusters, set
-  `log_min_messages.autovacuum = debug1` to capture autovacuum's
-  decision-making without raising the global noise floor.
+- For dev / staging clusters, set the relevant override in
+  `postgresql.conf` (or via `ALTER SYSTEM SET …`) — for example:
+
+  ```ini
+  # postgresql.conf
+  log_min_messages              = info
+  log_min_messages.autovacuum   = debug1
+  log_min_messages.parallel_worker = warning
+  ```
+
+  `pg_reload_conf()` is enough; no restart needed.
 - The MCPg `obs_logging` module already parses standard PG
   log-line shapes; per-process levels affect verbosity, not the
   line format, so no MCPg-side change is required.
