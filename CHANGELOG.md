@@ -22,6 +22,28 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **PG 19 skip-scan-aware index advisor** (`mcpg.pg19_skip_scan`). Two
+  new tools that expose PG 19's B-tree skip-scan optimisation as an
+  actionable advisor. `get_skip_scan_status` is the version probe
+  (never raises). `recommend_skip_scan_indexes` walks `pg_index`
+  joined to `pg_stats` for composite B-tree indexes whose leading
+  column has a low NDV — those are the ones PG 19's skip-scan
+  unlocks for queries that filter only on trailing columns. Each
+  candidate's `rationale` flags the dedicated single-column indexes
+  on the trailing columns as review candidates for
+  `recommend_index_drops`.
+
+  PR-8 of the PG 19 Phase 3 plan (PO matrix row #9, PO score 20).
+  Both tools route to the existing `advisors` capability bucket
+  next to `recommend_indexes` / `recommend_index_drops`.
+
+  Per the no-deprecation rule, the existing `recommend_indexes` and
+  `recommend_index_drops` keep working on every supported PG version
+  with the same shape and reason codes. On PG ≤ 18 the new advisor
+  returns an empty list; `get_skip_scan_status` points at the
+  standard "add a dedicated single-column index" fallback. Advances
+  #120.
+
 - **Structured MCP tool outputs** (`outputSchema` on the wire). New
   contract surface for LangChain / LangGraph / typed-state agent
   clients: every tool with a typed return annotation now exposes a

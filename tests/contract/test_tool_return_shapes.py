@@ -84,6 +84,7 @@ _KNOWN_HELPER_MODULES = (
     "pg19_ddl",
     "pg19_partitions",
     "pg19_runtime",
+    "pg19_skip_scan",
     "pg19_stats",
     "pg_prewarm",
     "pg_search",

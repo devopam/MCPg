@@ -75,7 +75,7 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
     phase can decide which writes to attempt based on per-feature
     availability.
     """
-    from mcpg import aio, pg19_ddl, pg19_partitions, pg19_runtime, pg19_stats, pgq, repack
+    from mcpg import aio, pg19_ddl, pg19_partitions, pg19_runtime, pg19_skip_scan, pg19_stats, pgq, repack
 
     driver = database.driver()
     results: dict[str, dict[str, Any]] = {}
@@ -92,6 +92,7 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
         ),
         ("get_pg19_ddl_status", pg19_ddl.get_pg19_ddl_status(driver)),
         ("get_pg19_partitions_status", pg19_partitions.get_pg19_partitions_status(driver)),
+        ("get_skip_scan_status", pg19_skip_scan.get_skip_scan_status(driver)),
     ):
         result = await _safe(label, helper)
         if result is not None:
@@ -101,7 +102,7 @@ async def _exercise_status_probes(database: Database) -> dict[str, dict[str, Any
 
 async def _exercise_advisors(database: Database) -> None:
     """Phase 2 — read-only advisors that are safe to call on any cluster."""
-    from mcpg import aio, pg19_ddl, pg19_stats
+    from mcpg import aio, pg19_ddl, pg19_skip_scan, pg19_stats
 
     driver = database.driver()
     await _safe("recommend_io_method", aio.recommend_io_method(driver))
@@ -121,6 +122,14 @@ async def _exercise_advisors(database: Database) -> None:
     await _safe(
         "get_tablespace_ddl(pg_default)",
         pg19_ddl.get_tablespace_ddl(driver, "pg_default"),
+    )
+    # PG 19 skip-scan advisor — exercise on whatever indexes the
+    # smoke container happens to have. On a stock container with no
+    # user indexes the result will be an empty list; that's a clean
+    # signal that the query ran and the planner detection works.
+    await _safe(
+        "recommend_skip_scan_indexes",
+        pg19_skip_scan.recommend_skip_scan_indexes(driver),
     )
 
 

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 217
+    "tool_count": 219
   },
   "tools": [
     {
@@ -2285,6 +2285,15 @@
       "name": "get_server_info"
     },
     {
+      "description": "Report whether PG 19's B-tree skip-scan optimisation is the planner default on this server. Never raises — driver-level errors surface as `available=false`. On PG ≤ 18 reports `available=false` and points the agent at the standard 'add a dedicated single-column index' fallback. Returns an object with `available` (bool), `server_version_num` (int), `server_version`, and `detail` (guidance string).\n\nExample: `get_skip_scan_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_skip_scan_statusArguments",
+        "type": "object"
+      },
+      "name": "get_skip_scan_status"
+    },
+    {
       "description": "Return the `CREATE TABLESPACE` DDL for a named tablespace using PG 19's `pg_get_tablespacedef(oid)` function. Returns `found=false` with an empty `ddl` when the tablespace doesn't exist. Requires PG 19+. Returns an object with `object_type` (`'tablespace'`), `object_name`, `found`, and `ddl`.\n\nExample: `get_tablespace_ddl(tablespace_name='fast_ssd')`",
       "inputSchema": {
         "properties": {
@@ -4504,6 +4513,21 @@
         "type": "object"
       },
       "name": "recommend_rerank_strategy"
+    },
+    {
+      "description": "Find composite B-tree indexes whose leading column has low NDV — these are the ones PG 19's skip-scan optimisation unlocks. Each candidate's trailing columns can now be served by the composite index alone, so any dedicated single-column indexes on those trailing columns become review candidates for `recommend_index_drops`. Returns an empty list on PG ≤ 18 or driver failure — pair with `get_skip_scan_status` for the diagnostic. `max_leading_ndv` (default 1000) caps the leading-column NDV that's considered low enough for skip-scan to be profitable. Returns a list of objects with `schema`, `table`, `index_name`, `leading_column`, `trailing_columns` (list of strings), `estimated_leading_ndv` (int), and `rationale` (human-readable explanation).\n\nExample: `recommend_skip_scan_indexes()`",
+      "inputSchema": {
+        "properties": {
+          "max_leading_ndv": {
+            "default": 1000,
+            "title": "Max Leading Ndv",
+            "type": "integer"
+          }
+        },
+        "title": "recommend_skip_scan_indexesArguments",
+        "type": "object"
+      },
+      "name": "recommend_skip_scan_indexes"
     },
     {
       "description": "Walk every pg_turboquant index and emit advisor findings. Rules currently surfaced: ``prerequisites_unmet`` (CRITICAL — pgvector is missing) and ``delta_tier_large`` (WARNING — upstream's own ``delta_health.merge_recommended=true`` advisory, emits a ``tq_maintain_index`` suggested_action). Each finding carries a ready-to-run ``suggested_action`` SQL statement. Returns an empty list when the extension is not installed. Also feeds the ``pg_turboquant Indexes`` category in audit_database.",
