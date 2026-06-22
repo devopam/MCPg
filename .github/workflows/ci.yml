@@ -86,15 +86,27 @@ jobs:
           # by the pgdg repo as soon as the server enters beta — but during
           # the beta window the package can be temporarily absent from the
           # noble suite (observed mid-Beta-1, 2026-06-22). Probe apt-cache
-          # before installing so a not-yet-published client doesn't trip
-          # the step (and emit a check-run-failed webhook to every open PR);
-          # the matrix entry is already `continue-on-error: true` for the
-          # `Tests (PG 19)` job, this just stops the noise at the step level.
-          # See roadmap 14.1 in docs/feature-shortlist.md.
-          if apt-cache show "postgresql-client-${{ matrix.postgres }}" >/dev/null 2>&1; then
-            sudo apt-get install -y "postgresql-client-${{ matrix.postgres }}"
+          # for the literal "Unable to locate package" failure mode before
+          # installing so the step distinguishes "package not yet published"
+          # (downgraded to a workflow ::warning::) from genuine apt errors
+          # (network / mirror outage — kept fatal so we don't silently mask
+          # real infra problems; sourcery feedback on PR #152). The matrix
+          # entry is already `continue-on-error: true` for the
+          # `Tests (PG 19)` job; this just stops the step-level webhook
+          # noise. See roadmap 14.1 in docs/feature-shortlist.md.
+          set +e
+          pkg="postgresql-client-${{ matrix.postgres }}"
+          apt_cache_out=$(apt-cache show "$pkg" 2>&1)
+          apt_cache_rc=$?
+          set -e
+          if [ "$apt_cache_rc" -eq 0 ]; then
+            sudo apt-get install -y "$pkg"
+          elif printf '%s' "$apt_cache_out" | grep -q "Unable to locate package\|No packages found"; then
+            echo "::warning::$pkg not yet in apt cache — skipping. Tests that shell out to pg_dump will be limited to what the runner's default client provides."
           else
-            echo "::warning::postgresql-client-${{ matrix.postgres }} not yet in apt cache — skipping. Tests that shell out to pg_dump will be limited to what the runner's default client provides."
+            echo "::error::apt-cache show $pkg failed with an unexpected error (likely a transient network / mirror issue, not a package-availability one):"
+            printf '%s\n' "$apt_cache_out" >&2
+            exit "$apt_cache_rc"
           fi
       # A custom image (pgvector + PostGIS) so the integration suite can test
       # vector and geospatial features against a real database. It is built
