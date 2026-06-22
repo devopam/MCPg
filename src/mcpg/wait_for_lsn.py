@@ -129,13 +129,18 @@ class ReadYourWritesRecommendation:
 
     * ``primary_no_wait_needed`` — call landed on the primary; reads
       already see writes.
-    * ``standby_no_lag`` — standby with zero observed replay lag;
+    * ``standby_no_lag`` — standby with a measured 0-byte replay lag;
       WAIT FOR LSN is harmless but unnecessary.
+    * ``standby_lag_unknown`` — standby where the lag probe returned
+      NULL or an unparseable value (transient receive-LSN gap,
+      pg_wal_lsn_diff() failure, etc.). Distinct from
+      ``standby_no_lag`` so the caller can tell "measured zero" from
+      "couldn't measure".
     * ``standby_with_lag`` — standby with non-zero replay lag; WAIT
       FOR LSN is the right primitive.
     * ``standby_pg18_or_older`` — standby but server is PG ≤ 18;
       fall back to the poll-loop pattern.
-    * ``unavailable`` — version probe failed; can't tell.
+    * ``unavailable`` — version / recovery / lag probe failed; can't tell.
     """
 
     recommend_use: bool
@@ -269,8 +274,11 @@ async def get_current_wal_lsn(driver: SqlDriver) -> CurrentWalLsnResult:
     call this → take the result to a standby session and pass it to
     ``wait_for_lsn``.
 
-    Works on every supported PG version. Raises
-    :class:`WaitForLsnError` only when both LSN-getter SQL calls fail.
+    Works on every supported PG version. Raises :class:`WaitForLsnError`
+    when the recovery probe or the LSN SQL call fails, or when the
+    role-appropriate LSN function returns NULL (sourcery bug-risk on
+    PR #146: the prior docstring claimed "only when both LSN-getter
+    calls fail" while pg_is_in_recovery() exceptions leaked).
     """
     try:
         in_recovery = await _is_in_recovery(driver)
@@ -323,11 +331,17 @@ async def wait_for_lsn(driver: SqlDriver, *, lsn: str, timeout_ms: int = 0) -> W
     try:
         await driver.execute_query(wait_sql, force_readonly=True)
     except Exception as exc:
+        # PG raises SQLSTATE 57014 (query_canceled) on TIMEOUT — that's
+        # the locale-independent signal and the only reliable one
+        # (gemini + sourcery critical on PR #146: substring matching
+        # on "timed out" / "timeout" misfires under non-English
+        # lc_messages and conflates statement_timeout with the
+        # WAIT FOR LSN timeout). The English-message check stays as a
+        # belt-and-braces fallback for drivers that don't surface the
+        # SQLSTATE attribute.
+        sqlstate = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
         msg = str(exc).lower()
-        # PG's WAIT FOR LSN raises a SQLSTATE 57014 (query_canceled) /
-        # "wait for lsn timed out" message on timeout. Catch the
-        # documented shape; let everything else propagate.
-        if "timed out" in msg or "timeout" in msg:
+        if sqlstate == "57014" or "timed out" in msg or "timeout" in msg:
             return WaitForLsnResult(lsn=lsn, timeout_ms=timeout_ms, timed_out=True, wait_sql=wait_sql)
         raise WaitForLsnError(f"WAIT FOR LSN failed: {exc}") from exc
     return WaitForLsnResult(lsn=lsn, timeout_ms=timeout_ms, timed_out=False, wait_sql=wait_sql)
@@ -338,38 +352,32 @@ async def wait_for_lsn(driver: SqlDriver, *, lsn: str, timeout_ms: int = 0) -> W
 # ---------------------------------------------------------------------------
 
 
-async def _replay_lag_bytes(driver: SqlDriver) -> int | None:
-    """Return current replay lag in bytes for the connected standby.
-
-    Computed as ``pg_wal_lsn_diff(pg_last_wal_receive_lsn(),
-    pg_last_wal_replay_lsn())``. Returns None when the server isn't a
-    standby (both LSN functions return NULL).
-    """
-    rows = await driver.execute_query(
-        "SELECT pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn())::bigint AS lag",
-        force_readonly=True,
-    )
-    if not rows:
-        return None
-    raw = rows[0].cells.get("lag")
-    if raw is None:
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
-
-
 async def recommend_read_your_writes(driver: SqlDriver) -> ReadYourWritesRecommendation:
     """Advisor — should the caller use WAIT FOR LSN for read-your-writes?
 
     Read-only; never raises. Returns a structured recommendation with
-    one of five ``reason`` codes (see :class:`ReadYourWritesRecommendation`).
-    The caller can branch on ``recommend_use`` for the simple
-    yes / no answer and surface ``detail`` to the human / agent.
+    one of six ``reason`` codes (see :class:`ReadYourWritesRecommendation`).
+
+    Implementation note: version + recovery + lag are captured in a
+    single round-trip SELECT so the advisor cannot mis-classify a
+    standby as a primary if the recovery probe transiently fails
+    (gemini critical on PR #146 — the prior split-query implementation
+    swallowed an `_is_in_recovery` exception, defaulted to
+    `in_recovery=False`, and would route the caller to
+    `primary_no_wait_needed` on a real standby). The atomic query also
+    eliminates the race window between probes during a fail-over.
     """
     try:
-        ver_num, ver = await _server_version(driver)
+        rows = await driver.execute_query(
+            "SELECT "
+            "  current_setting('server_version_num')::int AS ver_num, "
+            "  current_setting('server_version') AS ver, "
+            "  pg_is_in_recovery() AS in_recovery, "
+            "  CASE WHEN pg_is_in_recovery() "
+            "       THEN pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn())::bigint "
+            "       ELSE NULL END AS lag",
+            force_readonly=True,
+        )
     except Exception as exc:
         return ReadYourWritesRecommendation(
             recommend_use=False,
@@ -377,12 +385,40 @@ async def recommend_read_your_writes(driver: SqlDriver) -> ReadYourWritesRecomme
             is_in_recovery=False,
             server_version_num=0,
             current_lag_bytes=None,
-            detail=f"Version probe failed: {exc}. Re-run after the server is back online.",
+            detail=f"Combined probe failed: {exc}. Re-run after the server is back online.",
         )
+    if not rows:
+        return ReadYourWritesRecommendation(
+            recommend_use=False,
+            reason="unavailable",
+            is_in_recovery=False,
+            server_version_num=0,
+            current_lag_bytes=None,
+            detail="Combined probe returned no rows.",
+        )
+    cells = rows[0].cells
     try:
-        in_recovery = await _is_in_recovery(driver)
-    except Exception:
+        ver_num = int(cells.get("ver_num") or 0)
+    except (TypeError, ValueError):
+        ver_num = 0
+    ver = str(cells.get("ver") or "")
+    raw_in_recovery = cells.get("in_recovery")
+    if isinstance(raw_in_recovery, bool):
+        in_recovery = raw_in_recovery
+    elif raw_in_recovery is None:
         in_recovery = False
+    else:
+        in_recovery = str(raw_in_recovery).strip().lower() in {"on", "true", "yes", "t", "1"}
+    raw_lag = cells.get("lag")
+    lag: int | None
+    if raw_lag is None:
+        lag = None
+    else:
+        try:
+            lag = int(raw_lag)
+        except (TypeError, ValueError):
+            lag = None
+
     if not in_recovery:
         return ReadYourWritesRecommendation(
             recommend_use=False,
@@ -395,10 +431,6 @@ async def recommend_read_your_writes(driver: SqlDriver) -> ReadYourWritesRecomme
                 f"Server version: {ver or 'unknown'}. WAIT FOR LSN is unnecessary in this context."
             ),
         )
-    try:
-        lag = await _replay_lag_bytes(driver)
-    except Exception:
-        lag = None
     if ver_num < _MIN_PG19_WAIT_VERSION:
         return ReadYourWritesRecommendation(
             recommend_use=False,
@@ -412,15 +444,33 @@ async def recommend_read_your_writes(driver: SqlDriver) -> ReadYourWritesRecomme
                 "catches up to the captured primary LSN."
             ),
         )
-    if lag is None or lag == 0:
+    if lag is None:
+        # Distinct from `standby_no_lag` — sourcery critical on PR #146:
+        # `None` means "couldn't measure" (NULL from pg_wal_lsn_diff,
+        # missing receive LSN on a freshly-started standby, …), not
+        # "measured zero".
+        return ReadYourWritesRecommendation(
+            recommend_use=False,
+            reason="standby_lag_unknown",
+            is_in_recovery=True,
+            server_version_num=ver_num,
+            current_lag_bytes=None,
+            detail=(
+                "Standby but replay lag could not be measured "
+                "(pg_wal_lsn_diff returned NULL or pg_last_wal_receive_lsn is unset). "
+                "Re-run after the receive LSN is reported; if the symptom persists, "
+                "use the RYW pattern conservatively (capture-then-wait) as a precaution."
+            ),
+        )
+    if lag == 0:
         return ReadYourWritesRecommendation(
             recommend_use=False,
             reason="standby_no_lag",
             is_in_recovery=True,
             server_version_num=ver_num,
-            current_lag_bytes=lag,
+            current_lag_bytes=0,
             detail=(
-                "Standby with no observable replay lag — WAIT FOR LSN is harmless "
+                "Standby with a measured 0-byte replay lag — WAIT FOR LSN is harmless "
                 "but unnecessary. Re-evaluate during traffic spikes if you start "
                 "seeing stale-read reports."
             ),

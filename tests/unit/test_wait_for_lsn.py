@@ -142,6 +142,38 @@ async def test_wait_for_lsn_timeout_reported_not_raised() -> None:
     assert result.lsn == "0/1234ABCD"
 
 
+class _SqlstateError(Exception):
+    """Driver exception that carries a `sqlstate` attribute, like psycopg's
+    DatabaseError. Used to test the locale-independent timeout path."""
+
+    def __init__(self, msg: str, sqlstate: str) -> None:
+        super().__init__(msg)
+        self.sqlstate = sqlstate
+
+
+async def test_wait_for_lsn_timeout_detected_via_sqlstate_57014() -> None:
+    """A non-English error carrying SQLSTATE 57014 still surfaces as timed_out=True
+    (gemini + sourcery critical on PR #146 — locale-independent timeout detection)."""
+    driver = _WaitForLsnDriver()
+    # Override the driver's failure with a SQLSTATE-bearing exception.
+    driver._fail_with = None
+
+    async def fail_with_sqlstate(query, params=None, force_readonly=False):  # type: ignore[no-untyped-def]
+        from mcpg._vendor.sql import SqlDriver
+
+        driver.calls.append((query, params, force_readonly))
+        if "current_setting" in query:
+            return [SqlDriver.RowResult(cells={"ver_num": 190001, "ver": "19beta1"})]
+        driver.executed.append(query)
+        # Mimic a localized error string (German for "canceled by query timeout").
+        raise _SqlstateError("Anfrage durch Anweisungs-Timeout abgebrochen", sqlstate="57014")
+
+    driver.execute_query = fail_with_sqlstate  # type: ignore[method-assign]
+    result = await wait_for_lsn(driver, lsn="0/1234ABCD", timeout_ms=100)  # type: ignore[arg-type]
+    assert result.timed_out is True
+    assert result.lsn == "0/1234ABCD"
+
+
 async def test_wait_for_lsn_other_driver_failure_raises() -> None:
     driver = _WaitForLsnDriver(fail_with="connection refused")
     with pytest.raises(WaitForLsnError, match="WAIT FOR LSN failed"):
@@ -196,8 +228,30 @@ async def test_wait_for_lsn_rejects_bool_timeout() -> None:
 # --- recommend_read_your_writes ------------------------------------------
 
 
+def _advisor_route(*, ver_num: int, ver: str, in_recovery: bool, lag: int | None) -> FakeRoutingDriver:
+    """Build a FakeRoutingDriver for the new combined advisor query.
+
+    The advisor runs a single SELECT that returns ver_num / ver /
+    in_recovery / lag in one row — match on the (unique) substring of
+    that SELECT so the fake doesn't accidentally route via the
+    legacy per-probe keys.
+    """
+    return FakeRoutingDriver(
+        {
+            "AS in_recovery": [
+                {
+                    "ver_num": ver_num,
+                    "ver": ver,
+                    "in_recovery": in_recovery,
+                    "lag": lag,
+                }
+            ],
+        }
+    )
+
+
 async def test_recommend_primary_returns_no_wait_needed() -> None:
-    driver = FakeRoutingDriver(_route(190001, "19beta1", in_recovery=False))
+    driver = _advisor_route(ver_num=190001, ver="19beta1", in_recovery=False, lag=None)
     rec = await recommend_read_your_writes(driver)  # type: ignore[arg-type]
     assert isinstance(rec, ReadYourWritesRecommendation)
     assert rec.recommend_use is False
@@ -206,9 +260,7 @@ async def test_recommend_primary_returns_no_wait_needed() -> None:
 
 
 async def test_recommend_standby_with_lag_recommends_use() -> None:
-    routes = _route(190001, "19beta1", in_recovery=True)
-    routes["pg_wal_lsn_diff"] = [{"lag": 50_000_000}]
-    driver = FakeRoutingDriver(routes)
+    driver = _advisor_route(ver_num=190001, ver="19beta1", in_recovery=True, lag=50_000_000)
     rec = await recommend_read_your_writes(driver)  # type: ignore[arg-type]
     assert rec.recommend_use is True
     assert rec.reason == "standby_with_lag"
@@ -216,19 +268,25 @@ async def test_recommend_standby_with_lag_recommends_use() -> None:
 
 
 async def test_recommend_standby_no_lag_does_not_recommend() -> None:
-    routes = _route(190001, "19beta1", in_recovery=True)
-    routes["pg_wal_lsn_diff"] = [{"lag": 0}]
-    driver = FakeRoutingDriver(routes)
+    driver = _advisor_route(ver_num=190001, ver="19beta1", in_recovery=True, lag=0)
     rec = await recommend_read_your_writes(driver)  # type: ignore[arg-type]
     assert rec.recommend_use is False
     assert rec.reason == "standby_no_lag"
     assert rec.current_lag_bytes == 0
 
 
+async def test_recommend_standby_lag_unknown_is_distinct_from_no_lag() -> None:
+    """lag=NULL → standby_lag_unknown, not standby_no_lag — sourcery critical on PR #146."""
+    driver = _advisor_route(ver_num=190001, ver="19beta1", in_recovery=True, lag=None)
+    rec = await recommend_read_your_writes(driver)  # type: ignore[arg-type]
+    assert rec.recommend_use is False
+    assert rec.reason == "standby_lag_unknown"
+    assert rec.current_lag_bytes is None
+    assert "could not be measured" in rec.detail
+
+
 async def test_recommend_standby_pg18_falls_back() -> None:
-    routes = _route(180003, "18.3", in_recovery=True)
-    routes["pg_wal_lsn_diff"] = [{"lag": 100}]
-    driver = FakeRoutingDriver(routes)
+    driver = _advisor_route(ver_num=180003, ver="18.3", in_recovery=True, lag=100)
     rec = await recommend_read_your_writes(driver)  # type: ignore[arg-type]
     assert rec.recommend_use is False
     assert rec.reason == "standby_pg18_or_older"
@@ -236,10 +294,26 @@ async def test_recommend_standby_pg18_falls_back() -> None:
 
 
 async def test_recommend_never_raises_on_driver_failure() -> None:
+    """A bare driver failure must surface as reason=unavailable, not raise.
+
+    Gemini critical on PR #146: the prior split-query implementation
+    could mis-classify a standby as a primary if the recovery probe
+    swallowed an exception. The combined query collapses that risk
+    into a single try/except that always routes to `unavailable`.
+    """
     driver = FakeDriver(fail=True)
     rec = await recommend_read_your_writes(driver)  # type: ignore[arg-type]
     assert rec.recommend_use is False
     assert rec.reason == "unavailable"
+    assert rec.is_in_recovery is False
+
+
+async def test_recommend_handles_empty_rows() -> None:
+    """A driver that returns zero rows from the combined SELECT routes to `unavailable`."""
+    driver = FakeRoutingDriver({"AS in_recovery": []})
+    rec = await recommend_read_your_writes(driver)  # type: ignore[arg-type]
+    assert rec.reason == "unavailable"
+    assert "no rows" in rec.detail.lower()
 
 
 # --- Dataclass shapes -----------------------------------------------------
