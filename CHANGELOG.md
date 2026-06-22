@@ -22,6 +22,35 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **PG 19 `WAIT FOR LSN` + read-your-writes advisor** (`mcpg.wait_for_lsn`).
+  Four new tools that turn the "read your own writes from a hot
+  standby" pattern into a one-call primitive. `get_wait_for_lsn_status`
+  is the version probe + standby detection (never raises).
+  `get_current_wal_lsn` returns the primary write LSN or the standby
+  replay LSN — the natural pairing for the RYW workflow. `wait_for_lsn`
+  issues `WAIT FOR LSN '<lsn>' TIMEOUT <ms>` with strict
+  `^[0-9A-Fa-f]+/[0-9A-Fa-f]+$` LSN validation up-front (the grammar
+  can't parameter-bind LSN literals, so we validate then embed
+  verbatim). `recommend_read_your_writes` is the advisor — combines
+  server role + replay lag + version into a structured recommendation
+  with reason codes `primary_no_wait_needed`, `standby_no_lag`,
+  `standby_lag_unknown`, `standby_with_lag`, `standby_pg18_or_older`,
+  `unavailable`.
+
+  PR-7 of the PG 19 Phase 3 plan (PO matrix row #7, PO score 22).
+  All four tools route to the `operations_and_health` capability
+  bucket next to the existing replication / replica advisors.
+
+  Per the no-deprecation rule, the poll-loop pattern stays valid on
+  PG ≤ 18 — `get_wait_for_lsn_status` and `recommend_read_your_writes`
+  both point at it; `wait_for_lsn` raises `WaitForLsnError` on older
+  servers with the same fallback in the message. The wait surface
+  also reports `timed_out=true` instead of raising when PG's own
+  TIMEOUT fires; timeout detection is SQLSTATE-57014-based for
+  locale-independence, and the advisor uses a single atomic
+  SELECT so a transient recovery-state probe can't mis-classify a
+  standby as a primary.
+
 - **PG 19 skip-scan-aware index advisor** (`mcpg.pg19_skip_scan`). Two
   new tools that expose PG 19's B-tree skip-scan optimisation as an
   actionable advisor. `get_skip_scan_status` is the version probe

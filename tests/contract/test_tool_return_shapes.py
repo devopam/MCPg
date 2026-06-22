@@ -103,6 +103,7 @@ _KNOWN_HELPER_MODULES = (
     "turboquant",
     "vector_ops",
     "vector_tuning",
+    "wait_for_lsn",
     "walinspect",
     "workload",
     "write",

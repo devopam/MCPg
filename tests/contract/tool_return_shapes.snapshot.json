@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 219
+    "tool_count": 223
   },
   "tools": {
     "add_compression_policy": {
@@ -618,6 +618,14 @@
     "get_compact_schema": {
       "kind": "opaque"
     },
+    "get_current_wal_lsn": {
+      "dataclass": "CurrentWalLsnResult",
+      "fields": [
+        "lsn",
+        "role"
+      ],
+      "kind": "scalar"
+    },
     "get_data_checksums_status": {
       "dataclass": "DataChecksumsStatus",
       "fields": [
@@ -828,6 +836,17 @@
     },
     "get_turboquant_last_scan_stats": {
       "kind": "opaque"
+    },
+    "get_wait_for_lsn_status": {
+      "dataclass": "WaitForLsnStatus",
+      "fields": [
+        "available",
+        "detail",
+        "is_in_recovery",
+        "server_version",
+        "server_version_num"
+      ],
+      "kind": "scalar"
     },
     "hybrid_bm25_vector_search": {
       "dataclass": "HybridHit",
@@ -1695,6 +1714,18 @@
       ],
       "kind": "scalar"
     },
+    "recommend_read_your_writes": {
+      "dataclass": "ReadYourWritesRecommendation",
+      "fields": [
+        "current_lag_bytes",
+        "detail",
+        "is_in_recovery",
+        "reason",
+        "recommend_use",
+        "server_version_num"
+      ],
+      "kind": "scalar"
+    },
     "recommend_redis_cache_targets": {
       "dataclass": "RecommendRedisCacheTargetsResult",
       "fields": [
@@ -2120,6 +2151,16 @@
         "total_connections",
         "unencrypted_connections",
         "version"
+      ],
+      "kind": "scalar"
+    },
+    "wait_for_lsn": {
+      "dataclass": "WaitForLsnResult",
+      "fields": [
+        "lsn",
+        "timed_out",
+        "timeout_ms",
+        "wait_sql"
       ],
       "kind": "scalar"
     },
