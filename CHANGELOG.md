@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Roadmap observation loop.** Extended `docs/feature-shortlist.md`
+  with 14 new entries capturing gaps surfaced during the Phase 3
+  retrospective: tool-bucket usage telemetry (1.4), PG 19 PR-10
+  small-tools batch (2.5), `EXPLAIN ANALYZE (IO)` capture (2.6),
+  benchmark harness (3.3), PR-11 characterisation tests (3.4), MCP
+  resources (8.3), MCP prompts (8.4), `describe_tool` (8.5),
+  remaining `outputSchema` sweep (8.6), session-scope cost advisor
+  (8.7), session-intent handshake (8.8), and a new section 14
+  covering release engineering / hygiene papercuts (CI noise,
+  changelog bloat, sourcery rotation, headline-tool drift, v0.7.0
+  release-cut, roadmap-PR linkage). Roadmap intro now documents the
+  **observation loop** convention so gaps always land as a numbered
+  row, never as a chat-thread orphan.
+
 - **PG 19 DDL helpers** (`mcpg.pg19_ddl`). Five new tools that close
   the "validate-and-ship constraints, dump cluster-level DDL without
   pg_dumpall" gap on the agent surface. `validate_check_constraint`
