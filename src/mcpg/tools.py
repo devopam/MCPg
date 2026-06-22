@@ -4717,14 +4717,10 @@ def _register_pg19_skip_scan_reads(server: FastMCP[AppContext]) -> None:
             "recommend_skip_scan_indexes()",
         ),
     )
-    async def recommend_skip_scan_indexes(
-        ctx: _Ctx, max_leading_ndv: int = 1000
-    ) -> list[dict[str, Any]]:
+    async def recommend_skip_scan_indexes(ctx: _Ctx, max_leading_ndv: int = 1000) -> list[dict[str, Any]]:
         # Live catalog + stats walk — never cache. ANALYZE / index DDL
         # changes need to be visible on the next call.
-        candidates = await pg19_skip_scan.recommend_skip_scan_indexes(
-            _driver(ctx), max_leading_ndv=max_leading_ndv
-        )
+        candidates = await pg19_skip_scan.recommend_skip_scan_indexes(_driver(ctx), max_leading_ndv=max_leading_ndv)
         return [asdict(c) for c in candidates]
 
 
