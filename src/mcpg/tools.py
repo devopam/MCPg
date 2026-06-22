@@ -49,6 +49,7 @@ from mcpg import (
     nl2sql,
     partman,
     pg19_ddl,
+    pg19_partitions,
     pg19_runtime,
     pg19_stats,
     pg_prewarm,
@@ -4669,6 +4670,122 @@ def _register_pg19_ddl_writes(server: FastMCP[AppContext]) -> None:
         return asdict(result)
 
 
+def _register_pg19_partitions_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_pg19_partitions_status",
+        description=_with_example(
+            "Report whether PG 19's `ALTER TABLE … MERGE PARTITIONS` and "
+            "`ALTER TABLE … SPLIT PARTITION` forms are usable on this "
+            "server. Never raises — driver-level errors surface as "
+            "`available=false`. On PG ≤ 18 reports `available=false` and "
+            "points the agent at the detach / create / attach fallback "
+            "path. "
+            "Returns an object with `available` (bool), `server_version_num` "
+            "(int), `server_version`, and `detail` (guidance string).",
+            "get_pg19_partitions_status()",
+        ),
+    )
+    async def get_pg19_partitions_status(ctx: _Ctx) -> dict[str, Any]:
+        # Cluster version probe — never cache: a server upgrade mid-session
+        # needs to flip availability on the next call.
+        status = await pg19_partitions.get_pg19_partitions_status(_driver(ctx))
+        return asdict(status)
+
+
+def _register_pg19_partitions_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="merge_partitions",
+        description=_with_example(
+            "Consolidate two or more partitions into a single new "
+            "partition using PG 19's `ALTER TABLE … MERGE PARTITIONS (p1, "
+            "p2, …) INTO new`. Reuses the existing partition data "
+            "files — no row-by-row copy. PG validates that the source "
+            "partition bounds are contiguous; non-adjacent ranges are "
+            "rejected by the server. Requires PG 19+; raises on older "
+            "versions with the detach / create / attach fallback in the "
+            "message. "
+            "Returns an object with `parent_schema`, `parent_table`, "
+            "`source_partitions` (list of strings), `target_partition`, "
+            "and `merge_sql` (the rendered DDL that actually executed).",
+            "merge_partitions(parent_schema='public', parent_table='measurement', "
+            "source_partitions=['measurement_y2024_q1', 'measurement_y2024_q2'], "
+            "target_partition_name='measurement_y2024_h1')",
+        ),
+    )
+    async def merge_partitions(
+        ctx: _Ctx,
+        parent_schema: str,
+        parent_table: str,
+        source_partitions: list[str],
+        target_partition_name: str,
+    ) -> dict[str, Any]:
+        database = ctx.request_context.lifespan_context.database
+        result = await pg19_partitions.merge_partitions(
+            database,
+            parent_schema=parent_schema,
+            parent_table=parent_table,
+            source_partitions=source_partitions,
+            target_partition_name=target_partition_name,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="split_partition",
+        description=_with_example(
+            "Split one partition into two or more new partitions using "
+            "PG 19's `ALTER TABLE … SPLIT PARTITION existing INTO ("
+            "PARTITION new1 FOR VALUES …, PARTITION new2 FOR VALUES …)`. "
+            "`new_partitions` is a list of `{name, for_values_clause}` "
+            "objects — the `name` is quoted as an identifier; the "
+            "`for_values_clause` is embedded verbatim (DDL grammar can't "
+            "parameter-bind partition bounds — caller composes safe "
+            "fragments from validated values). Example RANGE form: "
+            "`\"FROM ('2024-01-01') TO ('2024-04-01')\"`. Requires PG 19+. "
+            "Returns an object with `parent_schema`, `parent_table`, "
+            "`source_partition`, `new_partitions` (the new names), and "
+            "`split_sql`.",
+            "split_partition(parent_schema='public', parent_table='measurement', "
+            "source_partition='measurement_y2024', new_partitions=["
+            "{'name': 'measurement_y2024_h1', 'for_values_clause': \"FROM ('2024-01-01') TO ('2024-07-01')\"}, "
+            "{'name': 'measurement_y2024_h2', 'for_values_clause': \"FROM ('2024-07-01') TO ('2025-01-01')\"}])",
+        ),
+    )
+    async def split_partition(
+        ctx: _Ctx,
+        parent_schema: str,
+        parent_table: str,
+        source_partition: str,
+        new_partitions: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        # Wire-format adapter: MCP passes list-of-dict; helper expects
+        # a typed dataclass. Validate keys here so a missing field
+        # surfaces a sane error message instead of an AttributeError.
+        try:
+            specs = [
+                pg19_partitions.SplitPartitionSpec(
+                    name=spec["name"],
+                    for_values_clause=spec["for_values_clause"],
+                )
+                for spec in new_partitions
+            ]
+        except KeyError as exc:
+            raise pg19_partitions.Pg19PartitionsError(
+                f"new_partitions entry missing required key {exc.args[0]!r}; "
+                "expected {'name': str, 'for_values_clause': str}."
+            ) from exc
+        database = ctx.request_context.lifespan_context.database
+        result = await pg19_partitions.split_partition(
+            database,
+            parent_schema=parent_schema,
+            parent_table=parent_table,
+            source_partition=source_partition,
+            new_partitions=specs,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="get_pg19_stats_status",
@@ -5214,6 +5331,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_pg19_stats_reads(server)
         _register_pg19_runtime_reads(server)
         _register_pg19_ddl_reads(server)
+        _register_pg19_partitions_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -5229,6 +5347,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_ddl(server)
         _register_partman(server)
         _register_pg19_ddl_writes(server)
+        _register_pg19_partitions_writes(server)
         _register_turboquant_ddl(server)
         _register_pg_search_ddl(server)
         _register_rag_telemetry_ddl(server)

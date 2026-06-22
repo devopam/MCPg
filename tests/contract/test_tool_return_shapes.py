@@ -82,6 +82,7 @@ _KNOWN_HELPER_MODULES = (
     "nl2sql",
     "partman",
     "pg19_ddl",
+    "pg19_partitions",
     "pg19_runtime",
     "pg19_stats",
     "pg_prewarm",

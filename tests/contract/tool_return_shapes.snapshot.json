@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 214
+    "tool_count": 217
   },
   "tools": {
     "add_compression_policy": {
@@ -663,6 +663,16 @@
         "has_pg_get_databasedef",
         "has_pg_get_roledef",
         "has_pg_get_tablespacedef",
+        "server_version",
+        "server_version_num"
+      ],
+      "kind": "scalar"
+    },
+    "get_pg19_partitions_status": {
+      "dataclass": "Pg19PartitionsStatus",
+      "fields": [
+        "available",
+        "detail",
         "server_version",
         "server_version_num"
       ],
@@ -1342,6 +1352,17 @@
       ],
       "kind": "scalar"
     },
+    "merge_partitions": {
+      "dataclass": "MergePartitionsResult",
+      "fields": [
+        "merge_sql",
+        "parent_schema",
+        "parent_table",
+        "source_partitions",
+        "target_partition"
+      ],
+      "kind": "scalar"
+    },
     "migrate_vector_to_halfvec": {
       "dataclass": "HalfvecMigrationPlan",
       "fields": [
@@ -1885,6 +1906,17 @@
         "schema_created",
         "setup_sql",
         "table_created"
+      ],
+      "kind": "scalar"
+    },
+    "split_partition": {
+      "dataclass": "SplitPartitionResult",
+      "fields": [
+        "new_partitions",
+        "parent_schema",
+        "parent_table",
+        "source_partition",
+        "split_sql"
       ],
       "kind": "scalar"
     },
