@@ -31,6 +31,10 @@ them" — pick the section that matches what you're trying to do.
 
 - [**Security hardening roadmap**](security-hardening.md) — shipped
   vs queued security features.
+- [**PG 19 operations playbook**](plans/pg19-operations-playbook.md)
+  — PostgreSQL 19 behaviour changes that affect operators even when
+  MCPg itself isn't the surface that exposes them (JIT defaults,
+  LZ4 TOAST, RADIUS removal, OAuth `pg_hba`, MD5 deprecation, …).
 - [**Release process**](release-process.md) — the playbook for
   cutting a new MCPg release to PyPI.
 - [**User guide**](user-guide.md) — end-user-facing reference.
