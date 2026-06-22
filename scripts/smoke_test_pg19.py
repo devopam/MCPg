@@ -260,4 +260,12 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
+    # Windows shells default to ProactorEventLoop, which the psycopg async
+    # subsystem doesn't play well with. Switch to the selector loop on
+    # Windows so the smoke harness runs against `wsl-postgres:19beta1` or
+    # a Windows-native test cluster without spurious connection errors.
+    # No-op on Linux / macOS. Picked up from user-side feedback on
+    # branch `fix/pg19-compat-and-demo`.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     sys.exit(asyncio.run(main()))
