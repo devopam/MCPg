@@ -1,7 +1,9 @@
 """Integration tests for in-process CSV/JSON export against real PG."""
 
 import json
+import re
 import shutil
+import subprocess
 from collections.abc import AsyncIterator
 
 import pytest
@@ -16,6 +18,46 @@ from mcpg.data_movement import (
     restore_database,
 )
 from mcpg.database import Database
+
+
+async def _skip_when_pg_dump_too_old_for_server(database: Database) -> None:
+    """Skip the calling test when the runner's `pg_dump` is older than
+    the connected server.
+
+    pg_dump refuses with SQLSTATE-shaped "server version mismatch" when
+    the client is older than the server. This is the exact failure we
+    see on the `Tests (PG 19)` matrix entry when the Phase 1 image
+    can't install `postgresql-client-19` (roadmap 14.1) — the runner
+    falls back to its system-default pg_dump (currently 16.x) which
+    cannot dump a PG 19 server.
+
+    Centralised here so all four pg_dump-shelling tests get the same
+    skip predicate; future server versions just bump the matrix and
+    the gate keeps working.
+    """
+    if shutil.which("pg_dump") is None:
+        pytest.skip("pg_dump is not on PATH on this runner")
+    try:
+        client_out = subprocess.check_output(["pg_dump", "--version"], text=True, timeout=5)
+    except (subprocess.SubprocessError, OSError) as exc:
+        pytest.skip(f"pg_dump --version probe failed: {exc}")
+    client_match = re.search(r"\b(\d+)(?:\.\d+)?\b", client_out)
+    if not client_match:
+        pytest.skip(f"could not parse pg_dump --version output: {client_out!r}")
+    client_major = int(client_match.group(1))
+    rows = await database.driver().execute_query(
+        "SELECT current_setting('server_version_num')::int AS ver_num",
+        force_readonly=True,
+    )
+    if not rows:
+        pytest.skip("server version probe returned no rows")
+    server_major = int(rows[0].cells["ver_num"]) // 10000
+    if client_major < server_major:
+        pytest.skip(
+            f"pg_dump {client_major} cannot dump a PG {server_major} server "
+            "(matching client tools were not installable in this CI matrix entry; see roadmap 14.1)"
+        )
+
 
 _SCHEMA = "mcpg_data_movement_it"
 
@@ -89,8 +131,7 @@ async def test_export_query_truncates_at_limit_against_a_large_real_result(
 async def test_dump_database_runs_real_pg_dump_against_a_live_schema(
     connected_database: Database, export_schema: str
 ) -> None:
-    if shutil.which("pg_dump") is None:
-        pytest.skip("pg_dump is not on PATH on this runner")
+    await _skip_when_pg_dump_too_old_for_server(connected_database)
 
     settings = connected_database._settings
     result = await dump_database(
@@ -171,8 +212,9 @@ async def test_import_json_loads_rows_with_nested_jsonb_via_executemany(
 
 
 async def test_dump_then_restore_round_trip_against_real_pg(connected_database: Database, export_schema: str) -> None:
-    if shutil.which("pg_dump") is None or shutil.which("psql") is None:
-        pytest.skip("pg_dump / psql not on PATH on this runner")
+    if shutil.which("psql") is None:
+        pytest.skip("psql is not on PATH on this runner")
+    await _skip_when_pg_dump_too_old_for_server(connected_database)
 
     settings = connected_database._settings
     # Dump the seeded test schema (--schema-only is enough; data isn't
@@ -221,8 +263,9 @@ async def test_copy_table_between_databases_round_trips_against_real_pg(
     collisions. Exercises the full subprocess pipeline (two separate
     libpq envs, stdin handoff between dump and restore) end-to-end.
     """
-    if shutil.which("pg_dump") is None or shutil.which("pg_restore") is None:
-        pytest.skip("pg_dump / pg_restore not on PATH on this runner")
+    if shutil.which("pg_restore") is None:
+        pytest.skip("pg_restore is not on PATH on this runner")
+    await _skip_when_pg_dump_too_old_for_server(connected_database)
 
     from urllib.parse import urlparse, urlunparse
 
