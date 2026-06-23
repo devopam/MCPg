@@ -8,6 +8,34 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **MCP resources** (`mcpg.resources`) — four `mcpg://…` preload-on-connect
+  URIs that close the gap between MCPg's tool surface and the MCP
+  protocol's resources primitive. Pre-this-PR, the only way an agent
+  could learn what MCPg does was to call `describe_self` / `list_tables`
+  / `get_compact_schema` as *tools*, burning call budget on
+  every session start. The resources surface skips the tool-call wire
+  overhead and the per-call context-window cost — an agent reads by
+  URI once, caches locally, and uses tool calls only for actual work.
+
+  Surface (all `application/json`):
+
+  - `mcpg://about/index` — full `describe_self`-equivalent payload
+  - `mcpg://capabilities/index` — compact bucket list (id + name + summary)
+  - `mcpg://capabilities/{bucket_id}` — per-bucket detail (templated)
+  - `mcpg://schema/{schema_name}` — compact Markdown schema dump (templated)
+
+  Registered alongside READ tools (resources share the READ gate).
+  New contract test `tests/contract/test_mcp_resources.py` pins the
+  URI set + variable shape + uniform MIME type. Realises roadmap row
+  8.3.
+
+  Wire-format note: existing clients are unaffected — resources are
+  a separate MCP primitive from tools, accessed via `read_resource`
+  rather than `call_tool`. Tools that emitted the same content
+  (`describe_self`, `get_compact_schema`) continue working unchanged.
+
+### Added
+
 - **Tool-surface overlap analyser** (`tools/analyse_tool_overlap.py`).
   Scans the snapshotted MCPg tool catalogue (now 223 tools after the
   Phase 3 sprint) for pairs likely to confuse an LLM picker — similar
