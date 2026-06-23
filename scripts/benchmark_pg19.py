@@ -181,7 +181,7 @@ async def bench_skip_scan(database: Database, ver_num: int) -> dict[str, Any]:
         SELECT
             g,
             (ARRAY['pending', 'active', 'done', 'failed'])[1 + (g % 4)],
-            TIMESTAMPTZ '2025-01-01 00:00:00+00' + (g || ' seconds')::INTERVAL,
+            TIMESTAMPTZ '2025-01-01 00:00:00+00' + (g || ' minutes')::INTERVAL,
             repeat('x', 32)
         FROM generate_series(1, {FIXTURE_ROWS}) g
         """
