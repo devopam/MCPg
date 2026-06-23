@@ -279,10 +279,20 @@ def test_audit_record_json_format(caplog) -> None:
         try:
             caplog.set_level(logging.INFO)
             record(event)
+            # Dedupe by message text — pytest 9.1+ caplog can attach
+            # handlers to both the named logger and the root logger when
+            # propagate=True, double-capturing the same emit. The audit
+            # invariant we care about is "one logical record per
+            # `record()` call", not "one LogRecord object in caplog."
             audit_records = [r for r in caplog.records if r.name == "mcpg.audit"]
-            assert len(audit_records) == 1
-            log_record = audit_records[0]
-            payload = json.loads(log_record.message)
+            unique_messages = {r.message for r in audit_records}
+            assert len(unique_messages) == 1, (
+                f"expected exactly one unique audit log message, got "
+                f"{len(unique_messages)} (records: {audit_records!r})"
+            )
+            # Parse off the first record; the dedupe above guarantees every
+            # record in the list carries the same message text.
+            payload = json.loads(audit_records[0].message)
             assert payload["tool"] == "my_test_tool"
             assert payload["status"] == "ok"
             assert payload["arguments"] == {"foo": "bar"}
