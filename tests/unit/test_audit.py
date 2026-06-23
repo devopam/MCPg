@@ -290,7 +290,9 @@ def test_audit_record_json_format(caplog) -> None:
                 f"expected exactly one unique audit log message, got "
                 f"{len(unique_messages)} (records: {audit_records!r})"
             )
-            payload = json.loads(next(iter(unique_messages)))
+            # Parse off the first record; the dedupe above guarantees every
+            # record in the list carries the same message text.
+            payload = json.loads(audit_records[0].message)
             assert payload["tool"] == "my_test_tool"
             assert payload["status"] == "ok"
             assert payload["arguments"] == {"foo": "bar"}
