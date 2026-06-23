@@ -116,6 +116,34 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **PG 19 benchmark harness** (`scripts/benchmark_pg19.py` +
+  `scripts/benchmark_pg19.sh`). Sibling of the existing smoke
+  launcher; spins up a fresh PG 19 Beta container and quantifies the
+  three measurable-without-restart PG 19 operational wins MCPg
+  claims:
+
+    1. **Skip-scan vs dedicated index** — same probe query on a
+       composite `(status, created_at)` index (PG 19 skip-scan) vs
+       a dedicated `(created_at)` index. Demonstrates PG 19 closing
+       the gap to the pre-19 catch-up index.
+    2. **REPACK CONCURRENTLY vs VACUUM FULL** — same bloated
+       fixture rebuilt both ways; reports wall-clock + lock-mode
+       contrast (VACUUM FULL holds ACCESS EXCLUSIVE; REPACK
+       CONCURRENTLY doesn't block reads + writes).
+    3. **LZ4 vs pglz TOAST** — same compressible payload inserted
+       into two tables with explicit per-column `COMPRESSION`,
+       compares resulting `pg_table_size` and INSERT throughput.
+
+  Server-side timing throughout (`EXPLAIN (ANALYZE, TIMING)` for
+  query probes, `clock_timestamp()` deltas for maintenance ops) so
+  the numbers don't include psycopg / network RTT noise. Idempotent:
+  drops + recreates a dedicated `mcpg_bench` schema on each run.
+  AIO `io_uring` vs `worker` is a `PGC_POSTMASTER` GUC and needs a
+  restart — it lives as a manual recipe in
+  [`docs/plans/pg19-operations-playbook.md`](docs/plans/pg19-operations-playbook.md)
+  rather than the harness. Realises roadmap row 3.3 and the
+  GA-day-0 verification milestone in `pg19-readiness.md`.
+
 - **Tool-surface overlap analyser** (`tools/analyse_tool_overlap.py`).
   Scans the snapshotted MCPg tool catalogue (now 223 tools after the
   Phase 3 sprint) for pairs likely to confuse an LLM picker — similar

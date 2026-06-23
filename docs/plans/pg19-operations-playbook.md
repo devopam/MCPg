@@ -196,6 +196,54 @@ case-insensitive lookups by `jsonb_path_query`, for instance.
 - The MCPg `nl2sql` translator will gain emission patterns for
   these in a future PR (#18 in the Phase 2 audit).
 
+## Benchmarking AIO `io_uring` vs `worker` (manual recipe)
+
+**Why this is a manual recipe.** `io_method` is a `PGC_POSTMASTER`
+GUC — changing it requires a server restart. The
+`scripts/benchmark_pg19.py` harness deliberately covers only
+without-restart benchmarks; AIO needs an out-of-band loop.
+
+**Pre-reqs.** Linux 5.1+ for `io_uring` to be available; check with
+`uname -r`. The kernel module is enabled by default on every modern
+distro.
+
+**Procedure.**
+
+1. Set up a benchmark fixture and an I/O-heavy probe query that
+   reads enough buffers to saturate the I/O subsystem (a 10M-row
+   sequential scan with `set enable_indexscan = off` works). Stash
+   the query in `/tmp/probe.sql` so each pass uses the identical
+   payload.
+
+2. For each `io_method` value in `worker` (legacy) and `io_uring`
+   (PG 19 default on Linux), do:
+
+   ```
+   sudo -u postgres psql -c "ALTER SYSTEM SET io_method = '$method';"
+   sudo systemctl restart postgresql
+   # drop OS page cache so the read isn't served from RAM
+   sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'
+   psql -c "EXPLAIN (ANALYZE, BUFFERS, TIMING) $(cat /tmp/probe.sql)"
+   ```
+
+3. Compare the `Execution Time` and the `Buffers: shared read=...`
+   line. On a workload that's actually I/O-bound (not buffer-cache
+   resident), `io_uring` should show a meaningful reduction in
+   wall-clock vs `worker`. On CPU-bound or fully-cached workloads
+   the two methods perform identically — that's expected, not a
+   bug.
+
+4. Restore your prior setting:
+   `ALTER SYSTEM RESET io_method;` then restart.
+
+**Caveats.**
+
+- Run inside a VM / dedicated host. Containers share the host
+  kernel; the I/O numbers you see are real but you cannot change
+  `io_method` independently of the host's other tenants.
+- `pg_test_fsync` is a useful sibling tool to baseline raw disk
+  latency before blaming Postgres for slow I/O.
+
 ## Reference
 
 - PostgreSQL 19 Beta 1 release notes:
