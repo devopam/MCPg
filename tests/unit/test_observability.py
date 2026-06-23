@@ -37,31 +37,42 @@ def test_histogram_observe_increments_every_bucket_whose_upper_bound_includes_th
     assert hist.sum == pytest.approx(0.05)
 
 
-def test_metrics_record_call_counts_per_tool_and_status_pair() -> None:
+def test_metrics_record_call_counts_per_tool_bucket_status_triple() -> None:
     m = Metrics()
-    m.record_call("run_select", "ok", 0.01)
-    m.record_call("run_select", "ok", 0.02)
-    m.record_call("run_select", "error", 0.005)
-    m.record_call("export_query", "ok", 0.4)
+    m.record_call("run_select", "ok", 0.01, bucket="query_execution")
+    m.record_call("run_select", "ok", 0.02, bucket="query_execution")
+    m.record_call("run_select", "error", 0.005, bucket="query_execution")
+    m.record_call("export_query", "ok", 0.4, bucket="data_movement")
 
     calls, durations = m.snapshot()
-    assert calls[("run_select", "ok")] == 2
-    assert calls[("run_select", "error")] == 1
-    assert calls[("export_query", "ok")] == 1
-    # Histograms are per-tool, NOT per-(tool, status).
+    assert calls[("run_select", "query_execution", "ok")] == 2
+    assert calls[("run_select", "query_execution", "error")] == 1
+    assert calls[("export_query", "data_movement", "ok")] == 1
+    # Histograms are per-tool, NOT per-(tool, bucket, status).
     assert durations["run_select"].count == 3
     assert durations["export_query"].count == 1
 
 
+def test_metrics_record_call_bucket_defaults_to_unknown_for_unrouted_tools() -> None:
+    """``classify_tool`` returns None for any tool we haven't routed —
+    `record_call` must keep the label dimension cardinality-stable by
+    defaulting to "unknown" rather than crashing or carrying None
+    through to the Prometheus output."""
+    m = Metrics()
+    m.record_call("orphan_tool", "ok", 0.01)
+    calls, _ = m.snapshot()
+    assert calls[("orphan_tool", "unknown", "ok")] == 1
+
+
 def test_metrics_snapshot_is_defensive_copy() -> None:
     m = Metrics()
-    m.record_call("run_select", "ok", 0.01)
+    m.record_call("run_select", "ok", 0.01, bucket="query_execution")
     calls, durations = m.snapshot()
     # Mutating the snapshot must not affect the source.
     calls.clear()
     durations["run_select"].counts[0] = 999
     calls_again, durations_again = m.snapshot()
-    assert calls_again == {("run_select", "ok"): 1}
+    assert calls_again == {("run_select", "query_execution", "ok"): 1}
     assert durations_again["run_select"].counts[0] != 999
 
 
@@ -79,22 +90,35 @@ def test_render_prometheus_emits_help_and_type_comments_with_zero_counters() -> 
     assert "# TYPE mcpg_tool_duration_seconds histogram" in out
 
 
-def test_render_prometheus_emits_one_counter_line_per_observed_tool_status_pair() -> None:
+def test_render_prometheus_emits_one_counter_line_per_observed_tool_bucket_status_triple() -> None:
     m = get_metrics()
-    m.record_call("run_select", "ok", 0.1)
-    m.record_call("run_select", "error", 0.05)
-    m.record_call("run_write", "ok", 1.0)
+    m.record_call("run_select", "ok", 0.1, bucket="query_execution")
+    m.record_call("run_select", "error", 0.05, bucket="query_execution")
+    m.record_call("run_write", "ok", 1.0, bucket="query_execution")
 
     out = render_prometheus()
-    assert 'mcpg_tool_calls_total{tool="run_select",status="ok"} 1' in out
-    assert 'mcpg_tool_calls_total{tool="run_select",status="error"} 1' in out
-    assert 'mcpg_tool_calls_total{tool="run_write",status="ok"} 1' in out
+    assert 'mcpg_tool_calls_total{tool="run_select",bucket="query_execution",status="ok"} 1' in out
+    assert 'mcpg_tool_calls_total{tool="run_select",bucket="query_execution",status="error"} 1' in out
+    assert 'mcpg_tool_calls_total{tool="run_write",bucket="query_execution",status="ok"} 1' in out
+
+
+def test_render_prometheus_distinguishes_bucket_label_for_same_tool() -> None:
+    """Belt + braces — if a tool were ever re-routed mid-session
+    (it can't, but the test pins the label dimensionality contract),
+    the bucket label cleanly partitions the counts."""
+    m = get_metrics()
+    m.record_call("renamed_tool", "ok", 0.01, bucket="old_bucket")
+    m.record_call("renamed_tool", "ok", 0.01, bucket="new_bucket")
+
+    out = render_prometheus()
+    assert 'mcpg_tool_calls_total{tool="renamed_tool",bucket="old_bucket",status="ok"} 1' in out
+    assert 'mcpg_tool_calls_total{tool="renamed_tool",bucket="new_bucket",status="ok"} 1' in out
 
 
 def test_render_prometheus_emits_one_histogram_block_per_observed_tool() -> None:
     m = get_metrics()
-    m.record_call("run_select", "ok", 0.02)
-    m.record_call("run_select", "ok", 0.06)
+    m.record_call("run_select", "ok", 0.02, bucket="query_execution")
+    m.record_call("run_select", "ok", 0.06, bucket="query_execution")
 
     out = render_prometheus()
     assert 'mcpg_tool_duration_seconds_bucket{tool="run_select",le="+Inf"} 2' in out

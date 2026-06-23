@@ -74,13 +74,27 @@ class TracerHandle:
         self._provider = provider
 
     @contextlib.contextmanager
-    def tool_span(self, tool_name: str, arguments: dict[str, Any] | None = None) -> Iterator[Any]:
+    def tool_span(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any] | None = None,
+        bucket: str | None = None,
+    ) -> Iterator[Any]:
         """Start a span for one tool invocation.
 
         ``arguments`` is optional because MCP allows a tool to be
         invoked without any (the dispatcher passes ``None``). The
         ``mcp.tool.argument_count`` attribute reports 0 in that case
         rather than crashing with ``len(None)``.
+
+        ``bucket`` is the capability-bucket id from
+        :func:`mcpg.about.classify_tool` — when supplied it surfaces
+        as the ``mcp.tool.bucket`` span attribute so a tracing
+        backend can group spans by capability without re-deriving
+        the routing from the tool name. Roadmap row 1.4. ``None`` is
+        accepted so call sites that don't have the routing wired
+        (early bootstrap, tests) stay valid; the attribute is
+        omitted in that case.
         """
         # Importing inside the method keeps the module importable when
         # the SDK isn't installed; the `is_otel_installed` guard on the
@@ -91,6 +105,8 @@ class TracerHandle:
         with self._tracer.start_as_current_span(_SPAN_NAME) as span:
             span.set_attribute("mcp.tool.name", tool_name)
             span.set_attribute("mcp.tool.argument_count", argument_count)
+            if bucket is not None:
+                span.set_attribute("mcp.tool.bucket", bucket)
             try:
                 yield span
             except Exception as exc:
@@ -241,16 +257,20 @@ def tool_span(
     handle: TracerHandle | None,
     tool_name: str,
     arguments: dict[str, Any] | None = None,
+    bucket: str | None = None,
 ) -> Iterator[Any]:
     """Yield a span (or ``None``) for one MCP tool call.
 
     A unified entry point so the server can wrap every ``call_tool``
     in ``with tool_span(...)`` regardless of whether OTel is enabled.
     ``arguments`` is optional — MCP allows a tool to be invoked
-    without any (the dispatcher passes ``None``).
+    without any (the dispatcher passes ``None``). ``bucket`` is the
+    capability-bucket label per :func:`mcpg.about.classify_tool`;
+    when supplied it lands as the ``mcp.tool.bucket`` span attribute
+    (roadmap row 1.4).
     """
     if handle is None:
         yield None
         return
-    with handle.tool_span(tool_name, arguments) as span:
+    with handle.tool_span(tool_name, arguments, bucket=bucket) as span:
         yield span

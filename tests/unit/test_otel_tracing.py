@@ -222,6 +222,44 @@ def test_tool_span_records_attributes_on_success() -> None:
         handle.shutdown()
 
 
+def test_tool_span_records_bucket_attribute_when_supplied() -> None:
+    """Roadmap row 1.4 — the bucket label needs to land on the span
+    so a tracing backend can group by capability without re-deriving
+    the routing from the tool name."""
+    handle = setup_tracing(_settings(MCPG_OTEL_ENABLED="true"))
+    assert handle is not None
+    try:
+        exporter = _capture_spans(handle)
+        with tool_span(handle, "list_tables", {"schema": "app"}, bucket="schema_introspection"):
+            pass
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert spans[0].attributes is not None
+        assert spans[0].attributes["mcp.tool.bucket"] == "schema_introspection"
+    finally:
+        handle.shutdown()
+
+
+def test_tool_span_omits_bucket_attribute_when_not_supplied() -> None:
+    """Backward-compat — callers that don't pass `bucket` (the test
+    harness, early bootstrap) shouldn't see a None attribute on the
+    span; the key is simply absent."""
+    handle = setup_tracing(_settings(MCPG_OTEL_ENABLED="true"))
+    assert handle is not None
+    try:
+        exporter = _capture_spans(handle)
+        with tool_span(handle, "list_tables", {"schema": "app"}):
+            pass
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert spans[0].attributes is not None
+        assert "mcp.tool.bucket" not in spans[0].attributes
+    finally:
+        handle.shutdown()
+
+
 def test_tool_span_records_error_attributes_on_exception() -> None:
     handle = setup_tracing(_settings(MCPG_OTEL_ENABLED="true"))
     assert handle is not None
