@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Tool-surface overlap analyser** (`tools/analyse_tool_overlap.py`).
+  Scans the snapshotted MCPg tool catalogue (now 223 tools after the
+  Phase 3 sprint) for pairs likely to confuse an LLM picker — similar
+  names, overlapping descriptions, near-identical input schemas.
+  Output is a Markdown report ranked by a hand-tuned suspicion score
+  (SequenceMatcher on names + Jaccard / containment on description
+  stems + shared verb-noun + identical required-params), ready for
+  a reviewer to triage. Deterministic, no API key required, runs in
+  seconds against the checked-in snapshot — recovered from
+  `claude/tool-overlap-sweep` (originally landed 2026-06-18) and
+  rebased onto current `main`.
+
+  Run with `python tools/analyse_tool_overlap.py > docs/reviews/tool-overlap-report.md`.
+  Pairs with similarity ≥ 0.70 / Jaccard ≥ 0.45 surface; tune the
+  module-level constants if signal-to-noise drifts as the catalogue
+  grows.
+
 ### Changed
 
 - **`Tests (PG 19)` CI step now succeeds gracefully when the pgdg
