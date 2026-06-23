@@ -65,7 +65,7 @@ class Pg19StatsError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Pg19StatsStatus:
     """Reports whether the PG 19 lock + recovery views are usable.
 
@@ -86,7 +86,7 @@ class Pg19StatsStatus:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LockStatRow:
     """One row from ``pg_stat_lock``.
 
@@ -101,7 +101,7 @@ class LockStatRow:
     wait_time_us: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RecoveryStatRow:
     """One row from ``pg_stat_recovery`` — typically a single-row view
     that summarises the standby's replay progress.
@@ -118,7 +118,7 @@ class RecoveryStatRow:
     startup_state: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LockHotspot:
     """One advisor recommendation row.
 
@@ -139,7 +139,7 @@ class LockHotspot:
     suggested_followup: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LockHotspotsResult:
     """Roll-up of :func:`analyze_lock_hotspots`."""
 

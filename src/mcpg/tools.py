@@ -4100,10 +4100,9 @@ def _register_pgq_reads(server: FastMCP[AppContext]) -> None:
             "get_pgq_status()",
         ),
     )
-    async def get_pgq_status(ctx: _Ctx) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
-            status = await pgq.get_pgq_status(_driver(ctx))
-            return asdict(status)
+    async def get_pgq_status(ctx: _Ctx) -> pgq.PgqStatus:
+        async def _run() -> pgq.PgqStatus:
+            return await pgq.get_pgq_status(_driver(ctx))
 
         return await _cached_call(ctx, "get_pgq_status", _run)
 
@@ -4121,10 +4120,9 @@ def _register_pgq_reads(server: FastMCP[AppContext]) -> None:
             "list_property_graphs()",
         ),
     )
-    async def list_property_graphs(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
-            graphs = await pgq.list_property_graphs(_driver(ctx))
-            return [asdict(g) for g in graphs]
+    async def list_property_graphs(ctx: _Ctx) -> list[pgq.PropertyGraphInfo]:
+        async def _run() -> list[pgq.PropertyGraphInfo]:
+            return await pgq.list_property_graphs(_driver(ctx))
 
         return await _cached_call(ctx, "list_property_graphs", _run)
 
@@ -4141,10 +4139,9 @@ def _register_pgq_reads(server: FastMCP[AppContext]) -> None:
             "describe_property_graph(schema='public', name='org_chart')",
         ),
     )
-    async def describe_property_graph(ctx: _Ctx, schema: str, name: str) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
-            info = await pgq.describe_property_graph(_driver(ctx), schema, name)
-            return asdict(info)
+    async def describe_property_graph(ctx: _Ctx, schema: str, name: str) -> pgq.PropertyGraphInfo:
+        async def _run() -> pgq.PropertyGraphInfo:
+            return await pgq.describe_property_graph(_driver(ctx), schema, name)
 
         return await _cached_call(ctx, "describe_property_graph", _run, schema, name)
 
@@ -4167,9 +4164,8 @@ def _register_pgq_reads(server: FastMCP[AppContext]) -> None:
             ),
         ),
     )
-    async def run_pgq(ctx: _Ctx, query: str, max_rows: int = 200) -> dict[str, Any]:
-        result = await pgq.run_pgq(_driver(ctx), query, max_rows=max_rows)
-        return asdict(result)
+    async def run_pgq(ctx: _Ctx, query: str, max_rows: int = 200) -> pgq.PgqRunResult:
+        return await pgq.run_pgq(_driver(ctx), query, max_rows=max_rows)
 
 
 def _register_pgq_ddl(server: FastMCP[AppContext]) -> None:
@@ -4198,7 +4194,7 @@ def _register_pgq_ddl(server: FastMCP[AppContext]) -> None:
         schema: str,
         name: str,
         definition_body: str,
-    ) -> dict[str, Any]:
+    ) -> pgq.CreatePropertyGraphResult:
         result = await pgq.create_property_graph(
             _driver(ctx),
             schema=schema,
@@ -4206,7 +4202,7 @@ def _register_pgq_ddl(server: FastMCP[AppContext]) -> None:
             definition_body=definition_body,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="drop_property_graph",
@@ -4223,7 +4219,7 @@ def _register_pgq_ddl(server: FastMCP[AppContext]) -> None:
         schema: str,
         name: str,
         if_exists: bool = True,
-    ) -> dict[str, Any]:
+    ) -> pgq.DropPropertyGraphResult:
         result = await pgq.drop_property_graph(
             _driver(ctx),
             schema=schema,
@@ -4231,7 +4227,7 @@ def _register_pgq_ddl(server: FastMCP[AppContext]) -> None:
             if_exists=if_exists,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_pg_prewarm_reads(server: FastMCP[AppContext]) -> None:
@@ -4471,12 +4467,11 @@ def _register_pg19_runtime_reads(server: FastMCP[AppContext]) -> None:
             "get_data_checksums_status()",
         ),
     )
-    async def get_data_checksums_status(ctx: _Ctx) -> dict[str, Any]:
+    async def get_data_checksums_status(ctx: _Ctx) -> pg19_runtime.DataChecksumsStatus:
         # Live cluster setting — never cache (gemini-review pattern from
         # PR #141): an agent toggling checksums needs to see the
         # post-toggle state on the next probe.
-        status = await pg19_runtime.get_data_checksums_status(_driver(ctx))
-        return asdict(status)
+        return await pg19_runtime.get_data_checksums_status(_driver(ctx))
 
     @server.tool(
         name="get_logical_replication_status",
@@ -4493,10 +4488,11 @@ def _register_pg19_runtime_reads(server: FastMCP[AppContext]) -> None:
             "get_logical_replication_status()",
         ),
     )
-    async def get_logical_replication_status(ctx: _Ctx) -> dict[str, Any]:
+    async def get_logical_replication_status(
+        ctx: _Ctx,
+    ) -> pg19_runtime.LogicalReplicationStatus:
         # Live setting — never cache; status reflects post-toggle state.
-        status = await pg19_runtime.get_logical_replication_status(_driver(ctx))
-        return asdict(status)
+        return await pg19_runtime.get_logical_replication_status(_driver(ctx))
 
 
 def _register_pg19_runtime_writes(server: FastMCP[AppContext]) -> None:
@@ -4517,11 +4513,11 @@ def _register_pg19_runtime_writes(server: FastMCP[AppContext]) -> None:
             "enable_data_checksums()",
         ),
     )
-    async def enable_data_checksums(ctx: _Ctx) -> dict[str, Any]:
+    async def enable_data_checksums(ctx: _Ctx) -> pg19_runtime.ToggleDataChecksumsResult:
         database = ctx.request_context.lifespan_context.database
         result = await pg19_runtime.enable_data_checksums(database)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="disable_data_checksums",
@@ -4535,11 +4531,11 @@ def _register_pg19_runtime_writes(server: FastMCP[AppContext]) -> None:
             "disable_data_checksums()",
         ),
     )
-    async def disable_data_checksums(ctx: _Ctx) -> dict[str, Any]:
+    async def disable_data_checksums(ctx: _Ctx) -> pg19_runtime.ToggleDataChecksumsResult:
         database = ctx.request_context.lifespan_context.database
         result = await pg19_runtime.disable_data_checksums(database)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="enable_logical_replication_on_demand",
@@ -4555,11 +4551,13 @@ def _register_pg19_runtime_writes(server: FastMCP[AppContext]) -> None:
             "enable_logical_replication_on_demand()",
         ),
     )
-    async def enable_logical_replication_on_demand(ctx: _Ctx) -> dict[str, Any]:
+    async def enable_logical_replication_on_demand(
+        ctx: _Ctx,
+    ) -> pg19_runtime.EnableLogicalReplicationOnDemandResult:
         database = ctx.request_context.lifespan_context.database
         result = await pg19_runtime.enable_logical_replication_on_demand(database)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_pg19_ddl_reads(server: FastMCP[AppContext]) -> None:
@@ -4691,11 +4689,10 @@ def _register_pg19_skip_scan_reads(server: FastMCP[AppContext]) -> None:
             "get_skip_scan_status()",
         ),
     )
-    async def get_skip_scan_status(ctx: _Ctx) -> dict[str, Any]:
+    async def get_skip_scan_status(ctx: _Ctx) -> pg19_skip_scan.SkipScanStatus:
         # Live version probe — never cache. A server upgrade mid-session
         # needs to flip availability on the next call.
-        status = await pg19_skip_scan.get_skip_scan_status(_driver(ctx))
-        return asdict(status)
+        return await pg19_skip_scan.get_skip_scan_status(_driver(ctx))
 
     @server.tool(
         name="recommend_skip_scan_indexes",
@@ -4718,11 +4715,12 @@ def _register_pg19_skip_scan_reads(server: FastMCP[AppContext]) -> None:
             "recommend_skip_scan_indexes()",
         ),
     )
-    async def recommend_skip_scan_indexes(ctx: _Ctx, max_leading_ndv: int = 1000) -> list[dict[str, Any]]:
+    async def recommend_skip_scan_indexes(
+        ctx: _Ctx, max_leading_ndv: int = 1000
+    ) -> list[pg19_skip_scan.SkipScanCandidate]:
         # Live catalog + stats walk — never cache. ANALYZE / index DDL
         # changes need to be visible on the next call.
-        candidates = await pg19_skip_scan.recommend_skip_scan_indexes(_driver(ctx), max_leading_ndv=max_leading_ndv)
-        return [asdict(c) for c in candidates]
+        return await pg19_skip_scan.recommend_skip_scan_indexes(_driver(ctx), max_leading_ndv=max_leading_ndv)
 
 
 def _register_pg19_partitions_reads(server: FastMCP[AppContext]) -> None:
@@ -4740,11 +4738,10 @@ def _register_pg19_partitions_reads(server: FastMCP[AppContext]) -> None:
             "get_pg19_partitions_status()",
         ),
     )
-    async def get_pg19_partitions_status(ctx: _Ctx) -> dict[str, Any]:
+    async def get_pg19_partitions_status(ctx: _Ctx) -> pg19_partitions.Pg19PartitionsStatus:
         # Cluster version probe — never cache: a server upgrade mid-session
         # needs to flip availability on the next call.
-        status = await pg19_partitions.get_pg19_partitions_status(_driver(ctx))
-        return asdict(status)
+        return await pg19_partitions.get_pg19_partitions_status(_driver(ctx))
 
 
 def _register_pg19_partitions_writes(server: FastMCP[AppContext]) -> None:
@@ -4773,7 +4770,7 @@ def _register_pg19_partitions_writes(server: FastMCP[AppContext]) -> None:
         parent_table: str,
         source_partitions: list[str],
         target_partition_name: str,
-    ) -> dict[str, Any]:
+    ) -> pg19_partitions.MergePartitionsResult:
         database = ctx.request_context.lifespan_context.database
         result = await pg19_partitions.merge_partitions(
             database,
@@ -4783,7 +4780,7 @@ def _register_pg19_partitions_writes(server: FastMCP[AppContext]) -> None:
             target_partition_name=target_partition_name,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="split_partition",
@@ -4812,7 +4809,7 @@ def _register_pg19_partitions_writes(server: FastMCP[AppContext]) -> None:
         parent_table: str,
         source_partition: str,
         new_partitions: list[dict[str, str]],
-    ) -> dict[str, Any]:
+    ) -> pg19_partitions.SplitPartitionResult:
         # Wire-format adapter: MCP passes list-of-dict; helper expects
         # a typed dataclass. Validate keys here so a missing field
         # surfaces a sane error message instead of an AttributeError.
@@ -4838,7 +4835,7 @@ def _register_pg19_partitions_writes(server: FastMCP[AppContext]) -> None:
             new_partitions=specs,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_wait_for_lsn_reads(server: FastMCP[AppContext]) -> None:
@@ -4855,12 +4852,11 @@ def _register_wait_for_lsn_reads(server: FastMCP[AppContext]) -> None:
             "get_wait_for_lsn_status()",
         ),
     )
-    async def get_wait_for_lsn_status(ctx: _Ctx) -> dict[str, Any]:
+    async def get_wait_for_lsn_status(ctx: _Ctx) -> wait_for_lsn.WaitForLsnStatus:
         # Live cluster state — never cache. is_in_recovery flips on
         # promotion / demotion and the agent needs to see the new
         # state on the next call.
-        status = await wait_for_lsn.get_wait_for_lsn_status(_driver(ctx))
-        return asdict(status)
+        return await wait_for_lsn.get_wait_for_lsn_status(_driver(ctx))
 
     @server.tool(
         name="get_current_wal_lsn",
@@ -4877,11 +4873,10 @@ def _register_wait_for_lsn_reads(server: FastMCP[AppContext]) -> None:
             "get_current_wal_lsn()",
         ),
     )
-    async def get_current_wal_lsn(ctx: _Ctx) -> dict[str, Any]:
+    async def get_current_wal_lsn(ctx: _Ctx) -> wait_for_lsn.CurrentWalLsnResult:
         # Snapshot — never cache; the LSN advances monotonically with
         # every WAL-emitting transaction.
-        result = await wait_for_lsn.get_current_wal_lsn(_driver(ctx))
-        return asdict(result)
+        return await wait_for_lsn.get_current_wal_lsn(_driver(ctx))
 
     @server.tool(
         name="recommend_read_your_writes",
@@ -4899,10 +4894,11 @@ def _register_wait_for_lsn_reads(server: FastMCP[AppContext]) -> None:
             "recommend_read_your_writes()",
         ),
     )
-    async def recommend_read_your_writes(ctx: _Ctx) -> dict[str, Any]:
+    async def recommend_read_your_writes(
+        ctx: _Ctx,
+    ) -> wait_for_lsn.ReadYourWritesRecommendation:
         # Live advisor — never cache. Lag and role change in real time.
-        result = await wait_for_lsn.recommend_read_your_writes(_driver(ctx))
-        return asdict(result)
+        return await wait_for_lsn.recommend_read_your_writes(_driver(ctx))
 
 
 def _register_wait_for_lsn_writes(server: FastMCP[AppContext]) -> None:
@@ -4923,9 +4919,8 @@ def _register_wait_for_lsn_writes(server: FastMCP[AppContext]) -> None:
             "wait_for_lsn(lsn='0/1234ABCD', timeout_ms=5000)",
         ),
     )
-    async def wait_for_lsn_tool(ctx: _Ctx, lsn: str, timeout_ms: int = 0) -> dict[str, Any]:
-        result = await wait_for_lsn.wait_for_lsn(_driver(ctx), lsn=lsn, timeout_ms=timeout_ms)
-        return asdict(result)
+    async def wait_for_lsn_tool(ctx: _Ctx, lsn: str, timeout_ms: int = 0) -> wait_for_lsn.WaitForLsnResult:
+        return await wait_for_lsn.wait_for_lsn(_driver(ctx), lsn=lsn, timeout_ms=timeout_ms)
 
 
 def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
@@ -4943,10 +4938,9 @@ def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
             "get_pg19_stats_status()",
         ),
     )
-    async def get_pg19_stats_status(ctx: _Ctx) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
-            status = await pg19_stats.get_pg19_stats_status(_driver(ctx))
-            return asdict(status)
+    async def get_pg19_stats_status(ctx: _Ctx) -> pg19_stats.Pg19StatsStatus:
+        async def _run() -> pg19_stats.Pg19StatsStatus:
+            return await pg19_stats.get_pg19_stats_status(_driver(ctx))
 
         return await _cached_call(ctx, "get_pg19_stats_status", _run)
 
@@ -4963,12 +4957,11 @@ def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
             "read_pg_stat_lock()",
         ),
     )
-    async def read_pg_stat_lock(ctx: _Ctx) -> list[dict[str, Any]]:
+    async def read_pg_stat_lock(ctx: _Ctx) -> list[pg19_stats.LockStatRow]:
         # Live counters — never cache (matches find_blocking_chains /
         # read_pg_stat_io pattern). Caching would return stale waits
         # during real-time incident response (gemini review on PR #141).
-        rows = await pg19_stats.read_pg_stat_lock(_driver(ctx))
-        return [asdict(r) for r in rows]
+        return await pg19_stats.read_pg_stat_lock(_driver(ctx))
 
     @server.tool(
         name="read_pg_stat_recovery",
@@ -4984,11 +4977,10 @@ def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
             "read_pg_stat_recovery()",
         ),
     )
-    async def read_pg_stat_recovery(ctx: _Ctx) -> list[dict[str, Any]]:
+    async def read_pg_stat_recovery(ctx: _Ctx) -> list[pg19_stats.RecoveryStatRow]:
         # Live replay state — never cache. Stale lag readings during
         # standby triage are worse than useless (gemini review on PR #141).
-        rows = await pg19_stats.read_pg_stat_recovery(_driver(ctx))
-        return [asdict(r) for r in rows]
+        return await pg19_stats.read_pg_stat_recovery(_driver(ctx))
 
     @server.tool(
         name="analyze_lock_hotspots",
@@ -5006,12 +4998,11 @@ def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
             "analyze_lock_hotspots()",
         ),
     )
-    async def analyze_lock_hotspots(ctx: _Ctx) -> dict[str, Any]:
+    async def analyze_lock_hotspots(ctx: _Ctx) -> pg19_stats.LockHotspotsResult:
         # Live advisor over live counters — never cache. Incident-response
         # callers need the current snapshot, not what we saw 60s ago
         # (gemini review on PR #141).
-        result = await pg19_stats.analyze_lock_hotspots(_driver(ctx))
-        return asdict(result)
+        return await pg19_stats.analyze_lock_hotspots(_driver(ctx))
 
 
 def _register_aio_reads(server: FastMCP[AppContext]) -> None:
@@ -5030,10 +5021,9 @@ def _register_aio_reads(server: FastMCP[AppContext]) -> None:
             "get_aio_status()",
         ),
     )
-    async def get_aio_status(ctx: _Ctx) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
-            status = await aio.get_aio_status(_driver(ctx))
-            return asdict(status)
+    async def get_aio_status(ctx: _Ctx) -> aio.AioStatus:
+        async def _run() -> aio.AioStatus:
+            return await aio.get_aio_status(_driver(ctx))
 
         return await _cached_call(ctx, "get_aio_status", _run)
 
@@ -5059,10 +5049,9 @@ def _register_aio_reads(server: FastMCP[AppContext]) -> None:
             "recommend_io_method()",
         ),
     )
-    async def recommend_io_method(ctx: _Ctx) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
-            result = await aio.recommend_io_method(_driver(ctx))
-            return asdict(result)
+    async def recommend_io_method(ctx: _Ctx) -> aio.RecommendIoMethodResult:
+        async def _run() -> aio.RecommendIoMethodResult:
+            return await aio.recommend_io_method(_driver(ctx))
 
         return await _cached_call(ctx, "recommend_io_method", _run)
 
@@ -5083,10 +5072,9 @@ def _register_repack_reads(server: FastMCP[AppContext]) -> None:
             "get_repack_status()",
         ),
     )
-    async def get_repack_status(ctx: _Ctx) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
-            status = await repack.get_repack_status(_driver(ctx))
-            return asdict(status)
+    async def get_repack_status(ctx: _Ctx) -> repack.RepackStatus:
+        async def _run() -> repack.RepackStatus:
+            return await repack.get_repack_status(_driver(ctx))
 
         return await _cached_call(ctx, "get_repack_status", _run)
 
@@ -5114,7 +5102,7 @@ def _register_repack_writes(server: FastMCP[AppContext]) -> None:
         schema: str,
         table: str,
         concurrently: bool = True,
-    ) -> dict[str, Any]:
+    ) -> repack.RepackResult:
         database = ctx.request_context.lifespan_context.database
         result = await repack.repack_table(
             database,
@@ -5123,7 +5111,7 @@ def _register_repack_writes(server: FastMCP[AppContext]) -> None:
             concurrently=concurrently,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_partman(server: FastMCP[AppContext]) -> None:

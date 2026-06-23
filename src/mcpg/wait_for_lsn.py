@@ -70,7 +70,7 @@ class WaitForLsnError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class WaitForLsnStatus:
     """Reports whether PG 19's WAIT FOR LSN is usable on this server.
 
@@ -88,7 +88,7 @@ class WaitForLsnStatus:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CurrentWalLsnResult:
     """One LSN snapshot — what the helper returned at call time.
 
@@ -102,7 +102,7 @@ class CurrentWalLsnResult:
     lsn: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class WaitForLsnResult:
     """Outcome of `wait_for_lsn`.
 
@@ -119,7 +119,7 @@ class WaitForLsnResult:
     wait_sql: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReadYourWritesRecommendation:
     """Advisor output for the RYW workflow.
 
