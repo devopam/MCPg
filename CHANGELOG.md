@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-06-23
+
 ### Added
 
 - **Tool-surface overlap analyser** (`tools/analyse_tool_overlap.py`).
