@@ -62,7 +62,7 @@ class Pg19RuntimeError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DataChecksumsStatus:
     """Reports whether online checksum toggling is usable + the current state.
 
@@ -79,7 +79,7 @@ class DataChecksumsStatus:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ToggleDataChecksumsResult:
     """Outcome of `enable_data_checksums` / `disable_data_checksums`.
 
@@ -94,7 +94,7 @@ class ToggleDataChecksumsResult:
     toggle_sql: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LogicalReplicationStatus:
     """Reports whether on-demand logical replication is usable + the current state.
 
@@ -113,7 +113,7 @@ class LogicalReplicationStatus:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class EnableLogicalReplicationOnDemandResult:
     """Outcome of `enable_logical_replication_on_demand`.
 

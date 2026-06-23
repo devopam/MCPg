@@ -72,6 +72,105 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
             "validate_sql",
         }
     ),
+    # PG 19 SQL/PGQ helpers (Phase 3 PR-13 sweep).
+    "get_pgq_status": frozenset({"available", "server_version_num", "server_version", "detail"}),
+    # List-returning handlers: FastMCP wraps `list[Dataclass]` returns into a
+    # `{"result": [...]}` envelope at the top level. The per-item dataclass
+    # fields live under `$defs` — the field-level snapshot test in
+    # `test_tool_return_shapes.py` pins those. We only assert the envelope key
+    # here so the schema-population gate still trips on a dict-typed regression.
+    "list_property_graphs": frozenset({"result"}),
+    "describe_property_graph": frozenset({"schema", "name", "vertex_tables", "edge_tables"}),
+    "run_pgq": frozenset({"columns", "rows", "row_count", "truncated"}),
+    "create_property_graph": frozenset({"schema", "name", "created"}),
+    "drop_property_graph": frozenset({"schema", "name", "dropped"}),
+    # PG 19 runtime toggles.
+    "get_data_checksums_status": frozenset({"available", "server_version_num", "server_version", "enabled", "detail"}),
+    "get_logical_replication_status": frozenset(
+        {
+            "available",
+            "server_version_num",
+            "server_version",
+            "wal_level",
+            "effective_wal_level",
+            "max_replication_slots",
+            "detail",
+        }
+    ),
+    "enable_data_checksums": frozenset({"was_enabled", "now_enabled", "changed", "toggle_sql"}),
+    "disable_data_checksums": frozenset({"was_enabled", "now_enabled", "changed", "toggle_sql"}),
+    "enable_logical_replication_on_demand": frozenset(
+        {"previous_wal_level", "new_wal_level", "requires_restart", "detail"}
+    ),
+    # PG 19 skip-scan.
+    "get_skip_scan_status": frozenset({"available", "server_version_num", "server_version", "detail"}),
+    "recommend_skip_scan_indexes": frozenset({"result"}),
+    # PG 19 partitions.
+    "get_pg19_partitions_status": frozenset({"available", "server_version_num", "server_version", "detail"}),
+    "merge_partitions": frozenset(
+        {
+            "parent_schema",
+            "parent_table",
+            "source_partitions",
+            "target_partition",
+            "merge_sql",
+        }
+    ),
+    "split_partition": frozenset(
+        {
+            "parent_schema",
+            "parent_table",
+            "source_partition",
+            "new_partitions",
+            "split_sql",
+        }
+    ),
+    # WAIT FOR LSN.
+    "get_wait_for_lsn_status": frozenset(
+        {"available", "server_version_num", "server_version", "is_in_recovery", "detail"}
+    ),
+    "get_current_wal_lsn": frozenset({"role", "lsn"}),
+    "recommend_read_your_writes": frozenset(
+        {
+            "recommend_use",
+            "reason",
+            "is_in_recovery",
+            "server_version_num",
+            "current_lag_bytes",
+            "detail",
+        }
+    ),
+    "wait_for_lsn": frozenset({"lsn", "timeout_ms", "timed_out", "wait_sql"}),
+    # PG 19 stats.
+    "get_pg19_stats_status": frozenset(
+        {
+            "available",
+            "server_version_num",
+            "server_version",
+            "has_pg_stat_lock",
+            "has_pg_stat_recovery",
+            "detail",
+        }
+    ),
+    "read_pg_stat_lock": frozenset({"result"}),
+    "read_pg_stat_recovery": frozenset({"result"}),
+    "analyze_lock_hotspots": frozenset({"available", "server_version_num", "detail", "hotspots"}),
+    # PG 19 async I/O.
+    "get_aio_status": frozenset(
+        {
+            "available",
+            "server_version_num",
+            "server_version",
+            "io_method",
+            "io_min_workers",
+            "io_max_workers",
+            "detail",
+        }
+    ),
+    "recommend_io_method": frozenset({"available", "server_version_num", "detail", "recommendations"}),
+    # PG 19 in-server REPACK.
+    "get_repack_status": frozenset({"available", "server_version_num", "server_version", "detail"}),
+    "repack_table": frozenset({"schema", "table", "concurrently", "repack_sql"}),
 }
 
 
@@ -162,7 +261,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 5
+    floor = 33
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "

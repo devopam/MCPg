@@ -72,7 +72,7 @@ class Pg19SkipScanError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SkipScanStatus:
     """Reports whether PG 19's skip-scan optimisation is usable.
 
@@ -87,7 +87,7 @@ class SkipScanStatus:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SkipScanCandidate:
     """One composite B-tree index that PG 19's skip-scan unlocks.
 

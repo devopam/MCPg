@@ -6,6 +6,47 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **outputSchema sweep across the 8 PG 19 modules** — 28 tools
+  converted from `dict[str, Any]` returns to typed dataclass
+  returns, so every PG 19 tool now exposes a populated MCP
+  `outputSchema` for LangChain / LangGraph clients to validate
+  against. Modules covered: `pgq` (6 tools), `pg19_runtime` (5),
+  `pg19_partitions` (3), `pg19_stats` (4), `pg19_skip_scan` (2),
+  `wait_for_lsn` (4), `aio` (2), `repack` (2).
+
+  Per the established sweep playbook (`docs/contributing/adding-tools.md`):
+  - Stripped `slots=True` from every dataclass returned to the
+    wire — slot descriptors block Pydantic's schema generation.
+  - Re-annotated each `@server.tool` handler return type, plus the
+    7 nested `_run` helpers used by the `_cached_call` pattern in
+    `pgq` / `pg19_stats` / `aio` / `repack`.
+  - Removed `asdict(...)` calls; FastMCP serialises the dataclass
+    directly. Write tools preserve their `await cache.clear()`
+    between the helper call and the bare `return result`.
+
+  List-returning tools (`list_property_graphs`,
+  `recommend_skip_scan_indexes`, `read_pg_stat_lock`,
+  `read_pg_stat_recovery`) emit FastMCP's `{"result": [...]}`
+  envelope — the per-item dataclass fields live under `$defs` in
+  the schema. The manifest in `test_tool_output_schemas.py` pins
+  the envelope key for these; the field-level snapshot test
+  (`test_tool_return_shapes.py`) still pins the per-item fields,
+  so a rename / removal trips both tests in concert.
+
+  Realises the second batch of roadmap row **8.6** (PR-13 first
+  sweep covered the 5 PG 19 DDL helper tools). Manifest floor
+  bumped 5 → 33; remaining ~190 legacy `dict[str, Any]` tools
+  follow in further sweep PRs per the same checklist.
+
+  Wire-format note: backward-compatible — FastMCP continues to
+  emit the legacy text `content` array alongside the new
+  `structuredContent` for every converted tool. Clients reading
+  just `content` see no change.
+
+## [Unreleased]
+
 ### Added
 
 - **Tool-surface overlap analyser** (`tools/analyse_tool_overlap.py`).

@@ -50,7 +50,7 @@ class RepackError(Exception):
     """Raised when a REPACK request is rejected or fails."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RepackStatus:
     """Reports whether ``REPACK`` is usable on this server.
 
@@ -66,7 +66,7 @@ class RepackStatus:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RepackResult:
     """The outcome of a ``REPACK`` run.
 

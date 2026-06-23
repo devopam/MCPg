@@ -82,7 +82,7 @@ class AioError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AioStatus:
     """Reports whether the PG 19 AIO subsystem is usable on this server.
 
@@ -101,7 +101,7 @@ class AioStatus:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class IoMethodRecommendation:
     """One recommendation row from :func:`recommend_io_method`.
 
@@ -133,7 +133,7 @@ class IoMethodRecommendation:
     ready_to_run_sql: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RecommendIoMethodResult:
     """Roll-up of :func:`recommend_io_method` — the recommendation plus
     the AIO status that produced it.

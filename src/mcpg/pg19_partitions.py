@@ -74,7 +74,7 @@ class Pg19PartitionsError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Pg19PartitionsStatus:
     """Reports whether PG 19 partition reorganisation is usable.
 
@@ -90,7 +90,7 @@ class Pg19PartitionsStatus:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MergePartitionsResult:
     """Outcome of `merge_partitions`.
 
@@ -106,7 +106,7 @@ class MergePartitionsResult:
     merge_sql: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SplitPartitionSpec:
     """One new-partition spec for `split_partition`.
 
@@ -122,7 +122,7 @@ class SplitPartitionSpec:
     for_values_clause: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SplitPartitionResult:
     """Outcome of `split_partition`."""
 

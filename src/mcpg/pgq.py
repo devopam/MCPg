@@ -89,7 +89,7 @@ class PgqError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PgqStatus:
     """Reports whether SQL/PGQ is usable on this server.
 
@@ -104,7 +104,7 @@ class PgqStatus:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PropertyGraphInfo:
     """A property graph defined in the database.
 
@@ -120,7 +120,7 @@ class PropertyGraphInfo:
     edge_tables: list[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PgqRunResult:
     """The result of a ``SELECT ... FROM GRAPH_TABLE(...)`` query.
 
@@ -135,14 +135,14 @@ class PgqRunResult:
     truncated: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CreatePropertyGraphResult:
     schema: str
     name: str
     created: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DropPropertyGraphResult:
     schema: str
     name: str
