@@ -16,7 +16,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ContentBlock
 
-from mcpg import audit
+from mcpg import about, audit
 from mcpg.config import Settings, Transport
 from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
@@ -74,20 +74,26 @@ class AuditedFastMCP(FastMCP[AppContext]):
                     raise RuntimeError(f"Rate limit exceeded for tool {name!r}. Please try again later.")
 
             metrics = get_metrics()
+            # Resolve the capability bucket once per call so both the
+            # OTel span attribute and the Prometheus counter carry the
+            # same label. `classify_tool` returns None for tools that
+            # don't match any override / pattern — defensively use
+            # "unknown" so the label dimension stays cardinality-stable.
+            bucket = about.classify_tool(name) or "unknown"
             start = time.monotonic()
             try:
-                with tool_span(self.otel_tracer, name, arguments):
+                with tool_span(self.otel_tracer, name, arguments, bucket=bucket):
                     result = await super().call_tool(name, arguments)
             except Exception as exc:
                 duration = time.monotonic() - start
                 self._log_if_slow(name, duration)
                 audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(exc)))
-                metrics.record_call(name, "error", duration)
+                metrics.record_call(name, "error", duration, bucket=bucket)
                 raise
             duration = time.monotonic() - start
             self._log_if_slow(name, duration)
             audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="ok"))
-            metrics.record_call(name, "ok", duration)
+            metrics.record_call(name, "ok", duration, bucket=bucket)
             return result
         finally:
             self.in_flight_calls -= 1

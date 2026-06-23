@@ -77,6 +77,45 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Tool-bucket usage telemetry** (`mcpg.observability` +
+  `mcpg.otel_tracing`) — every `call_tool` invocation now carries
+  the capability-bucket label on both observability surfaces, so
+  operators can slice tool usage by capability without re-deriving
+  the routing from the tool name in PromQL / their tracing backend.
+  Realises roadmap row **1.4**.
+
+  Wire-level shape:
+
+  - **Prometheus**: `mcpg_tool_calls_total{tool, bucket, status}` —
+    the existing series gained a `bucket` label. Driver:
+    `sum by (bucket) (rate(mcpg_tool_calls_total[5m]))` answers
+    "which capabilities is this agent actually exercising?"
+  - **OpenTelemetry**: every `mcp.call_tool` span gains a
+    `mcp.tool.bucket` attribute, so Honeycomb / Tempo / Datadog
+    light up bucket-level facets automatically.
+
+  Bucket lookup uses the existing `mcpg.about.classify_tool`
+  routing. Tools that don't classify (shouldn't happen on the
+  maximal-flag server but defensively) land on the literal
+  `"unknown"` label so the label dimension stays
+  cardinality-stable.
+
+  Pre-this-change every bucket ordering decision in `describe_self`
+  was hand-curated; with this telemetry in place the next iteration
+  can drive `headline_tools` selection empirically (roadmap row
+  14.4).
+
+  Wire-format note: existing `mcpg_tool_calls_total` queries that
+  don't reference `bucket` keep working — PromQL's label-matcher
+  semantics treat the new label as a "don't care" dimension. The
+  internal `Metrics.record_call` signature gained an optional
+  `bucket="unknown"` kwarg; the in-tree call site
+  (`server.AuditedFastMCP.call_tool`) passes the classified bucket.
+
+
+
+### Added
+
 - **Tool-surface overlap analyser** (`tools/analyse_tool_overlap.py`).
   Scans the snapshotted MCPg tool catalogue (now 223 tools after the
   Phase 3 sprint) for pairs likely to confuse an LLM picker — similar
