@@ -5436,6 +5436,104 @@ def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
         return dict(res)
 
 
+def _register_resources(server: FastMCP[AppContext]) -> None:
+    """Register the MCP **resources** primitive — `mcpg://…` URIs.
+
+    Resources are MCP's preload-on-connect surface (separate from tools
+    and prompts). Agents read by URI rather than calling a tool, which
+    skips the tool-call wire overhead and the per-call context-window
+    cost. The content payloads come from :mod:`mcpg.resources` — see
+    that module's docstring for the surface inventory.
+    """
+    from mcpg import resources as mcpg_resources
+
+    # ------------------------------------------------------------------
+    # mcpg://about/index — full describe_self-equivalent payload.
+    # Static (no template variable), no DB access. Reuses the tool
+    # surface registered on this server so the bucket counts match
+    # the maximal-flag enumeration the same agent would see via
+    # `describe_self`.
+    # ------------------------------------------------------------------
+    @server.resource(
+        "mcpg://about/index",
+        name="MCPg self-description",
+        mime_type="application/json",
+        description=(
+            "Full capability summary — the same JSON payload `describe_self` returns, "
+            "exposed as a resource so an agent can preload it once at session start "
+            "without burning a tool call. Includes per-bucket tool lists + headlines. "
+            "Drill into a single bucket via `mcpg://capabilities/{bucket_id}`."
+        ),
+    )
+    async def about_index_resource() -> str:
+        # ``list_tools`` is async; collect names once and reuse the
+        # canonical formatter so the wire shape matches `describe_self`
+        # exactly.
+        registered_tools = list(await server.list_tools())
+        names = [t.name for t in registered_tools]
+        return mcpg_resources._build_about_index_payload(names)
+
+    # ------------------------------------------------------------------
+    # mcpg://capabilities/index — compact bucket list (id + name + summary).
+    # Cheaper than `mcpg://about/index` — meant for "what's the menu"
+    # discovery without pulling per-bucket tool lists.
+    # ------------------------------------------------------------------
+    @server.resource(
+        "mcpg://capabilities/index",
+        name="MCPg capability buckets (compact)",
+        mime_type="application/json",
+        description=(
+            "Compact list of MCPg's capability buckets — just `id`, `name`, "
+            "`summary` per bucket. Cheap enough to pull on every session "
+            "start. Drill into a bucket with `mcpg://capabilities/{bucket_id}`."
+        ),
+    )
+    def capabilities_index_resource() -> str:
+        return mcpg_resources._build_capabilities_index_payload()
+
+    # ------------------------------------------------------------------
+    # mcpg://capabilities/{bucket_id} — per-bucket detail.
+    # Same payload shape as the `capabilities[i]` entry from
+    # `describe_self`, filtered to one bucket.
+    # ------------------------------------------------------------------
+    @server.resource(
+        "mcpg://capabilities/{bucket_id}",
+        name="MCPg capability bucket detail",
+        mime_type="application/json",
+        description=(
+            "Full detail for one capability bucket — `id`, `name`, "
+            "`summary`, `detail`, `headline_tools` (top 3-6), "
+            "`tool_count`, and `all_tools`. Use after picking a bucket "
+            "from `mcpg://capabilities/index`."
+        ),
+    )
+    async def capability_detail_resource(bucket_id: str) -> str:
+        registered_tools = list(await server.list_tools())
+        names = [t.name for t in registered_tools]
+        return mcpg_resources._build_capability_detail_payload(bucket_id, names)
+
+    # ------------------------------------------------------------------
+    # mcpg://schema/{schema_name} — compact schema dump as Markdown
+    # inside a JSON envelope. Read-only DB access; schema name is
+    # parameter-bound inside `get_compact_schema`.
+    # ------------------------------------------------------------------
+    @server.resource(
+        "mcpg://schema/{schema_name}",
+        name="PostgreSQL schema (compact)",
+        mime_type="application/json",
+        description=(
+            "Compact Markdown dump of one PostgreSQL schema — tables, "
+            "columns, foreign keys. Same content as the `get_compact_schema` "
+            "tool, exposed as a resource so an agent can preload schema "
+            "context without burning a tool call. JSON envelope "
+            "`{schema, format: 'markdown', body}`."
+        ),
+    )
+    async def schema_resource(ctx: _Ctx, schema_name: str) -> str:
+        database = ctx.request_context.lifespan_context.database
+        return await mcpg_resources._build_schema_payload(database.driver(), schema_name)
+
+
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     """Register the MCP tools permitted by the configured access mode.
 
@@ -5443,9 +5541,14 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     queries) are exposed whenever the READ capability is permitted, which is
     every mode. Write tools require the WRITE capability — unrestricted mode.
     The DDL tool additionally requires the ``MCPG_ALLOW_DDL`` opt-in.
+
+    MCP resources (the ``mcpg://…`` preload surface) are registered
+    alongside READ tools — they're conceptually a read-shape operation
+    and they share the same gate.
     """
     _register_server_info(server)
     if is_permitted(settings.access_mode, Capability.READ):
+        _register_resources(server)
         _register_introspection(server)
         _register_diagrams(server)
         _register_schema_diff(server)
