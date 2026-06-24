@@ -6,6 +6,34 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **MCP prompts surface** — three pre-built investigation playbooks
+  exposed via the MCP `prompts/list` + `prompts/get` protocol
+  primitives:
+
+    - `diagnose_slow_query(sql)` — routes the agent through
+      `explain_query`, `analyze_query_plan`, `recommend_indexes`,
+      `analyze_workload` in order, then asks for a structured
+      root-cause + fix + impact report.
+    - `bisect_slow_migration(migration_id, baseline_schema, current_schema)`
+      — confirms the migration ran, scopes what changed via
+      `compare_schemas`, validates suspects with per-query
+      `analyze_query_plan`, and ends with a forward-fix / rollback /
+      no-op remediation decision tree.
+    - `review_rls_policy(schema, table)` — RLS coverage audit:
+      `describe_table` → `list_policies` → `audit_database(category=
+      'security')`, with gap analysis against identity-bearing
+      columns. Diagnosis-only — proposes `CREATE POLICY` statements
+      but never applies them.
+
+  Lives in `mcpg.prompts` (content builders) + `mcpg.tools.
+  _register_prompts` (FastMCP wiring). Completes the MCP primitive
+  triad alongside the resources surface (PR #157) and the tools
+  surface. Contract test (`tests/contract/test_mcp_prompts.py`) pins
+  the name + argument-shape manifest so a refactor can't silently
+  drop a prompt. Realises roadmap row 8.4.
+
 ### Changed
 
 - **outputSchema sweep across the 8 PG 19 modules** — 28 tools
