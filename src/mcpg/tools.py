@@ -2677,6 +2677,32 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "detect_n_plus_one", _run, min_calls, max_rows_per_call, min_total_ms, limit)
 
     @server.tool(
+        name="read_autovacuum_priority",
+        description=_with_example(
+            "Return the tables most urgently needing autovacuum, ranked by how "
+            "close their dead-tuple count is to the per-table autovacuum "
+            "threshold (`autovacuum_vacuum_threshold + "
+            "autovacuum_vacuum_scale_factor * reltuples`, honouring per-table "
+            "`reloptions` overrides). Each row carries `priority` ('overdue' "
+            "if past the threshold, 'watchlist' if within 50%, 'borderline' "
+            "otherwise) plus the inputs (`n_dead_tup`, `vacuum_threshold`, "
+            "`last_autovacuum`, `autovacuum_enabled`) so the agent can "
+            "explain *why* a table landed on the shortlist. Top-level "
+            "`overdue_count` lets an agent branch without walking the list. "
+            "Read-only catalog query.",
+            "read_autovacuum_priority(limit=25)",
+        ),
+    )
+    async def read_autovacuum_priority(ctx: _Ctx, limit: int = 25) -> dict[str, Any]:
+        from mcpg import autovacuum
+
+        async def _run() -> dict[str, Any]:
+            report = await autovacuum.read_autovacuum_priority(_driver(ctx), limit=limit)
+            return asdict(report)
+
+        return await _cached_call(ctx, "read_autovacuum_priority", _run, limit)
+
+    @server.tool(
         name="recommend_indexes",
         description=_with_example(
             "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan. "
