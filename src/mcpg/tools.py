@@ -230,6 +230,41 @@ def _register_server_info(server: FastMCP[AppContext]) -> None:
         return build_capability_summary(names)
 
     @server.tool(
+        name="describe_tool",
+        description=(
+            "Return the full registered schema for one MCP tool by name — "
+            "`description`, `input_schema`, `output_schema`, and which "
+            "capability bucket it belongs to. Use this when an agent hits "
+            "a tool error and needs to verify the call shape without "
+            "re-walking the full `describe_self` payload (handy when the "
+            "transport surfaces only `tools/call`, not `tools/list`). "
+            "Returns `registered=false` plus a `did_you_mean` suggestion "
+            "list when the name isn't on this server. Read-only; no "
+            "database access. Example: `describe_tool(name='run_select')`"
+        ),
+    )
+    async def describe_tool(ctx: _Ctx, name: str) -> dict[str, Any]:
+        del ctx  # purely-static response; no per-request state
+        from mcpg.tool_introspection import (
+            build_missing_tool_descriptor,
+            build_tool_descriptor,
+        )
+
+        registered_tools = list(await server.list_tools())
+        for tool in registered_tools:
+            if tool.name == name:
+                return build_tool_descriptor(
+                    name=tool.name,
+                    description=tool.description,
+                    input_schema=tool.inputSchema,
+                    output_schema=tool.outputSchema,
+                )
+        return build_missing_tool_descriptor(
+            name,
+            registered_names=[t.name for t in registered_tools],
+        )
+
+    @server.tool(
         name="get_metrics_exposition",
         description=(
             "Return the in-process Prometheus-format metrics for this MCPg "
