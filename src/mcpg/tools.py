@@ -110,7 +110,14 @@ def _with_example(description: str, example: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ServerInfo:
-    """High-level facts about a running MCPg server."""
+    """High-level facts about a running MCPg server.
+
+    ``wal_level`` and ``effective_wal_level`` are sourced from the
+    server via ``current_setting('...', true)`` when a driver is
+    supplied to :func:`build_server_info`; ``None`` when the database
+    isn't connected or the GUC isn't recognised on this PG version
+    (PG ≤ 18 doesn't ship ``effective_wal_level``).
+    """
 
     mcpg_version: str
     access_mode: str
@@ -118,10 +125,35 @@ class ServerInfo:
     database_connected: bool
     nl2sql_default_provider: str | None
     nl2sql_available_providers: list[str]
+    wal_level: str | None = None
+    effective_wal_level: str | None = None
 
 
-def build_server_info(app: AppContext) -> ServerInfo:
-    """Assemble server info from the application context."""
+async def build_server_info(app: AppContext, *, driver: SqlDriver | None = None) -> ServerInfo:
+    """Assemble server info from the application context.
+
+    When ``driver`` is supplied and the database is connected, queries
+    the live ``wal_level`` and PG 19's ``effective_wal_level`` GUCs.
+    Both fall back to ``None`` on driver errors and on PG ≤ 18 (where
+    ``effective_wal_level`` doesn't exist) — the agent can tell the
+    cluster's actual emit-state apart from the configured
+    intent-state when they diverge.
+    """
+    wal_level: str | None = None
+    effective_wal_level: str | None = None
+    if driver is not None and app.database.is_connected:
+        try:
+            from mcpg.pg19_runtime import _string_setting
+
+            wal_level = await _string_setting(driver, "wal_level")
+            effective_wal_level = await _string_setting(driver, "effective_wal_level")
+        except Exception:
+            # GUC probe failures don't block the rest of the server-info
+            # response — the connection may be transiently down or the
+            # GUC may not exist on this PG version. Both manifest as
+            # `None` in the surfaced result, which matches the "not
+            # known on this server" semantics.
+            pass
     return ServerInfo(
         mcpg_version=__version__,
         access_mode=app.settings.access_mode.value,
@@ -129,6 +161,8 @@ def build_server_info(app: AppContext) -> ServerInfo:
         database_connected=app.database.is_connected,
         nl2sql_default_provider=app.settings.nl2sql_provider,
         nl2sql_available_providers=[p for p, _ in app.settings.nl2sql_api_keys],
+        wal_level=wal_level,
+        effective_wal_level=effective_wal_level,
     )
 
 
@@ -195,10 +229,20 @@ def _driver(ctx: _Ctx) -> SqlDriver:
 def _register_server_info(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="get_server_info",
-        description=("Return the MCPg server version, access mode, transport, and database connection status."),
+        description=(
+            "Return the MCPg server version, access mode, transport, database "
+            "connection status, and PostgreSQL `wal_level` / `effective_wal_level` "
+            "(the latter is `None` on PG ≤ 18 where the GUC doesn't exist; on "
+            "PG 19+ a divergence between the two indicates a reload is still "
+            "pending)."
+        ),
     )
     async def get_server_info(ctx: _Ctx) -> dict[str, Any]:
-        return asdict(build_server_info(ctx.request_context.lifespan_context))
+        info = await build_server_info(
+            ctx.request_context.lifespan_context,
+            driver=_driver(ctx) if ctx.request_context.lifespan_context.database.is_connected else None,
+        )
+        return asdict(info)
 
     @server.tool(
         name="describe_self",

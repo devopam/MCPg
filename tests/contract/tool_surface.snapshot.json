@@ -2312,7 +2312,7 @@
       "name": "get_role_ddl"
     },
     {
-      "description": "Return the MCPg server version, access mode, transport, and database connection status.",
+      "description": "Return the MCPg server version, access mode, transport, database connection status, and PostgreSQL `wal_level` / `effective_wal_level` (the latter is `None` on PG ≤ 18 where the GUC doesn't exist; on PG 19+ a divergence between the two indicates a reload is still pending).",
       "inputSchema": {
         "properties": {},
         "title": "get_server_infoArguments",
