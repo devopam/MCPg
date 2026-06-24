@@ -116,6 +116,7 @@ _PROMPT_RENDER_ARGS: dict[str, dict[str, str]] = {
     "review_rls_policy": {"schema": "public", "table": "widgets"},
 }
 
+
 def _extract_tool_names_from_body(body: str) -> set[str]:
     """Pull tool-call references out of a prompt body.
 
@@ -171,9 +172,7 @@ async def test_every_tool_name_in_every_prompt_body_is_actually_registered() -> 
             referenced = _extract_tool_names_from_body(body)
             missing = referenced - registered_tools
             if missing:
-                drift.append(
-                    f"  {prompt.name}: references unregistered tools {sorted(missing)}"
-                )
+                drift.append(f"  {prompt.name}: references unregistered tools {sorted(missing)}")
 
     assert not drift, (
         "Prompt bodies reference tool names that don't exist on the registered server:\n"
