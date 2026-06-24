@@ -799,8 +799,13 @@ async def list_grants(driver: SqlDriver, schema: str, table: str) -> list[GrantI
     # information_schema rows still surface as before.
     acl_string: str | None = None
     try:
+        # `pg_get_acl` returns aclitem[] — psycopg's typecasters
+        # deserialise that as a Python list, which would break the
+        # `acl: str | None` contract on GrantInfo. Cast to text so we
+        # get the catalog-display form (`{user=privs/grantor, ...}`)
+        # as a single str regardless of driver / typecaster config.
         acl_rows = await driver.execute_query(
-            "SELECT pg_get_acl('pg_class'::regclass, c.oid, 0) AS acl "
+            "SELECT pg_get_acl('pg_class'::regclass, c.oid, 0)::text AS acl "
             "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
             "WHERE n.nspname = %s AND c.relname = %s",
             params=[schema, table],
