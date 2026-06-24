@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 224
+    "tool_count": 225
   },
   "tools": {
     "add_compression_policy": {
@@ -1556,6 +1556,9 @@
         "remaining"
       ],
       "kind": "scalar"
+    },
+    "read_autovacuum_priority": {
+      "kind": "opaque"
     },
     "read_migration_history": {
       "dataclass": "MigrationHistoryReport",

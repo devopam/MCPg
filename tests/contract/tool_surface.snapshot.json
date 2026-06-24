@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 224
+    "tool_count": 225
   },
   "tools": [
     {
@@ -4190,6 +4190,21 @@
         "type": "object"
       },
       "name": "prune_audit_events"
+    },
+    {
+      "description": "Return the tables most urgently needing autovacuum, ranked by how close their dead-tuple count is to the per-table autovacuum threshold (`autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor * reltuples`, honouring per-table `reloptions` overrides). Each row carries `priority` ('overdue' if past the threshold, 'watchlist' if within 50%, 'borderline' otherwise) plus the inputs (`n_dead_tup`, `vacuum_threshold`, `last_autovacuum`, `autovacuum_enabled`) so the agent can explain *why* a table landed on the shortlist. Top-level `overdue_count` lets an agent branch without walking the list. Read-only catalog query.\n\nExample: `read_autovacuum_priority(limit=25)`",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 25,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "read_autovacuum_priorityArguments",
+        "type": "object"
+      },
+      "name": "read_autovacuum_priority"
     },
     {
       "description": "Query and summarize historical migrations applied to the database by popular migration frameworks (Alembic, Flyway, Diesel, Django, Prisma, Golang Migrate, Goose, Sequelize). Allows filtering by schema. Returns an object with one optional list per detected framework: `alembic`, `flyway`, `diesel`, `django`, `prisma`, `golang_migrate`, `goose`, `sequelize`. Each entry is null when the framework's table isn't present; otherwise it carries the framework-specific row shape (e.g. alembic has `{version_num}`; flyway has `{installed_rank, version, description, type, ...}`).",

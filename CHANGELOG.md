@@ -8,6 +8,30 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`read_autovacuum_priority(limit)`** — read-only catalog tool
+  that surfaces tables most urgently needing autovacuum, ranked by
+  how close their `n_dead_tup` count is to the per-table autovacuum
+  threshold (`autovacuum_vacuum_threshold +
+  autovacuum_vacuum_scale_factor * reltuples`, honouring per-table
+  `reloptions` overrides). Each row carries:
+
+    - `priority` — `overdue` (past the threshold), `watchlist`
+      (within 50%), or `borderline` (everything else surfaced).
+    - The full inputs: `n_dead_tup`, `n_live_tup`,
+      `n_mod_since_analyze`, `n_ins_since_vacuum` (PG 13+),
+      `vacuum_threshold`, `analyze_threshold`, `last_autovacuum`,
+      `last_autoanalyze`, `autovacuum_enabled`.
+    - `dead_tuple_ratio` / `analyze_ratio` floats for sorting beyond
+      the categorical bucket.
+
+  Top-level `overdue_count` lets agents branch without walking the
+  list; the count reflects the cluster, not the `limit`-clipped
+  output, so pagination can't hide an urgent backlog. Driver
+  failures surface as `available=False` (no raise — same convention
+  as `mcpg.health`). Lives in `mcpg.autovacuum`. Classified under
+  the `operations_and_health` capability bucket. Realises sub-item
+  #14 of roadmap row 2.5 (the PG 19 PR-10 small-tools batch).
+
 - **`explain_query` / `analyze_query_plan` gain an `io=true` option**
   for PG 19's extended `EXPLAIN (ANALYZE, BUFFERS)` output. With
   `io=true`, the tools switch from `EXPLAIN (FORMAT JSON)` (plan
