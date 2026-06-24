@@ -8,33 +8,36 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-<<<<<<< HEAD
-- **MCP prompts surface** — three pre-built investigation playbooks
-  exposed via the MCP `prompts/list` + `prompts/get` protocol
-  primitives:
+- **`explain_query` / `analyze_query_plan` gain an `io=true` option**
+  for PG 19's extended `EXPLAIN (ANALYZE, BUFFERS)` output. With
+  `io=true`, the tools switch from `EXPLAIN (FORMAT JSON)` (plan
+  only, no execution) to `EXPLAIN (ANALYZE, BUFFERS, TIMING,
+  FORMAT JSON)` (executes the query and surfaces real buffer + I/O
+  timing per node).
 
-    - `diagnose_slow_query(sql)` — routes the agent through
-      `explain_query`, `analyze_query_plan`, `recommend_indexes`,
-      `analyze_workload` in order, then asks for a structured
-      root-cause + fix + impact report.
-    - `bisect_slow_migration(migration_id, baseline_schema, current_schema)`
-      — confirms the migration ran, scopes what changed via
-      `compare_schemas`, validates suspects with per-query
-      `analyze_query_plan`, and ends with a forward-fix / rollback /
-      no-op remediation decision tree.
-    - `review_rls_policy(schema, table)` — RLS coverage audit:
-      `describe_table` → `list_policies` → `audit_database(category=
-      'security')`, with gap analysis against identity-bearing
-      columns. Diagnosis-only — proposes `CREATE POLICY` statements
-      but never applies them.
+  On `analyze_query_plan`, the rolled-up `QueryPlanAnalysis` gains
+  optional fields: `actual_total_time_ms`, `actual_rows`,
+  `shared_blocks_read`, `shared_blocks_hit`, `io_read_time_ms`,
+  `io_write_time_ms`, plus the PG 19 asynchronous-I/O split as
+  `aio_read_blocks` / `aio_write_blocks`. Pre-PG-19 servers don't
+  carry the AIO keys in BUFFERS output — those fields stay `None`
+  rather than synthesising `0`, so the agent can tell "no AIO
+  observations" apart from "zero AIO observations".
 
-  Lives in `mcpg.prompts` (content builders) + `mcpg.tools.
-  _register_prompts` (FastMCP wiring). Completes the MCP primitive
-  triad alongside the resources surface (PR #157) and the tools
-  surface. Contract test (`tests/contract/test_mcp_prompts.py`) pins
-  the name + argument-shape manifest so a refactor can't silently
-  drop a prompt. Realises roadmap row 8.4.
-=======
+  Pairs with the already-shipped `recommend_io_method` (PR #131) to
+  close the AIO observability loop end-to-end: the advisor tells
+  you which `io_method` to pick, then `analyze_query_plan(io=True)`
+  shows what the AIO path actually does on a representative
+  workload. Realises roadmap row 2.6.
+
+  **Safety**: `io=True` triggers actual execution. The safety
+  allowlist still rejects writes / DDL — the pre-flight validates
+  the SQL via `SafeSqlDriver._validate(EXPLAIN (FORMAT JSON) <sql>)`
+  before running the ANALYZE variant, so `explain_query(sql='DROP
+  TABLE x', io=True)` still raises `QueryError` instead of dropping
+  the table. The `io=False` default is unchanged — agents who don't
+  opt in pay no execution cost.
+
 - **`describe_tool(name)` MCP tool** — single-tool deep-dive
   introspection for the agent self-recovery loop. Returns the
   registered description, `inputSchema`, `outputSchema`, and bucket
@@ -84,7 +87,6 @@ adheres to [Semantic Versioning](https://semver.org/).
   surface. Contract test (`tests/contract/test_mcp_prompts.py`) pins
   the name + argument-shape manifest so a refactor can't silently
   drop a prompt. Realises roadmap row 8.4.
->>>>>>> 2d8f2bf (feat(introspection): describe_tool(name) — single-tool deep-dive (roadmap 8.5))
 
 ### Changed
 

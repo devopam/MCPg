@@ -152,9 +152,14 @@
       "name": "analyze_lock_hotspots"
     },
     {
-      "description": "Summarise a query's execution plan: total estimated cost, estimated rows, node types used, and any sequentially-scanned tables.\n\nExample: `analyze_query_plan(sql='SELECT * FROM orders WHERE customer_id = 42')`",
+      "description": "Summarise a query's execution plan: total estimated cost, estimated rows, node types used, and any sequentially-scanned tables. Set `io=true` to run `EXPLAIN (ANALYZE, BUFFERS, TIMING)` instead of the plan-only variant — adds `actual_total_time_ms`, `shared_blocks_read/hit`, `io_read_time_ms`, `io_write_time_ms`, and (PG 19) `aio_read_blocks` / `aio_write_blocks` rolled up across the plan tree. Reasoning about AIO needs `io=true`.\n\nExample: `analyze_query_plan(sql='SELECT * FROM orders WHERE customer_id = 42', io=true)`",
       "inputSchema": {
         "properties": {
+          "io": {
+            "default": false,
+            "title": "Io",
+            "type": "boolean"
+          },
           "sql": {
             "title": "Sql",
             "type": "string"
@@ -1557,9 +1562,14 @@
       "name": "enable_redis_fdw"
     },
     {
-      "description": "Return the PostgreSQL execution plan for a query without running it. The query is validated by the same safety allowlist as run_select.\n\nExample: `explain_query(sql='SELECT * FROM orders WHERE created_at > now() - interval \\'7 days\\'')`",
+      "description": "Return the PostgreSQL execution plan for a query. By default uses `EXPLAIN (FORMAT JSON)` — plan only, the query is not executed. Set `io=true` to switch to `EXPLAIN (ANALYZE, BUFFERS, TIMING)` — runs the query and includes buffer + I/O timing per node (PG 19 additionally surfaces asynchronous-I/O block counts). Validated by the same safety allowlist as `run_select`, so writes / DDL are rejected.\n\nExample: `explain_query(sql='SELECT * FROM orders WHERE customer_id = 42', io=true)`",
       "inputSchema": {
         "properties": {
+          "io": {
+            "default": false,
+            "title": "Io",
+            "type": "boolean"
+          },
           "sql": {
             "title": "Sql",
             "type": "string"

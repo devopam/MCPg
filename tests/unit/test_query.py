@@ -181,6 +181,147 @@ async def test_analyze_query_plan_tool_is_callable_from_a_client() -> None:
     assert result.isError is False
 
 
+# --- io=True / EXPLAIN ANALYZE BUFFERS path (roadmap 2.6) ---------------
+
+
+async def test_explain_query_io_true_runs_analyze_buffers_timing() -> None:
+    """With ``io=True`` the driver must see the full ANALYZE+BUFFERS+TIMING
+    options on the EXPLAIN — otherwise PG won't emit the I/O fields."""
+    driver = FakeDriver([{"QUERY PLAN": [{"Plan": {"Node Type": "Result"}}]}])
+    await explain_query(driver, "SELECT 1", io=True)
+    sent_query, _, _ = driver.calls[-1]
+    assert "ANALYZE" in sent_query
+    assert "BUFFERS" in sent_query
+    assert "TIMING" in sent_query
+    assert "FORMAT JSON" in sent_query
+
+
+async def test_explain_query_default_keeps_the_plan_only_path() -> None:
+    """Regression — without ``io=True`` we must NOT run ANALYZE (that
+    would execute every query an agent inspects)."""
+    driver = FakeDriver([{"QUERY PLAN": [{"Plan": {"Node Type": "Result"}}]}])
+    await explain_query(driver, "SELECT 1")
+    sent_query, _, _ = driver.calls[-1]
+    assert "ANALYZE" not in sent_query
+    assert "BUFFERS" not in sent_query
+
+
+_PLAN_TREE_WITH_BUFFERS = [
+    {
+        "Plan": {
+            "Node Type": "Hash Join",
+            "Total Cost": 250.0,
+            "Plan Rows": 1000,
+            "Actual Total Time": 42.5,
+            "Actual Rows": 950,
+            "Shared Hit Blocks": 100,
+            "Shared Read Blocks": 20,
+            "I/O Read Time": 12.3,
+            "I/O Write Time": 0.0,
+            # PG 19 BUFFERS extension — asynchronous-I/O block counts.
+            "Async I/O Read Blocks": 15,
+            "Async I/O Write Blocks": 0,
+            "Plans": [
+                {
+                    "Node Type": "Seq Scan",
+                    "Relation Name": "orders",
+                    "Total Cost": 100.0,
+                    "Plan Rows": 5000,
+                    "Shared Hit Blocks": 80,
+                    "Shared Read Blocks": 15,
+                    "I/O Read Time": 8.0,
+                    "I/O Write Time": 0.0,
+                    "Async I/O Read Blocks": 10,
+                    "Async I/O Write Blocks": 0,
+                },
+                {
+                    "Node Type": "Index Scan",
+                    "Relation Name": "users",
+                    "Total Cost": 50.0,
+                    "Plan Rows": 1000,
+                    "Shared Hit Blocks": 5,
+                    "Shared Read Blocks": 2,
+                    "I/O Read Time": 1.5,
+                    "I/O Write Time": 0.0,
+                    "Async I/O Read Blocks": 2,
+                    "Async I/O Write Blocks": 0,
+                },
+            ],
+        }
+    }
+]
+
+
+async def test_analyze_query_plan_io_rolls_up_buffer_and_timing_counts() -> None:
+    """Per-node buffer + IO counts get summed across the plan tree."""
+    driver = FakeDriver([{"QUERY PLAN": _PLAN_TREE_WITH_BUFFERS}])
+    result = await analyze_query_plan(driver, "SELECT 1", io=True)
+    assert result.actual_total_time_ms == 42.5
+    assert result.actual_rows == 950
+    # Sums across hash-join + seq-scan + index-scan.
+    assert result.shared_blocks_hit == 100 + 80 + 5
+    assert result.shared_blocks_read == 20 + 15 + 2
+    assert result.io_read_time_ms == pytest.approx(12.3 + 8.0 + 1.5)
+    assert result.io_write_time_ms == 0.0
+    # PG 19 AIO summary — non-None means the EXPLAIN carried the keys.
+    assert result.aio_read_blocks == 15 + 10 + 2
+    assert result.aio_write_blocks == 0
+
+
+async def test_analyze_query_plan_io_aio_fields_are_none_when_explain_omits_them() -> None:
+    """PG ≤ 18 doesn't emit ``Async I/O *`` keys in BUFFERS output;
+    the rollup must report ``None`` (not 0) so the caller can tell
+    "no AIO observations" apart from "zero AIO observations"."""
+    plan = [
+        {
+            "Plan": {
+                "Node Type": "Result",
+                "Total Cost": 0.01,
+                "Plan Rows": 1,
+                "Actual Total Time": 0.05,
+                "Actual Rows": 1,
+                "Shared Hit Blocks": 1,
+                "Shared Read Blocks": 0,
+                "I/O Read Time": 0.0,
+                "I/O Write Time": 0.0,
+                # No "Async I/O Read Blocks" / "Async I/O Write Blocks" keys.
+            }
+        }
+    ]
+    result = await analyze_query_plan(FakeDriver([{"QUERY PLAN": plan}]), "SELECT 1", io=True)
+    assert result.aio_read_blocks is None
+    assert result.aio_write_blocks is None
+    # Shared counts are still populated — pre-PG-19 BUFFERS reports them.
+    assert result.shared_blocks_hit == 1
+
+
+async def test_analyze_query_plan_default_leaves_io_fields_unset() -> None:
+    """Without io=True the io-related fields stay None — agents who
+    don't ask for execution shouldn't see synthesised zeros."""
+    result = await analyze_query_plan(FakeDriver([{"QUERY PLAN": _PLAN_TREE}]), "SELECT 1")
+    assert result.actual_total_time_ms is None
+    assert result.shared_blocks_read is None
+    assert result.aio_read_blocks is None
+
+
+@pytest.mark.parametrize(
+    "unsafe_sql",
+    [
+        "DROP TABLE widget",
+        "DELETE FROM widget",
+        "INSERT INTO widget (id) VALUES (1)",
+        "UPDATE widget SET id = 1",
+    ],
+)
+async def test_explain_query_io_true_still_rejects_writes(unsafe_sql: str) -> None:
+    """``io=True`` switches to ``EXPLAIN ANALYZE`` (which executes the
+    statement). The pre-flight validation must still reject every
+    write/DDL form — otherwise ``explain_query(..., io=True)`` would
+    become a backdoor to run any SQL the agent supplies."""
+    with pytest.raises(QueryError):
+        await explain_query(FakeDriver(), unsafe_sql, io=True)
+
+
 # --- run_select_parallel (Phase 3.4) -------------------------------------
 
 

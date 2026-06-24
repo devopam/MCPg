@@ -2455,25 +2455,36 @@ def _register_query(server: FastMCP[AppContext]) -> None:
     @server.tool(
         name="explain_query",
         description=_with_example(
-            "Return the PostgreSQL execution plan for a query without running "
-            "it. The query is validated by the same safety allowlist as run_select.",
-            "explain_query(sql='SELECT * FROM orders WHERE created_at > now() - interval \\'7 days\\'')",
+            "Return the PostgreSQL execution plan for a query. By default "
+            "uses `EXPLAIN (FORMAT JSON)` — plan only, the query is not "
+            "executed. Set `io=true` to switch to `EXPLAIN (ANALYZE, "
+            "BUFFERS, TIMING)` — runs the query and includes buffer + "
+            "I/O timing per node (PG 19 additionally surfaces "
+            "asynchronous-I/O block counts). Validated by the same "
+            "safety allowlist as `run_select`, so writes / DDL are "
+            "rejected.",
+            "explain_query(sql='SELECT * FROM orders WHERE customer_id = 42', io=true)",
         ),
     )
-    async def explain_query(ctx: _Ctx, sql: str) -> dict[str, Any]:
-        result = await query.explain_query(_driver(ctx), sql)
+    async def explain_query(ctx: _Ctx, sql: str, io: bool = False) -> dict[str, Any]:
+        result = await query.explain_query(_driver(ctx), sql, io=io)
         return asdict(result)
 
     @server.tool(
         name="analyze_query_plan",
         description=_with_example(
             "Summarise a query's execution plan: total estimated cost, "
-            "estimated rows, node types used, and any sequentially-scanned tables.",
-            "analyze_query_plan(sql='SELECT * FROM orders WHERE customer_id = 42')",
+            "estimated rows, node types used, and any sequentially-scanned tables. "
+            "Set `io=true` to run `EXPLAIN (ANALYZE, BUFFERS, TIMING)` instead "
+            "of the plan-only variant — adds `actual_total_time_ms`, "
+            "`shared_blocks_read/hit`, `io_read_time_ms`, `io_write_time_ms`, "
+            "and (PG 19) `aio_read_blocks` / `aio_write_blocks` rolled up across "
+            "the plan tree. Reasoning about AIO needs `io=true`.",
+            "analyze_query_plan(sql='SELECT * FROM orders WHERE customer_id = 42', io=true)",
         ),
     )
-    async def analyze_query_plan(ctx: _Ctx, sql: str) -> dict[str, Any]:
-        result = await query.analyze_query_plan(_driver(ctx), sql)
+    async def analyze_query_plan(ctx: _Ctx, sql: str, io: bool = False) -> dict[str, Any]:
+        result = await query.analyze_query_plan(_driver(ctx), sql, io=io)
         return asdict(result)
 
     @server.tool(
