@@ -5522,6 +5522,76 @@ def _register_resources(server: FastMCP[AppContext]) -> None:
         return await mcpg_resources._build_schema_payload(database.driver(), schema_name)
 
 
+def _register_prompts(server: FastMCP[AppContext]) -> None:
+    """Register the MCP **prompts** primitive — pre-built investigation playbooks.
+
+    Companion to :func:`_register_resources` (preload context) and
+    :func:`register_tools` (operations). Prompts surface as the
+    standard ``prompts/list`` + ``prompts/get`` MCP protocol; clients
+    render them with arguments the user supplies and inject the
+    result into the conversation. Bodies come from :mod:`mcpg.prompts`
+    so tests can exercise the templating directly.
+    """
+    from mcpg import prompts as mcpg_prompts
+
+    # ------------------------------------------------------------------
+    # diagnose_slow_query — single-statement investigation flow.
+    # Routes the agent through explain_query, analyze_query_plan,
+    # recommend_indexes, analyze_workload in order.
+    # ------------------------------------------------------------------
+    @server.prompt(
+        name="diagnose_slow_query",
+        title="Diagnose a slow query",
+        description=(
+            "Deterministic investigation plan for a single slow SQL statement. "
+            "Walks the agent through `explain_query`, `analyze_query_plan`, "
+            "`recommend_indexes`, and `analyze_workload` in order, with a "
+            "structured reporting checklist at the end."
+        ),
+    )
+    def diagnose_slow_query_prompt(sql: str) -> str:
+        return mcpg_prompts._build_diagnose_slow_query(sql)
+
+    # ------------------------------------------------------------------
+    # bisect_slow_migration — narrows the cause of a migration regression
+    # via `compare_schemas` + `list_applied_migrations` + per-query analysis.
+    # ------------------------------------------------------------------
+    @server.prompt(
+        name="bisect_slow_migration",
+        title="Bisect a slow migration",
+        description=(
+            "Investigation plan for a performance regression introduced by a "
+            "migration. Confirms the migration ran, scopes what changed via "
+            "`compare_schemas`, validates the suspects with per-query "
+            "`analyze_query_plan`, and ends with a remediation decision tree."
+        ),
+    )
+    def bisect_slow_migration_prompt(
+        migration_id: str,
+        baseline_schema: str,
+        current_schema: str,
+    ) -> str:
+        return mcpg_prompts._build_bisect_slow_migration(migration_id, baseline_schema, current_schema)
+
+    # ------------------------------------------------------------------
+    # review_rls_policy — RLS coverage audit for one table.
+    # Uses `describe_table` + `list_policies` + `audit_database`.
+    # ------------------------------------------------------------------
+    @server.prompt(
+        name="review_rls_policy",
+        title="Review row-level security for a table",
+        description=(
+            "RLS coverage audit for a single table — inventories columns, "
+            "reads current policies, identifies gaps against identity-bearing "
+            "columns, and cross-checks the cluster security posture. "
+            "Diagnosis only — proposes `CREATE POLICY` statements but does "
+            "not apply them."
+        ),
+    )
+    def review_rls_policy_prompt(schema: str, table: str) -> str:
+        return mcpg_prompts._build_review_rls_policy(schema, table)
+
+
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     """Register the MCP tools permitted by the configured access mode.
 
@@ -5537,6 +5607,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     _register_server_info(server)
     if is_permitted(settings.access_mode, Capability.READ):
         _register_resources(server)
+        _register_prompts(server)
         _register_introspection(server)
         _register_diagrams(server)
         _register_schema_diff(server)
