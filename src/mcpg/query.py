@@ -133,7 +133,14 @@ async def explain_query(
     try:
         if io:
             safe_driver._validate(f"EXPLAIN (FORMAT JSON) {sql}")
-            rows = await driver.execute_query(f"EXPLAIN (ANALYZE, BUFFERS, TIMING, FORMAT JSON) {sql}")
+            # SafeSqlDriver wraps its own execute_query in `asyncio.timeout`;
+            # the raw driver doesn't, so reinstate the bound here. Without
+            # this an EXPLAIN ANALYZE on a runaway query (long sort, missing
+            # index, deadlock) would block the server worker indefinitely.
+            rows = await asyncio.wait_for(
+                driver.execute_query(f"EXPLAIN (ANALYZE, BUFFERS, TIMING, FORMAT JSON) {sql}"),
+                timeout=timeout,
+            )
         else:
             rows = await safe_driver.execute_query(f"EXPLAIN (FORMAT JSON) {sql}")
     except Exception as exc:

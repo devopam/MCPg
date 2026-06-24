@@ -1,5 +1,7 @@
 """Tests for safe read-only query execution and the run_select tool."""
 
+from typing import Any
+
 import pytest
 from _fakes import FakeDatabase, FakeDriver
 from mcp.shared.memory import create_connected_server_and_client_session
@@ -320,6 +322,34 @@ async def test_explain_query_io_true_still_rejects_writes(unsafe_sql: str) -> No
     become a backdoor to run any SQL the agent supplies."""
     with pytest.raises(QueryError):
         await explain_query(FakeDriver(), unsafe_sql, io=True)
+
+
+class _StallingDriver:
+    """SqlDriver double that hangs forever on execute_query.
+
+    The ``io=True`` path bypasses ``SafeSqlDriver`` (which has built-in
+    asyncio.timeout enforcement) — so the explain_query code must
+    re-impose the timeout via ``asyncio.wait_for``. Without that, an
+    EXPLAIN ANALYZE on a runaway query would block the server worker
+    indefinitely. This double lets us prove the timeout fires.
+    """
+
+    async def execute_query(
+        self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+    ) -> list[Any]:
+        del query, params, force_readonly
+        import asyncio
+
+        await asyncio.Event().wait()  # never fires; hangs until cancelled
+        return []  # pragma: no cover
+
+
+async def test_explain_query_io_true_enforces_timeout_against_runaway_query() -> None:
+    """The io=True path uses the raw driver and so loses SafeSqlDriver's
+    built-in timeout. The code must re-impose it via asyncio.wait_for —
+    otherwise a long-running EXPLAIN ANALYZE blocks the server worker."""
+    with pytest.raises(QueryError):
+        await explain_query(_StallingDriver(), "SELECT 1", io=True, timeout=0.05)  # type: ignore[arg-type]
 
 
 # --- run_select_parallel (Phase 3.4) -------------------------------------
