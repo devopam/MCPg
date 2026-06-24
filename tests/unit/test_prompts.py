@@ -45,12 +45,14 @@ def test_bisect_slow_migration_embeds_all_three_caller_supplied_identifiers() ->
 def test_bisect_slow_migration_references_the_canonical_migration_tool_chain() -> None:
     body = _build_bisect_slow_migration("m1", "baseline", "current")
     for tool_name in (
-        "list_applied_migrations",
+        "read_migration_history",
         "list_unapplied_migration_scripts",
         "compare_schemas",
         "analyze_workload",
         "analyze_query_plan",
         "recommend_indexes",
+        "prepare_migration",
+        "validate_migration_schema",
     ):
         assert tool_name in body, f"`bisect_slow_migration` should mention `{tool_name}`"
 

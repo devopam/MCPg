@@ -19,8 +19,8 @@ Surface inventory:
   ``analyze_workload`` for the broader context.
 * ``bisect_slow_migration(migration_id, baseline_schema, current_schema)``
   — narrows the cause of a migration that regressed performance;
-  walks ``list_unapplied_migration_scripts`` /
-  ``list_applied_migrations`` first, then
+  walks ``read_migration_history`` /
+  ``list_unapplied_migration_scripts`` first, then
   ``compare_schemas(baseline, current)``, then targeted
   ``analyze_query_plan`` calls on the suspect tables.
 * ``review_rls_policy(schema, table)`` — RLS coverage audit:
@@ -71,10 +71,11 @@ def _build_diagnose_slow_query(sql: str) -> str:
         "times + buffer reads. Compare `Buffers: shared read=...` (cold cache) against "
         "`shared hit=...` (warm cache) — high `read` on a query that should be cached signals "
         "working-set pressure.\n\n"
-        "**Step 3 — Index opportunities.** Call `recommend_indexes` with the same statement. "
-        "Returns ranked `CREATE INDEX` suggestions plus a reason code per candidate. If a "
-        "recommendation looks plausible, validate by re-running `analyze_query_plan` against "
-        "the suggested index on a shadow schema before applying.\n\n"
+        "**Step 3 — Index opportunities.** Call `recommend_indexes` (workload-wide — it "
+        "scans `pg_stat_user_tables` for high-seq-scan tables, no per-query argument). Filter "
+        "the result to the tables this statement touches. For each candidate, validate by "
+        "re-running `analyze_query_plan` after creating the suggested index on a shadow schema "
+        "before applying to production.\n\n"
         "**Step 4 — Workload context.** Call `analyze_workload`. If the same statement appears "
         "in the top-N by total time, the fix is high-leverage; if it's a one-off, prioritise "
         "correctness over micro-optimisation.\n\n"
@@ -102,7 +103,7 @@ def _build_bisect_slow_migration(
         f"- **Migration id:** `{migration_id}`\n"
         f"- **Baseline schema (pre-migration shape):** `{baseline_schema}`\n"
         f"- **Current schema (post-migration shape):** `{current_schema}`\n\n"
-        f"**Step 1 — Confirm the migration ran.** Call `list_applied_migrations` and verify "
+        f"**Step 1 — Confirm the migration ran.** Call `read_migration_history` and verify "
         f"`{migration_id}` is in the applied list. If it isn't, the regression is in an "
         "unapplied or partial migration — call `list_unapplied_migration_scripts` to surface "
         "the script body and stop here (the bug is in the rollout, not the schema).\n\n"
@@ -126,9 +127,11 @@ def _build_bisect_slow_migration(
         "  - **Forward-fix** (preferred when the migration's intent was right but the index "
         "plan was wrong): add the missing index via `recommend_indexes`, re-run "
         "`analyze_query_plan` to confirm.\n"
-        "  - **Rollback** (when the migration introduced semantic breakage): use "
-        "`generate_rollback_sql` against the migration script + the `compare_schemas` diff "
-        "to produce the inverse.\n"
+        "  - **Rollback** (when the migration introduced semantic breakage): construct the "
+        "inverse SQL by hand from the `compare_schemas` diff (added → drop, dropped → "
+        "recreate from the baseline DDL, altered → revert), then validate the rollback "
+        "against a shadow schema via `prepare_migration` + `validate_migration_schema` "
+        "before applying.\n"
         "  - **No-op** (when the regression is real but expected): document via "
         "`prepare_migration` so the next migration carries forward the new floor.\n\n"
         "**Reporting.** Summarise: (a) which schema-diff entries are causally implicated, "
@@ -162,10 +165,10 @@ def _build_review_rls_policy(schema: str, table: str) -> str:
         "footgun — confirm with the user.\n"
         "  - **`roles = '{public}'`** — the policy applies to every role. Often intentional, "
         "but flag for the user.\n\n"
-        "**Step 4 — Cross-check the cluster posture.** Call `audit_database(category="
-        "'security')`. This surfaces broader issues: tables with RLS enabled but no policies, "
-        "tables with policies but RLS disabled (policies inert), superusers bypassing every "
-        "policy (PG default).\n\n"
+        f"**Step 4 — Cross-check the cluster posture.** Call `audit_database(schema='{schema}')`. "
+        "Returns a multi-category report; focus on the security category for: tables with RLS "
+        "enabled but no policies, tables with policies but RLS disabled (policies inert), "
+        "superusers bypassing every policy (PG default).\n\n"
         "**Reporting.** Produce: (a) a per-policy summary (verb + role + intent), (b) an "
         'explicit "gaps" list with severity (`critical` / `warning` / `info`), and (c) for '
         "each critical gap, a proposed `CREATE POLICY` statement the user can review before "

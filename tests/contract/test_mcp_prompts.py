@@ -101,3 +101,83 @@ def test_prompts_carry_human_readable_title() -> None:
                 f"Clients fall back to the name when the title is missing, "
                 f"which reads as unpolished in picker UIs."
             )
+
+
+# Sample arguments used to render each prompt body. Real values shouldn't
+# matter for tool-name extraction, but every required arg must be present
+# so `render` doesn't reject the call.
+_PROMPT_RENDER_ARGS: dict[str, dict[str, str]] = {
+    "diagnose_slow_query": {"sql": "SELECT 1"},
+    "bisect_slow_migration": {
+        "migration_id": "m1",
+        "baseline_schema": "baseline",
+        "current_schema": "current",
+    },
+    "review_rls_policy": {"schema": "public", "table": "widgets"},
+}
+
+def _extract_tool_names_from_body(body: str) -> set[str]:
+    """Pull tool-call references out of a prompt body.
+
+    Prompt bodies mix tool calls with reason codes, column-name
+    examples, catalog references, severity labels — all of which can
+    look like ``lower_snake_case`` identifiers in backticks. To
+    distinguish, we only accept two narrow shapes that *unambiguously*
+    denote a tool call:
+
+      1. ``\\`name(...)\\``` — the agent is meant to call it.
+      2. ``Call \\`name\\``` / ``call \\`name\\``` / ``via \\`name\\``` —
+         the surrounding prose explicitly names it as something to
+         invoke.
+
+    Anything else (`` `tenant_id` ``, `` `critical` ``, `` `pg_stat_user_tables` ``)
+    stays out of the candidate set. New tool references should follow
+    one of the two shapes above so the contract test continues to
+    cover them.
+    """
+    import re
+
+    # Shape 1: backtick-wrapped function-call form.
+    parens = re.compile(r"`([a-z][a-z0-9_]+)\([^`]*\)`")
+    # Shape 2: prose verb ("Call" / "call" / "via" / "use") immediately
+    # preceding a backtick-wrapped identifier. Case-insensitive on the
+    # verb; the identifier itself stays lowercase.
+    prose = re.compile(r"\b(?:[Cc]all|via|[Uu]se)\s+`([a-z][a-z0-9_]+)`")
+    return set(parens.findall(body)) | set(prose.findall(body))
+
+
+async def test_every_tool_name_in_every_prompt_body_is_actually_registered() -> None:
+    """Catch the failure mode the original unit test missed.
+
+    Asserting that a prompt mentions `recommend_indexes` proves nothing
+    if no tool by that name exists on the server. This test renders
+    each prompt with sample args, extracts every backtick-wrapped
+    lower_snake_case identifier, and verifies each one matches a real
+    registered tool. Without this guardrail, prompts can ship that
+    route agents to dead-end tool calls (gemini-code-assist found
+    four such drifts in PR #161's first cut).
+    """
+    server = _build_maximal_server()
+    registered_tools = {t.name for t in await server.list_tools()}
+
+    drift: list[str] = []
+    for prompt in server._prompt_manager.list_prompts():
+        if prompt.name not in _EXPECTED_PROMPTS:
+            continue
+        render_args = _PROMPT_RENDER_ARGS[prompt.name]
+        messages = await prompt.render(arguments=render_args)
+        for message in messages:
+            body = getattr(message.content, "text", "") or ""
+            referenced = _extract_tool_names_from_body(body)
+            missing = referenced - registered_tools
+            if missing:
+                drift.append(
+                    f"  {prompt.name}: references unregistered tools {sorted(missing)}"
+                )
+
+    assert not drift, (
+        "Prompt bodies reference tool names that don't exist on the registered server:\n"
+        + "\n".join(drift)
+        + "\n\nEither fix the prompt to use the canonical tool name, or add the "
+        "name to `_FALSE_POSITIVE_NAMES` above if it's a false positive."
+    )
