@@ -1086,6 +1086,178 @@ async def audit_slow_queries(driver: SqlDriver) -> CategoryResult:
     )
 
 
+# How many days out from now() counts as "expiring soon" for a role
+# password. 30 mirrors what most rotation policies set their cron to.
+_PASSWORD_EXPIRY_WARN_DAYS = 30
+
+
+async def audit_authentication(driver: SqlDriver) -> CategoryResult:
+    """Authentication hygiene checks — role password expiry + MD5 deprecation.
+
+    PG 19 deprecates MD5 password hashes (still supported, but
+    explicitly flagged for removal). Surfacing roles still using MD5
+    *before* the GA upgrade lets operators rotate to SCRAM-SHA-256
+    without an emergency rotation window.
+
+    Password-expiration scan is the matching hygiene check — any
+    ``LOGIN`` role with ``rolvaliduntil`` within 30 days (or already
+    past) needs a rotation now.
+
+    Both probes read ``pg_authid``, which requires superuser. When
+    the connection role can't read it the category surfaces a single
+    ``GOOD``-with-evidence metric explaining why — same convention as
+    other catalogue probes in this module.
+    """
+    metrics: list[MetricResult] = []
+    category_score = 100
+
+    # 1. Roles with expired or soon-to-expire passwords.
+    try:
+        rows = await driver.execute_query(
+            "SELECT count(*) FILTER (WHERE rolvaliduntil <= now()) AS expired, "
+            "count(*) FILTER (WHERE rolvaliduntil > now() "
+            f"AND rolvaliduntil <= now() + interval '{_PASSWORD_EXPIRY_WARN_DAYS} days') AS expiring_soon, "
+            "array_agg(rolname ORDER BY rolvaliduntil) FILTER (WHERE rolvaliduntil <= now() "
+            f"+ interval '{_PASSWORD_EXPIRY_WARN_DAYS} days') AS roles_at_risk "
+            "FROM pg_authid WHERE rolcanlogin AND rolvaliduntil IS NOT NULL",
+            force_readonly=True,
+        )
+        cells = (rows or [])[0].cells if rows else {}
+        expired = int(cells.get("expired") or 0)
+        expiring_soon = int(cells.get("expiring_soon") or 0)
+        roles_at_risk = cells.get("roles_at_risk") or []
+        sample = ", ".join(str(r) for r in roles_at_risk[:5])
+        if expired > 0:
+            status = "CRITICAL"
+            severity = 3
+            # CRITICAL on an authentication metric must push the
+            # category below GOOD (>=80) on its own — expired login
+            # passwords block users, so the overall scorecard needs to
+            # surface that the cluster isn't healthy.
+            category_score -= 25
+            evidence = (
+                f"{expired} login role(s) have already expired and "
+                f"{expiring_soon} more expire within {_PASSWORD_EXPIRY_WARN_DAYS} days. "
+                f"Sample: {sample or '(none surfaced)'}."
+            )
+            suggestion = (
+                "Rotate the affected role passwords with "
+                "`ALTER ROLE <name> WITH PASSWORD '...' VALID UNTIL '...'` immediately. "
+                "Expired passwords block new logins."
+            )
+        elif expiring_soon > 0:
+            status = "WARNING"
+            severity = 2
+            category_score -= 10
+            evidence = (
+                f"{expiring_soon} login role(s) expire within "
+                f"{_PASSWORD_EXPIRY_WARN_DAYS} days. Sample: {sample or '(none surfaced)'}."
+            )
+            suggestion = (
+                "Schedule a rotation window — `ALTER ROLE <name> "
+                "WITH PASSWORD '...' VALID UNTIL '...'` for each affected role."
+            )
+        else:
+            status = "GOOD"
+            severity = 0
+            evidence = f"No login roles have passwords expiring within {_PASSWORD_EXPIRY_WARN_DAYS} days."
+            suggestion = "No action needed."
+        metrics.append(
+            MetricResult(
+                name="Role Password Expiration",
+                value=expired + expiring_soon,
+                unit="roles",
+                target="0",
+                status=status,
+                severity=severity,
+                evidence=evidence,
+                suggestion=suggestion,
+            )
+        )
+    except Exception as exc:
+        # `pg_authid` requires superuser; degrade cleanly rather than
+        # mark the whole audit as failed when the audit role can't read it.
+        metrics.append(
+            MetricResult(
+                name="Role Password Expiration",
+                value="N/A",
+                unit="roles",
+                target="0",
+                status="WARNING",
+                severity=2,
+                evidence=f"Could not read pg_authid: {exc}",
+                suggestion="Run as a superuser (or grant pg_read_server_files) to enable this check.",
+            )
+        )
+
+    # 2. Roles still using MD5 password hashes (PG 19 deprecates MD5).
+    try:
+        rows = await driver.execute_query(
+            "SELECT count(*) AS md5_count, "
+            "array_agg(rolname ORDER BY rolname) FILTER (WHERE rolpassword LIKE 'md5%') AS md5_roles "
+            "FROM pg_authid WHERE rolcanlogin AND rolpassword LIKE 'md5%'",
+            force_readonly=True,
+        )
+        cells = (rows or [])[0].cells if rows else {}
+        md5_count = int(cells.get("md5_count") or 0)
+        md5_roles = cells.get("md5_roles") or []
+        sample = ", ".join(str(r) for r in md5_roles[:5])
+        if md5_count > 0:
+            status = "WARNING"
+            severity = 2
+            category_score -= 15
+            evidence = (
+                f"{md5_count} login role(s) still hash passwords with MD5, "
+                "which PG 19 deprecates (still functional, scheduled for removal). "
+                f"Sample: {sample or '(none surfaced)'}."
+            )
+            suggestion = (
+                "Switch the cluster to SCRAM-SHA-256: set "
+                "`password_encryption = scram-sha-256` in postgresql.conf, "
+                "then re-set each affected role's password with `ALTER ROLE "
+                "<name> WITH PASSWORD '...'`. The new hash will use SCRAM."
+            )
+        else:
+            status = "GOOD"
+            severity = 0
+            evidence = "No login roles use MD5 password hashes."
+            suggestion = "No action needed."
+        metrics.append(
+            MetricResult(
+                name="MD5 Password Hashes (PG 19 deprecated)",
+                value=md5_count,
+                unit="roles",
+                target="0",
+                status=status,
+                severity=severity,
+                evidence=evidence,
+                suggestion=suggestion,
+            )
+        )
+    except Exception as exc:
+        metrics.append(
+            MetricResult(
+                name="MD5 Password Hashes (PG 19 deprecated)",
+                value="N/A",
+                unit="roles",
+                target="0",
+                status="WARNING",
+                severity=2,
+                evidence=f"Could not read pg_authid: {exc}",
+                suggestion="Run as a superuser to enable this check.",
+            )
+        )
+
+    cat_score = max(0, category_score)
+    cat_status = "GOOD" if cat_score >= 80 else "WARNING" if cat_score >= 50 else "CRITICAL"
+    return CategoryResult(
+        category="Authentication & Password Hygiene",
+        status=cat_status,
+        score=cat_score,
+        metrics=metrics,
+    )
+
+
 async def _check_custom_logs(driver: SqlDriver, log_table: str | None) -> list[TopIssue]:
     """Scan custom server log tables for errors if configured and present in system catalogs."""
     issues: list[TopIssue] = []
@@ -1153,6 +1325,7 @@ async def audit_database(driver: SqlDriver, schema: str, log_table: str | None =
     cat_lock = await audit_concurrency_locks(driver)
     cat_bloat = await audit_cleanliness_bloat(driver, schema)
     cat_slow = await audit_slow_queries(driver)
+    cat_auth = await audit_authentication(driver)
 
     # Optional categories — only included when the relevant extension
     # is installed, so a stock cluster's scorecard isn't padded with
@@ -1162,7 +1335,7 @@ async def audit_database(driver: SqlDriver, schema: str, log_table: str | None =
     cat_vector = await audit_vector_indexes(driver)
     cat_rag_pipeline = await audit_rag_pipeline(driver)
 
-    categories = [cat_mem, cat_tx, cat_lock, cat_bloat, cat_slow]
+    categories = [cat_mem, cat_tx, cat_lock, cat_bloat, cat_slow, cat_auth]
     if cat_turboquant is not None:
         categories.append(cat_turboquant)
     if cat_pg_search is not None:
