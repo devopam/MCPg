@@ -1091,6 +1091,7 @@
     "list_grants": {
       "dataclass": "GrantInfo",
       "fields": [
+        "acl",
         "grantable",
         "grantee",
         "grantor",

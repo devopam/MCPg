@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`list_grants` gains a `pg_get_acl()` ACL string on PG 19+.**
+  PG 19 introduces `pg_get_acl(classid, objid, objsubid)` — the
+  canonical aclitem array (`{user=privs/grantor, …}`) the catalog
+  stores natively and `\dp` displays. `list_grants` now invokes it
+  alongside the portable `information_schema.table_privileges`
+  query and attaches the returned string to every emitted
+  `GrantInfo.acl`. On PG ≤ 18 (no such function) the call's
+  exception is swallowed and `acl` stays `None` — the
+  information_schema rows still surface unchanged, so existing
+  consumers see no behaviour change.
+
+  The new field gives agents access to the privilege-flag form
+  (`r` SELECT, `w` UPDATE, `a` INSERT, `d` DELETE, `D` TRUNCATE,
+  `x` REFERENCES, `t` TRIGGER, with `*` suffix for `WITH GRANT
+  OPTION`) without reverse-engineering the information_schema
+  view's one-row-per-(grantee, privilege) shape. Realises sub-item
+  #21 of roadmap row 2.5 (the PG 19 PR-10 small-tools batch).
+
 - **`audit_database` gains an `Authentication & Password Hygiene`
   category.** Two new security metrics surface from `pg_authid`:
 
