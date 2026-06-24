@@ -10,6 +10,8 @@ exist.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from mcpg.prompts import (
@@ -86,7 +88,9 @@ def test_review_rls_policy_stops_short_of_applying_writes() -> None:
         (_build_review_rls_policy, ("public", "t")),
     ],
 )
-def test_every_prompt_body_is_a_non_empty_string(builder, args) -> None:
+def test_every_prompt_body_is_a_non_empty_string(
+    builder: Callable[..., str], args: tuple[str, ...]
+) -> None:
     body = builder(*args)
     assert isinstance(body, str)
     assert len(body) > 200, "prompt bodies should be substantial — these are investigation playbooks"
