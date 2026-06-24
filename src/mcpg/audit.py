@@ -1186,7 +1186,7 @@ async def audit_authentication(driver: SqlDriver) -> CategoryResult:
                 status="WARNING",
                 severity=2,
                 evidence=f"Could not read pg_authid: {exc}",
-                suggestion="Run as a superuser (or grant pg_read_server_files) to enable this check.",
+                suggestion="Run as a superuser (or grant SELECT on pg_authid to the audit role) to enable this check.",
             )
         )
 
