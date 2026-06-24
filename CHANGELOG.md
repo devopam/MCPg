@@ -62,6 +62,24 @@ adheres to [Semantic Versioning](https://semver.org/).
   Classified under the `observability` capability bucket. Realises
   roadmap row 8.5.
 
+- **`get_server_info` now reports `wal_level` + `effective_wal_level`.**
+  PG 19 introduced the runtime-distinct `effective_wal_level` GUC —
+  it's what the server is *actually* emitting, which can lag behind
+  the configured `wal_level` (post-`ALTER SYSTEM` but pre-reload).
+  Surfacing both via `get_server_info` lets agents detect this drift
+  at a glance without reaching for the deeper
+  `get_logical_replication_status` tool. On PG ≤ 18 (no such GUC)
+  `effective_wal_level` returns `None`, distinguishing "not known on
+  this server" from "configured to a known value".
+
+  The GUC probe is best-effort: driver errors during the probe leave
+  both fields `None` rather than aborting the response, so a
+  transiently-flapping connection doesn't break the whole tool.
+  `build_server_info` is now async + accepts an optional driver;
+  the existing dataclass shape is backward-compatible — the new
+  fields default to `None`. Realises sub-item #19 of roadmap row
+  2.5 (the PG 19 PR-10 small-tools batch).
+
 - **MCP prompts surface** — three pre-built investigation playbooks
   exposed via the MCP `prompts/list` + `prompts/get` protocol
   primitives:

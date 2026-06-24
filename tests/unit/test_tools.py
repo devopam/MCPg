@@ -64,8 +64,8 @@ def _cursor_manager() -> CursorManager:
     return CursorManager(database_url=_SETTINGS.database_url)
 
 
-def test_build_server_info_reports_static_facts() -> None:
-    info = build_server_info(
+async def test_build_server_info_reports_static_facts() -> None:
+    info = await build_server_info(
         AppContext(
             settings=_SETTINGS,
             database=_database(),
@@ -81,6 +81,8 @@ def test_build_server_info_reports_static_facts() -> None:
         database_connected=False,
         nl2sql_default_provider=None,
         nl2sql_available_providers=[],
+        wal_level=None,
+        effective_wal_level=None,
     )
 
 
@@ -88,7 +90,7 @@ async def test_build_server_info_reflects_database_connection() -> None:
     db = _database()
     await db.connect()
 
-    info = build_server_info(
+    info = await build_server_info(
         AppContext(
             settings=_SETTINGS,
             database=db,
@@ -97,6 +99,74 @@ async def test_build_server_info_reflects_database_connection() -> None:
         )
     )
 
+    assert info.database_connected is True
+
+
+async def test_build_server_info_skips_wal_level_probe_without_a_driver() -> None:
+    """No driver → no probe; both WAL fields stay None even when the
+    DB is connected. Lets `build_server_info` stay sync-callable in
+    contexts where the caller doesn't need the live GUCs."""
+    db = _database()
+    await db.connect()
+    info = await build_server_info(
+        AppContext(
+            settings=_SETTINGS,
+            database=db,
+            listen_manager=_listen_manager(),
+            cursor_manager=_cursor_manager(),
+        )
+    )
+    assert info.wal_level is None
+    assert info.effective_wal_level is None
+
+
+async def test_build_server_info_populates_wal_levels_from_the_driver() -> None:
+    """When a driver IS supplied and the DB is connected, both
+    `wal_level` and `effective_wal_level` come from
+    `current_setting(..., true)` calls — the second `true` flag means
+    the GUC name being missing returns NULL instead of erroring,
+    which is how we differentiate PG ≤ 18 (no `effective_wal_level`)
+    from PG 19+ (where both are populated)."""
+    db = _database()
+    await db.connect()
+    # FakeDriver returns the same rows for every query, so seed both
+    # GUC values into a single row keyed by the field name
+    # `_string_setting` expects (`val`).
+    driver = FakeDriver([{"val": "logical"}])
+    info = await build_server_info(
+        AppContext(
+            settings=_SETTINGS,
+            database=db,
+            listen_manager=_listen_manager(),
+            cursor_manager=_cursor_manager(),
+        ),
+        driver=driver,  # type: ignore[arg-type]
+    )
+    assert info.wal_level == "logical"
+    assert info.effective_wal_level == "logical"
+
+
+async def test_build_server_info_swallows_driver_errors() -> None:
+    """A driver failure during the WAL-level probe must not abort the
+    rest of the response — `wal_level` / `effective_wal_level` stay
+    None and the static fields still populate. This is the "GUC probe
+    is best-effort" contract."""
+    db = _database()
+    await db.connect()
+    driver = FakeDriver([], fail=True)
+    info = await build_server_info(
+        AppContext(
+            settings=_SETTINGS,
+            database=db,
+            listen_manager=_listen_manager(),
+            cursor_manager=_cursor_manager(),
+        ),
+        driver=driver,  # type: ignore[arg-type]
+    )
+    assert info.wal_level is None
+    assert info.effective_wal_level is None
+    # Static facts still landed.
+    assert info.mcpg_version == __version__
     assert info.database_connected is True
 
 
