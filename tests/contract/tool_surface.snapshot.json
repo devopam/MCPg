@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 223
+    "tool_count": 224
   },
   "tools": [
     {
@@ -1312,6 +1312,23 @@
         "type": "object"
       },
       "name": "describe_table"
+    },
+    {
+      "description": "Return the full registered schema for one MCP tool by name — `description`, `input_schema`, `output_schema`, and which capability bucket it belongs to. Use this when an agent hits a tool error and needs to verify the call shape without re-walking the full `describe_self` payload (handy when the transport surfaces only `tools/call`, not `tools/list`). Returns `registered=false` plus a `did_you_mean` suggestion list when the name isn't on this server. Read-only; no database access. Example: `describe_tool(name='run_select')`",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "describe_toolArguments",
+        "type": "object"
+      },
+      "name": "describe_tool"
     },
     {
       "description": "Surface query templates in pg_stat_statements that look like an N+1 loop: hundreds of calls, each returning at most a row or two, with meaningful total wall-clock time spent. Returns the candidates sorted by total time descending so the worst offender appears first. Thresholds (min_calls, max_rows_per_call, min_total_ms) are tunable. Treat results as candidates for investigation, NOT verdicts — a hot cache-miss pattern on a primary-key lookup can trip the same shape. Reports availability=false if pg_stat_statements is not installed.",

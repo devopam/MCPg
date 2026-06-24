@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 223
+    "tool_count": 224
   },
   "tools": {
     "add_compression_policy": {
@@ -377,6 +377,9 @@
         "vector_dimension"
       ],
       "kind": "list"
+    },
+    "describe_tool": {
+      "kind": "opaque"
     },
     "detect_n_plus_one": {
       "dataclass": "NPlusOneReport",

@@ -8,6 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+<<<<<<< HEAD
 - **MCP prompts surface** — three pre-built investigation playbooks
   exposed via the MCP `prompts/list` + `prompts/get` protocol
   primitives:
@@ -33,6 +34,57 @@ adheres to [Semantic Versioning](https://semver.org/).
   surface. Contract test (`tests/contract/test_mcp_prompts.py`) pins
   the name + argument-shape manifest so a refactor can't silently
   drop a prompt. Realises roadmap row 8.4.
+=======
+- **`describe_tool(name)` MCP tool** — single-tool deep-dive
+  introspection for the agent self-recovery loop. Returns the
+  registered description, `inputSchema`, `outputSchema`, and bucket
+  metadata for one tool by name. Handy when:
+
+    - the transport surfaces `tools/call` but not `tools/list` (some
+      MCP clients don't expose the latter as a callable surface);
+    - an agent hits a schema-validation error and wants to verify
+      one tool's shape without re-walking the full `describe_self`
+      payload (which on a maximal-flag server is ~250 tools).
+
+  Unknown names come back with `registered=false` plus a
+  `did_you_mean` list — close-match suggestions scored via
+  `difflib.get_close_matches` so a single-letter typo like
+  `run_sleect` surfaces `run_select` rather than forcing a wider
+  catalogue scan. Empty `did_you_mean` distinguishes "typo with
+  obvious fix" from "wrong server / wrong universe", which is
+  itself the diagnostic.
+
+  Builder lives in `mcpg.tool_introspection`; bucket classification
+  reuses `mcpg.about.classify_tool`. Read-only, no DB access.
+  Classified under the `observability` capability bucket. Realises
+  roadmap row 8.5.
+
+- **MCP prompts surface** — three pre-built investigation playbooks
+  exposed via the MCP `prompts/list` + `prompts/get` protocol
+  primitives:
+
+    - `diagnose_slow_query(sql)` — routes the agent through
+      `explain_query`, `analyze_query_plan`, `recommend_indexes`,
+      `analyze_workload` in order, then asks for a structured
+      root-cause + fix + impact report.
+    - `bisect_slow_migration(migration_id, baseline_schema, current_schema)`
+      — confirms the migration ran, scopes what changed via
+      `compare_schemas`, validates suspects with per-query
+      `analyze_query_plan`, and ends with a forward-fix / rollback /
+      no-op remediation decision tree.
+    - `review_rls_policy(schema, table)` — RLS coverage audit:
+      `describe_table` → `list_policies` → `audit_database(category=
+      'security')`, with gap analysis against identity-bearing
+      columns. Diagnosis-only — proposes `CREATE POLICY` statements
+      but never applies them.
+
+  Lives in `mcpg.prompts` (content builders) + `mcpg.tools.
+  _register_prompts` (FastMCP wiring). Completes the MCP primitive
+  triad alongside the resources surface (PR #157) and the tools
+  surface. Contract test (`tests/contract/test_mcp_prompts.py`) pins
+  the name + argument-shape manifest so a refactor can't silently
+  drop a prompt. Realises roadmap row 8.4.
+>>>>>>> 2d8f2bf (feat(introspection): describe_tool(name) — single-tool deep-dive (roadmap 8.5))
 
 ### Changed
 

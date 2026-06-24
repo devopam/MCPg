@@ -570,8 +570,9 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "cancel_migration": "migrations",
     "complete_migration": "migrations",
     "prepare_migration": "migrations",
-    # describe_self is observability (we own this one).
+    # describe_self / describe_tool are observability (we own these).
     "describe_self": "observability",
+    "describe_tool": "observability",
     # check_database_health is operations.
     "check_database_health": "operations_and_health",
     # audit_database is the deep DBA advisor scan.
