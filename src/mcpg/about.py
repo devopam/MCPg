@@ -577,6 +577,9 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "check_database_health": "operations_and_health",
     # read_autovacuum_priority is operations — shortlists tables for ops attention.
     "read_autovacuum_priority": "operations_and_health",
+    # get_warehousepg_status is a status probe — same bucket as the other
+    # `get_*_status` family entries (pgq, repack, aio, pg19_*).
+    "get_warehousepg_status": "operations_and_health",
     # audit_database is the deep DBA advisor scan.
     "audit_database": "advisors",
     # turboquant tools whose name has `turboquant` in the middle (the

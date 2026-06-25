@@ -77,6 +77,7 @@ from mcpg import (
     vector_tuning,
     wait_for_lsn,
     walinspect,
+    warehousepg,
     workload,
     write,
 )
@@ -5708,6 +5709,29 @@ def _register_prompts(server: FastMCP[AppContext]) -> None:
         return mcpg_prompts._build_review_rls_policy(schema, table)
 
 
+def _register_warehousepg_reads(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="get_warehousepg_status",
+        description=_with_example(
+            "Probe the connected server for the WarehousePG (Greenplum-derived "
+            "MPP) signature. Reports `available=true` only when BOTH the "
+            "version string mentions WarehousePG / Greenplum AND the "
+            "`gp_segment_configuration` catalog view exists. Surfaces "
+            "`coordinator_role`, `segment_count` (primary segments only), and "
+            "`mirroring` (bool). On vanilla PostgreSQL clusters returns "
+            "`available=false` with a clean diagnostic — the rest of the "
+            "`mcpg.warehousepg.*` family advertise themselves inert via this "
+            "probe. Read-only; never raises.",
+            "get_warehousepg_status()",
+        ),
+    )
+    async def get_warehousepg_status(ctx: _Ctx) -> warehousepg.WarehousePGStatus:
+        async def _run() -> warehousepg.WarehousePGStatus:
+            return await warehousepg.get_warehousepg_status(_driver(ctx))
+
+        return await _cached_call(ctx, "get_warehousepg_status", _run)
+
+
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     """Register the MCP tools permitted by the configured access mode.
 
@@ -5755,6 +5779,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_pg19_skip_scan_reads(server)
         _register_wait_for_lsn_reads(server)
         _register_wait_for_lsn_writes(server)
+        _register_warehousepg_reads(server)
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)

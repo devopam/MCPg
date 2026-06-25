@@ -8,6 +8,30 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`get_warehousepg_status` MCP tool** — gating status probe for
+  the new `mcpg.warehousepg.*` family. Detects whether the connected
+  server is a WarehousePG (Greenplum-derived MPP) cluster by
+  combining TWO signals that must agree:
+
+    1. **Version banner** — `SELECT version()` mentions `WarehousePG`
+       or `Greenplum` (case-insensitive; legacy Greenplum branding
+       honoured for compatibility).
+    2. **Catalog presence** — `pg_catalog.gp_segment_configuration`
+       view exists (probed via `to_regclass()` to avoid permission
+       errors from segment-table SELECTs).
+
+  When both agree, surfaces `coordinator_role` (`coordinator` on
+  modern WarehousePG, `master` on legacy Greenplum), `segment_count`
+  (primary segments only, excludes mirrors + coordinator), and
+  `mirroring` (`True` when ≥1 mirror exists). On vanilla PG returns
+  `available=False` cleanly so the rest of the `mcpg.warehousepg.*`
+  family can stay inert without raising.
+
+  Lives in `mcpg.warehousepg`. Classified under `operations_and_health`.
+  Read-only; never raises — driver failures surface as
+  `available=False` with the actual error in `detail`. Realises
+  roadmap row 15.1 (gating prerequisite for sub-items 15.2-15.8).
+
 - **`translate_nl_to_sql` advertises PG 19 SQL constructs in its
   system prompt when the connected server actually supports them.**
   Probes `current_setting('server_version_num')` once per

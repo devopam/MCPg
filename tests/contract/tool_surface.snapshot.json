@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 225
+    "tool_count": 226
   },
   "tools": [
     {
@@ -2407,6 +2407,15 @@
         "type": "object"
       },
       "name": "get_wait_for_lsn_status"
+    },
+    {
+      "description": "Probe the connected server for the WarehousePG (Greenplum-derived MPP) signature. Reports `available=true` only when BOTH the version string mentions WarehousePG / Greenplum AND the `gp_segment_configuration` catalog view exists. Surfaces `coordinator_role`, `segment_count` (primary segments only), and `mirroring` (bool). On vanilla PostgreSQL clusters returns `available=false` with a clean diagnostic — the rest of the `mcpg.warehousepg.*` family advertise themselves inert via this probe. Read-only; never raises.\n\nExample: `get_warehousepg_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_warehousepg_statusArguments",
+        "type": "object"
+      },
+      "name": "get_warehousepg_status"
     },
     {
       "description": "Combine a BM25 search and a pgvector search via Reciprocal Rank Fusion — the canonical v2 pattern ParadeDB documents in the 2025-10-22 'Hybrid Search Missing Manual' blog post. Returns hits as {id, score, bm25_rank, vector_rank}. ``score`` is the summed ``sum(weight * 1.0 / (k + rank))`` across both legs; per-leg ranks are surfaced for transparency (either can be NULL if a row only appeared in one leg's top-K). ``distance_op`` is the pgvector operator ('<=>'/'<->'/'<#>' — RRF is operator-agnostic). ``bm25_columns=None`` searches the whole BM25 index; ``bm25_columns=[\"col\"]`` restricts the BM25 leg to a single field. Defaults mirror upstream's demonstrated form (cosine, k=60, equal weights, per_leg_limit=20). Requires the pg_search and pgvector extensions.",
