@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 230
+    "tool_count": 232
   },
   "tools": {
     "add_compression_policy": {
@@ -48,6 +48,9 @@
         "server_version_num"
       ],
       "kind": "scalar"
+    },
+    "analyze_mpp_query_plan": {
+      "kind": "opaque"
     },
     "analyze_query_plan": {
       "kind": "opaque"
@@ -1755,6 +1758,9 @@
         "server"
       ],
       "kind": "scalar"
+    },
+    "recommend_redistribute": {
+      "kind": "opaque"
     },
     "recommend_rerank_strategy": {
       "dataclass": "RerankRecommendation",

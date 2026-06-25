@@ -5805,6 +5805,48 @@ def _register_warehousepg_reads(server: FastMCP[AppContext]) -> None:
 
         return await _cached_call(ctx, "list_resource_groups", _run)
 
+    @server.tool(
+        name="analyze_mpp_query_plan",
+        description=_with_example(
+            "Run `EXPLAIN (ANALYZE, FORMAT JSON)` on `sql` and roll up "
+            "MPP-specific facts: slice count, motion nodes (`Redistribute "
+            "Motion` / `Broadcast Motion` / `Gather Motion`), and per-motion "
+            "metadata (senders, receivers, estimated rows). Uses the same "
+            "safety pre-flight as `analyze_query_plan(io=True)` — writes / "
+            "DDL stay rejected. `redistribute_count` flags 'data is not "
+            "co-located with the join key'. On vanilla PG returns "
+            "`available=false`.",
+            "analyze_mpp_query_plan(sql='SELECT * FROM big JOIN small ON big.k = small.k')",
+        ),
+    )
+    async def analyze_mpp_query_plan(ctx: _Ctx, sql: str) -> warehousepg.MppQueryPlanAnalysis:
+        # Deliberately NOT cached — matches the convention for
+        # analyze_query_plan / explain_query: each EXPLAIN ANALYZE
+        # call reflects the planner state + actual buffer cache at
+        # invocation time. Caching by SQL text would hide regressions
+        # the agent is calling this tool to detect.
+        return await warehousepg.analyze_mpp_query_plan(_driver(ctx), sql)
+
+    @server.tool(
+        name="recommend_redistribute",
+        description=_with_example(
+            "Distribution-skew advisor for a hash-distributed table. Reads "
+            "`pg_stats.n_distinct` for every column on the table and suggests "
+            "a better hash key when the current one is low-cardinality. Pure "
+            "catalog read — no per-segment scans. Returns ranked "
+            "`candidates`, optional `recommendation`, and ready-to-review "
+            "`suggested_ddl` (`ALTER TABLE … SET WITH (REORGANIZE=TRUE) "
+            "DISTRIBUTED BY (col)`). Diagnosis-only — never executes. On "
+            "vanilla PG returns `available=false`.",
+            "recommend_redistribute(schema='public', table='fact_sales')",
+        ),
+    )
+    async def recommend_redistribute(ctx: _Ctx, schema: str, table: str) -> warehousepg.RedistributeRecommendation:
+        async def _run() -> warehousepg.RedistributeRecommendation:
+            return await warehousepg.recommend_redistribute(_driver(ctx), schema, table)
+
+        return await _cached_call(ctx, "recommend_redistribute", _run, schema, table)
+
 
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     """Register the MCP tools permitted by the configured access mode.
