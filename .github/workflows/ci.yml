@@ -19,7 +19,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           enable-cache: true
       - run: uv sync --frozen
       - name: ruff (lint)
@@ -37,7 +37,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           enable-cache: true
       - run: uv sync --frozen
       # pip-audit consults the PyPI advisory DB + OSV.dev for known
@@ -152,7 +152,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           enable-cache: true
       - run: uv sync --frozen
       # Runs unit, vendored-kernel, and integration suites with the coverage
