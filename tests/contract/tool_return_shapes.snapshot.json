@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 225
+    "tool_count": 226
   },
   "tools": {
     "add_compression_policy": {
@@ -850,6 +850,9 @@
         "server_version_num"
       ],
       "kind": "scalar"
+    },
+    "get_warehousepg_status": {
+      "kind": "opaque"
     },
     "hybrid_bm25_vector_search": {
       "dataclass": "HybridHit",
