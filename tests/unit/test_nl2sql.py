@@ -136,6 +136,107 @@ def test_parse_response_falls_back_to_raw_text_on_invalid_json() -> None:
     assert "cannot answer" in explanation
 
 
+# --- PG 19 emission-pattern injection (roadmap 2.5#18) ----------------
+
+
+def test_build_system_prompt_appends_pg19_patterns_on_pg19() -> None:
+    from mcpg.nl2sql import _build_system_prompt
+
+    prompt = _build_system_prompt(190000)
+    assert "GROUP BY ALL" in prompt
+    # The temporal / on-conflict notes belong in the prompt for
+    # completeness but call out that this tool stays read-only.
+    assert "FOR PORTION OF" in prompt
+    assert "ON CONFLICT DO SELECT" in prompt
+
+
+def test_build_system_prompt_omits_pg19_patterns_on_pg18() -> None:
+    from mcpg.nl2sql import _build_system_prompt
+
+    prompt = _build_system_prompt(180000)
+    assert "GROUP BY ALL" not in prompt
+    assert "FOR PORTION OF" not in prompt
+
+
+def test_build_system_prompt_falls_back_to_conservative_on_probe_failure() -> None:
+    """Version 0 = probe failed. Falls back to the pre-PG-19 prompt so
+    we never emit GROUP BY ALL against a server that would reject it."""
+    from mcpg.nl2sql import _build_system_prompt
+
+    prompt = _build_system_prompt(0)
+    assert "GROUP BY ALL" not in prompt
+
+
+def _routes_with_version(ver_num: int) -> dict[str, list[dict[str, object]]]:
+    """Extend the simple-schema route set with a server-version probe.
+
+    The version probe in translate_nl_to_sql runs `current_setting(
+    'server_version_num')`; route it to the supplied number so the
+    test can pin which prompt branch fired.
+    """
+    routes = _routes_for_simple_schema()
+    routes["current_setting('server_version_num')"] = [{"ver_num": ver_num}]
+    return routes
+
+
+async def test_translate_nl_to_sql_passes_pg19_patterns_in_system_prompt_on_pg19() -> None:
+    """End-to-end: the captured system prompt the provider saw must
+    include the PG 19 emission patterns when the connected server
+    reports version 190000."""
+    provider = _StubProvider(response='{"sql": "SELECT 1", "explanation": "smoke"}')
+    driver = FakeRoutingDriver(_routes_with_version(190000))
+
+    await translate_nl_to_sql(
+        driver,  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="claude-sonnet-4-6",
+        question="count widgets",
+        schema="public",
+    )
+    assert "GROUP BY ALL" in provider.captured_system
+
+
+async def test_translate_nl_to_sql_omits_pg19_patterns_in_system_prompt_on_pg18() -> None:
+    """End-to-end: when the server reports < 190000, the PG 19 patterns
+    must NOT reach the provider — the LLM would happily emit syntax
+    the server rejects otherwise."""
+    provider = _StubProvider(response='{"sql": "SELECT 1", "explanation": "smoke"}')
+    driver = FakeRoutingDriver(_routes_with_version(180000))
+
+    await translate_nl_to_sql(
+        driver,  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="claude-sonnet-4-6",
+        question="count widgets",
+        schema="public",
+    )
+    assert "GROUP BY ALL" not in provider.captured_system
+
+
+async def test_translate_nl_to_sql_falls_back_to_conservative_prompt_when_version_probe_fails() -> None:
+    """The version probe is best-effort; on driver failure the prompt
+    falls back to the pre-PG-19 conservative shape. This is the safe
+    default — losing the GROUP BY ALL shortcut beats emitting syntax
+    the server rejects."""
+    provider = _StubProvider(response='{"sql": "SELECT 1", "explanation": "smoke"}')
+    # _routes_for_simple_schema has no server_version_num route, so the
+    # probe returns 0 (the FakeRoutingDriver default for unmatched
+    # queries is an empty list).
+    driver = FakeRoutingDriver(_routes_for_simple_schema())
+
+    await translate_nl_to_sql(
+        driver,  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="claude-sonnet-4-6",
+        question="count widgets",
+        schema="public",
+    )
+    assert "GROUP BY ALL" not in provider.captured_system
+
+
+# --- existing tests ---------------------------------------------------
+
+
 async def test_translate_nl_to_sql_rejects_blank_question() -> None:
     with pytest.raises(NL2SQLError, match="empty"):
         await translate_nl_to_sql(

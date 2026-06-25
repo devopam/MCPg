@@ -459,6 +459,70 @@ If the question cannot be answered with the given schema, return:
 {"sql": "", "explanation": "why this can't be answered"}"""
 
 
+# PG 19 SQL emission patterns — appended to the system prompt ONLY when
+# the connected server is PG 19+. Pre-PG 19 servers reject the syntax,
+# so emitting it unconditionally would break translations on every PG
+# 14-18 cluster.
+_PG19_EMISSION_PATTERNS = (
+    "\n\nPostgreSQL 19 emission patterns (the connected server supports them):\n"
+    "- `GROUP BY ALL` — when grouping by every non-aggregate column in the "
+    "SELECT list, you may write `GROUP BY ALL` instead of repeating the column "
+    "list. Use this when it makes the query shorter and clearer; keep explicit "
+    "columns when the grouping intent is non-obvious.\n"
+    "- Temporal `UPDATE` (`FOR PORTION OF`) — only for temporal tables (declared "
+    "with a system-time / valid-time period). NEVER emit this here: the hard "
+    "rule above forbids UPDATE in any form; surfacing temporal semantics is the "
+    "catalog-introspection tool's job, not the NL→SQL tool's.\n"
+    "- `ON CONFLICT DO SELECT` — returns the conflicting rows from an upsert. "
+    "Same constraint: this is only valid inside `INSERT ... ON CONFLICT`, which "
+    "the hard rule forbids. Do not emit it from this tool.\n\n"
+    "Apply `GROUP BY ALL` when it improves readability. The other PG 19 "
+    "constructs are mentioned for completeness but stay outside this tool's safe "
+    "scope."
+)
+
+
+# Lowest PG version that accepts the `GROUP BY ALL` emission shape.
+# (190000 = PG 19.0 — the version-num scheme is M*10000.)
+_PG19_VERSION_NUM = 190000
+
+
+def _build_system_prompt(server_version_num: int) -> str:
+    """Return the system prompt, appending PG 19 emission patterns when
+    the connected server actually supports them.
+
+    The version-aware path lets agents on PG 19+ use shorter, more
+    idiomatic queries (the `GROUP BY ALL` win), while PG 14-18 servers
+    keep the conservative-only prompt and never see the new syntax
+    they'd reject.
+    """
+    if server_version_num >= _PG19_VERSION_NUM:
+        return _SYSTEM_PROMPT + _PG19_EMISSION_PATTERNS
+    return _SYSTEM_PROMPT
+
+
+async def _probe_server_version_num(driver: SqlDriver) -> int:
+    """Return ``server_version_num``, or 0 on probe failure.
+
+    A failure here falls back to the conservative pre-PG 19 prompt —
+    losing the `GROUP BY ALL` shortcut is preferable to emitting it
+    against a server that rejects it.
+    """
+    try:
+        rows = await driver.execute_query(
+            "SELECT current_setting('server_version_num')::int AS ver_num",
+            force_readonly=True,
+        )
+    except Exception:
+        return 0
+    if not rows:
+        return 0
+    try:
+        return int(rows[0].cells.get("ver_num") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 _USER_PROMPT_TEMPLATE = """Schema name: {schema}
 
 Tables (truncated to {max_tables}):
@@ -822,9 +886,17 @@ async def translate_nl_to_sql(
         .replace("{question}", question.strip())
     )
 
+    # Probe the connected server's version so we can advertise PG 19
+    # emission patterns (GROUP BY ALL) only when the server actually
+    # supports them. Probe failure falls back to the conservative
+    # pre-PG 19 prompt — losing the shortcut is preferable to emitting
+    # syntax the server would reject. One cheap query per translation.
+    server_version_num = await _probe_server_version_num(driver)
+    system_prompt = _build_system_prompt(server_version_num)
+
     try:
         raw = await provider.complete(
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
             model=model,
             max_tokens=max_tokens,

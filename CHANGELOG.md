@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`translate_nl_to_sql` advertises PG 19 SQL constructs in its
+  system prompt when the connected server actually supports them.**
+  Probes `current_setting('server_version_num')` once per
+  translation; on PG 19+ the prompt grows a block describing:
+
+    - `GROUP BY ALL` — emit instead of repeating non-aggregate
+      column lists when grouping is exhaustive (the real win — the
+      LLM will produce shorter, more readable queries).
+    - Temporal `UPDATE` (`FOR PORTION OF`) — mentioned for context
+      only; the hard read-only rule still forbids `UPDATE` in any
+      form.
+    - `ON CONFLICT DO SELECT` — same, only valid inside `INSERT`,
+      forbidden here.
+
+  Probe failures (driver error, version unparseable, empty rows)
+  fall back to the conservative pre-PG-19 prompt — losing the
+  shortcut is preferable to emitting syntax the server rejects.
+  Realises sub-item #18 of roadmap row 2.5 (the PG 19 PR-10 small-
+  tools batch) — **completes the entire 2.5 batch**.
+
 - **`list_grants` gains a `pg_get_acl()` ACL string on PG 19+.**
   PG 19 introduces `pg_get_acl(classid, objid, objsubid)` — the
   canonical aclitem array (`{user=privs/grantor, …}`) the catalog
