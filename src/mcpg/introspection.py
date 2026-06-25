@@ -229,12 +229,22 @@ class GrantInfo:
 
     ``grantable`` is ``True`` when the grantee may pass the privilege on
     (``WITH GRANT OPTION``).
+
+    ``acl`` is the raw PostgreSQL aclitem string (``user=privs/grantor``)
+    that ``pg_get_acl()`` returns on PG 19+; it's ``None`` on
+    PG ≤ 18 (where the function doesn't exist and the field stays
+    absent from the wire). Useful for matching what ``\\dp`` shows
+    and for parsing privilege flags (``r``=SELECT, ``w``=UPDATE,
+    ``a``=INSERT, ``d``=DELETE, ``D``=TRUNCATE, ``x``=REFERENCES,
+    ``t``=TRIGGER) without reverse-engineering the
+    information_schema row.
     """
 
     grantee: str
     privilege: str
     grantable: bool
     grantor: str
+    acl: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -757,7 +767,22 @@ async def list_roles(driver: SqlDriver, *, include_system: bool = False) -> list
 
 
 async def list_grants(driver: SqlDriver, schema: str, table: str) -> list[GrantInfo]:
-    """List the privileges granted on a table — who may do what to it."""
+    """List the privileges granted on a table — who may do what to it.
+
+    Combines the portable information_schema view (works on every PG
+    version, one row per (grantee, privilege) pair) with PG 19's
+    ``pg_get_acl()`` function, which returns the canonical aclitem
+    string ``user=privs/grantor`` for a relation. On PG 19+ every
+    returned :class:`GrantInfo` carries the same ``acl`` string
+    (one ACL per relation, not per privilege); on PG ≤ 18 the field
+    stays ``None``.
+
+    The two probes are independent — a server where ``pg_get_acl``
+    fails (PG ≤ 18, or PG 19 with a missing-permission error)
+    silently drops the ``acl`` field. The information_schema base
+    query never raises on the supported versions; if it does, the
+    function returns an empty list.
+    """
     rows = await driver.execute_query(
         "SELECT grantee, privilege_type AS privilege, is_grantable, grantor "
         "FROM information_schema.table_privileges "
@@ -766,12 +791,41 @@ async def list_grants(driver: SqlDriver, schema: str, table: str) -> list[GrantI
         params=[schema, table],
         force_readonly=True,
     )
+
+    # PG 19+ surface: pg_get_acl(classid, objid, objsubid). Returns the
+    # ACL string for the table — the canonical form `\dp` displays.
+    # On PG <= 18 the function doesn't exist and to_regclass /
+    # pg_get_acl returns NULL or raises; we swallow both cases so the
+    # information_schema rows still surface as before.
+    acl_string: str | None = None
+    try:
+        # `pg_get_acl` returns aclitem[] — psycopg's typecasters
+        # deserialise that as a Python list, which would break the
+        # `acl: str | None` contract on GrantInfo. Cast to text so we
+        # get the catalog-display form (`{user=privs/grantor, ...}`)
+        # as a single str regardless of driver / typecaster config.
+        acl_rows = await driver.execute_query(
+            "SELECT pg_get_acl('pg_class'::regclass, c.oid, 0)::text AS acl "
+            "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = %s AND c.relname = %s",
+            params=[schema, table],
+            force_readonly=True,
+        )
+        if acl_rows:
+            acl_string = acl_rows[0].cells.get("acl")
+    except Exception:
+        # PG <= 18 (function doesn't exist), or any other catalog
+        # error — leave acl_string None. The information_schema rows
+        # still tell the agent who has what privilege.
+        acl_string = None
+
     return [
         GrantInfo(
             grantee=row.cells["grantee"],
             privilege=row.cells["privilege"],
             grantable=row.cells["is_grantable"] == "YES",
             grantor=row.cells["grantor"],
+            acl=acl_string,
         )
         for row in rows or []
     ]

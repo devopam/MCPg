@@ -1,5 +1,7 @@
 """Tests for schema-introspection queries and their MCP tools."""
 
+from typing import Any
+
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -417,11 +419,93 @@ async def test_list_grants_maps_rows() -> None:
         ]
     )
 
-    assert await list_grants(driver, "app", "widget") == [
+    result = await list_grants(driver, "app", "widget")
+    # First call carries the (schema, table) params; FakeDriver returns
+    # the same rows for both calls (info_schema and pg_get_acl). The
+    # acl field falls through as None because the canned rows don't
+    # carry an `acl` key.
+    assert result == [
         GrantInfo("app_user", "SELECT", grantable=False, grantor="app_owner"),
         GrantInfo("app_admin", "UPDATE", grantable=True, grantor="app_owner"),
     ]
     assert driver.calls[0][1] == ["app", "widget"]
+
+
+async def test_list_grants_attaches_pg_get_acl_string_on_pg19() -> None:
+    """On PG 19+ ``pg_get_acl()`` returns the canonical ``\\dp`` ACL
+    string; every returned :class:`GrantInfo` should carry it on the
+    ``acl`` field (one ACL per relation, repeated per privilege row)."""
+    routes = {
+        "information_schema.table_privileges": [
+            {"grantee": "app_user", "privilege": "SELECT", "is_grantable": "NO", "grantor": "app_owner"},
+            {"grantee": "app_admin", "privilege": "UPDATE", "is_grantable": "YES", "grantor": "app_owner"},
+        ],
+        "pg_get_acl": [{"acl": "{app_owner=arwdDxt/app_owner,app_user=r/app_owner,app_admin=rw*/app_owner}"}],
+    }
+    driver = FakeRoutingDriver(routes)
+    result = await list_grants(driver, "app", "widget")
+    assert len(result) == 2
+    expected_acl = "{app_owner=arwdDxt/app_owner,app_user=r/app_owner,app_admin=rw*/app_owner}"
+    assert all(grant.acl == expected_acl for grant in result)
+    # The information_schema rows still surface unchanged.
+    assert result[0].grantee == "app_user"
+    assert result[0].privilege == "SELECT"
+    assert result[1].grantable is True
+
+
+async def test_list_grants_acl_is_none_when_pg_get_acl_does_not_exist() -> None:
+    """PG ≤ 18 doesn't ship ``pg_get_acl``; the call raises. The
+    information_schema rows must still surface, with ``acl=None``
+    on every row — distinguishes "PG 19 with no ACL set" (where
+    ``pg_get_acl`` returns NULL → empty list) from "PG ≤ 18
+    no-such-function"."""
+
+    class _Pg18Driver:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, list[Any] | None]] = []
+
+        async def execute_query(
+            self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+        ) -> list[Any]:
+            del force_readonly
+            self.calls.append((query, params))
+            if "pg_get_acl" in query:
+                raise RuntimeError("function pg_get_acl(regclass, oid, integer) does not exist")
+            from mcpg._vendor.sql import SqlDriver
+
+            return [
+                SqlDriver.RowResult(
+                    cells={
+                        "grantee": "app_user",
+                        "privilege": "SELECT",
+                        "is_grantable": "NO",
+                        "grantor": "app_owner",
+                    }
+                )
+            ]
+
+    driver = _Pg18Driver()
+    result = await list_grants(driver, "app", "widget")  # type: ignore[arg-type]
+    assert len(result) == 1
+    assert result[0].acl is None
+    # Both queries were attempted — the function tries pg_get_acl
+    # but swallows its failure.
+    assert len(driver.calls) == 2
+
+
+async def test_list_grants_acl_stays_none_when_pg_get_acl_returns_no_rows() -> None:
+    """``to_regclass`` returning NULL → empty rows from the ACL probe;
+    the acl field stays None rather than KeyError-ing on the cells dict."""
+    routes = {
+        "information_schema.table_privileges": [
+            {"grantee": "app_user", "privilege": "SELECT", "is_grantable": "NO", "grantor": "app_owner"},
+        ],
+        "pg_get_acl": [],  # empty result — relation no longer exists by ACL probe time
+    }
+    driver = FakeRoutingDriver(routes)
+    result = await list_grants(driver, "app", "widget")
+    assert len(result) == 1
+    assert result[0].acl is None
 
 
 def _role_row(name: str, **overrides: object) -> dict[str, object]:
