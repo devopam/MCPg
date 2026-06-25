@@ -69,7 +69,9 @@ jobs:
           # WarehousePG (Greenplum-derived MPP) characterisation lane.
           # `continue-on-error: true` while the upstream community image
           # landscape stabilises — see roadmap row 15.8 and
-          # .github/ci-postgres-warehousepg.Dockerfile.
+          # .github/ci-postgres-warehousepg.Dockerfile (single source of
+          # truth for the upstream image tag; pin a specific tag here
+          # once the WarehousePG release cadence stabilises).
           - postgres: "warehousepg-latest"
             experimental: true
     steps:
