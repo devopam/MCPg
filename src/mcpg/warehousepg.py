@@ -317,7 +317,7 @@ async def list_distribution_policies(driver: SqlDriver, schema: str | None = Non
         "       d.policytype AS policy_type, "
         "       COALESCE(d.numsegments, 0)::int AS num_segments, "
         "       COALESCE("
-        "         ARRAY(SELECT a.attname FROM unnest(d.distkey::int[]) WITH ORDINALITY AS k(att, ord) "
+        "         ARRAY(SELECT a.attname FROM unnest(d.distkey::int2[]) WITH ORDINALITY AS k(att, ord) "
         "               JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.att "
         "               ORDER BY k.ord), "
         "         '{}'::text[]"
