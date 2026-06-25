@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`warehousepg-latest` CI lane** — adds a new matrix entry to the
+  CI `test` job that runs the full suite against a community
+  WarehousePG (Greenplum-derived MPP) image. Lives alongside the
+  existing PG 14-19 lanes; uses `.github/ci-postgres-warehousepg.Dockerfile`
+  to pull the upstream image.
+
+  Gated `continue-on-error: true` (via `experimental: true` on the
+  matrix entry) so a missing image tag / upstream outage doesn't
+  block the main suite while the community image landscape
+  stabilises. The lane is the characterisation-test surface for the
+  whole `mcpg.warehousepg.*` family — it catches SQL syntax that
+  passes unit tests against mocked drivers but breaks on the real
+  parser. **Realises roadmap row 15.8 — closes section §15 in
+  full.**
+
+  Postgres client tooling install is skipped for the WarehousePG
+  lane (WarehousePG is wire-compatible with libpq; the runner's
+  default `psql` works) and the Dockerfile branch in the test job
+  is updated alongside the existing PG 19 special-case.
+
 - **WarehousePG advisors bundle** — two MPP-aware analysis tools.
   Both gate on the 15.1 status probe; on vanilla PG return
   `available=false` cleanly. Realises roadmap rows **15.6 + 15.7**

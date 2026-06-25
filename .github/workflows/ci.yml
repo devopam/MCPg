@@ -66,6 +66,12 @@ jobs:
         include:
           - postgres: "19"
             experimental: true
+          # WarehousePG (Greenplum-derived MPP) characterisation lane.
+          # `continue-on-error: true` while the upstream community image
+          # landscape stabilises — see roadmap row 15.8 and
+          # .github/ci-postgres-warehousepg.Dockerfile.
+          - postgres: "warehousepg-latest"
+            experimental: true
     steps:
       - uses: actions/checkout@v4
       # The ubuntu-latest runner ships an older PostgreSQL client by
@@ -75,6 +81,11 @@ jobs:
       # exactly. Required by the Phase-24 subprocess integration tests
       # (mcpg.shell + dump_database); harmless for the older versions.
       - name: Install PostgreSQL ${{ matrix.postgres }} client tools
+        # WarehousePG is wire-compatible with libpq, so the default
+        # runner-shipped psql works. We don't try to install a custom
+        # `postgresql-client-warehousepg` package — it doesn't exist on
+        # pgdg and the existing client is what mcpg.shell expects.
+        if: matrix.postgres != 'warehousepg-latest'
         run: |
           sudo apt-get install -y wget gnupg lsb-release ca-certificates
           wget --quiet -O- https://www.postgresql.org/media/keys/ACCC4CF8.asc \
@@ -125,6 +136,12 @@ jobs:
           DOCKERFILE=".github/ci-postgres.Dockerfile"
           if [ "${{ matrix.postgres }}" = "19" ]; then
             DOCKERFILE=".github/ci-postgres-pg19.Dockerfile"
+          elif [ "${{ matrix.postgres }}" = "warehousepg-latest" ]; then
+            # WarehousePG (Greenplum-derived MPP) lane — see roadmap 15.8
+            # and .github/ci-postgres-warehousepg.Dockerfile. The matrix
+            # entry is `continue-on-error: true` so an upstream image
+            # outage doesn't block the main suite.
+            DOCKERFILE=".github/ci-postgres-warehousepg.Dockerfile"
           fi
           build_db() {
             docker build -f "$DOCKERFILE" \
