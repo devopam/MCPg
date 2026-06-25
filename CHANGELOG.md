@@ -8,6 +8,41 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **WarehousePG read introspection bundle** — four read-only tools
+  for the MPP-specific catalogue surface. All gate on the 15.1
+  status probe; on vanilla PG they return `available=false` with a
+  clean diagnostic rather than raising. Realises roadmap rows
+  **15.2 + 15.3 + 15.4 + 15.5** (Bundle A — read introspection):
+
+    - **`list_distribution_policies(schema=None)`** — joins
+      `gp_distribution_policy` + `pg_class` + `pg_attribute` to
+      surface per-table `method` (`HASH` / `RANDOM` / `REPLICATED`),
+      `distribution_columns` (in catalog order for composite hash
+      keys), and `num_segments`. Big agentic win for "is my data
+      co-located with my joins" diagnosis on MPP workloads. (15.2)
+    - **`check_segment_health()`** — walks `gp_segment_configuration`
+      and rolls up per-segment `status` ('u' = up), `mode` ('s' =
+      sync / 'n' = not-in-sync / 'c' = changetracking), and
+      `role` vs `preferred_role` (post-failover detection).
+      Top-level `unhealthy_count` + `out_of_sync_count` let agents
+      branch without walking the segments array. (15.3)
+    - **`describe_ao_table(schema, table)`** — reads `pg_appendonly`
+      for AO / AO-CO storage metadata: row vs column orientation,
+      compression type / level, block size, checksum. Returns
+      `is_ao=false` cleanly for regular heap tables. (15.4)
+    - **`list_resource_groups()`** — reads `gp_toolkit.gp_resgroup_status`
+      for `concurrency`, `cpu_max_percent`, `cpu_weight`,
+      `memory_limit`, `memory_shared_quota`, plus live `num_running`
+      / `num_queueing`. Pairs with `analyze_workload` for
+      "where's my workload time going" diagnosis. (15.5)
+
+  All four live in `mcpg.warehousepg`. Bucket overrides:
+  introspection tools classified under `schema_introspection`;
+  health/ops tools under `operations_and_health`. Driver errors on
+  the data query surface as `available=false` with the actual error
+  in `detail`. Pure read-only; no caller-supplied identifiers in
+  identifier slots.
+
 - **`get_warehousepg_status` MCP tool** — gating status probe for
   the new `mcpg.warehousepg.*` family. Detects whether the connected
   server is a WarehousePG (Greenplum-derived MPP) cluster by

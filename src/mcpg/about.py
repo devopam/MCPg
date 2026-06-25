@@ -580,6 +580,11 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     # get_warehousepg_status is a status probe — same bucket as the other
     # `get_*_status` family entries (pgq, repack, aio, pg19_*).
     "get_warehousepg_status": "operations_and_health",
+    # WarehousePG MPP read introspection (roadmap 15.2-15.5).
+    "list_distribution_policies": "schema_introspection",
+    "check_segment_health": "operations_and_health",
+    "describe_ao_table": "schema_introspection",
+    "list_resource_groups": "operations_and_health",
     # audit_database is the deep DBA advisor scan.
     "audit_database": "advisors",
     # turboquant tools whose name has `turboquant` in the middle (the
