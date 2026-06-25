@@ -8,6 +8,37 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **WarehousePG advisors bundle** — two MPP-aware analysis tools.
+  Both gate on the 15.1 status probe; on vanilla PG return
+  `available=false` cleanly. Realises roadmap rows **15.6 + 15.7**
+  (Bundle B — advisors):
+
+    - **`analyze_mpp_query_plan(sql)`** — runs `EXPLAIN (ANALYZE,
+      FORMAT JSON)` (via `mcpg.query.explain_query(io=True)`, so
+      writes / DDL stay rejected) and rolls up MPP-specific facts:
+      slice count, motion-node inventory (`Redistribute` /
+      `Broadcast` / `Gather`), per-motion senders/receivers/rows.
+      `redistribute_count > 0` flags "data isn't co-located with the
+      join key" — the canonical signal an agent should suggest a
+      key redistribution. Returns `available=false` on EXPLAIN
+      failure with the underlying error message. (15.6)
+    - **`recommend_redistribute(schema, table)`** — distribution-key
+      advisor. Reads the current `gp_distribution_policy`, then
+      `pg_stats.n_distinct` for every column on the table, ranks
+      candidates by approximate distinct count (translating
+      negative encoded fractions to absolute estimates using
+      `reltuples`), and flags a rewrite when the current key has
+      < `segment_count * 10` distinct values AND a better candidate
+      exists. Returns a ready-to-review `ALTER TABLE … SET WITH
+      (REORGANIZE=TRUE) DISTRIBUTED BY (…)` statement — **never
+      executes DDL itself**. Skips RANDOM and REPLICATED tables
+      (no key to optimize). (15.7)
+
+  Bucket overrides: `analyze_mpp_query_plan` → `query_execution`;
+  `recommend_redistribute` → `advisors`. Driver errors on either
+  data probe surface as `available=false` with the actual error in
+  `detail`.
+
 - **WarehousePG read introspection bundle** — four read-only tools
   for the MPP-specific catalogue surface. All gate on the 15.1
   status probe; on vanilla PG they return `available=false` with a

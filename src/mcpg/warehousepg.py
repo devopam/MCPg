@@ -62,7 +62,9 @@ the actual error message in ``detail`` — same convention as
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any
 
 from mcpg._vendor.sql import SqlDriver
 
@@ -685,18 +687,447 @@ async def list_resource_groups(driver: SqlDriver) -> ResourceGroupReport:
     )
 
 
+# ---------------------------------------------------------------------------
+# 15.6 — analyze_mpp_query_plan
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MppMotionNode:
+    """One Motion node from a WarehousePG plan tree.
+
+    ``kind`` is the node type literal — ``Gather Motion``,
+    ``Redistribute Motion``, ``Broadcast Motion``, etc. Each motion
+    moves rows between slices; the number of motions in the plan is
+    a first-order signal for whether a query is co-located with its
+    joins.
+    """
+
+    kind: str
+    slice_index: int | None
+    senders: int | None
+    receivers: int | None
+    estimated_rows: int | None
+
+
+@dataclass(frozen=True)
+class MppQueryPlanAnalysis:
+    """MPP-aware roll-up of an `EXPLAIN (ANALYZE, FORMAT JSON)` plan.
+
+    All fields populate only when ``available=True`` (i.e. the
+    cluster is a real MPP and the EXPLAIN succeeded). ``motions`` is
+    every Motion node encountered while walking the plan tree.
+
+    ``redistribute_count`` / ``broadcast_count`` / ``gather_count``
+    are derived from ``motions`` for the common branches an agent
+    cares about — a high redistribute count usually means the query
+    isn't using the table's distribution key.
+    """
+
+    available: bool
+    slice_count: int
+    motion_count: int
+    redistribute_count: int
+    broadcast_count: int
+    gather_count: int
+    motions: list[MppMotionNode]
+    detail: str
+
+
+def _walk_mpp_plan(node: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Yield every node in an MPP plan tree, depth-first."""
+    yield node
+    for child in node.get("Plans") or []:
+        yield from _walk_mpp_plan(child)
+
+
+async def analyze_mpp_query_plan(driver: SqlDriver, sql: str) -> MppQueryPlanAnalysis:
+    """Run ``EXPLAIN (ANALYZE, FORMAT JSON)`` and roll up MPP plan facts.
+
+    Reuses :func:`mcpg.query.explain_query` with ``io=True`` (which
+    already enforces the safety allowlist on the inner SQL) so writes
+    / DDL are still rejected — only SELECTs execute.
+
+    Returns ``available=False`` on every error path: vanilla PG
+    (gated by 15.1), explain failure, or any unexpected plan shape.
+    """
+    status = await get_warehousepg_status(driver)
+    if not status.available:
+        return MppQueryPlanAnalysis(
+            available=False,
+            slice_count=0,
+            motion_count=0,
+            redistribute_count=0,
+            broadcast_count=0,
+            gather_count=0,
+            motions=[],
+            detail=("MPP plan analysis is only available on WarehousePG / Greenplum. " + status.detail),
+        )
+
+    # Late import — avoids a circular at module load time (query.py
+    # itself is part of the same source tree but warehousepg.py
+    # shouldn't pull it in eagerly).
+    from mcpg import query as mcpg_query
+
+    try:
+        plan_result = await mcpg_query.explain_query(driver, sql, io=True)
+    except Exception as exc:
+        return MppQueryPlanAnalysis(
+            available=False,
+            slice_count=0,
+            motion_count=0,
+            redistribute_count=0,
+            broadcast_count=0,
+            gather_count=0,
+            motions=[],
+            detail=f"MPP plan probe failed: {exc}",
+        )
+    plan = plan_result.plan
+    if not isinstance(plan, list) or not plan:
+        return MppQueryPlanAnalysis(
+            available=False,
+            slice_count=0,
+            motion_count=0,
+            redistribute_count=0,
+            broadcast_count=0,
+            gather_count=0,
+            motions=[],
+            detail="EXPLAIN returned an unexpected shape.",
+        )
+
+    root = plan[0].get("Plan") if isinstance(plan[0], dict) else None
+    if not isinstance(root, dict):
+        return MppQueryPlanAnalysis(
+            available=False,
+            slice_count=0,
+            motion_count=0,
+            redistribute_count=0,
+            broadcast_count=0,
+            gather_count=0,
+            motions=[],
+            detail="EXPLAIN plan root is missing.",
+        )
+
+    motions: list[MppMotionNode] = []
+    slices: set[int] = set()
+    redistribute = 0
+    broadcast = 0
+    gather = 0
+    for node in _walk_mpp_plan(root):
+        slice_index = node.get("Slice")
+        if isinstance(slice_index, int):
+            slices.add(slice_index)
+        kind = str(node.get("Node Type") or "")
+        if "Motion" not in kind:
+            continue
+        normalised = kind.lower()
+        if "redistribute" in normalised:
+            redistribute += 1
+        elif "broadcast" in normalised:
+            broadcast += 1
+        elif "gather" in normalised:
+            gather += 1
+        motions.append(
+            MppMotionNode(
+                kind=kind,
+                slice_index=slice_index if isinstance(slice_index, int) else None,
+                senders=int(node["Senders"]) if isinstance(node.get("Senders"), int) else None,
+                receivers=int(node["Receivers"]) if isinstance(node.get("Receivers"), int) else None,
+                estimated_rows=int(node["Plan Rows"]) if isinstance(node.get("Plan Rows"), int) else None,
+            )
+        )
+
+    slice_count = len(slices)
+    motion_count = len(motions)
+    if motion_count == 0:
+        detail = "No motion nodes — query is fully co-located across segments."
+    elif redistribute and gather <= 1 and broadcast == 0:
+        detail = (
+            f"{redistribute} redistribute motion(s) — the query's join / "
+            "group key doesn't match the table distribution. Consider "
+            "redistributing the table (see recommend_redistribute) or "
+            "rewriting the join."
+        )
+    elif broadcast:
+        detail = (
+            f"{broadcast} broadcast motion(s) — every segment receives "
+            "the entire broadcast side. Common when joining a small "
+            "dimension table; check that the dimension is actually small."
+        )
+    else:
+        detail = (
+            f"{motion_count} motion(s) across {slice_count} slice(s) "
+            f"(redistribute={redistribute}, broadcast={broadcast}, "
+            f"gather={gather})."
+        )
+
+    return MppQueryPlanAnalysis(
+        available=True,
+        slice_count=slice_count,
+        motion_count=motion_count,
+        redistribute_count=redistribute,
+        broadcast_count=broadcast,
+        gather_count=gather,
+        motions=motions,
+        detail=detail,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 15.7 — recommend_redistribute
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RedistributeCandidate:
+    """One candidate column for a better distribution key.
+
+    ``n_distinct`` is the value from ``pg_stats``: positive numbers
+    are absolute distinct counts; negative numbers are a fraction of
+    the table's row count (e.g. ``-0.5`` = ~half the rows are
+    distinct). We normalise to ``approx_distinct`` (an int estimate)
+    for ranking — higher is better for hash distribution.
+    """
+
+    column: str
+    data_type: str
+    n_distinct: float
+    approx_distinct: int
+
+
+@dataclass(frozen=True)
+class RedistributeRecommendation:
+    """Aggregate result of :func:`recommend_redistribute`.
+
+    ``recommendation`` is ``None`` when no rewrite would help — the
+    table already has a good distribution or no better candidate
+    column exists. ``suggested_ddl`` is the rewrite the operator
+    should review (NOT executed by this tool).
+    """
+
+    available: bool
+    schema: str
+    table: str
+    current_method: str
+    current_columns: list[str]
+    candidates: list[RedistributeCandidate]
+    recommendation: RedistributeCandidate | None
+    suggested_ddl: str | None
+    detail: str
+
+
+def _approx_distinct(n_distinct: float, reltuples: float) -> int:
+    """Translate ``pg_stats.n_distinct`` to an absolute estimate.
+
+    PG encodes "distinct values are a constant fraction of rows" as a
+    negative number, so ``-1.0`` means "every value distinct" and
+    ``-0.1`` means "10% are distinct". Positive values are direct
+    counts.
+    """
+    if n_distinct >= 0:
+        return int(n_distinct)
+    return max(0, int(reltuples * -n_distinct))
+
+
+async def recommend_redistribute(driver: SqlDriver, schema: str, table: str) -> RedistributeRecommendation:
+    """Suggest a better distribution key for a hash-distributed table.
+
+    Pure catalog-stats advisor (no per-segment row counts — those
+    require expensive `gp_dist_random()` scans we defer to a future
+    enhancement). Reads `pg_stats.n_distinct` for every column on the
+    table and recommends the column with the highest approximate
+    distinct count when it materially beats the current distribution
+    key. Returns a ready-to-review `ALTER TABLE … SET WITH
+    (REORGANIZE=TRUE) DISTRIBUTED BY (…)` statement; never executes
+    DDL itself.
+    """
+    status = await get_warehousepg_status(driver)
+    if not status.available:
+        return RedistributeRecommendation(
+            available=False,
+            schema=schema,
+            table=table,
+            current_method="",
+            current_columns=[],
+            candidates=[],
+            recommendation=None,
+            suggested_ddl=None,
+            detail=("Distribution-skew advice is only available on WarehousePG / Greenplum. " + status.detail),
+        )
+
+    try:
+        rows = await driver.execute_query(
+            "SELECT c.reltuples::bigint AS reltuples, "
+            "       d.policytype AS policy_type, "
+            "       COALESCE(d.numsegments, 0)::int AS num_segments, "
+            "       COALESCE("
+            "         ARRAY(SELECT a.attname FROM unnest(d.distkey::int2[]) WITH ORDINALITY AS k(att, ord) "
+            "               JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.att "
+            "               ORDER BY k.ord), "
+            "         '{}'::text[]"
+            "       ) AS distribution_columns "
+            "FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "LEFT JOIN gp_distribution_policy d ON d.localoid = c.oid "
+            "WHERE n.nspname = %s AND c.relname = %s",
+            params=[schema, table],
+            force_readonly=True,
+        )
+    except Exception as exc:
+        return RedistributeRecommendation(
+            available=False,
+            schema=schema,
+            table=table,
+            current_method="",
+            current_columns=[],
+            candidates=[],
+            recommendation=None,
+            suggested_ddl=None,
+            detail=f"Distribution-key probe failed: {exc}",
+        )
+    if not rows:
+        return RedistributeRecommendation(
+            available=False,
+            schema=schema,
+            table=table,
+            current_method="",
+            current_columns=[],
+            candidates=[],
+            recommendation=None,
+            suggested_ddl=None,
+            detail=f"Table '{schema}.{table}' not found.",
+        )
+
+    cells = rows[0].cells
+    policy_code = str(cells.get("policy_type") or "")
+    current_method = _POLICY_TYPE_NAMES.get(policy_code, policy_code.upper() or "UNKNOWN")
+    current_columns = [str(c) for c in (cells.get("distribution_columns") or [])]
+    reltuples = float(cells.get("reltuples") or 0)
+    if current_method != "HASH":
+        return RedistributeRecommendation(
+            available=True,
+            schema=schema,
+            table=table,
+            current_method=current_method,
+            current_columns=current_columns,
+            candidates=[],
+            recommendation=None,
+            suggested_ddl=None,
+            detail=(
+                f"Table is {current_method.lower()}-distributed; redistribution "
+                "advice only applies to HASH-distributed tables."
+            ),
+        )
+
+    try:
+        stats_rows = await driver.execute_query(
+            "SELECT attname, n_distinct::float AS n_distinct, "
+            "       (SELECT format_type(atttypid, atttypmod) "
+            "        FROM pg_attribute a "
+            "        WHERE a.attrelid = (schemaname || '.' || tablename)::regclass "
+            "          AND a.attname = pg_stats.attname) AS data_type "
+            "FROM pg_stats "
+            "WHERE schemaname = %s AND tablename = %s",
+            params=[schema, table],
+            force_readonly=True,
+        )
+    except Exception as exc:
+        return RedistributeRecommendation(
+            available=True,
+            schema=schema,
+            table=table,
+            current_method=current_method,
+            current_columns=current_columns,
+            candidates=[],
+            recommendation=None,
+            suggested_ddl=None,
+            detail=f"Distribution policy known but pg_stats probe failed: {exc}",
+        )
+
+    candidates: list[RedistributeCandidate] = []
+    for row in stats_rows or []:
+        cells = row.cells
+        n_distinct = float(cells.get("n_distinct") or 0)
+        candidates.append(
+            RedistributeCandidate(
+                column=str(cells.get("attname") or ""),
+                data_type=str(cells.get("data_type") or ""),
+                n_distinct=n_distinct,
+                approx_distinct=_approx_distinct(n_distinct, reltuples),
+            )
+        )
+    candidates.sort(key=lambda c: c.approx_distinct, reverse=True)
+
+    current_col_stats = next(
+        (c for c in candidates if c.column in current_columns),
+        None,
+    )
+    current_distinct = current_col_stats.approx_distinct if current_col_stats is not None else 0
+
+    # Only recommend a better key when the top candidate is materially
+    # better (≥2x distinct values) AND the current column has demonstrated
+    # low cardinality (< 10x segment count is a common skew threshold).
+    segment_count = status.segment_count or 0
+    skew_threshold = max(segment_count * 10, 100)
+    recommendation: RedistributeCandidate | None = None
+    suggested_ddl: str | None = None
+    detail: str
+    if not candidates:
+        detail = "No pg_stats data — run ANALYZE on the table to get advice."
+    elif current_col_stats is None:
+        detail = "Current distribution column has no pg_stats row — run ANALYZE on the table and re-check."
+    elif (
+        current_distinct < skew_threshold
+        and candidates[0].column not in current_columns
+        and candidates[0].approx_distinct >= max(current_distinct * 2, skew_threshold)
+    ):
+        recommendation = candidates[0]
+        suggested_ddl = (
+            f'ALTER TABLE "{schema}"."{table}" SET WITH (REORGANIZE=TRUE) DISTRIBUTED BY ("{recommendation.column}")'
+        )
+        detail = (
+            f"Current key '{current_columns[0] if current_columns else '?'}' has only "
+            f"~{current_distinct} distinct values across {segment_count} segments; "
+            f"'{recommendation.column}' has ~{recommendation.approx_distinct}. "
+            "Review the suggested DDL before applying."
+        )
+    else:
+        detail = (
+            f"Current distribution on {current_columns} looks reasonable "
+            f"(~{current_distinct} distinct values). No rewrite recommended."
+        )
+
+    return RedistributeRecommendation(
+        available=True,
+        schema=schema,
+        table=table,
+        current_method=current_method,
+        current_columns=current_columns,
+        candidates=candidates,
+        recommendation=recommendation,
+        suggested_ddl=suggested_ddl,
+        detail=detail,
+    )
+
+
 __all__ = [
     "AppendOptimizedTableInfo",
     "DistributionPolicy",
     "DistributionPolicyReport",
+    "MppMotionNode",
+    "MppQueryPlanAnalysis",
+    "RedistributeCandidate",
+    "RedistributeRecommendation",
     "ResourceGroup",
     "ResourceGroupReport",
     "SegmentHealth",
     "SegmentHealthReport",
     "WarehousePGStatus",
+    "analyze_mpp_query_plan",
     "check_segment_health",
     "describe_ao_table",
     "get_warehousepg_status",
     "list_distribution_policies",
     "list_resource_groups",
+    "recommend_redistribute",
 ]

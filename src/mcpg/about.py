@@ -585,6 +585,8 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "check_segment_health": "operations_and_health",
     "describe_ao_table": "schema_introspection",
     "list_resource_groups": "operations_and_health",
+    "analyze_mpp_query_plan": "query_execution",
+    "recommend_redistribute": "advisors",
     # audit_database is the deep DBA advisor scan.
     "audit_database": "advisors",
     # turboquant tools whose name has `turboquant` in the middle (the
