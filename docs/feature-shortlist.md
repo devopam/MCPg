@@ -195,6 +195,33 @@ in-flight PR.
 | 14.5 | **v0.7.0-pg19-ready release-cut PR.** Snapshots the current `[Unreleased]` block into a tagged release notes file, bumps the version, flips the PyPI classifier to mention PG 19. Acts as the anchor for GA-day-0 verification work. | S | High | Maps to the GA-day-0 milestone in `pg19-readiness.md`. |
 | 14.6 | **Roadmap-item linkage from PRs.** Every Phase 3 PR could cite the matching roadmap row in its body (e.g. "advances 8.6"); the contract review at merge time then explicitly clears the row. Today the linkage is implicit. | S | Low-Medium | Process change, not code. |
 
+## 15. WarehousePG (Greenplum-derived MPP) coverage
+
+[WarehousePG](https://github.com/WarehousePG/warehousepg) is the
+community fork of Greenplum — a massively-parallel, analytical-
+workload Postgres fork (distributed coordinator + segments,
+append-optimized + column-oriented tables, `DISTRIBUTED BY`,
+resource groups, `gp_*` catalog surface) that picked up the
+mantle after the upstream Greenplum project changed its licensing.
+Since it's wire-compatible with libpq and the core SQL surface is
+PostgreSQL, most MCPg tools already work. The roadmap items below
+cover the MPP-specific surface that doesn't exist on vanilla PG.
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 15.1 | **`get_warehousepg_status` status probe.** Detect WarehousePG vs vanilla PG (parse `version()` output; check for the `gp_segment_configuration` system view). Returns `available`, `version`, `coordinator_role`, `segment_count`, `mirroring` so every other 15.x tool can advertise its readiness via the same convention as the PG 19 module probes. | S | High (gate for the rest) | Mirrors `mcpg.pgq.get_pgq_status` / `mcpg.pg19_runtime.get_logical_replication_status`. |
+| 15.2 | **Distribution-policy introspection — `list_distribution_policies(schema)`.** Read `gp_distribution_policy` joined to `pg_class` + `pg_attribute` to surface per-table distribution: `distribution_method` (HASH / RANDOM / REPLICATED), `distribution_columns`, `num_segments`. Big agentic win for "is my data co-located with my joins" diagnosis on an MPP workload. | M | High | Pure read; no caller-supplied identifiers in identifier slots. |
+| 15.3 | **Segment-health probes — `check_segment_health()`.** Report per-segment state (`gp_segment_configuration.status`, `role`, `preferred_role`, `mode`), surface FAIL / unmirrored / unsync rows. Lives in `mcpg.warehousepg.health`; composes with `check_database_health` so an MPP cluster's bottom-line health includes segment posture. | M | High | Read-only; classify under `operations_and_health`. |
+| 15.4 | **Append-optimized / column-oriented table introspection — `describe_ao_table(schema, table)`.** Read `pg_appendonly` / `pg_aocsseg_*` to surface AO compression type, block size, compression level, and per-segment bloat. Useful for storage-tuning decisions that don't exist on heap tables. | M | Medium | Read-only. |
+| 15.5 | **Resource-group introspection — `list_resource_groups()`.** Read `gp_toolkit.gp_resgroup_*` for memory limits, concurrency, CPU caps, and per-group active query counts. Pairs with the existing `analyze_workload` for "where's my workload time going" diagnosis. | S-M | Medium | Read-only. |
+| 15.6 | **MPP-aware `explain_query` extension.** WarehousePG's `EXPLAIN ANALYZE` output carries a `Slice` / `Segment` tree above the standard PG plan tree. Extend `analyze_query_plan` with optional `mpp=true` to roll up: slice count, motion node types (Redistribute / Broadcast / Gather), per-segment skew (max/avg row counts). Reuses the existing `EXPLAIN (ANALYZE, FORMAT JSON)` wire; only the parser is MPP-aware. | M | High | Pairs with 15.2 — agents can diagnose "this query redistributes because it's not co-located with its join". |
+| 15.7 | **Distribution-skew advisor — `recommend_redistribute(schema, table)`.** Read `pg_stat_user_tables` per-segment (via `gp_dist_random()`) to detect skew. Report distribution-key columns plus a suggested better key when a single segment carries >2× its share. Diagnosis-only — emits the `ALTER TABLE … SET WITH (REORGANIZE=TRUE) DISTRIBUTED BY …` DDL for review, doesn't execute. | M-L | Medium-High | Composes 15.2 + per-segment row counts. |
+| 15.8 | **MPP characterisation tests.** Defensive coverage that asserts every WarehousePG-specific catalog query parses cleanly on WarehousePG. Today's PG 14-18 + PG 19 matrix doesn't include WarehousePG, so a syntax-level drift would slip through. Add a `warehousepg-latest` matrix entry to the CI workflow (community Docker image), gated `continue-on-error: true` initially per the no-deprecation rule. | M | Medium | Sibling of roadmap 3.4. |
+
+**Effort note**: 15.1 is the gating prerequisite for the rest — without the status probe each tool would have to repeat the version sniff. Bundle 15.1 + 15.2 as the first PR (the read surface stabilises the catalogue shape we're targeting); subsequent rows split per the M / S-M effort.
+
+**Backward compatibility**: every 15.x tool follows the established `available=False` convention on non-MPP servers — they appear in `describe_self` but return a clear "this is a vanilla PG cluster" diagnostic when called against one. No tool surface gets hidden conditionally.
+
 ---
 
 ## Currently deferred (no commitments)
