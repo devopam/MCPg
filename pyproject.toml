@@ -172,7 +172,7 @@ select = ["E", "F", "I", "B", "W", "N", "UP", "RUF"]
 known-first-party = ["mcpg"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 # Vendored code keeps its own (looser) typing; do not gate on it.
 exclude = ["src/mcpg/_vendor/", "tests/vendor/", "scratch/"]
