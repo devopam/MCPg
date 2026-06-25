@@ -8,6 +8,29 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`audit_database` gains an `Authentication & Password Hygiene`
+  category.** Two new security metrics surface from `pg_authid`:
+
+    - **Role Password Expiration** — counts login roles whose
+      `rolvaliduntil` has expired (`CRITICAL`) or expires within the
+      next 30 days (`WARNING`). Carries a sample of the affected
+      role names plus the canonical `ALTER ROLE … VALID UNTIL`
+      remediation.
+    - **MD5 Password Hashes (PG 19 deprecated)** — flags login
+      roles whose `rolpassword` is still an MD5 hash. PG 19
+      deprecates MD5 password auth (still functional, scheduled for
+      removal). Suggestion points at the SCRAM-SHA-256 migration
+      path: flip `password_encryption = scram-sha-256`, then
+      `ALTER ROLE … WITH PASSWORD '…'` per role.
+
+  Both probes read `pg_authid` which requires superuser; when the
+  audit role can't read it the category surfaces a clean per-metric
+  WARNING ("Could not read pg_authid: …") rather than failing the
+  whole audit. CRITICAL on password expiry deducts 25 points from
+  the category — enough to pull it below the GOOD threshold on its
+  own, since expired passwords block new logins. Realises sub-item
+  #13 of roadmap row 2.5 (the PG 19 PR-10 small-tools batch).
+
 - **`read_autovacuum_priority(limit)`** — read-only catalog tool
   that surfaces tables most urgently needing autovacuum, ranked by
   how close their `n_dead_tup` count is to the per-table autovacuum
