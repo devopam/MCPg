@@ -240,7 +240,463 @@ async def get_warehousepg_status(driver: SqlDriver) -> WarehousePGStatus:
     )
 
 
+# ---------------------------------------------------------------------------
+# 15.2 — list_distribution_policies
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DistributionPolicy:
+    """How one table's data is distributed across the MPP segments.
+
+    ``method`` is one of ``HASH``, ``RANDOM``, or ``REPLICATED`` —
+    the three policies WarehousePG supports. ``distribution_columns``
+    is empty for RANDOM / REPLICATED tables. ``num_segments`` is the
+    table-level segment count (0 means "default, all segments").
+    """
+
+    schema: str
+    table: str
+    method: str
+    distribution_columns: list[str]
+    num_segments: int
+
+
+@dataclass(frozen=True)
+class DistributionPolicyReport:
+    """Aggregate result of :func:`list_distribution_policies`.
+
+    ``available=False`` on a vanilla PG cluster (returned without
+    running any catalog query — gated by the 15.1 probe).
+    """
+
+    available: bool
+    policies: list[DistributionPolicy]
+    detail: str
+
+
+# `gp_distribution_policy.policytype` codes — single-letter encoding
+# in modern WarehousePG releases. Pre-7.x stored the method as a more
+# verbose string; the COALESCE in the query handles both shapes.
+_POLICY_TYPE_NAMES = {"p": "HASH", "r": "REPLICATED", "n": "RANDOM"}
+
+
+async def list_distribution_policies(driver: SqlDriver, schema: str | None = None) -> DistributionPolicyReport:
+    """List distribution policies for tables in ``schema``.
+
+    Joins ``gp_distribution_policy`` (one row per distributed table)
+    to ``pg_class`` + ``pg_namespace`` for the schema-qualified name
+    and ``pg_attribute`` for the distribution-key column names. The
+    column-name lookup uses array agg ordered by the position in the
+    catalog's ``distkey`` int2vector so a composite hash distribution
+    surfaces in the right column order.
+
+    ``schema`` is optional — when ``None`` returns policies for every
+    non-system schema; when supplied (typical) restricts the report
+    to that schema. The schema name is parameter-bound, never
+    interpolated into SQL.
+    """
+    status = await get_warehousepg_status(driver)
+    if not status.available:
+        return DistributionPolicyReport(
+            available=False,
+            policies=[],
+            detail=(
+                "Distribution policies are only available on WarehousePG / Greenplum MPP clusters. " + status.detail
+            ),
+        )
+
+    where_clause = "n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')"
+    params: list[str] = []
+    if schema is not None:
+        where_clause = "n.nspname = %s"
+        params.append(schema)
+
+    query = (
+        "SELECT n.nspname AS schema, c.relname AS table_name, "
+        "       d.policytype AS policy_type, "
+        "       COALESCE(d.numsegments, 0)::int AS num_segments, "
+        "       COALESCE("
+        "         ARRAY(SELECT a.attname FROM unnest(d.distkey::int2[]) WITH ORDINALITY AS k(att, ord) "
+        "               JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.att "
+        "               ORDER BY k.ord), "
+        "         '{}'::text[]"
+        "       ) AS distribution_columns "
+        "FROM gp_distribution_policy d "
+        "JOIN pg_class c ON c.oid = d.localoid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        f"WHERE {where_clause} "
+        "ORDER BY n.nspname, c.relname"
+    )
+    try:
+        rows = await driver.execute_query(query, params=params, force_readonly=True)
+    except Exception as exc:
+        return DistributionPolicyReport(
+            available=False,
+            policies=[],
+            detail=f"Distribution policy probe failed: {exc}",
+        )
+
+    policies: list[DistributionPolicy] = []
+    for row in rows or []:
+        cells = row.cells
+        policy_code = str(cells.get("policy_type") or "")
+        method = _POLICY_TYPE_NAMES.get(policy_code, policy_code.upper() or "UNKNOWN")
+        cols = cells.get("distribution_columns") or []
+        policies.append(
+            DistributionPolicy(
+                schema=str(cells.get("schema") or ""),
+                table=str(cells.get("table_name") or ""),
+                method=method,
+                distribution_columns=[str(c) for c in cols],
+                num_segments=int(cells.get("num_segments") or 0),
+            )
+        )
+
+    return DistributionPolicyReport(
+        available=True,
+        policies=policies,
+        detail=(f"{len(policies)} distributed table(s) found" + (f" in schema '{schema}'" if schema else "") + "."),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 15.3 — check_segment_health
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SegmentHealth:
+    """One row from ``gp_segment_configuration`` — segment posture.
+
+    ``content`` is -1 for the coordinator, 0+ for segments (paired
+    primary + mirror share a content number). ``role`` is what the
+    segment is doing now (``p`` primary / ``m`` mirror / ``c``
+    coordinator); ``preferred_role`` is what it should be doing — if
+    they differ the segment has failed over and needs recovery.
+    """
+
+    dbid: int
+    content: int
+    role: str
+    preferred_role: str
+    mode: str
+    status: str
+    hostname: str
+    port: int
+
+
+@dataclass(frozen=True)
+class SegmentHealthReport:
+    """Aggregate result of :func:`check_segment_health`.
+
+    ``unhealthy`` flags any segment whose `status != 'u'` (up) or
+    whose `role != preferred_role` (failed over). ``mode='n'`` means
+    "not in sync" — the segment is catching up on WAL.
+    """
+
+    available: bool
+    total_segments: int
+    healthy_count: int
+    unhealthy_count: int
+    out_of_sync_count: int
+    segments: list[SegmentHealth]
+    detail: str
+
+
+async def check_segment_health(driver: SqlDriver) -> SegmentHealthReport:
+    """Walk ``gp_segment_configuration`` and surface segment posture.
+
+    Sorts segments by content ID so the coordinator (content=-1)
+    surfaces first, then primary/mirror pairs in order. ``unhealthy``
+    rolls up rows where the `status` column is not `'u'` (up) OR the
+    `role` doesn't match `preferred_role` (post-failover).
+    """
+    status = await get_warehousepg_status(driver)
+    if not status.available:
+        return SegmentHealthReport(
+            available=False,
+            total_segments=0,
+            healthy_count=0,
+            unhealthy_count=0,
+            out_of_sync_count=0,
+            segments=[],
+            detail=("Segment health is only available on WarehousePG / Greenplum MPP. " + status.detail),
+        )
+
+    try:
+        rows = await driver.execute_query(
+            "SELECT dbid, content, role, preferred_role, mode, status, hostname, port "
+            "FROM gp_segment_configuration ORDER BY content, role",
+            force_readonly=True,
+        )
+    except Exception as exc:
+        return SegmentHealthReport(
+            available=False,
+            total_segments=0,
+            healthy_count=0,
+            unhealthy_count=0,
+            out_of_sync_count=0,
+            segments=[],
+            detail=f"Segment health probe failed: {exc}",
+        )
+
+    segments: list[SegmentHealth] = []
+    healthy = 0
+    unhealthy = 0
+    out_of_sync = 0
+    for row in rows or []:
+        cells = row.cells
+        status_code = str(cells.get("status") or "")
+        role = str(cells.get("role") or "")
+        preferred = str(cells.get("preferred_role") or "")
+        mode = str(cells.get("mode") or "")
+        is_up = status_code == "u"
+        is_failover = bool(role and preferred and role != preferred)
+        is_sync = mode != "n"  # 'n' = not-in-sync; 's' = sync; 'c' = changetracking
+        if is_up and not is_failover:
+            healthy += 1
+        else:
+            unhealthy += 1
+        if not is_sync:
+            out_of_sync += 1
+        segments.append(
+            SegmentHealth(
+                dbid=int(cells.get("dbid") or 0),
+                content=int(cells.get("content") or 0),
+                role=role,
+                preferred_role=preferred,
+                mode=mode,
+                status=status_code,
+                hostname=str(cells.get("hostname") or ""),
+                port=int(cells.get("port") or 0),
+            )
+        )
+
+    if unhealthy or out_of_sync:
+        detail = f"{unhealthy} segment(s) unhealthy (status != 'u' or post-failover); {out_of_sync} not in sync."
+    else:
+        detail = f"All {len(segments)} entries healthy and in sync."
+    return SegmentHealthReport(
+        available=True,
+        total_segments=len(segments),
+        healthy_count=healthy,
+        unhealthy_count=unhealthy,
+        out_of_sync_count=out_of_sync,
+        segments=segments,
+        detail=detail,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 15.4 — describe_ao_table
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AppendOptimizedTableInfo:
+    """Storage metadata for an append-optimized (AO) or AO/CO table.
+
+    ``columnar`` is ``True`` for AO/CO (column-oriented) tables,
+    ``False`` for AO row-oriented. ``compression_type`` is the
+    catalog's ``compresstype`` value (``none``, ``zlib``, ``zstd``,
+    ``rle_type``, ``quicklz`` — historic versions only). When the
+    table isn't AO at all, ``is_ao=False`` and the storage fields
+    are all ``None``.
+    """
+
+    schema: str
+    table: str
+    is_ao: bool
+    columnar: bool
+    compression_type: str | None
+    compression_level: int | None
+    block_size: int | None
+    checksum: bool | None
+    detail: str
+
+
+async def describe_ao_table(driver: SqlDriver, schema: str, table: str) -> AppendOptimizedTableInfo:
+    """Describe storage settings for an append-optimized table.
+
+    Reads ``pg_appendonly`` for the relation's catalog metadata —
+    compression, block size, checksum, and row vs column orientation.
+    Returns ``is_ao=False`` (with storage fields ``None``) when the
+    table is a regular heap table.
+    """
+    status = await get_warehousepg_status(driver)
+    if not status.available:
+        return AppendOptimizedTableInfo(
+            schema=schema,
+            table=table,
+            is_ao=False,
+            columnar=False,
+            compression_type=None,
+            compression_level=None,
+            block_size=None,
+            checksum=None,
+            detail=("AO table introspection is only available on WarehousePG / Greenplum MPP. " + status.detail),
+        )
+
+    try:
+        rows = await driver.execute_query(
+            "SELECT ao.columnstore, ao.compresstype, ao.compresslevel, "
+            "       ao.blocksize, ao.checksum "
+            "FROM pg_appendonly ao "
+            "JOIN pg_class c ON c.oid = ao.relid "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = %s AND c.relname = %s",
+            params=[schema, table],
+            force_readonly=True,
+        )
+    except Exception as exc:
+        return AppendOptimizedTableInfo(
+            schema=schema,
+            table=table,
+            is_ao=False,
+            columnar=False,
+            compression_type=None,
+            compression_level=None,
+            block_size=None,
+            checksum=None,
+            detail=f"AO table probe failed: {exc}",
+        )
+    if not rows:
+        return AppendOptimizedTableInfo(
+            schema=schema,
+            table=table,
+            is_ao=False,
+            columnar=False,
+            compression_type=None,
+            compression_level=None,
+            block_size=None,
+            checksum=None,
+            detail=(
+                f"Table '{schema}.{table}' is not append-optimized "
+                "(no row in pg_appendonly). Regular heap tables don't "
+                "have AO storage metadata."
+            ),
+        )
+
+    cells = rows[0].cells
+    columnar = bool(cells.get("columnstore"))
+    compression = cells.get("compresstype")
+    compression_str = str(compression) if compression else None
+    if compression_str and compression_str.lower() == "none":
+        compression_str = None
+    return AppendOptimizedTableInfo(
+        schema=schema,
+        table=table,
+        is_ao=True,
+        columnar=columnar,
+        compression_type=compression_str,
+        compression_level=int(cells.get("compresslevel") or 0) or None,
+        block_size=int(cells.get("blocksize") or 0) or None,
+        checksum=bool(cells.get("checksum")) if cells.get("checksum") is not None else None,
+        detail=(
+            f"{'AO/CO column-oriented' if columnar else 'AO row-oriented'} "
+            f"table, compression={compression_str or 'none'}, "
+            f"block_size={cells.get('blocksize') or 'unknown'}."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 15.5 — list_resource_groups
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ResourceGroup:
+    """One row from ``gp_toolkit.gp_resgroup_config``.
+
+    ``cpu_max_percent`` is the cgroup CPU cap; ``cpu_weight`` is the
+    relative share when groups compete (higher = more). ``memory_limit``
+    is the percentage of segment memory available to the group.
+    ``active_queries`` / ``queued_queries`` are derived from
+    ``pg_resgroup_get_status_kv`` where available.
+    """
+
+    name: str
+    concurrency: int
+    cpu_max_percent: int
+    cpu_weight: int
+    memory_limit: int
+    memory_shared_quota: int
+    active_queries: int | None
+    queued_queries: int | None
+
+
+@dataclass(frozen=True)
+class ResourceGroupReport:
+    """Aggregate result of :func:`list_resource_groups`."""
+
+    available: bool
+    groups: list[ResourceGroup]
+    detail: str
+
+
+async def list_resource_groups(driver: SqlDriver) -> ResourceGroupReport:
+    """List configured resource groups + their utilisation."""
+    status = await get_warehousepg_status(driver)
+    if not status.available:
+        return ResourceGroupReport(
+            available=False,
+            groups=[],
+            detail=("Resource groups are only available on WarehousePG / Greenplum MPP. " + status.detail),
+        )
+
+    try:
+        rows = await driver.execute_query(
+            "SELECT groupname, concurrency, cpu_max_percent, cpu_weight, "
+            "       memory_limit, memory_shared_quota, "
+            "       num_running, num_queueing "
+            "FROM gp_toolkit.gp_resgroup_status "
+            "ORDER BY groupname",
+            force_readonly=True,
+        )
+    except Exception as exc:
+        return ResourceGroupReport(
+            available=False,
+            groups=[],
+            detail=f"Resource group probe failed: {exc}",
+        )
+
+    groups: list[ResourceGroup] = []
+    for row in rows or []:
+        cells = row.cells
+        groups.append(
+            ResourceGroup(
+                name=str(cells.get("groupname") or ""),
+                concurrency=int(cells.get("concurrency") or 0),
+                cpu_max_percent=int(cells.get("cpu_max_percent") or 0),
+                cpu_weight=int(cells.get("cpu_weight") or 0),
+                memory_limit=int(cells.get("memory_limit") or 0),
+                memory_shared_quota=int(cells.get("memory_shared_quota") or 0),
+                active_queries=(int(num_running) if (num_running := cells.get("num_running")) is not None else None),
+                queued_queries=(int(num_queueing) if (num_queueing := cells.get("num_queueing")) is not None else None),
+            )
+        )
+
+    return ResourceGroupReport(
+        available=True,
+        groups=groups,
+        detail=f"{len(groups)} resource group(s) configured.",
+    )
+
+
 __all__ = [
+    "AppendOptimizedTableInfo",
+    "DistributionPolicy",
+    "DistributionPolicyReport",
+    "ResourceGroup",
+    "ResourceGroupReport",
+    "SegmentHealth",
+    "SegmentHealthReport",
     "WarehousePGStatus",
+    "check_segment_health",
+    "describe_ao_table",
     "get_warehousepg_status",
+    "list_distribution_policies",
+    "list_resource_groups",
 ]

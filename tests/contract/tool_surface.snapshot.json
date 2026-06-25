@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 226
+    "tool_count": 230
   },
   "tools": [
     {
@@ -504,6 +504,15 @@
         "type": "object"
       },
       "name": "check_database_health"
+    },
+    {
+      "description": "Walk `gp_segment_configuration` and surface MPP segment posture. Returns per-segment `status` ('u' = up), `mode` ('s' = sync / 'n' = not-in-sync / 'c' = changetracking), and `role` vs `preferred_role` to detect post-failover state. Top-level `unhealthy_count` + `out_of_sync_count` let agents branch without walking the segments array. Read-only. On vanilla PG returns `available=false`.\n\nExample: `check_segment_health()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "check_segment_healthArguments",
+        "type": "object"
+      },
+      "name": "check_segment_health"
     },
     {
       "description": "Close a server-side cursor and release its dedicated connection. Idempotent — returns closed=false when the cursor was not open (already closed, expired, or never existed).",
@@ -1225,6 +1234,28 @@
         "type": "object"
       },
       "name": "cross_table_similarity"
+    },
+    {
+      "description": "Describe append-optimized (AO) / append-optimized columnar (AO/CO) storage metadata for one table: row vs column orientation, `compression_type`, `compression_level`, `block_size`, `checksum`. Reads `pg_appendonly`. Returns `is_ao=false` cleanly when the table is a regular heap. Read-only. On vanilla PG returns `available=false`.\n\nExample: `describe_ao_table(schema='public', table='events_ao')`",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "describe_ao_tableArguments",
+        "type": "object"
+      },
+      "name": "describe_ao_table"
     },
     {
       "description": "Describe the schema structure, vertex labels, and edge labels of a specific property graph. Returns an object with `graph_name`, `vertex_labels`, and `edge_labels`.",
@@ -2873,6 +2904,28 @@
       "name": "list_cursors"
     },
     {
+      "description": "List the data-distribution policy for each table in a WarehousePG schema (`HASH(col,...)`, `RANDOM`, or `REPLICATED`). Joins `gp_distribution_policy` to `pg_attribute` for the distribution-key column names in catalog order. `schema=None` returns every non-system schema. Read-only. On vanilla PG returns `available=false` with a diagnostic.\n\nExample: `list_distribution_policies(schema='public')`",
+      "inputSchema": {
+        "properties": {
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema"
+          }
+        },
+        "title": "list_distribution_policiesArguments",
+        "type": "object"
+      },
+      "name": "list_distribution_policies"
+    },
+    {
       "description": "List the domain types in a schema, with base type, default, and check constraints. Returns a list of objects with `name`, `base_type`, `nullable`, `default`, and `constraints` (list of CHECK clauses).",
       "inputSchema": {
         "properties": {
@@ -3211,6 +3264,15 @@
         "type": "object"
       },
       "name": "list_replicas"
+    },
+    {
+      "description": "List configured WarehousePG resource groups + their utilisation. Reads `gp_toolkit.gp_resgroup_status` for `concurrency`, `cpu_max_percent`, `cpu_weight`, `memory_limit`, `memory_shared_quota`, plus live `num_running` / `num_queueing`. Pairs with `analyze_workload` for 'where's my workload time going' diagnosis. Read-only. On vanilla PG returns `available=false`.\n\nExample: `list_resource_groups()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_resource_groupsArguments",
+        "type": "object"
+      },
+      "name": "list_resource_groups"
     },
     {
       "description": "List the database roles and their attributes, excluding PostgreSQL's own roles unless include_system is true. Returns a list of objects with `name`, `superuser`, `create_role`, `create_db`, `can_login`, `replication`, `bypass_rls`, `connection_limit`, `member_of`.",

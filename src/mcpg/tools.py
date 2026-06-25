@@ -5731,6 +5731,80 @@ def _register_warehousepg_reads(server: FastMCP[AppContext]) -> None:
 
         return await _cached_call(ctx, "get_warehousepg_status", _run)
 
+    @server.tool(
+        name="list_distribution_policies",
+        description=_with_example(
+            "List the data-distribution policy for each table in a WarehousePG "
+            "schema (`HASH(col,...)`, `RANDOM`, or `REPLICATED`). Joins "
+            "`gp_distribution_policy` to `pg_attribute` for the distribution-"
+            "key column names in catalog order. `schema=None` returns every "
+            "non-system schema. Read-only. On vanilla PG returns "
+            "`available=false` with a diagnostic.",
+            "list_distribution_policies(schema='public')",
+        ),
+    )
+    async def list_distribution_policies(ctx: _Ctx, schema: str | None = None) -> warehousepg.DistributionPolicyReport:
+        async def _run() -> warehousepg.DistributionPolicyReport:
+            return await warehousepg.list_distribution_policies(_driver(ctx), schema=schema)
+
+        return await _cached_call(ctx, "list_distribution_policies", _run, schema)
+
+    @server.tool(
+        name="check_segment_health",
+        description=_with_example(
+            "Walk `gp_segment_configuration` and surface MPP segment posture. "
+            "Returns per-segment `status` ('u' = up), `mode` ('s' = sync / "
+            "'n' = not-in-sync / 'c' = changetracking), and `role` vs "
+            "`preferred_role` to detect post-failover state. Top-level "
+            "`unhealthy_count` + `out_of_sync_count` let agents branch "
+            "without walking the segments array. Read-only. On vanilla PG "
+            "returns `available=false`.",
+            "check_segment_health()",
+        ),
+    )
+    async def check_segment_health(ctx: _Ctx) -> warehousepg.SegmentHealthReport:
+        async def _run() -> warehousepg.SegmentHealthReport:
+            return await warehousepg.check_segment_health(_driver(ctx))
+
+        return await _cached_call(ctx, "check_segment_health", _run)
+
+    @server.tool(
+        name="describe_ao_table",
+        description=_with_example(
+            "Describe append-optimized (AO) / append-optimized columnar "
+            "(AO/CO) storage metadata for one table: row vs column orientation, "
+            "`compression_type`, `compression_level`, `block_size`, `checksum`. "
+            "Reads `pg_appendonly`. Returns `is_ao=false` cleanly when the "
+            "table is a regular heap. Read-only. On vanilla PG returns "
+            "`available=false`.",
+            "describe_ao_table(schema='public', table='events_ao')",
+        ),
+    )
+    async def describe_ao_table(ctx: _Ctx, schema: str, table: str) -> warehousepg.AppendOptimizedTableInfo:
+        async def _run() -> warehousepg.AppendOptimizedTableInfo:
+            return await warehousepg.describe_ao_table(_driver(ctx), schema, table)
+
+        return await _cached_call(ctx, "describe_ao_table", _run, schema, table)
+
+    @server.tool(
+        name="list_resource_groups",
+        description=_with_example(
+            "List configured WarehousePG resource groups + their utilisation. "
+            "Reads `gp_toolkit.gp_resgroup_status` for `concurrency`, "
+            "`cpu_max_percent`, `cpu_weight`, `memory_limit`, "
+            "`memory_shared_quota`, plus live `num_running` / `num_queueing`. "
+            "Pairs with `analyze_workload` for 'where's my workload time "
+            "going' diagnosis. Read-only. On vanilla PG returns "
+            "`available=false`.",
+            "list_resource_groups()",
+        ),
+    )
+    async def list_resource_groups(ctx: _Ctx) -> warehousepg.ResourceGroupReport:
+        async def _run() -> warehousepg.ResourceGroupReport:
+            return await warehousepg.list_resource_groups(_driver(ctx))
+
+        return await _cached_call(ctx, "list_resource_groups", _run)
+
 
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     """Register the MCP tools permitted by the configured access mode.

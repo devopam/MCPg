@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 226
+    "tool_count": 230
   },
   "tools": {
     "add_compression_policy": {
@@ -180,6 +180,9 @@
       ],
       "kind": "scalar"
     },
+    "check_segment_health": {
+      "kind": "opaque"
+    },
     "close_cursor": {
       "kind": "opaque"
     },
@@ -336,6 +339,9 @@
         "source_embedding_found"
       ],
       "kind": "scalar"
+    },
+    "describe_ao_table": {
+      "kind": "opaque"
     },
     "describe_graph": {
       "kind": "opaque"
@@ -999,6 +1005,9 @@
     "list_cursors": {
       "kind": "opaque"
     },
+    "list_distribution_policies": {
+      "kind": "opaque"
+    },
     "list_domains": {
       "dataclass": "DomainInfo",
       "fields": [
@@ -1249,6 +1258,9 @@
       "kind": "list"
     },
     "list_replicas": {
+      "kind": "opaque"
+    },
+    "list_resource_groups": {
       "kind": "opaque"
     },
     "list_roles": {
