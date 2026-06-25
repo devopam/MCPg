@@ -1020,14 +1020,20 @@ async def recommend_redistribute(driver: SqlDriver, schema: str, table: str) -> 
         )
 
     try:
+        # Join pg_stats to pg_class + pg_namespace + pg_attribute via
+        # the catalog relationships directly. Concatenating
+        # `schemaname || '.' || tablename` and casting to regclass
+        # would fail on tables whose names need quoting (uppercase,
+        # spaces, or reserved keywords) — PostgreSQL parses the raw
+        # string and would lower-case the unquoted form.
         stats_rows = await driver.execute_query(
-            "SELECT attname, n_distinct::float AS n_distinct, "
-            "       (SELECT format_type(atttypid, atttypmod) "
-            "        FROM pg_attribute a "
-            "        WHERE a.attrelid = (schemaname || '.' || tablename)::regclass "
-            "          AND a.attname = pg_stats.attname) AS data_type "
-            "FROM pg_stats "
-            "WHERE schemaname = %s AND tablename = %s",
+            "SELECT s.attname, s.n_distinct::float AS n_distinct, "
+            "       format_type(a.atttypid, a.atttypmod) AS data_type "
+            "FROM pg_stats s "
+            "JOIN pg_class c ON c.relname = s.tablename "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = s.schemaname "
+            "JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = s.attname "
+            "WHERE s.schemaname = %s AND s.tablename = %s",
             params=[schema, table],
             force_readonly=True,
         )

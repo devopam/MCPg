@@ -5820,6 +5820,11 @@ def _register_warehousepg_reads(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def analyze_mpp_query_plan(ctx: _Ctx, sql: str) -> warehousepg.MppQueryPlanAnalysis:
+        # Deliberately NOT cached — matches the convention for
+        # analyze_query_plan / explain_query: each EXPLAIN ANALYZE
+        # call reflects the planner state + actual buffer cache at
+        # invocation time. Caching by SQL text would hide regressions
+        # the agent is calling this tool to detect.
         return await warehousepg.analyze_mpp_query_plan(_driver(ctx), sql)
 
     @server.tool(
