@@ -222,6 +222,31 @@ cover the MPP-specific surface that doesn't exist on vanilla PG.
 
 **Backward compatibility**: every 15.x tool follows the established `available=False` convention on non-MPP servers — they appear in `describe_self` but return a clear "this is a vanilla PG cluster" diagnostic when called against one. No tool surface gets hidden conditionally.
 
+## 16. Configuration & sizing advisors (pghero / pgtune coverage)
+
+[pghero](https://github.com/ankane/pghero) (Ankane) and [pgtune](https://pgtune.leopard.in.ua/) (le0pard) cover two
+operator-facing gaps that MCPg's existing `audit_database` does not:
+**sequence-overflow detection**, a **general `postgresql.conf` sanity
+sweep**, and **greenfield sizing recommendations**. A short audit
+(2026-06-26) confirmed the rest of pghero's surface — index
+suggestions, slow queries, long-running queries, bloat, replication
+lag, vacuum statistics, password expiration — is already covered by
+existing tools (`recommend_indexes` / `recommend_index_drops` /
+`analyze_workload` / `list_active_queries` / `recommend_repack` /
+`get_logical_replication_status` / `read_autovacuum_priority` /
+`audit_database`'s password warnings). The three rows below are the
+non-overlapping gaps worth filling.
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 16.1 | **`audit_sequences` category — sequence-near-overflow check.** Walks `information_schema.sequences` for every serial / identity / explicit sequence; computes `current_value / max_value` ratio and flags any ratio above `WARNING` / `CRITICAL` thresholds (default 80 % / 95 %). Critical because sequence overflow is catastrophic and silent until the next `nextval()` raises — the `serial` (int4) ceiling at 2³¹ - 1 is reached far more often than operators realise. Pure read; new audit category folds into `audit_database`. Adapter for `bigserial` / `int8` so the threshold scales. Mirrors pghero's "Sequence Danger" panel. | S | High | Pure-SQL check against `pg_sequences` + `information_schema.sequences`. Drop-in audit category. |
+| 16.2 | **`audit_settings` category — `postgresql.conf` sanity sweep.** Reads `pg_settings` and applies the pghero-style rule set: cross-setting ratios (`shared_buffers` should be ≥ 128 MB and ≤ 40 % of `effective_cache_size`; `work_mem * max_connections` plausibility check; `maintenance_work_mem` ≥ `work_mem`); deprecated / risky settings (`fsync = off`, `synchronous_commit = off` outside well-understood replicas, `autovacuum = off`, `log_min_messages = panic`); `random_page_cost` mismatches with declared storage type. Skips host-RAM-aware checks (we can't see system RAM from inside PG); operators pass an optional `total_ram_mb` argument when the workload is hosted alongside MCPg and they want full coverage. New audit category. | M | Medium-High | Largest piece — ~20 rule codes, each a small SQL+rule pair. |
+| 16.3 | **`recommend_postgres_conf(total_ram_mb, cpu_count, workload_type, storage_type, max_connections)` — pgtune calculator.** Pure function, no DB connection: returns recommended values for `shared_buffers`, `effective_cache_size`, `work_mem`, `maintenance_work_mem`, `wal_buffers`, `default_statistics_target`, `random_page_cost`, `max_wal_size`, `min_wal_size`, `checkpoint_completion_target`, `effective_io_concurrency`, `max_worker_processes`, `max_parallel_workers_per_gather`, `max_parallel_workers`. `workload_type` ∈ `{web, oltp, dw, desktop, mixed}`; `storage_type` ∈ `{ssd, hdd, san}`. Lives in `mcpg.config_advisor`; classified under the `advisors` bucket. Composes naturally with 16.2 — operators run the audit first, then call `recommend_postgres_conf` to get the proposed deltas. | S | Medium-High | Pure calculator. Routes via `advisors` bucket. No DB connection needed; could even ship as a standalone CLI subcommand. |
+
+**Bundling note**: 16.1 + 16.3 are S-effort and bundleable into one PR (the sequence audit and the calculator share no code but share the review cycle). 16.2 is M-effort enough to stand alone — the rule set deserves its own review pass.
+
+**Why not a wholesale pghero port**: pghero's "queries", "indexes", "vacuum", "connections", "replication" panels overlap directly with existing MCPg tools; porting them would create surface duplication that violates the no-deprecation rule (callers couldn't tell `recommend_indexes` apart from a hypothetical `pghero_recommend_indexes`). The three rows above are the strict net-new surface.
+
 ---
 
 ## Currently deferred (no commitments)
