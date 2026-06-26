@@ -31,7 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from mcpg._vendor.sql import SqlDriver
-from mcpg.about import BUCKET_IDS, classify_tool
+from mcpg.about import CAPABILITIES, classify_tool
 
 
 class HeadlineCuratorError(Exception):
@@ -149,21 +149,30 @@ async def recommend_headline_tools(
     )
 
     # Group by bucket; preserve call counts so the report can show
-    # the magnitude alongside each recommendation.
-    bucket_to_counts: dict[str, dict[str, int]] = {bid: {} for bid in BUCKET_IDS}
+    # the magnitude alongside each recommendation. Initialised from
+    # CAPABILITIES (the curated tuple, not BUCKET_IDS which is a
+    # frozenset with non-deterministic iteration order — gemini review
+    # on #180) so the resulting bucket list comes back in the same
+    # display order as describe_self.
+    bucket_to_counts: dict[str, dict[str, int]] = {cap.id: {} for cap in CAPABILITIES}
     total_events = 0
     for row in rows or []:
         tool = str(row.cells["tool"])
         count = int(row.cells["call_count"])
         total_events += count
         bucket = classify_tool(tool)
-        if bucket is None:
+        # Defensive: classify_tool *should* always return a bucket in
+        # BUCKET_IDS (the contract test enforces it) but a stale override
+        # typo could slip through before that test runs. Skip rather
+        # than crash the recommender on the bad row.
+        if bucket is None or bucket not in bucket_to_counts:
             continue
         bucket_to_counts[bucket][tool] = count
 
     current_headlines = current_headlines or {}
     recommendations: list[BucketHeadlineRecommendation] = []
-    for bucket_id in BUCKET_IDS:
+    for capability in CAPABILITIES:
+        bucket_id = capability.id
         counts = bucket_to_counts.get(bucket_id, {})
         # Sort by count DESC, then alphabetically so ties are deterministic.
         ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))

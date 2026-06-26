@@ -164,6 +164,26 @@ async def test_departures_flag_current_not_in_recommended() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Deterministic bucket ordering
+# ---------------------------------------------------------------------------
+
+
+async def test_bucket_order_matches_curated_display_order() -> None:
+    """Report's `buckets` list comes back in CAPABILITIES order, NOT
+    BUCKET_IDS (frozenset hash) order. Gemini critical on #180."""
+    from mcpg.about import CAPABILITIES
+
+    routes: dict[str, list[dict[str, object]]] = {}
+    routes.update(_audit_present(True))
+    routes.update(_events_route([]))
+    driver = FakeRoutingDriver(routes)
+    report = await recommend_headline_tools(driver)  # type: ignore[arg-type]
+    expected_order = [cap.id for cap in CAPABILITIES]
+    actual_order = [b.bucket_id for b in report.buckets]
+    assert actual_order == expected_order
+
+
+# ---------------------------------------------------------------------------
 # Successful-only filter
 # ---------------------------------------------------------------------------
 
