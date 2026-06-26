@@ -338,7 +338,11 @@ async def create_subscription(
     if not create_slot:
         options.append("create_slot = false")
     if slot_name is not None:
-        options.append(f"slot_name = {_pg_quote_ident(slot_name)}")
+        # CREATE SUBSCRIPTION WITH (slot_name = ...) takes a string
+        # literal, not a SQL identifier (per PG docs). Quoting it as
+        # an identifier (`"my_slot"`) trips a parse error at the
+        # subscription-options DefElem walker.
+        options.append(f"slot_name = {_pg_quote_literal(slot_name)}")
     if synchronous_commit is not None:
         options.append(f"synchronous_commit = '{synchronous_commit}'")
 
@@ -349,7 +353,12 @@ async def create_subscription(
     try:
         await database.run_unmanaged(sql)
     except Exception as exc:
-        raise LogicalReplicationError(f"create subscription failed: {exc}") from exc
+        # psycopg's error message frequently echoes the failing SQL,
+        # which on CREATE SUBSCRIPTION includes the DSN — strip the
+        # CONNECTION literal before it can leak into logs or back to
+        # the caller. Same redaction the result's __repr__ uses.
+        redacted = _CONN_LITERAL.sub("CONNECTION '<redacted>'", str(exc))
+        raise LogicalReplicationError(f"create subscription failed: {redacted}") from exc
 
     detail = (
         f"Subscription {name!r} created against {len(publications)} "

@@ -94,6 +94,30 @@ async def test_create_publication_surfaces_driver_failure_as_typed_error() -> No
         await create_publication(db, name="x", all_tables=True)  # type: ignore[arg-type]
 
 
+async def test_create_subscription_redacts_dsn_on_driver_failure() -> None:
+    """When the driver's error message includes the failing SQL — and that
+    SQL is a CREATE SUBSCRIPTION carrying a DSN with credentials — the
+    wrapped LogicalReplicationError must NOT echo the DSN."""
+
+    class _DsnLeakingDatabase(FakeDatabase):
+        async def run_unmanaged(self, sql: str) -> None:  # type: ignore[override]
+            # Mimic psycopg's habit of echoing the SQL it tried to run.
+            raise RuntimeError(f"syntax error at or near 'PUBLICATION': {sql}")
+
+    db = _DsnLeakingDatabase(FakeDriver())
+    secret_dsn = "host=p dbname=d user=u password=hunter2"
+    with pytest.raises(LogicalReplicationError) as info:
+        await create_subscription(  # type: ignore[arg-type]
+            db,
+            name="sub",
+            connection_string=secret_dsn,
+            publications=("p1",),
+        )
+    msg = str(info.value)
+    assert "hunter2" not in msg
+    assert "<redacted>" in msg
+
+
 # ---------------------------------------------------------------------------
 # drop_publication
 # ---------------------------------------------------------------------------
@@ -160,7 +184,9 @@ async def test_create_subscription_with_options_renders_with_clause() -> None:
     assert "enabled = false" in sql
     assert "copy_data = false" in sql
     assert "create_slot = false" in sql
-    assert 'slot_name = "my_slot"' in sql
+    # slot_name lands as a string literal — CREATE SUBSCRIPTION's
+    # WITH-clause parser takes string literals, not identifiers.
+    assert "slot_name = 'my_slot'" in sql
     assert "synchronous_commit = 'remote_apply'" in sql
 
 
