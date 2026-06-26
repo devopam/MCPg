@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 236
+    "tool_count": 238
   },
   "tools": {
     "add_compression_policy": {
@@ -99,6 +99,9 @@
         "window_days"
       ],
       "kind": "scalar"
+    },
+    "analyze_session_cost": {
+      "kind": "opaque"
     },
     "analyze_topk_stability": {
       "dataclass": "TopKStabilityReport",
@@ -617,6 +620,9 @@
         "table"
       ],
       "kind": "scalar"
+    },
+    "generate_test_row_for": {
+      "kind": "opaque"
     },
     "geo_search": {
       "dataclass": "GeoSearchResult",

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 236
+    "tool_count": 238
   },
   "tools": [
     {
@@ -316,6 +316,26 @@
         "type": "object"
       },
       "name": "analyze_reranker_lift"
+    },
+    {
+      "description": "Surface hot-path inefficiencies from the audit log. Reads `mcpg_audit.events` over the last `lookback_minutes` (default 60, capped at 1440) and flags tools called more than `hot_threshold` times (default 10). Catalogue-listing tools (`list_tables` / `list_schemas` / `list_indexes` / etc.) get a `redundant_listing` finding pointing at `get_compact_schema`; other tools get a `hot_repeated_call` finding suggesting caching. Idle sessions get an `idle_session` finding. When `mcpg_audit.events` doesn't exist (audit subsystem off) returns `audit_table_present=False` with a diagnostic. Returns an object with `audit_table_present` (bool), `events_examined` (int), `lookback_minutes`, `findings` (list of objects with `reason`, `tool`, `call_count`, `suggestion`), and `detail`.\n\nExample: `analyze_session_cost(lookback_minutes=30, hot_threshold=15)`",
+      "inputSchema": {
+        "properties": {
+          "hot_threshold": {
+            "default": 10,
+            "title": "Hot Threshold",
+            "type": "integer"
+          },
+          "lookback_minutes": {
+            "default": 60,
+            "title": "Lookback Minutes",
+            "type": "integer"
+          }
+        },
+        "title": "analyze_session_costArguments",
+        "type": "object"
+      },
+      "name": "analyze_session_cost"
     },
     {
       "description": "Jaccard overlap between top-K-by-bi-rank and top-K-by-cross-rank per query, aggregated. High mean Jaccard means the reranker isn't actually changing the top-K membership. Surfaces ``topk_stable`` (WARNING) when the rerank is barely earning its place at this K. Reads from mcpg_rag.rerank_events; returns a report with zero counts when the table doesn't exist or the window is empty.",
@@ -2275,6 +2295,45 @@
         "type": "object"
       },
       "name": "generate_test_data"
+    },
+    {
+      "description": "Generate ONE realistic test row for a table — catalogue-aware. Skips identity / generated columns (server fills them in), samples one existing row from each referenced table for FK columns (so the row inserts cleanly), and uses column-name heuristics (`*_email` → `user_N@example.com`, `*_url` → `https://example.com/r/N`, `*_at` → recent timestamp, etc.) to make values look like data. Sibling of `generate_test_data` (bulk) — designed for the shadow-migration workflow where a single realistic row matters more than volume. Returns an object with `insert_sql` (one ready-to-execute INSERT), `columns` (per-column ColumnFill with `sql_literal` + `heuristic` explanation), `schema`, `table`. Does NOT execute the INSERT — caller applies via `run_write` when ready.\n\nExample: `generate_test_row_for(schema='public', table='orders', seed=42)`",
+      "inputSchema": {
+        "properties": {
+          "follow_foreign_keys": {
+            "default": true,
+            "title": "Follow Foreign Keys",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seed"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table"
+        ],
+        "title": "generate_test_row_forArguments",
+        "type": "object"
+      },
+      "name": "generate_test_row_for"
     },
     {
       "description": "Find the rows nearest to a lon/lat point by PostGIS distance. Reports available=false if the postgis extension is not installed.",

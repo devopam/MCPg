@@ -80,6 +80,51 @@ adheres to [Semantic Versioning](https://semver.org/).
       tool surface. MCPg ships no FDW-specific tool today; the doc
       explains why and what would change that.
 
+- **Agent-ergonomics bundle** — two related M-effort tools that
+  together make agentic deployments cheaper to run. Realises roadmap
+  rows **8.1** + **8.7**:
+
+    - **`generate_test_row_for(schema, table)`** — produces ONE
+      realistic test row designed to insert cleanly against the
+      catalogue as it stands today. Sibling of the existing
+      `generate_test_data` (bulk synthetic INSERTs that ignore FKs)
+      and `seed_table_with_sample_data` (bulk + execute); this one
+      is for the shadow-migration workflow where a single row that
+      actually inserts matters more than volume. Heuristic order
+      per column: identity / `GENERATED ALWAYS` columns are skipped
+      (server fills them in); FK columns sample one existing row
+      from the referenced table so composite FKs stay consistent;
+      column-name patterns produce realistic values
+      (`*_email` → `user_N@example.com`, `*_url` →
+      `https://example.com/r/N`, `*_at` → recent timestamp,
+      `*_phone` / `country_code` / `currency_code` / `ip_address` /
+      `first_name` / etc.); type-driven synthesis is the
+      fallthrough. Returns a `GeneratedTestRow` with `insert_sql`
+      (single ready-to-execute INSERT) and a per-column
+      `ColumnFill` carrying the chosen heuristic so reviewers see
+      the decision trail. Lives in `mcpg.test_row_factory`; routed
+      to the `data_movement` bucket alongside the bulk siblings.
+
+    - **`analyze_session_cost(lookback_minutes=60, hot_threshold=10)`** —
+      reads `mcpg_audit.events` and surfaces hot-path
+      inefficiencies before they cost real tokens. Two finding
+      classes: `redundant_listing` (catalogue-listing tools called
+      > threshold → suggests `get_compact_schema`) and
+      `hot_repeated_call` (any other tool called > threshold →
+      suggests conversation-memory caching). Returns
+      `audit_table_present=False` with a clear diagnostic when the
+      audit subsystem is off, distinguishing it from an idle
+      session (which gets an `idle_session` finding). Lookback
+      lands as a bound parameter via `make_interval(mins => %s)` —
+      no f-string composition. Lives in `mcpg.session_advisor`;
+      routed to the `observability` bucket alongside
+      `describe_tool`.
+
+  Combined: 37 new unit tests, two new bucket overrides, snapshots
+  regenerated. The two tools share the agent-ergonomics theme but
+  no code — bundled per the "fewer review cycles for related work"
+  rule.
+
 - **`warehousepg-latest` CI lane** — adds a new matrix entry to the
   CI `test` job that runs the full suite against a community
   WarehousePG (Greenplum-derived MPP) image. Lives alongside the
