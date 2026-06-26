@@ -587,6 +587,13 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "list_resource_groups": "operations_and_health",
     "analyze_mpp_query_plan": "query_execution",
     "recommend_redistribute": "advisors",
+    # Logical replication management writes (roadmap 2.1) — same bucket
+    # as `get_logical_replication_status` / `enable_logical_replication_on_demand`
+    # so an agent finds all the replication tooling in one place.
+    "create_publication": "operations_and_health",
+    "drop_publication": "operations_and_health",
+    "create_subscription": "operations_and_health",
+    "drop_subscription": "operations_and_health",
     # audit_database is the deep DBA advisor scan.
     "audit_database": "advisors",
     # turboquant tools whose name has `turboquant` in the middle (the

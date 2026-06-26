@@ -8,6 +8,42 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Logical replication management writes bundle** — four DDL-gated
+  tools that close the loop on the existing `list_publications` /
+  `list_subscriptions` read surface. Realises roadmap row **2.1**:
+
+    - **`create_publication(name, all_tables=False, tables=())`** —
+      emits `CREATE PUBLICATION … FOR ALL TABLES` or
+      `… FOR TABLE …` with each schema-qualified table validated +
+      quoted via the same `_pg_quote_ident` helper used elsewhere.
+      Rejects names that don't match the unquoted-identifier regex
+      so SQL injection through the publication name is impossible.
+
+    - **`drop_publication(name, if_exists=False, cascade=False)`** —
+      symmetric DROP with the standard `IF EXISTS` / `CASCADE`
+      modifiers.
+
+    - **`create_subscription(name, connection_string, publications,
+      enabled=True, copy_data=True, create_slot=True, slot_name=None,
+      synchronous_commit=None)`** — full WITH-clause grammar.
+      `connection_string` is single-quote-doubled (libpq DSNs can
+      contain `'` legitimately) and is **never echoed back**: the
+      result's `__repr__` redacts the `CONNECTION '…'` literal so
+      DSN credentials don't leak into logs or accidental
+      `print(result)`. `synchronous_commit` is validated against
+      `{on, off, local, remote_write, remote_apply}` before reaching
+      SQL.
+
+    - **`drop_subscription(name, if_exists=False)`** — plain DROP;
+      the caller pairs it with `ALTER SUBSCRIPTION … DISABLE` (via
+      `run_ddl`) when needed.
+
+  All four require `MCPG_ACCESS_MODE=unrestricted` +
+  `MCPG_ALLOW_DDL=true`, raise the typed `LogicalReplicationError`
+  on validation / driver failure, and clear the read cache on
+  success so the matching `list_*` tools see the new state
+  immediately.
+
 - **`warehousepg-latest` CI lane** — adds a new matrix entry to the
   CI `test` job that runs the full suite against a community
   WarehousePG (Greenplum-derived MPP) image. Lives alongside the
