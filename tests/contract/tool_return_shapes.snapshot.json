@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 232
+    "tool_count": 236
   },
   "tools": {
     "add_compression_policy": {
@@ -282,6 +282,9 @@
       ],
       "kind": "scalar"
     },
+    "create_publication": {
+      "kind": "opaque"
+    },
     "create_redis_cache_server": {
       "dataclass": "CreateRedisServerResult",
       "fields": [
@@ -315,6 +318,9 @@
         "user"
       ],
       "kind": "scalar"
+    },
+    "create_subscription": {
+      "kind": "opaque"
     },
     "create_turboquant_index": {
       "dataclass": "CreateIndexResult",
@@ -435,6 +441,12 @@
         "schema"
       ],
       "kind": "scalar"
+    },
+    "drop_publication": {
+      "kind": "opaque"
+    },
+    "drop_subscription": {
+      "kind": "opaque"
     },
     "dump_database": {
       "dataclass": "DumpResult",

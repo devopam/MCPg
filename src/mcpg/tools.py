@@ -41,6 +41,7 @@ from mcpg import (
     jooq,
     liveops,
     locks,
+    logical_replication,
     maintenance,
     migration_history,
     migration_ingestion,
@@ -5848,6 +5849,124 @@ def _register_warehousepg_reads(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "recommend_redistribute", _run, schema, table)
 
 
+def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="create_publication",
+        description=_with_example(
+            "Create a logical-replication publication. Exactly one of "
+            "`all_tables=True` or a non-empty `tables` tuple must be supplied. "
+            "Each table in `tables` must be a `schema.table`-qualified name; "
+            "both pieces are identifier-validated and quoted. Returns the "
+            "rendered SQL for audit. Requires `MCPG_ALLOW_DDL`.",
+            "create_publication(name='sales_pub', tables=('public.orders', 'public.line_items'))",
+        ),
+    )
+    async def create_publication(
+        ctx: _Ctx,
+        name: str,
+        all_tables: bool = False,
+        tables: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        result = await logical_replication.create_publication(
+            ctx.request_context.lifespan_context.database,
+            name=name,
+            all_tables=all_tables,
+            tables=tables,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="drop_publication",
+        description=_with_example(
+            "Drop a logical-replication publication. `if_exists=True` "
+            "suppresses 'does not exist' errors; `cascade=True` lets the "
+            "drop cascade through dependent objects. Identifier-validated. "
+            "Requires `MCPG_ALLOW_DDL`.",
+            "drop_publication(name='sales_pub', if_exists=True)",
+        ),
+    )
+    async def drop_publication(
+        ctx: _Ctx,
+        name: str,
+        if_exists: bool = False,
+        cascade: bool = False,
+    ) -> dict[str, Any]:
+        result = await logical_replication.drop_publication(
+            ctx.request_context.lifespan_context.database,
+            name=name,
+            if_exists=if_exists,
+            cascade=cascade,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="create_subscription",
+        description=_with_example(
+            "Create a logical-replication subscription to one or more "
+            "publications on a publisher cluster. `connection_string` is a "
+            "libpq DSN; it's NOT echoed back in the result (may contain "
+            "credentials). Options: `enabled` (start immediately), "
+            "`copy_data` (initial sync), `create_slot` (let subscriber "
+            "create the upstream slot), `slot_name` (override default), "
+            "`synchronous_commit` (one of 'on'/'off'/'local'/'remote_write'/"
+            "'remote_apply'). Requires `MCPG_ALLOW_DDL`.",
+            "create_subscription(name='sales_sub', "
+            "connection_string='host=publisher dbname=app user=replicator', "
+            "publications=('sales_pub',))",
+        ),
+    )
+    async def create_subscription(
+        ctx: _Ctx,
+        name: str,
+        connection_string: str,
+        publications: tuple[str, ...],
+        enabled: bool = True,
+        copy_data: bool = True,
+        create_slot: bool = True,
+        slot_name: str | None = None,
+        synchronous_commit: str | None = None,
+    ) -> dict[str, Any]:
+        result = await logical_replication.create_subscription(
+            ctx.request_context.lifespan_context.database,
+            name=name,
+            connection_string=connection_string,
+            publications=publications,
+            enabled=enabled,
+            copy_data=copy_data,
+            create_slot=create_slot,
+            slot_name=slot_name,
+            synchronous_commit=synchronous_commit,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+    @server.tool(
+        name="drop_subscription",
+        description=_with_example(
+            "Drop a logical-replication subscription. PostgreSQL requires "
+            "the subscription be disabled first (or its slot dropped on the "
+            "publisher); this tool does NOT auto-disable — pair with "
+            "`run_ddl` for `ALTER SUBSCRIPTION ... DISABLE` when needed. "
+            "Identifier-validated. Requires `MCPG_ALLOW_DDL`.",
+            "drop_subscription(name='sales_sub', if_exists=True)",
+        ),
+    )
+    async def drop_subscription(
+        ctx: _Ctx,
+        name: str,
+        if_exists: bool = False,
+    ) -> dict[str, Any]:
+        result = await logical_replication.drop_subscription(
+            ctx.request_context.lifespan_context.database,
+            name=name,
+            if_exists=if_exists,
+        )
+        await ctx.request_context.lifespan_context.cache.clear()
+        return asdict(result)
+
+
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     """Register the MCP tools permitted by the configured access mode.
 
@@ -5909,6 +6028,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_pg19_runtime_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
+        _register_logical_replication_writes(server)
         _register_partman(server)
         _register_pg19_ddl_writes(server)
         _register_pg19_partitions_writes(server)

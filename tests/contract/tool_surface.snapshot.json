@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 232
+    "tool_count": 236
   },
   "tools": [
     {
@@ -966,6 +966,36 @@
       "name": "create_property_graph"
     },
     {
+      "description": "Create a logical-replication publication. Exactly one of `all_tables=True` or a non-empty `tables` tuple must be supplied. Each table in `tables` must be a `schema.table`-qualified name; both pieces are identifier-validated and quoted. Returns the rendered SQL for audit. Requires `MCPG_ALLOW_DDL`.\n\nExample: `create_publication(name='sales_pub', tables=('public.orders', 'public.line_items'))`",
+      "inputSchema": {
+        "properties": {
+          "all_tables": {
+            "default": false,
+            "title": "All Tables",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tables": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tables",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "create_publicationArguments",
+        "type": "object"
+      },
+      "name": "create_publication"
+    },
+    {
       "description": "Create a foreign server backed by ``redis_fdw`` (``CREATE SERVER … FOREIGN DATA WRAPPER redis_fdw OPTIONS (…)``). TLS is enabled by default; the tool refuses ``tls=false`` against a non-loopback Redis host unless ``allow_insecure_tls=true`` is passed explicitly. ``name`` must be a valid unquoted SQL identifier. Idempotent via ``IF NOT EXISTS``. Requires DDL mode. Returns an object with `name`, `address`, `port`, `database`, `tls`, and `created=true`.\n\nExample: `create_redis_cache_server(name='redis_primary', address='redis.internal', port=6379)`",
       "inputSchema": {
         "properties": {
@@ -1100,6 +1130,75 @@
         "type": "object"
       },
       "name": "create_redis_user_mapping"
+    },
+    {
+      "description": "Create a logical-replication subscription to one or more publications on a publisher cluster. `connection_string` is a libpq DSN; it's NOT echoed back in the result (may contain credentials). Options: `enabled` (start immediately), `copy_data` (initial sync), `create_slot` (let subscriber create the upstream slot), `slot_name` (override default), `synchronous_commit` (one of 'on'/'off'/'local'/'remote_write'/'remote_apply'). Requires `MCPG_ALLOW_DDL`.\n\nExample: `create_subscription(name='sales_sub', connection_string='host=publisher dbname=app user=replicator', publications=('sales_pub',))`",
+      "inputSchema": {
+        "properties": {
+          "connection_string": {
+            "title": "Connection String",
+            "type": "string"
+          },
+          "copy_data": {
+            "default": true,
+            "title": "Copy Data",
+            "type": "boolean"
+          },
+          "create_slot": {
+            "default": true,
+            "title": "Create Slot",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "publications": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Publications",
+            "type": "array"
+          },
+          "slot_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Slot Name"
+          },
+          "synchronous_commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Synchronous Commit"
+          }
+        },
+        "required": [
+          "name",
+          "connection_string",
+          "publications"
+        ],
+        "title": "create_subscriptionArguments",
+        "type": "object"
+      },
+      "name": "create_subscription"
     },
     {
       "description": "Build a CREATE INDEX … USING turboquant statement under tight allowlists and run it on autocommit (CONCURRENTLY can't run inside a transaction). ``metric`` is 'cosine' | 'inner_product' | 'l2' (mapped to the matching tq_*_ops opclass). Index options ``bits`` (1..64), ``lists`` (0..1_000_000), ``transform`` (allowlist: 'hadamard'), ``normalized`` (bool) are all optional; any not supplied are omitted from the WITH clause so upstream's defaults apply. The rendered CREATE INDEX SQL is returned in ``create_sql`` for auditability. Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL; pg_turboquant installed.",
@@ -1544,6 +1643,55 @@
         "type": "object"
       },
       "name": "drop_property_graph"
+    },
+    {
+      "description": "Drop a logical-replication publication. `if_exists=True` suppresses 'does not exist' errors; `cascade=True` lets the drop cascade through dependent objects. Identifier-validated. Requires `MCPG_ALLOW_DDL`.\n\nExample: `drop_publication(name='sales_pub', if_exists=True)`",
+      "inputSchema": {
+        "properties": {
+          "cascade": {
+            "default": false,
+            "title": "Cascade",
+            "type": "boolean"
+          },
+          "if_exists": {
+            "default": false,
+            "title": "If Exists",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "drop_publicationArguments",
+        "type": "object"
+      },
+      "name": "drop_publication"
+    },
+    {
+      "description": "Drop a logical-replication subscription. PostgreSQL requires the subscription be disabled first (or its slot dropped on the publisher); this tool does NOT auto-disable — pair with `run_ddl` for `ALTER SUBSCRIPTION ... DISABLE` when needed. Identifier-validated. Requires `MCPG_ALLOW_DDL`.\n\nExample: `drop_subscription(name='sales_sub', if_exists=True)`",
+      "inputSchema": {
+        "properties": {
+          "if_exists": {
+            "default": false,
+            "title": "If Exists",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "drop_subscriptionArguments",
+        "type": "object"
+      },
+      "name": "drop_subscription"
     },
     {
       "description": "Run pg_dump against the connected database and return the SQL dump as a string (for `format='plain'`) or base64-encoded bytes (for `custom`/`tar`). Credentials pass through libpq env vars, never on the command line. The result includes `output_truncated` and `timed_out` flags so the caller can re-run with a higher cap or a narrower scope. Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL.",
