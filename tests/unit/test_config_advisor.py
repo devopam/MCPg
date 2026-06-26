@@ -112,12 +112,82 @@ async def test_sequences_never_advanced_not_flagged() -> None:
 async def test_sequences_remaining_headroom_computed() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
     routes.update(_seq_present(True))
-    routes.update(_seq_rows([{"schemaname": "s", "sequencename": "q", "last_value": 95, "max_value": 100}]))
+    # min_value=0 so used_pct = (95-0)/(100-0) = 95.0 exactly.
+    routes.update(
+        _seq_rows(
+            [
+                {
+                    "schemaname": "s",
+                    "sequencename": "q",
+                    "last_value": 95,
+                    "min_value": 0,
+                    "max_value": 100,
+                    "increment_by": 1,
+                }
+            ]
+        )
+    )
     driver = FakeRoutingDriver(routes)
     result = await audit_sequences(driver, warning_pct=80, critical_pct=99)  # type: ignore[arg-type]
     assert result.sequences[0].remaining == 5
     assert result.sequences[0].used_pct == 95.0
     assert result.sequences[0].status == STATUS_WARNING  # 95 < 99 critical
+
+
+async def test_sequences_descending_supported() -> None:
+    """A descending sequence (increment_by < 0) exhausts toward min_value,
+    not max_value — used_pct must reflect the direction of travel.
+    Regression for gemini review on #181."""
+    routes: dict[str, list[dict[str, object]]] = {}
+    routes.update(_seq_present(True))
+    routes.update(
+        _seq_rows(
+            [
+                {
+                    "schemaname": "public",
+                    "sequencename": "desc_seq",
+                    "last_value": 5,
+                    "min_value": 1,
+                    "max_value": 100,
+                    "increment_by": -1,
+                }
+            ]
+        )
+    )
+    driver = FakeRoutingDriver(routes)
+    result = await audit_sequences(driver)  # type: ignore[arg-type]
+    assert result.total_examined == 1
+    assert len(result.sequences) == 1
+    seq = result.sequences[0]
+    assert seq.sequence == "desc_seq"
+    assert seq.status == STATUS_CRITICAL  # consumed 95 of 99 range
+    assert seq.remaining == 4  # last_value(5) - min_value(1)
+    assert seq.used_pct == 95.9596  # (100-5)/99 * 100
+
+
+async def test_sequences_fresh_descending_not_flagged() -> None:
+    """A just-started descending sequence near max_value has its whole
+    range left — it must NOT be flagged (the false-positive case)."""
+    routes: dict[str, list[dict[str, object]]] = {}
+    routes.update(_seq_present(True))
+    routes.update(
+        _seq_rows(
+            [
+                {
+                    "schemaname": "public",
+                    "sequencename": "fresh_desc",
+                    "last_value": 95,
+                    "min_value": 1,
+                    "max_value": 100,
+                    "increment_by": -1,
+                }
+            ]
+        )
+    )
+    driver = FakeRoutingDriver(routes)
+    result = await audit_sequences(driver)  # type: ignore[arg-type]
+    # consumed = (100-95)/99 = 5.05% → GOOD, not listed.
+    assert result.sequences == []
 
 
 # ===========================================================================

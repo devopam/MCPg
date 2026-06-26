@@ -129,6 +129,12 @@ async def audit_sequences(
     Sequences with a NULL ``last_value`` (never advanced) are counted
     in ``total_examined`` but never flagged — a fresh sequence at 0
     isn't at risk.
+
+    Direction-aware: ascending sequences exhaust toward ``max_value``;
+    descending sequences (``increment_by < 0``) exhaust toward
+    ``min_value``. ``used_pct`` and ``remaining`` are computed against
+    the direction of travel, so a near-exhausted descending sequence is
+    flagged and a freshly-started one isn't.
     """
     if not (0 < warning_pct <= 100):
         raise ConfigAdvisorError(f"warning_pct must be in (0, 100]; got {warning_pct}")
@@ -150,7 +156,8 @@ async def audit_sequences(
         )
 
     rows = await driver.execute_query(
-        "SELECT schemaname, sequencename, last_value, max_value FROM pg_sequences ORDER BY schemaname, sequencename",
+        "SELECT schemaname, sequencename, last_value, min_value, max_value, increment_by "
+        "FROM pg_sequences ORDER BY schemaname, sequencename",
         force_readonly=True,
     )
 
@@ -160,12 +167,32 @@ async def audit_sequences(
         total += 1
         last_value = row.cells.get("last_value")
         max_value = row.cells.get("max_value")
-        if last_value is None or max_value is None or int(max_value) <= 0:
-            # Never-advanced sequence, or a degenerate ceiling — not at risk.
+        min_value = row.cells.get("min_value")
+        increment_by = row.cells.get("increment_by")
+        if last_value is None or max_value is None:
+            # Never-advanced sequence — not at risk.
             continue
         last_i = int(last_value)
         max_i = int(max_value)
-        used_pct = (last_i / max_i) * 100.0
+        # Defaults mirror a plain ascending serial when the catalogue
+        # row didn't carry these (e.g. a hand-built test fixture).
+        min_i = int(min_value) if min_value is not None else 1
+        inc_i = int(increment_by) if increment_by is not None else 1
+        seq_range = max_i - min_i
+        if inc_i == 0 or seq_range <= 0:
+            # Degenerate sequence (zero increment / inverted bounds) — skip.
+            continue
+        # Direction-aware: an ASCENDING sequence exhausts toward
+        # max_value; a DESCENDING one (increment_by < 0) toward
+        # min_value. Compute consumption + headroom against the
+        # direction of travel so descending sequences aren't silently
+        # missed (gemini review on #181).
+        if inc_i < 0:
+            remaining = last_i - min_i
+            used_pct = ((max_i - last_i) / seq_range) * 100.0
+        else:
+            remaining = max_i - last_i
+            used_pct = ((last_i - min_i) / seq_range) * 100.0
         if used_pct >= critical_pct:
             status = STATUS_CRITICAL
         elif used_pct >= warning_pct:
@@ -179,7 +206,7 @@ async def audit_sequences(
                 last_value=last_i,
                 max_value=max_i,
                 used_pct=round(used_pct, 4),
-                remaining=max_i - last_i,
+                remaining=remaining,
                 status=status,
             )
         )
