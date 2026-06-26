@@ -110,6 +110,34 @@ async def test_read_lock_returns_rows_on_pg19() -> None:
     ]
 
 
+async def test_read_lock_propagates_stats_reset_when_present() -> None:
+    """PG 19 added ``stats_reset`` to every ``pg_stat_*`` view that
+    didn't already have it; the reader surfaces it as a string so
+    callers can tell "no contention" from "counters were just reset"."""
+    routes = _version_route(190001, "19beta1")
+    routes["FROM pg_class c "] = [{"present": 1}]
+    routes["FROM pg_stat_lock"] = [
+        {
+            "lock_type": "relation",
+            "acquires": 0,
+            "waits": 0,
+            "wait_time_us": 0,
+            "stats_reset": "2026-06-26 12:00:00+00",
+        }
+    ]
+    driver = FakeRoutingDriver(routes)
+    rows = await read_pg_stat_lock(driver)  # type: ignore[arg-type]
+    assert rows == [
+        LockStatRow(
+            lock_type="relation",
+            acquires=0,
+            waits=0,
+            wait_time_us=0,
+            stats_reset="2026-06-26 12:00:00+00",
+        )
+    ]
+
+
 async def test_read_lock_empty_when_view_absent_on_pg19() -> None:
     """PG 19 but pg_stat_lock view is missing — early Beta."""
     routes = _version_route(190001, "19beta1")
@@ -141,6 +169,31 @@ async def test_read_recovery_returns_row_for_standby() -> None:
             replay_lag_seconds=0.5,
             last_replayed_at="2026-06-20 18:00:00+00",
             startup_state="streaming",
+        )
+    ]
+
+
+async def test_read_recovery_propagates_stats_reset_when_present() -> None:
+    routes = _version_route(190001, "19beta1")
+    routes["FROM pg_class c "] = [{"present": 1}]
+    routes["FROM pg_stat_recovery"] = [
+        {
+            "replay_lsn": "0/1",
+            "replay_lag_seconds": None,
+            "last_replayed_at": None,
+            "startup_state": "streaming",
+            "stats_reset": "2026-06-26 12:00:00+00",
+        }
+    ]
+    driver = FakeRoutingDriver(routes)
+    rows = await read_pg_stat_recovery(driver)  # type: ignore[arg-type]
+    assert rows == [
+        RecoveryStatRow(
+            replay_lsn="0/1",
+            replay_lag_seconds=None,
+            last_replayed_at=None,
+            startup_state="streaming",
+            stats_reset="2026-06-26 12:00:00+00",
         )
     ]
 
