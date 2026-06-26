@@ -66,10 +66,12 @@ from mcpg import (
     rls,
     schema_diff,
     schema_docs,
+    session_advisor,
     shell,
     sqlalchemy_export,
     sqlc,
     test_data,
+    test_row_factory,
     textsearch,
     timescaledb,
     turboquant,
@@ -1743,6 +1745,73 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     ) -> dict[str, Any]:
         dataset = await test_data.generate_test_data(_driver(ctx), schema, table, rows=rows, seed=seed)
         return asdict(dataset)
+
+    @server.tool(
+        name="generate_test_row_for",
+        description=_with_example(
+            "Generate ONE realistic test row for a table — catalogue-aware. "
+            "Skips identity / generated columns (server fills them in), "
+            "samples one existing row from each referenced table for FK "
+            "columns (so the row inserts cleanly), and uses column-name "
+            "heuristics (`*_email` → `user_N@example.com`, `*_url` → "
+            "`https://example.com/r/N`, `*_at` → recent timestamp, etc.) "
+            "to make values look like data. Sibling of `generate_test_data` "
+            "(bulk) — designed for the shadow-migration workflow where a "
+            "single realistic row matters more than volume. Returns an "
+            "object with `insert_sql` (one ready-to-execute INSERT), "
+            "`columns` (per-column ColumnFill with `sql_literal` + "
+            "`heuristic` explanation), `schema`, `table`. Does NOT execute "
+            "the INSERT — caller applies via `run_write` when ready.",
+            "generate_test_row_for(schema='public', table='orders', seed=42)",
+        ),
+    )
+    async def generate_test_row_for(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        seed: int | None = None,
+        follow_foreign_keys: bool = True,
+    ) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            row = await test_row_factory.generate_test_row_for(
+                _driver(ctx),
+                schema,
+                table,
+                seed=seed,
+                follow_foreign_keys=follow_foreign_keys,
+            )
+            return asdict(row)
+
+        return await _cached_call(ctx, "generate_test_row_for", _run, schema, table, seed, follow_foreign_keys)
+
+    @server.tool(
+        name="analyze_session_cost",
+        description=_with_example(
+            "Surface hot-path inefficiencies from the audit log. Reads "
+            "`mcpg_audit.events` over the last `lookback_minutes` "
+            "(default 60, capped at 1440) and flags tools called more "
+            "than `hot_threshold` times (default 10). Catalogue-listing "
+            "tools (`list_tables` / `list_schemas` / `list_indexes` / "
+            "etc.) get a `redundant_listing` finding pointing at "
+            "`get_compact_schema`; other tools get a `hot_repeated_call` "
+            "finding suggesting caching. Idle sessions get an "
+            "`idle_session` finding. When `mcpg_audit.events` doesn't "
+            "exist (audit subsystem off) returns `audit_table_present=False` "
+            "with a diagnostic. Returns an object with `audit_table_present` "
+            "(bool), `events_examined` (int), `lookback_minutes`, "
+            "`findings` (list of objects with `reason`, `tool`, "
+            "`call_count`, `suggestion`), and `detail`.",
+            "analyze_session_cost(lookback_minutes=30, hot_threshold=15)",
+        ),
+    )
+    async def analyze_session_cost(ctx: _Ctx, lookback_minutes: int = 60, hot_threshold: int = 10) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            result = await session_advisor.analyze_session_cost(
+                _driver(ctx), lookback_minutes=lookback_minutes, hot_threshold=hot_threshold
+            )
+            return asdict(result)
+
+        return await _cached_call(ctx, "analyze_session_cost", _run, lookback_minutes, hot_threshold)
 
     @server.tool(
         name="optimize_query",

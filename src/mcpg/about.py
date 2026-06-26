@@ -551,7 +551,11 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "generate_fk_cascade_graph": "graph_operations",
     # generate_test_data / seed_table_with_sample_data are data_movement.
     "generate_test_data": "data_movement",
+    "generate_test_row_for": "data_movement",
     "seed_table_with_sample_data": "data_movement",
+    # analyze_session_cost is observability — reads the audit log for
+    # agent self-introspection.
+    "analyze_session_cost": "observability",
     # analyze_query_plan / analyze_workload are query/advisors not vector.
     "analyze_query_plan": "query_execution",
     "analyze_workload": "advisors",
