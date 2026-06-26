@@ -124,6 +124,21 @@ async def test_type_based_synthesis_uses_int_for_int_columns() -> None:
     assert fill.sql_literal.isdigit()
 
 
+@pytest.mark.parametrize(("decl_type", "cap"), [("character varying(2)", 2), ("varchar(5)", 5), ("char(3)", 3)])
+async def test_text_type_respects_length_cap(decl_type: str, cap: int) -> None:
+    """varchar(N) / char(N) columns get a synth string whose body
+    length is ≤ N. The bulk INSERT would otherwise fail with
+    "value too long for type" on a real cluster."""
+    routes = _full_routes(columns=[_column("code", data_type=decl_type)])
+    driver = FakeRoutingDriver(routes)
+    row = await generate_test_row_for(driver, "public", "t", seed=1)  # type: ignore[arg-type]
+    fill = next(c for c in row.columns if c.name == "code")
+    assert fill.heuristic == "text type"
+    # Strip the wrapping single quotes — the body must fit in `cap`.
+    body = fill.sql_literal.strip("'")
+    assert 1 <= len(body) <= cap, f"got {body!r} ({len(body)} chars) for cap={cap}"
+
+
 async def test_unsupported_type_with_nullable_lands_as_null() -> None:
     routes = _full_routes(columns=[_column("geom", data_type="geometry", nullable=True)])
     driver = FakeRoutingDriver(routes)
@@ -165,13 +180,54 @@ async def test_fk_column_samples_referenced_value() -> None:
             }
         ],
     )
-    routes['SELECT "id" AS v FROM "public"."users"'] = [{"v": 99}]
+    routes['SELECT "id" FROM "public"."users"'] = [{"id": 99}]
     driver = FakeRoutingDriver(routes)
     row = await generate_test_row_for(driver, "public", "orders", seed=1)  # type: ignore[arg-type]
     fill = next(c for c in row.columns if c.name == "user_id")
     assert fill.sql_literal == "99"
     assert "fk →" in fill.heuristic
     assert "public.users.id sampled" in fill.heuristic
+
+
+async def test_composite_fk_samples_one_consistent_row() -> None:
+    """Composite FK (a, b) REFERENCES t(x, y) must draw both values
+    from the SAME row in t — sampling them via separate LIMIT 1
+    queries could land different rows under concurrent writes.
+    Regression for gemini review on #178."""
+    routes = _full_routes(
+        columns=[
+            _column("user_id", data_type="bigint"),
+            _column("tenant_id", data_type="text"),
+        ],
+        fks=[
+            {
+                "local_column": "user_id",
+                "ref_schema": "public",
+                "ref_table": "users",
+                "ref_column": "id",
+            },
+            {
+                "local_column": "tenant_id",
+                "ref_schema": "public",
+                "ref_table": "users",
+                "ref_column": "tenant_id",
+            },
+        ],
+    )
+    # ONE query against users returns BOTH columns from the same row.
+    routes['SELECT "id", "tenant_id" FROM "public"."users"'] = [{"id": 99, "tenant_id": "tenant-A"}]
+    driver = FakeRoutingDriver(routes)
+    row = await generate_test_row_for(driver, "public", "orders", seed=1)  # type: ignore[arg-type]
+    user_fill = next(c for c in row.columns if c.name == "user_id")
+    tenant_fill = next(c for c in row.columns if c.name == "tenant_id")
+    assert user_fill.sql_literal == "99"
+    assert tenant_fill.sql_literal == "'tenant-A'"
+    # Both columns must have come from the single composite SELECT,
+    # not two separate per-column SELECTs.
+    select_calls = [call for call in driver.calls if 'FROM "public"."users"' in call[0]]
+    assert len(select_calls) == 1, (
+        f"expected ONE composite sample query against users, got {len(select_calls)}: {[c[0] for c in select_calls]}"
+    )
 
 
 async def test_fk_to_empty_table_with_default_lands_as_default() -> None:

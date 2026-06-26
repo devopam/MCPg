@@ -189,7 +189,20 @@ def _synth_by_type(column: ColumnInfo, rng: random.Random) -> tuple[object, str]
     if base in {"timestamp", "timestamp without time zone", "timestamptz", "timestamp with time zone"}:
         return datetime.now(UTC) - timedelta(seconds=rng.randint(0, 60 * 60 * 24 * 365)), "timestamp type"
     if base in {"text", "varchar", "character varying", "char", "character", "citext", "name"}:
-        length = rng.randint(4, 16)
+        # Honour the (N) length cap on varchar(N) / char(N) — generating
+        # a 4-16 char string into a varchar(2) lands a real "value too
+        # long" failure on the INSERT (gemini review on #178).
+        max_len: int | None = None
+        if "(" in column.data_type:
+            try:
+                max_len = int(column.data_type.split("(", 1)[1].split(")", 1)[0].strip())
+            except (ValueError, IndexError):
+                max_len = None
+        lo, hi = 4, 16
+        if max_len is not None:
+            hi = min(hi, max(1, max_len))
+            lo = min(lo, hi)
+        length = rng.randint(lo, hi)
         return "".join(rng.choice(string.ascii_lowercase) for _ in range(length)), "text type"
     if base in {"json", "jsonb"}:
         return '{"k": "v"}', "json type"
@@ -249,16 +262,30 @@ async def _foreign_key_targets(driver: SqlDriver, schema: str, table: str) -> di
     return out
 
 
-async def _sample_fk_value(driver: SqlDriver, ref_schema: str, ref_table: str, ref_column: str) -> object | None:
-    """Sample one value of ``ref_column`` from ``ref_schema.ref_table``."""
+async def _sample_fk_row(
+    driver: SqlDriver, ref_schema: str, ref_table: str, ref_columns: list[str]
+) -> dict[str, object | None] | None:
+    """Sample ONE row from ``ref_schema.ref_table`` covering every
+    referenced column in ``ref_columns``.
+
+    Critical for composite FK consistency: a `FOREIGN KEY (a, b)
+    REFERENCES t(x, y)` needs (a, b) drawn from the SAME row in t,
+    or the resulting INSERT trips a constraint violation. The earlier
+    per-column ``SELECT … LIMIT 1`` was prone to drift under
+    concurrent writes (gemini review on #178).
+
+    Returns ``None`` when the referenced table is empty, or a dict
+    mapping each referenced column to its sampled cell value.
+    """
     # Identifiers were validated by the caller — safe to interpolate.
+    col_list = ", ".join(f'"{c}"' for c in ref_columns)
     rows = await driver.execute_query(
-        f'SELECT "{ref_column}" AS v FROM "{ref_schema}"."{ref_table}" LIMIT 1',
+        f'SELECT {col_list} FROM "{ref_schema}"."{ref_table}" LIMIT 1',
         force_readonly=True,
     )
     if not rows:
         return None
-    return rows[0].cells.get("v")
+    return {c: rows[0].cells.get(c) for c in ref_columns}
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +335,7 @@ async def generate_test_row_for(
     if follow_foreign_keys:
         fk_targets = await _foreign_key_targets(driver, schema, table)
         # Validate referenced identifiers so the f-string in
-        # _sample_fk_value stays safe even if the catalogue contained
+        # _sample_fk_row stays safe even if the catalogue contained
         # something unexpected (e.g. a future PG feature that allows
         # special characters in identifiers).
         for ref_schema, ref_table, ref_column in fk_targets.values():
@@ -317,9 +344,19 @@ async def generate_test_row_for(
             _check_identifier(ref_column, "referenced column")
 
     rng = random.Random(seed)
-    # Cache a sampled value per (ref_schema, ref_table) so composite FKs
-    # against the same target table see the same row.
-    fk_sample_cache: dict[tuple[str, str], dict[str, object | None]] = {}
+    # One sampled ROW per (ref_schema, ref_table) — guarantees
+    # composite-FK consistency. None means we tried and the target was
+    # empty; the absence of the key means we haven't tried yet.
+    fk_sample_cache: dict[tuple[str, str], dict[str, object | None] | None] = {}
+
+    def _ref_cols_for(key: tuple[str, str]) -> list[str]:
+        """Distinct ref_columns referenced for one target table — order
+        preserved so the rendered SELECT is deterministic across calls."""
+        seen: list[str] = []
+        for rs, rt, rc in fk_targets.values():
+            if (rs, rt) == key and rc not in seen:
+                seen.append(rc)
+        return seen
 
     column_fills: list[ColumnFill] = []
     insert_cols: list[str] = []
@@ -336,11 +373,9 @@ async def generate_test_row_for(
             ref_schema, ref_table, ref_column = fk_targets[col.name]
             key = (ref_schema, ref_table)
             if key not in fk_sample_cache:
-                fk_sample_cache[key] = {}
-            cache = fk_sample_cache[key]
-            if ref_column not in cache:
-                cache[ref_column] = await _sample_fk_value(driver, ref_schema, ref_table, ref_column)
-            v = cache[ref_column]
+                fk_sample_cache[key] = await _sample_fk_row(driver, ref_schema, ref_table, _ref_cols_for(key))
+            sampled_row = fk_sample_cache[key]
+            v = sampled_row.get(ref_column) if sampled_row is not None else None
             if v is None:
                 if col.default is not None:
                     column_fills.append(
