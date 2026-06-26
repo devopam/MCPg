@@ -195,6 +195,15 @@ class Settings:
     cache_maxsize: int = 1024
     redis_url: str | None = None
     enable_heavy_diagnostics: bool = True
+    # Session-intent handshake (roadmap 8.8). Comma-separated list of
+    # intent presets (``lookup`` / ``migration`` / ``vector_rag`` /
+    # ``monitor`` / ``admin``) or raw bucket ids from :mod:`mcpg.about`.
+    # Empty (default) = no filter (every registered tool stays on the
+    # wire). When set, MCPg removes tools whose bucket isn't in the
+    # resolved allow-set BEFORE the first ``tools/list`` request so the
+    # narrowed surface is structural, not policy-checked at call time.
+    # ``describe_self`` and ``describe_tool`` are always kept regardless.
+    session_intent: tuple[str, ...] = ()
     http_max_body_bytes: int = 1048576
     http_allowed_origins: tuple[str, ...] = ()
     http_hsts_max_age: int = 31536000
@@ -1025,6 +1034,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if audit_integrity and audit_hmac_key is None:
         raise ConfigError("MCPG_AUDIT_INTEGRITY=true requires MCPG_AUDIT_HMAC_KEY")
 
+    session_intent: tuple[str, ...] = ()
+    if (raw := env.get("MCPG_SESSION_INTENT")) is not None:
+        from mcpg.session_intent import parse_intent_setting
+
+        session_intent = parse_intent_setting(raw)
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -1108,4 +1123,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         audit_hmac_key=audit_hmac_key,
         audit_integrity=audit_integrity,
         secrets_backend=secrets_backend,
+        session_intent=session_intent,
     )

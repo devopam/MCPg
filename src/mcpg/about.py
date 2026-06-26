@@ -556,6 +556,9 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     # analyze_session_cost is observability — reads the audit log for
     # agent self-introspection.
     "analyze_session_cost": "observability",
+    # recommend_headline_tools is observability — empirical curation
+    # for describe_self's headline_tools tuples.
+    "recommend_headline_tools": "observability",
     # analyze_query_plan / analyze_workload are query/advisors not vector.
     "analyze_query_plan": "query_execution",
     "analyze_workload": "advisors",

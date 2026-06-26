@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 238
+    "tool_count": 239
   },
   "tools": [
     {
@@ -4704,6 +4704,26 @@
         "type": "object"
       },
       "name": "recommend_efficiency_thresholds"
+    },
+    {
+      "description": "Empirically curate `describe_self`'s per-bucket `headline_tools` from the audit log. Reads `mcpg_audit.events` over the last `lookback_days` (default 7, capped at 90), groups successful calls by capability bucket, and reports the top-`top_n` (default 6) tools per bucket with `newcomers` (recommended but not in the hand-curated current list) and `departures` (currently headlined but not in the recommendation). The output is a REVIEWABLE recommendation, not an auto-applied override — operators decide whether to update `mcpg.about.CAPABILITIES`. Returns `audit_table_present=False` with a diagnostic when the audit subsystem is off. Returns an object with `audit_table_present`, `lookback_days`, `top_n`, `events_examined`, `detail`, and `buckets` (list of objects with `bucket_id`, `current`, `recommended`, `newcomers`, `departures`, `call_counts`).\n\nExample: `recommend_headline_tools(lookback_days=14, top_n=6)`",
+      "inputSchema": {
+        "properties": {
+          "lookback_days": {
+            "default": 7,
+            "title": "Lookback Days",
+            "type": "integer"
+          },
+          "top_n": {
+            "default": 6,
+            "title": "Top N",
+            "type": "integer"
+          }
+        },
+        "title": "recommend_headline_toolsArguments",
+        "type": "object"
+      },
+      "name": "recommend_headline_tools"
     },
     {
       "description": "Sibling of `recommend_indexes` for indexes to remove. Walks `pg_stat_user_indexes` + `pg_stat_user_tables` for existing indexes that look like pure cost — large on disk but never (or barely) scanned. Three reason codes, descending strength: `never_used` (no recorded idx_scans since the last stats reset — candidate for drop, but verify before removal), `scan_no_fetch` (planner picks it but it returns no rows — usually existence-check pattern), `rarely_used` (scan rate below `low_scan_ratio` of the table's total scan activity). Primary-key / unique / exclusion-constraint indexes are excluded (dropping those would be a schema change, not a performance win); indexes below `min_index_size_bytes` are skipped too. Returns a ready-to-run `DROP INDEX CONCURRENTLY` statement per candidate. Read-only advisor — execution is on the operator.\n\nExample: `recommend_index_drops(schema='public', min_index_size_bytes=1000000, low_scan_ratio=0.01)`",
