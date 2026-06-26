@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 239
+    "tool_count": 242
   },
   "tools": [
     {
@@ -498,6 +498,48 @@
         "type": "object"
       },
       "name": "audit_database"
+    },
+    {
+      "description": "Flag sequences nearing their ceiling — serial / identity / explicit sequences whose `last_value / max_value` exceeds `warning_pct` (default 80) or `critical_pct` (default 95). Sequence overflow is catastrophic and silent until the next `nextval()` raises 'reached maximum value' — the int4 `serial` ceiling (2^31-1) is hit far more often than expected. Pure read; `available=false` on PG < 10 (no pg_sequences). Returns an object with `available`, `total_examined`, `warning_pct`, `critical_pct`, `detail`, and `sequences` (at-risk only, sorted by `used_pct` desc — each with `schema`, `sequence`, `last_value`, `max_value`, `used_pct`, `remaining`, `status`).\n\nExample: `audit_sequences(warning_pct=80, critical_pct=95)`",
+      "inputSchema": {
+        "properties": {
+          "critical_pct": {
+            "default": 95.0,
+            "title": "Critical Pct",
+            "type": "number"
+          },
+          "warning_pct": {
+            "default": 80.0,
+            "title": "Warning Pct",
+            "type": "number"
+          }
+        },
+        "title": "audit_sequencesArguments",
+        "type": "object"
+      },
+      "name": "audit_sequences"
+    },
+    {
+      "description": "Sanity-sweep `postgresql.conf` via `pg_settings`. Flags dangerous toggles (`fsync=off`, `full_page_writes=off`, `autovacuum=off`, `synchronous_commit=off`), cross-setting issues (`maintenance_work_mem` < `work_mem`, tiny `shared_buffers`, low `checkpoint_completion_target`), and — when `total_ram_mb` is supplied — RAM-relative ratios for `shared_buffers` / `effective_cache_size` (PostgreSQL can't see host RAM itself). Pure read. Returns an object with `ram_aware` (bool), `examined_settings` (list), `detail`, and `findings` (tripped rules only — each with `code`, `setting`, `current`, `status`, `suggestion`).\n\nExample: `audit_settings(total_ram_mb=16384)`",
+      "inputSchema": {
+        "properties": {
+          "total_ram_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Total Ram Mb"
+          }
+        },
+        "title": "audit_settingsArguments",
+        "type": "object"
+      },
+      "name": "audit_settings"
     },
     {
       "description": "Drop a prepared migration's shadow schema and mark it cancelled. Idempotent — calling cancel on a non-existent or already-completed migration returns shadow_dropped=false without raising.",
@@ -4789,6 +4831,50 @@
         "type": "object"
       },
       "name": "recommend_pg_search_maintenance"
+    },
+    {
+      "description": "Compute pgtune-style `postgresql.conf` recommendations. Pure calculator — touches no database. Given `total_ram_mb` (required), `cpu_count` (default 4), `workload` (one of `web`/`oltp`/`dw`/`desktop`/`mixed`, default `mixed`), `storage` (one of `ssd`/`hdd`/`san`, default `ssd`), and an optional `max_connections` override, returns recommended values for `shared_buffers`, `effective_cache_size`, `work_mem`, `maintenance_work_mem`, `wal_buffers`, `min_wal_size`/`max_wal_size`, `checkpoint_completion_target`, `default_statistics_target`, `random_page_cost`, `effective_io_concurrency`, and the parallel-worker knobs. Memory fields are postgres-ready strings; `settings` is the same data as a flat {guc: value} dict for direct rendering. Pair with `audit_settings` (audit first, then size).\n\nExample: `recommend_postgres_conf(total_ram_mb=16384, cpu_count=8, workload='oltp', storage='ssd')`",
+      "inputSchema": {
+        "properties": {
+          "cpu_count": {
+            "default": 4,
+            "title": "Cpu Count",
+            "type": "integer"
+          },
+          "max_connections": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Connections"
+          },
+          "storage": {
+            "default": "ssd",
+            "title": "Storage",
+            "type": "string"
+          },
+          "total_ram_mb": {
+            "title": "Total Ram Mb",
+            "type": "integer"
+          },
+          "workload": {
+            "default": "mixed",
+            "title": "Workload",
+            "type": "string"
+          }
+        },
+        "required": [
+          "total_ram_mb"
+        ],
+        "title": "recommend_postgres_confArguments",
+        "type": "object"
+      },
+      "name": "recommend_postgres_conf"
     },
     {
       "description": "Recommend relations whose first-query latency would benefit from ``pg_prewarm``. Inspects ``pg_stat_user_tables`` + ``pg_statio_user_tables`` to find high cold-miss-rate / seq_scan-dominant relations, and caps the cumulative cost at ``shared_buffers_budget_pct`` * ``shared_buffers`` so the recommendation never silently exceeds shared_buffers. The advisor is read-only — never invokes pg_prewarm itself. Returns an object with `shared_buffers_blocks` (configured shared_buffers in 8 KiB pages), `budget_blocks` (the cap), `total_cost_blocks` (sum of recommendations actually returned), and `candidates` — a list of objects with `schema`, `relation`, `reason` (`seq_scan_dominant` / `high_cold_miss_rate` / `small_hot_relation_uncached` / `index_in_critical_path`), `prewarm_mode`, `estimated_buffer_cost`, `heap_blks_read`, `heap_blks_hit`, `cache_miss_ratio`, and `ready_to_run_sql`.\n\nExample: `recommend_prewarm_targets(shared_buffers_budget_pct=60.0, limit=10)`",
