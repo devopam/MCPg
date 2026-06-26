@@ -8,6 +8,48 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Agent-surface controls bundle** — two related tools touching
+  `describe_self` / agent ergonomics. Realises roadmap rows
+  **8.8** + **14.4**:
+
+    - **Session-intent surface filter** (`MCPG_SESSION_INTENT`
+      env var). At server start, MCPg filters its tool surface to
+      the capability buckets that match a declared intent — the
+      narrowed surface is structural (tools never reach
+      `tools/list`), not policy-checked at call time. Five
+      built-in presets: `lookup` (read + observability),
+      `migration` (schema + migrations + audit), `vector_rag`
+      (catalogue + query + vector / text search + RAG
+      telemetry), `monitor` (ops + advisors), `admin` (no
+      filter — sentinel value). Raw bucket ids accepted alongside
+      presets for combinations the presets don't cover. The
+      escape hatch — `describe_self` and `describe_tool` — is
+      always kept regardless of intent so the narrowed agent can
+      still introspect. Big prompt-injection resilience win: a
+      session declared `intent=lookup` literally cannot call
+      `drop_database` because `run_ddl` was never registered with
+      FastMCP. Lives in `mcpg.session_intent`.
+
+    - **`recommend_headline_tools(lookback_days=7, top_n=6)`** —
+      empirical curation of `describe_self`'s per-bucket
+      `headline_tools` from `mcpg_audit.events`. Reads
+      `status = 'success'` events over the configured window,
+      ranks by call count per bucket, and reports `recommended`
+      tuples alongside `newcomers` (recommended but not in the
+      current hand-curated list) and `departures` (currently
+      headlined but not in the recommendation). Reviewable
+      recommendation, NOT an auto-applied override — operators
+      decide whether to update the curated tuples. Returns
+      `audit_table_present=False` with a diagnostic when the
+      audit subsystem is off. Lives in `mcpg.headline_curator`;
+      routed to the `observability` bucket alongside
+      `analyze_session_cost`.
+
+  Combined: 30 new unit tests, one new env var
+  (`MCPG_SESSION_INTENT`), one new bucket override, snapshots
+  regenerated. Bundled per the "fewer review cycles for related
+  work" rule.
+
 - **Logical replication management writes bundle** — four DDL-gated
   tools that close the loop on the existing `list_publications` /
   `list_subscriptions` read surface. Realises roadmap row **2.1**:

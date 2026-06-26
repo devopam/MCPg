@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 238
+    "tool_count": 239
   },
   "tools": {
     "add_compression_policy": {
@@ -1695,6 +1695,9 @@
         "rerank_lift_steep_low"
       ],
       "kind": "scalar"
+    },
+    "recommend_headline_tools": {
+      "kind": "opaque"
     },
     "recommend_index_drops": {
       "dataclass": "IndexDropCandidate",

@@ -1814,6 +1814,42 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "analyze_session_cost", _run, lookback_minutes, hot_threshold)
 
     @server.tool(
+        name="recommend_headline_tools",
+        description=_with_example(
+            "Empirically curate `describe_self`'s per-bucket `headline_tools` "
+            "from the audit log. Reads `mcpg_audit.events` over the last "
+            "`lookback_days` (default 7, capped at 90), groups successful "
+            "calls by capability bucket, and reports the top-`top_n` (default "
+            "6) tools per bucket with `newcomers` (recommended but not in the "
+            "hand-curated current list) and `departures` (currently headlined "
+            "but not in the recommendation). The output is a REVIEWABLE "
+            "recommendation, not an auto-applied override — operators decide "
+            "whether to update `mcpg.about.CAPABILITIES`. Returns "
+            "`audit_table_present=False` with a diagnostic when the audit "
+            "subsystem is off. Returns an object with `audit_table_present`, "
+            "`lookback_days`, `top_n`, `events_examined`, `detail`, and "
+            "`buckets` (list of objects with `bucket_id`, `current`, "
+            "`recommended`, `newcomers`, `departures`, `call_counts`).",
+            "recommend_headline_tools(lookback_days=14, top_n=6)",
+        ),
+    )
+    async def recommend_headline_tools(ctx: _Ctx, lookback_days: int = 7, top_n: int = 6) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            from mcpg.about import CAPABILITIES
+            from mcpg.headline_curator import recommend_headline_tools as _recommend
+
+            current = {cap.id: cap.headline_tools for cap in CAPABILITIES}
+            report = await _recommend(
+                _driver(ctx),
+                lookback_days=lookback_days,
+                top_n=top_n,
+                current_headlines=current,
+            )
+            return asdict(report)
+
+        return await _cached_call(ctx, "recommend_headline_tools", _run, lookback_days, top_n)
+
+    @server.tool(
         name="optimize_query",
         description=(
             "Analyze a SQL query for syntax anti-patterns and performance issues "
@@ -6114,3 +6150,14 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_data_movement_shell(server)
     if is_permitted(settings.access_mode, Capability.LISTEN) and settings.allow_listen:
         _register_listen(server)
+
+    # Session-intent surface filter (roadmap 8.8). Runs LAST so every
+    # tool that would otherwise be registered has already been added —
+    # we then remove whatever the configured intent doesn't allow.
+    # describe_self / describe_tool are always kept (see session_intent).
+    if settings.session_intent:
+        from mcpg.session_intent import filter_server_tools, resolve_intent_to_buckets
+
+        allowed = resolve_intent_to_buckets(settings.session_intent)
+        if allowed is not None:
+            filter_server_tools(server, allowed)
