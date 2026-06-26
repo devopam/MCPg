@@ -45,7 +45,6 @@ surface it back to callers.
 
 from __future__ import annotations
 
-from contextlib import suppress
 from typing import Any
 
 import pglast
@@ -230,13 +229,18 @@ def test_stats_reset_propagates_through_pg19_stats_reads() -> None:
     assert "stats_reset" in recovery_sql
     # Catalogue entries are characterisation pins; the module is the
     # operational source. Re-render the module's own SELECTs by
-    # source-grep to make sure they didn't drift.
+    # source-grep to make sure they didn't drift. Failing to open the
+    # source is a hard fail — pg19_stats is in this repo and always
+    # readable from the test process; silently passing would defeat
+    # the purpose of the propagation guard (gemini review on #177).
     src = (pg19_stats.__file__ or "").replace(".pyc", ".py")
-    with suppress(OSError):
+    try:
         with open(src, encoding="utf-8") as fh:
             module_text = fh.read()
-        assert "FROM pg_stat_lock" in module_text
-        assert "FROM pg_stat_recovery" in module_text
-        assert module_text.count("stats_reset") >= 2, (
-            "expected stats_reset to be selected by both pg_stat_lock and pg_stat_recovery readers"
-        )
+    except OSError as exc:
+        pytest.fail(f"failed to read pg19_stats source from {src!r}: {exc}")
+    assert "FROM pg_stat_lock" in module_text
+    assert "FROM pg_stat_recovery" in module_text
+    assert module_text.count("stats_reset") >= 2, (
+        "expected stats_reset to be selected by both pg_stat_lock and pg_stat_recovery readers"
+    )
