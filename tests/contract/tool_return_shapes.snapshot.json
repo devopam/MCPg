@@ -1639,6 +1639,7 @@
       "fields": [
         "acquires",
         "lock_type",
+        "stats_reset",
         "wait_time_us",
         "waits"
       ],
@@ -1650,7 +1651,8 @@
         "last_replayed_at",
         "replay_lag_seconds",
         "replay_lsn",
-        "startup_state"
+        "startup_state",
+        "stats_reset"
       ],
       "kind": "list"
     },

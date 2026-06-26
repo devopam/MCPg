@@ -44,6 +44,42 @@ adheres to [Semantic Versioning](https://semver.org/).
   success so the matching `list_*` tools see the new state
   immediately.
 
+- **PG 19 characterisation tests bundle** — defensive coverage that
+  closes audit rows **#16 + #17 + #20** under roadmap row **3.4**:
+
+    - **`tests/contract/test_pg19_sql_characterisation.py`** — feeds
+      every SQL string MCPg's PG 19 modules emit through
+      `pglast.parse_sql` (libpg_query bindings). Two catalogues:
+      `_PARSE_OK_CATALOGUE` is the set that **must** parse on the
+      pinned pglast (catalogue SELECTs, `pg_enable_data_checksums()`,
+      version probes); `_PARSE_FAIL_CATALOGUE` pins PG 19-only
+      grammar (`REPACK`, `MERGE PARTITIONS`, `SPLIT PARTITION`,
+      `WAIT FOR LSN`, `GRAPH_TABLE`) to the exact token pglast 7.x
+      trips on so the day pglast picks up PG 19's parser source the
+      test flips and we move the entry to the OK catalogue. A
+      coverage guard ensures every PG 19 module gets at least one
+      entry — a new module without a characterisation pin trips CI
+      loudly. Today's mocked-driver unit suites can't catch a typo'd
+      catalogue identifier (`pg_state_lock` for `pg_stat_lock`); this
+      file is the cheapest gate that does.
+
+    - **`stats_reset` propagation through `pg19_stats` reads** —
+      `read_pg_stat_lock` and `read_pg_stat_recovery` (both PG 19
+      views) now select `stats_reset::text` and surface it on
+      `LockStatRow` / `RecoveryStatRow` with a `None` default. PG 19
+      added the column to every `pg_stat_*` view that didn't already
+      have it; the no-deprecation rule says we surface it so callers
+      can tell "no contention" from "counters were just reset". Two
+      new unit tests pin the propagation; the contract test pins the
+      SQL substring against the module source.
+
+    - **`docs/postgres-fdw-pushdown.md`** — characterisation of how
+      PG 19 widens `postgres_fdw` pushdown (array operators, extended
+      statistics, MERGE), the operator-managed setup recipe MCPg
+      supports today, and the return conditions for a dedicated FDW
+      tool surface. MCPg ships no FDW-specific tool today; the doc
+      explains why and what would change that.
+
 - **`warehousepg-latest` CI lane** — adds a new matrix entry to the
   CI `test` job that runs the full suite against a community
   WarehousePG (Greenplum-derived MPP) image. Lives alongside the

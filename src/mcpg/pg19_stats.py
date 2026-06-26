@@ -93,12 +93,20 @@ class LockStatRow:
     Field names follow the PG 19 Beta 1 docs. ``lock_type`` is the
     category (e.g. ``relation`` / ``tuple`` / ``advisory``).
     ``waits`` and ``wait_time_us`` are cumulative since the stats reset.
+
+    ``stats_reset`` is the timestamp of the last ``pg_stat_reset()`` call
+    against this view (PG 19 added the column to every ``pg_stat_*``
+    view that didn't already have it — surfacing it lets callers tell
+    "no lock contention" from "counters were reset 5 seconds ago").
+    Reported as the source ``text`` cast so callers don't need a
+    timezone-aware datetime to interpret it.
     """
 
     lock_type: str
     acquires: int
     waits: int
     wait_time_us: int
+    stats_reset: str | None = None
 
 
 @dataclass(frozen=True)
@@ -110,12 +118,17 @@ class RecoveryStatRow:
     ``replay_lag_seconds`` is the apparent lag from primary derived
     from the last-applied-record timestamp. ``startup_state`` reports
     the standby's startup-process status.
+
+    ``stats_reset`` is the timestamp of the last ``pg_stat_reset()``
+    call against this view (see :class:`LockStatRow` for the
+    rationale).
     """
 
     replay_lsn: str | None
     replay_lag_seconds: float | None
     last_replayed_at: str | None
     startup_state: str | None
+    stats_reset: str | None = None
 
 
 @dataclass(frozen=True)
@@ -279,7 +292,8 @@ async def read_pg_stat_lock(driver: SqlDriver) -> list[LockStatRow]:
         "  lock_type, "
         "  COALESCE(acquires, 0) AS acquires, "
         "  COALESCE(waits, 0) AS waits, "
-        "  COALESCE(wait_time_us, 0) AS wait_time_us "
+        "  COALESCE(wait_time_us, 0) AS wait_time_us, "
+        "  stats_reset::text AS stats_reset "
         "FROM pg_stat_lock "
         "ORDER BY wait_time_us DESC, waits DESC",
         force_readonly=True,
@@ -290,6 +304,7 @@ async def read_pg_stat_lock(driver: SqlDriver) -> list[LockStatRow]:
             acquires=int(row.cells["acquires"]),
             waits=int(row.cells["waits"]),
             wait_time_us=int(row.cells["wait_time_us"]),
+            stats_reset=row.cells.get("stats_reset"),
         )
         for row in rows or []
     ]
@@ -313,7 +328,8 @@ async def read_pg_stat_recovery(driver: SqlDriver) -> list[RecoveryStatRow]:
         "  replay_lsn::text AS replay_lsn, "
         "  EXTRACT(epoch FROM replay_lag) AS replay_lag_seconds, "
         "  last_replayed_at::text AS last_replayed_at, "
-        "  startup_state "
+        "  startup_state, "
+        "  stats_reset::text AS stats_reset "
         "FROM pg_stat_recovery",
         force_readonly=True,
     )
@@ -325,6 +341,7 @@ async def read_pg_stat_recovery(driver: SqlDriver) -> list[RecoveryStatRow]:
             ),
             last_replayed_at=row.cells.get("last_replayed_at"),
             startup_state=row.cells.get("startup_state"),
+            stats_reset=row.cells.get("stats_reset"),
         )
         for row in rows or []
     ]
