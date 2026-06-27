@@ -38,7 +38,7 @@ batches. List-returning tools wrap into a `{"result": [...]}`
 envelope; the ~17 remaining `dict`-typed tools are code-emitting /
 result-restructuring handlers (ORM generators, `describe_self`,
 `prepare_migration`) that legitimately can't auto-derive a clean
-schema and stay documented opaque exceptions.
+schema and are documented opaque exceptions.
 
 Backward-compatible: FastMCP keeps emitting the legacy text `content`
 array alongside the new `structuredContent`, so clients reading only
