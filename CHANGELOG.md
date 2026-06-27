@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.6.4] - 2026-06-27
+
+### Added
+
 - **`check_pitr_readiness`** — point-in-time recovery readiness
   advisor (`mcpg.pitr`, roadmap **5.3**). Composes
   `get_wal_archive_status` (5.2) with the GUCs that gate PITR
@@ -29,21 +37,14 @@ adheres to [Semantic Versioning](https://semver.org/).
   volume, bad object-store credentials, network partition), which
   otherwise silently accumulates WAL in `pg_wal/` until the volume
   fills. `healthy` is false when archiving is on and the latest
-  attempt failed (`last_failed_time` newer than `last_archived_time`).
-  The `archive_command` string is never echoed (it can carry
+  attempt failed (the comparison is computed in SQL on the native
+  `timestamptz` columns, correct across timezone offsets). The
+  `archive_command` string is never echoed (it can carry
   credentials) — only a boolean `archive_command_set`. Read-only;
   never raises. Typed return → emits an `outputSchema` (manifest
   floor 192 → 193). Companion to `read_pg_wal_records` (2.3, WAL
   *records*); this covers the WAL *archive*. Routed to the
   `operations_and_health` bucket.
-
-### Changed
-
-### Fixed
-
-## [0.6.4] - 2026-06-27
-
-### Added
 
 - **Roadmap-row linkage tooling** (roadmap **14.6**). The PR template
   now prompts for `Advances roadmap row: N.M`, and a new
