@@ -61,7 +61,7 @@ class PrewarmError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PrewarmExtensionStatus:
     """Whether the prewarm-related extensions are usable.
 
@@ -78,7 +78,7 @@ class PrewarmExtensionStatus:
     shared_preload_libraries: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PrewarmedRelation:
     """Current shared-buffer residency for one relation.
 
@@ -95,7 +95,7 @@ class PrewarmedRelation:
     dirty_blocks: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PrewarmRecommendation:
     """One advisor recommendation.
 
@@ -124,7 +124,7 @@ class PrewarmRecommendation:
     ready_to_run_sql: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RecommendPrewarmTargetsResult:
     """Advisor output rolled up with the budget context.
 
@@ -140,7 +140,7 @@ class RecommendPrewarmTargetsResult:
     candidates: list[PrewarmRecommendation] = field(default_factory=list)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PrewarmResult:
     """The outcome of a single ``pg_prewarm(...)`` call."""
 
@@ -150,7 +150,7 @@ class PrewarmResult:
     blocks_prewarmed: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BulkPrewarmOutcome:
     """One row in :class:`BulkPrewarmResult`."""
 
@@ -161,7 +161,7 @@ class BulkPrewarmOutcome:
     error: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BulkPrewarmResult:
     """Result of ``prewarm_recommended``."""
 
@@ -170,7 +170,7 @@ class BulkPrewarmResult:
     outcomes: list[BulkPrewarmOutcome] = field(default_factory=list)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AutowarmJob:
     """A pg_cron job MCPg owns for autowarm."""
 
@@ -180,7 +180,7 @@ class AutowarmJob:
     command: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ScheduleAutowarmResult:
     """Outcome of registering an autowarm cron job."""
 
@@ -189,7 +189,7 @@ class ScheduleAutowarmResult:
     schedule: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class UnscheduleAutowarmResult:
     """Outcome of removing an autowarm cron job."""
 

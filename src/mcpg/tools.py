@@ -3316,9 +3316,9 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             "pg_turboquant extension is not installed."
         ),
     )
-    async def list_turboquant_indexes(ctx: _Ctx) -> list[dict[str, Any]]:
+    async def list_turboquant_indexes(ctx: _Ctx) -> list[turboquant.TurboQuantIndexInfo]:
         infos = await turboquant.list_turboquant_indexes(_driver(ctx))
-        return [asdict(info) for info in infos]
+        return infos
 
     @server.tool(
         name="get_turboquant_index_metadata",
@@ -3335,9 +3335,9 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             "`raw_metadata` (full upstream payload)."
         ),
     )
-    async def get_turboquant_index_metadata(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
+    async def get_turboquant_index_metadata(ctx: _Ctx, schema: str, index: str) -> turboquant.TurboQuantIndexInfo:
         info = await turboquant.get_turboquant_index_metadata(_driver(ctx), schema, index)
-        return asdict(info)
+        return info
 
     @server.tool(
         name="get_turboquant_heap_stats",
@@ -3348,9 +3348,9 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             "may add. Requires the pg_turboquant extension."
         ),
     )
-    async def get_turboquant_heap_stats(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
+    async def get_turboquant_heap_stats(ctx: _Ctx, schema: str, index: str) -> turboquant.TurboQuantHeapStats:
         stats = await turboquant.get_turboquant_heap_stats(_driver(ctx), schema, index)
-        return asdict(stats)
+        return stats
 
     @server.tool(
         name="get_turboquant_last_scan_stats",
@@ -3362,9 +3362,9 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             "has run on this connection yet."
         ),
     )
-    async def get_turboquant_last_scan_stats(ctx: _Ctx) -> dict[str, Any] | None:
+    async def get_turboquant_last_scan_stats(ctx: _Ctx) -> turboquant.TurboQuantLastScanStats | None:
         stats = await turboquant.get_turboquant_last_scan_stats(_driver(ctx))
-        return asdict(stats) if stats is not None else None
+        return stats if stats is not None else None
 
     @server.tool(
         name="recommend_turboquant_maintenance",
@@ -3379,9 +3379,9 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             "``pg_turboquant Indexes`` category in audit_database."
         ),
     )
-    async def recommend_turboquant_maintenance(ctx: _Ctx) -> list[dict[str, Any]]:
+    async def recommend_turboquant_maintenance(ctx: _Ctx) -> list[turboquant.TurboQuantAdvisorFinding]:
         findings = await turboquant.recommend_turboquant_maintenance(_driver(ctx))
-        return [asdict(f) for f in findings]
+        return findings
 
     @server.tool(
         name="turboquant_approx_candidates",
@@ -3409,7 +3409,7 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
         probes: int | None = None,
         oversample_factor: int | None = None,
         half_precision: bool = False,
-    ) -> list[dict[str, Any]]:
+    ) -> list[turboquant.TurboQuantCandidate]:
         candidates = await turboquant.turboquant_approx_candidates(
             _driver(ctx),
             schema,
@@ -3423,7 +3423,7 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             oversample_factor=oversample_factor,
             half_precision=half_precision,
         )
-        return [asdict(c) for c in candidates]
+        return candidates
 
     @server.tool(
         name="turboquant_rerank_candidates",
@@ -3448,7 +3448,7 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
         probes: int | None = None,
         oversample_factor: int | None = None,
         half_precision: bool = False,
-    ) -> list[dict[str, Any]]:
+    ) -> list[turboquant.TurboQuantRerankedCandidate]:
         candidates = await turboquant.turboquant_rerank_candidates(
             _driver(ctx),
             schema,
@@ -3463,7 +3463,7 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             oversample_factor=oversample_factor,
             half_precision=half_precision,
         )
-        return [asdict(c) for c in candidates]
+        return candidates
 
     @server.tool(
         name="recommend_turboquant_query_knobs",
@@ -3487,7 +3487,7 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
         index_schema: str | None = None,
         index_name: str | None = None,
         filter_selectivity: float | None = None,
-    ) -> dict[str, Any]:
+    ) -> turboquant.TurboQuantQueryKnobs:
         knobs = await turboquant.recommend_turboquant_query_knobs(
             _driver(ctx),
             candidate_limit,
@@ -3496,7 +3496,7 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
             index_name=index_name,
             filter_selectivity=filter_selectivity,
         )
-        return asdict(knobs)
+        return knobs
 
 
 def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
@@ -3749,10 +3749,10 @@ def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
             "in unrestricted mode; requires pg_turboquant installed."
         ),
     )
-    async def maintain_turboquant_index(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
+    async def maintain_turboquant_index(ctx: _Ctx, schema: str, index: str) -> turboquant.MaintenanceResult:
         result = await turboquant.maintain_turboquant_index(_driver(ctx), schema, index)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
@@ -3970,7 +3970,7 @@ def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
         transform: str | None = None,
         normalized: bool | None = None,
         concurrently: bool = True,
-    ) -> dict[str, Any]:
+    ) -> turboquant.CreateIndexResult:
         database = ctx.request_context.lifespan_context.database
         result = await turboquant.create_turboquant_index(
             database,
@@ -3986,7 +3986,7 @@ def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
             concurrently=concurrently,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="reindex_turboquant_index",
@@ -4006,11 +4006,11 @@ def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
         schema: str,
         index: str,
         concurrently: bool = True,
-    ) -> dict[str, Any]:
+    ) -> turboquant.ReindexResult:
         database = ctx.request_context.lifespan_context.database
         result = await turboquant.reindex_turboquant_index(database, schema, index, concurrently=concurrently)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_pg_search_ddl(server: FastMCP[AppContext]) -> None:
@@ -4122,10 +4122,10 @@ def _register_redis_fdw_reads(server: FastMCP[AppContext]) -> None:
             "list_redis_foreign_servers()",
         ),
     )
-    async def list_redis_foreign_servers(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_redis_foreign_servers(ctx: _Ctx) -> list[redis_fdw.RedisForeignServer]:
+        async def _run() -> list[redis_fdw.RedisForeignServer]:
             servers = await redis_fdw.list_redis_foreign_servers(_driver(ctx))
-            return [asdict(s) for s in servers]
+            return servers
 
         return await _cached_call(ctx, "list_redis_foreign_servers", _run)
 
@@ -4143,10 +4143,10 @@ def _register_redis_fdw_reads(server: FastMCP[AppContext]) -> None:
             "describe_redis_cache_table(schema='public', table='sessions_cache')",
         ),
     )
-    async def describe_redis_cache_table(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    async def describe_redis_cache_table(ctx: _Ctx, schema: str, table: str) -> redis_fdw.RedisCacheTableInfo:
+        async def _run() -> redis_fdw.RedisCacheTableInfo:
             info = await redis_fdw.describe_redis_cache_table(_driver(ctx), schema, table)
-            return asdict(info)
+            return info
 
         return await _cached_call(ctx, "describe_redis_cache_table", _run, schema, table)
 
@@ -4163,10 +4163,10 @@ def _register_redis_fdw_reads(server: FastMCP[AppContext]) -> None:
             "get_redis_cache_stats(server='redis_primary')",
         ),
     )
-    async def get_redis_cache_stats(ctx: _Ctx, server: str) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    async def get_redis_cache_stats(ctx: _Ctx, server: str) -> redis_fdw.RedisCacheStats:
+        async def _run() -> redis_fdw.RedisCacheStats:
             stats = await redis_fdw.get_redis_cache_stats(_driver(ctx), server)
-            return asdict(stats)
+            return stats
 
         return await _cached_call(ctx, "get_redis_cache_stats", _run, server)
 
@@ -4197,8 +4197,8 @@ def _register_redis_fdw_reads(server: FastMCP[AppContext]) -> None:
         min_reads_per_day: int = 1000,
         max_rows: int = 1_000_000,
         limit: int = 20,
-    ) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    ) -> redis_fdw.RecommendRedisCacheTargetsResult:
+        async def _run() -> redis_fdw.RecommendRedisCacheTargetsResult:
             result = await redis_fdw.recommend_redis_cache_targets(
                 _driver(ctx),
                 server=server,
@@ -4207,7 +4207,7 @@ def _register_redis_fdw_reads(server: FastMCP[AppContext]) -> None:
                 max_rows=max_rows,
                 limit=limit,
             )
-            return asdict(result)
+            return result
 
         return await _cached_call(
             ctx,
@@ -4262,7 +4262,7 @@ def _register_redis_fdw_ddl(server: FastMCP[AppContext]) -> None:
         database: int = 0,
         tls: bool = True,
         allow_insecure_tls: bool = False,
-    ) -> dict[str, Any]:
+    ) -> redis_fdw.CreateRedisServerResult:
         result = await redis_fdw.create_redis_cache_server(
             _driver(ctx),
             name=name,
@@ -4273,7 +4273,7 @@ def _register_redis_fdw_ddl(server: FastMCP[AppContext]) -> None:
             allow_insecure_tls=allow_insecure_tls,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="create_redis_user_mapping",
@@ -4296,7 +4296,7 @@ def _register_redis_fdw_ddl(server: FastMCP[AppContext]) -> None:
         server: str,
         user: str,
         secret_ref: str,
-    ) -> dict[str, Any]:
+    ) -> redis_fdw.CreateRedisUserMappingResult:
         import os
 
         from mcpg.secrets import build_secrets_provider
@@ -4310,7 +4310,7 @@ def _register_redis_fdw_ddl(server: FastMCP[AppContext]) -> None:
             secrets=secrets_provider,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="create_redis_cache_table",
@@ -4340,7 +4340,7 @@ def _register_redis_fdw_ddl(server: FastMCP[AppContext]) -> None:
         columns: list[dict[str, str]],
         key_prefix: str | None = None,
         ttl_seconds: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> redis_fdw.CreateRedisCacheTableResult:
         result = await redis_fdw.create_redis_cache_table(
             _driver(ctx),
             schema=schema,
@@ -4352,7 +4352,7 @@ def _register_redis_fdw_ddl(server: FastMCP[AppContext]) -> None:
             ttl_seconds=ttl_seconds,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_cron_write(server: FastMCP[AppContext]) -> None:
@@ -4590,10 +4590,10 @@ def _register_pg_prewarm_reads(server: FastMCP[AppContext]) -> None:
             "get_prewarm_extension_status()",
         ),
     )
-    async def get_prewarm_extension_status(ctx: _Ctx) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    async def get_prewarm_extension_status(ctx: _Ctx) -> pg_prewarm.PrewarmExtensionStatus:
+        async def _run() -> pg_prewarm.PrewarmExtensionStatus:
             status = await pg_prewarm.get_prewarm_extension_status(_driver(ctx))
-            return asdict(status)
+            return status
 
         return await _cached_call(ctx, "get_prewarm_extension_status", _run)
 
@@ -4615,10 +4615,10 @@ def _register_pg_prewarm_reads(server: FastMCP[AppContext]) -> None:
         ctx: _Ctx,
         schema: str | None = None,
         limit: int = 100,
-    ) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    ) -> list[pg_prewarm.PrewarmedRelation]:
+        async def _run() -> list[pg_prewarm.PrewarmedRelation]:
             relations = await pg_prewarm.list_prewarmed_relations(_driver(ctx), schema=schema, limit=limit)
-            return [asdict(r) for r in relations]
+            return relations
 
         return await _cached_call(ctx, "list_prewarmed_relations", _run, schema, limit)
 
@@ -4649,8 +4649,8 @@ def _register_pg_prewarm_reads(server: FastMCP[AppContext]) -> None:
         min_heap_blks_read: int = 1000,
         limit: int = 20,
         prewarm_mode: str = "buffer",
-    ) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    ) -> pg_prewarm.RecommendPrewarmTargetsResult:
+        async def _run() -> pg_prewarm.RecommendPrewarmTargetsResult:
             result = await pg_prewarm.recommend_prewarm_targets(
                 _driver(ctx),
                 shared_buffers_budget_pct=shared_buffers_budget_pct,
@@ -4658,7 +4658,7 @@ def _register_pg_prewarm_reads(server: FastMCP[AppContext]) -> None:
                 limit=limit,
                 prewarm_mode=prewarm_mode,
             )
-            return asdict(result)
+            return result
 
         return await _cached_call(
             ctx,
@@ -4681,10 +4681,10 @@ def _register_pg_prewarm_reads(server: FastMCP[AppContext]) -> None:
             "list_autowarm_jobs()",
         ),
     )
-    async def list_autowarm_jobs(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_autowarm_jobs(ctx: _Ctx) -> list[pg_prewarm.AutowarmJob]:
+        async def _run() -> list[pg_prewarm.AutowarmJob]:
             jobs = await pg_prewarm.list_autowarm_jobs(_driver(ctx))
-            return [asdict(j) for j in jobs]
+            return jobs
 
         return await _cached_call(ctx, "list_autowarm_jobs", _run)
 
@@ -4707,10 +4707,10 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
         schema: str,
         relation: str,
         mode: str = "buffer",
-    ) -> dict[str, Any]:
+    ) -> pg_prewarm.PrewarmResult:
         result = await pg_prewarm.prewarm_relation(_driver(ctx), schema=schema, relation=relation, mode=mode)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="prewarm_recommended",
@@ -4734,7 +4734,7 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
         limit: int = 20,
         prewarm_mode: str = "buffer",
         dry_run: bool = False,
-    ) -> dict[str, Any]:
+    ) -> pg_prewarm.BulkPrewarmResult:
         result = await pg_prewarm.prewarm_recommended(
             _driver(ctx),
             shared_buffers_budget_pct=shared_buffers_budget_pct,
@@ -4744,7 +4744,7 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
             dry_run=dry_run,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="schedule_autowarm",
@@ -4768,7 +4768,7 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
         min_heap_blks_read: int = 1000,
         limit: int = 20,
         prewarm_mode: str = "buffer",
-    ) -> dict[str, Any]:
+    ) -> pg_prewarm.ScheduleAutowarmResult:
         result = await pg_prewarm.schedule_autowarm(
             _driver(ctx),
             name=name,
@@ -4779,7 +4779,7 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
             prewarm_mode=prewarm_mode,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="unschedule_autowarm",
@@ -4791,10 +4791,10 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
             "unschedule_autowarm(name='mcpg_autowarm')",
         ),
     )
-    async def unschedule_autowarm(ctx: _Ctx, name: str = "mcpg_autowarm") -> dict[str, Any]:
+    async def unschedule_autowarm(ctx: _Ctx, name: str = "mcpg_autowarm") -> pg_prewarm.UnscheduleAutowarmResult:
         result = await pg_prewarm.unschedule_autowarm(_driver(ctx), name=name)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_pg19_runtime_reads(server: FastMCP[AppContext]) -> None:

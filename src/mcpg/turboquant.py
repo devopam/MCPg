@@ -96,7 +96,7 @@ def _pg_quote_literal(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TurboQuantIndexInfo:
     """A turboquant index and the metadata `tq_index_metadata` reports for it.
 
@@ -160,7 +160,7 @@ class TurboQuantIndexInfo:
     index_options: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TurboQuantHeapStats:
     """Exact heap row count for a turboquant index."""
 
@@ -170,7 +170,7 @@ class TurboQuantHeapStats:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TurboQuantLastScanStats:
     """The most recent scan's diagnostic JSON, parsed defensively.
 
@@ -210,7 +210,7 @@ _BITS_MIN, _BITS_MAX = 1, 64
 _LISTS_MIN, _LISTS_MAX = 0, 1_000_000
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CreateIndexResult:
     """Outcome of a :func:`create_turboquant_index` call.
 
@@ -233,7 +233,7 @@ class CreateIndexResult:
     duration_seconds: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReindexResult:
     """Outcome of a :func:`reindex_turboquant_index` call."""
 
@@ -246,7 +246,7 @@ class ReindexResult:
     duration_seconds: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MaintenanceResult:
     """Outcome of a :func:`maintain_turboquant_index` call.
 
@@ -502,7 +502,7 @@ async def get_turboquant_heap_stats(driver: SqlDriver, schema: str, index: str) 
 # --- advisor + audit -------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TurboQuantAdvisorFinding:
     """A single rule-table hit produced by :func:`recommend_turboquant_maintenance`.
 
@@ -1027,7 +1027,7 @@ _TQ_METRIC_TEXT_FOR_METRIC: dict[str, str] = {
 }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TurboQuantCandidate:
     """A row from ``tq_approx_candidates``."""
 
@@ -1036,7 +1036,7 @@ class TurboQuantCandidate:
     approximate_distance: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TurboQuantRerankedCandidate:
     """A row from ``tq_rerank_candidates``."""
 
@@ -1047,7 +1047,7 @@ class TurboQuantRerankedCandidate:
     exact_distance: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TurboQuantQueryKnobs:
     """Tuning knobs returned by ``tq_recommended_query_knobs``."""
 
