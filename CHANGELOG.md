@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`outputSchema` sweep — batch 4 (schema-introspection catalogue
+  reads).** Roadmap **8.6**. 26 introspection tools converted to typed
+  frozen-dataclass returns: `list_schemas`, `list_tables`,
+  `describe_table`, `list_indexes`, `list_constraints`,
+  `list_foreign_keys`, `list_views`, `list_functions`, `list_triggers`,
+  `list_partitions`, `list_roles`, `list_grants`, `list_policies`,
+  `list_sequences`, `list_enums`, `list_domains`, `list_composite_types`,
+  `list_foreign_data_wrappers`, `list_foreign_servers`,
+  `list_foreign_tables`, `list_user_mappings`, `list_publications`,
+  `list_subscriptions`, `list_extensions`, `list_available_extensions`,
+  `list_generated_columns`. Structured-output manifest floor 51 → 77.
+  Additive only (field sets unchanged).
+
 - **`outputSchema` sweep — batch 3 (live-ops / health / catalogue
   reads).** Realises roadmap **8.6**. 18 more tools converted from
   `dict[str, Any]` returns to their typed frozen-dataclass returns,

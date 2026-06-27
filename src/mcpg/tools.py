@@ -340,10 +340,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "list_schemas(include_system=false)",
         ),
     )
-    async def list_schemas(ctx: _Ctx, include_system: bool = False) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_schemas(ctx: _Ctx, include_system: bool = False) -> list[introspection.SchemaInfo]:
+        async def _run() -> list[introspection.SchemaInfo]:
             schemas = await introspection.list_schemas(_driver(ctx), include_system=include_system)
-            return [asdict(schema) for schema in schemas]
+            return schemas
 
         return await _cached_call(ctx, "list_schemas", _run, include_system)
 
@@ -356,10 +356,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "list_tables(schema='public')",
         ),
     )
-    async def list_tables(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_tables(ctx: _Ctx, schema: str) -> list[introspection.TableInfo]:
+        async def _run() -> list[introspection.TableInfo]:
             tables = await introspection.list_tables(_driver(ctx), schema)
-            return [asdict(table) for table in tables]
+            return tables
 
         return await _cached_call(ctx, "list_tables", _run, schema)
 
@@ -372,10 +372,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "describe_table(schema='public', table='users')",
         ),
     )
-    async def describe_table(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def describe_table(ctx: _Ctx, schema: str, table: str) -> list[introspection.ColumnInfo]:
+        async def _run() -> list[introspection.ColumnInfo]:
             columns = await introspection.describe_table(_driver(ctx), schema, table)
-            return [asdict(column) for column in columns]
+            return columns
 
         return await _cached_call(ctx, "describe_table", _run, schema, table)
 
@@ -389,10 +389,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "list_indexes(schema='public', table='users')",
         ),
     )
-    async def list_indexes(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_indexes(ctx: _Ctx, schema: str, table: str) -> list[introspection.IndexInfo]:
+        async def _run() -> list[introspection.IndexInfo]:
             indexes = await introspection.list_indexes(_driver(ctx), schema, table)
-            return [asdict(index) for index in indexes]
+            return indexes
 
         return await _cached_call(ctx, "list_indexes", _run, schema, table)
 
@@ -404,10 +404,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "list_constraints(schema='public', table='orders')",
         ),
     )
-    async def list_constraints(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_constraints(ctx: _Ctx, schema: str, table: str) -> list[introspection.ConstraintInfo]:
+        async def _run() -> list[introspection.ConstraintInfo]:
             constraints = await introspection.list_constraints(_driver(ctx), schema, table)
-            return [asdict(constraint) for constraint in constraints]
+            return constraints
 
         return await _cached_call(ctx, "list_constraints", _run, schema, table)
 
@@ -420,10 +420,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "list_foreign_keys(schema='public')",
         ),
     )
-    async def list_foreign_keys(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_foreign_keys(ctx: _Ctx, schema: str) -> list[introspection.ForeignKeyInfo]:
+        async def _run() -> list[introspection.ForeignKeyInfo]:
             fks = await introspection.list_foreign_keys(_driver(ctx), schema)
-            return [asdict(fk) for fk in fks]
+            return fks
 
         return await _cached_call(ctx, "list_foreign_keys", _run, schema)
 
@@ -435,10 +435,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "(the SELECT SQL)."
         ),
     )
-    async def list_views(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_views(ctx: _Ctx, schema: str) -> list[introspection.ViewInfo]:
+        async def _run() -> list[introspection.ViewInfo]:
             views = await introspection.list_views(_driver(ctx), schema)
-            return [asdict(view) for view in views]
+            return views
 
         return await _cached_call(ctx, "list_views", _run, schema)
 
@@ -451,10 +451,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "(plpgsql / sql / c / etc.)."
         ),
     )
-    async def list_functions(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_functions(ctx: _Ctx, schema: str) -> list[introspection.FunctionInfo]:
+        async def _run() -> list[introspection.FunctionInfo]:
             functions = await introspection.list_functions(_driver(ctx), schema)
-            return [asdict(function) for function in functions]
+            return functions
 
         return await _cached_call(ctx, "list_functions", _run, schema)
 
@@ -466,10 +466,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "qualified name), and `definition` (the CREATE TRIGGER SQL)."
         ),
     )
-    async def list_triggers(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_triggers(ctx: _Ctx, schema: str, table: str) -> list[introspection.TriggerInfo]:
+        async def _run() -> list[introspection.TriggerInfo]:
             triggers = await introspection.list_triggers(_driver(ctx), schema, table)
-            return [asdict(trigger) for trigger in triggers]
+            return triggers
 
         return await _cached_call(ctx, "list_triggers", _run, schema, table)
 
@@ -481,10 +481,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "or null), and `partitions` (a list of `{name, bounds}` for each partition)."
         ),
     )
-    async def list_partitions(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    async def list_partitions(ctx: _Ctx, schema: str, table: str) -> introspection.PartitionSet:
+        async def _run() -> introspection.PartitionSet:
             partition_set = await introspection.list_partitions(_driver(ctx), schema, table)
-            return asdict(partition_set)
+            return partition_set
 
         return await _cached_call(ctx, "list_partitions", _run, schema, table)
 
@@ -497,10 +497,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "`can_login`, `replication`, `bypass_rls`, `connection_limit`, `member_of`."
         ),
     )
-    async def list_roles(ctx: _Ctx, include_system: bool = False) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_roles(ctx: _Ctx, include_system: bool = False) -> list[introspection.RoleInfo]:
+        async def _run() -> list[introspection.RoleInfo]:
             roles = await introspection.list_roles(_driver(ctx), include_system=include_system)
-            return [asdict(role) for role in roles]
+            return roles
 
         return await _cached_call(ctx, "list_roles", _run, include_system)
 
@@ -513,10 +513,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "regrant), and `grantor`."
         ),
     )
-    async def list_grants(ctx: _Ctx, schema: str, table: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_grants(ctx: _Ctx, schema: str, table: str) -> list[introspection.GrantInfo]:
+        async def _run() -> list[introspection.GrantInfo]:
             grants = await introspection.list_grants(_driver(ctx), schema, table)
-            return [asdict(grant) for grant in grants]
+            return grants
 
         return await _cached_call(ctx, "list_grants", _run, schema, table)
 
@@ -529,10 +529,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "using_expression, check_expression}`."
         ),
     )
-    async def list_policies(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    async def list_policies(ctx: _Ctx, schema: str, table: str) -> introspection.PolicySet:
+        async def _run() -> introspection.PolicySet:
             policy_set = await introspection.list_policies(_driver(ctx), schema, table)
-            return asdict(policy_set)
+            return policy_set
 
         return await _cached_call(ctx, "list_policies", _run, schema, table)
 
@@ -544,10 +544,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "`max_value`, `increment`, `cycle` (bool), `last_value`."
         ),
     )
-    async def list_sequences(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_sequences(ctx: _Ctx, schema: str) -> list[introspection.SequenceInfo]:
+        async def _run() -> list[introspection.SequenceInfo]:
             sequences = await introspection.list_sequences(_driver(ctx), schema)
-            return [asdict(sequence) for sequence in sequences]
+            return sequences
 
         return await _cached_call(ctx, "list_sequences", _run, schema)
 
@@ -559,10 +559,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "the order defined)."
         ),
     )
-    async def list_enums(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_enums(ctx: _Ctx, schema: str) -> list[introspection.EnumInfo]:
+        async def _run() -> list[introspection.EnumInfo]:
             enums = await introspection.list_enums(_driver(ctx), schema)
-            return [asdict(enum) for enum in enums]
+            return enums
 
         return await _cached_call(ctx, "list_enums", _run, schema)
 
@@ -574,10 +574,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "`constraints` (list of CHECK clauses)."
         ),
     )
-    async def list_domains(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_domains(ctx: _Ctx, schema: str) -> list[introspection.DomainInfo]:
+        async def _run() -> list[introspection.DomainInfo]:
             domains = await introspection.list_domains(_driver(ctx), schema)
-            return [asdict(domain) for domain in domains]
+            return domains
 
         return await _cached_call(ctx, "list_domains", _run, schema)
 
@@ -589,10 +589,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "`{name, data_type}` for each field)."
         ),
     )
-    async def list_composite_types(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_composite_types(ctx: _Ctx, schema: str) -> list[introspection.CompositeTypeInfo]:
+        async def _run() -> list[introspection.CompositeTypeInfo]:
             types = await introspection.list_composite_types(_driver(ctx), schema)
-            return [asdict(t) for t in types]
+            return types
 
         return await _cached_call(ctx, "list_composite_types", _run, schema)
 
@@ -604,10 +604,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "`validator`, and `options` (dict of wrapper-specific options)."
         ),
     )
-    async def list_foreign_data_wrappers(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_foreign_data_wrappers(ctx: _Ctx) -> list[introspection.ForeignDataWrapperInfo]:
+        async def _run() -> list[introspection.ForeignDataWrapperInfo]:
             wrappers = await introspection.list_foreign_data_wrappers(_driver(ctx))
-            return [asdict(wrapper) for wrapper in wrappers]
+            return wrappers
 
         return await _cached_call(ctx, "list_foreign_data_wrappers", _run)
 
@@ -619,10 +619,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "`type`, `version`, and `options` (dict of server options)."
         ),
     )
-    async def list_foreign_servers(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_foreign_servers(ctx: _Ctx) -> list[introspection.ForeignServerInfo]:
+        async def _run() -> list[introspection.ForeignServerInfo]:
             servers = await introspection.list_foreign_servers(_driver(ctx))
-            return [asdict(server_info) for server_info in servers]
+            return servers
 
         return await _cached_call(ctx, "list_foreign_servers", _run)
 
@@ -634,10 +634,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "and `options` (dict of per-table options)."
         ),
     )
-    async def list_foreign_tables(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_foreign_tables(ctx: _Ctx, schema: str) -> list[introspection.ForeignTableInfo]:
+        async def _run() -> list[introspection.ForeignTableInfo]:
             tables = await introspection.list_foreign_tables(_driver(ctx), schema)
-            return [asdict(table) for table in tables]
+            return tables
 
         return await _cached_call(ctx, "list_foreign_tables", _run, schema)
 
@@ -649,10 +649,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "(foreign-server name), and `options` (dict of mapping options, e.g. credentials)."
         ),
     )
-    async def list_user_mappings(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_user_mappings(ctx: _Ctx) -> list[introspection.UserMappingInfo]:
+        async def _run() -> list[introspection.UserMappingInfo]:
             mappings = await introspection.list_user_mappings(_driver(ctx))
-            return [asdict(mapping) for mapping in mappings]
+            return mappings
 
         return await _cached_call(ctx, "list_user_mappings", _run)
 
@@ -665,10 +665,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "(bools), and `tables` (list of `schema.table` strings)."
         ),
     )
-    async def list_publications(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_publications(ctx: _Ctx) -> list[introspection.PublicationInfo]:
+        async def _run() -> list[introspection.PublicationInfo]:
             publications = await introspection.list_publications(_driver(ctx))
-            return [asdict(publication) for publication in publications]
+            return publications
 
         return await _cached_call(ctx, "list_publications", _run)
 
@@ -676,10 +676,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         name="list_subscriptions",
         description="List logical-replication subscriptions; requires superuser to see any rows.",
     )
-    async def list_subscriptions(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_subscriptions(ctx: _Ctx) -> list[introspection.SubscriptionInfo]:
+        async def _run() -> list[introspection.SubscriptionInfo]:
             subscriptions = await introspection.list_subscriptions(_driver(ctx))
-            return [asdict(subscription) for subscription in subscriptions]
+            return subscriptions
 
         return await _cached_call(ctx, "list_subscriptions", _run)
 
@@ -689,10 +689,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "List the extensions installed in the database. Returns a list of objects with `name` and `version`."
         ),
     )
-    async def list_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_extensions(ctx: _Ctx) -> list[introspection.ExtensionInfo]:
+        async def _run() -> list[introspection.ExtensionInfo]:
             extensions = await introspection.list_extensions(_driver(ctx))
-            return [asdict(extension) for extension in extensions]
+            return extensions
 
         return await _cached_call(ctx, "list_extensions", _run)
 
@@ -704,10 +704,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "(null when not installed), and `installed` (bool)."
         ),
     )
-    async def list_available_extensions(ctx: _Ctx) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_available_extensions(ctx: _Ctx) -> list[introspection.AvailableExtension]:
+        async def _run() -> list[introspection.AvailableExtension]:
             extensions = await introspection.list_available_extensions(_driver(ctx))
-            return [asdict(extension) for extension in extensions]
+            return extensions
 
         return await _cached_call(ctx, "list_available_extensions", _run)
 
@@ -723,10 +723,10 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "`expression`, `kind` ('stored' today; reserved for 'virtual')."
         ),
     )
-    async def list_generated_columns(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
-        async def _run() -> list[dict[str, Any]]:
+    async def list_generated_columns(ctx: _Ctx, schema: str) -> list[introspection.GeneratedColumnInfo]:
+        async def _run() -> list[introspection.GeneratedColumnInfo]:
             cols = await introspection.list_generated_columns(_driver(ctx), schema)
-            return [asdict(c) for c in cols]
+            return cols
 
         return await _cached_call(ctx, "list_generated_columns", _run, schema)
 
