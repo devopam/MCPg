@@ -20,7 +20,7 @@ import math
 import random
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from mcpg._vendor.sql import SqlDriver
@@ -83,7 +83,7 @@ class VectorOpsError(Exception):
     """Raised when a vector-analytics request is rejected."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DistanceMetricRecommendation:
     """The outcome of an :func:`analyze_distance_metric` call.
 
@@ -326,7 +326,7 @@ async def analyze_distance_metric(
 DEFAULT_K = 10
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CrossTableMatch:
     """One hit from :func:`cross_table_similarity`.
 
@@ -341,7 +341,7 @@ class CrossTableMatch:
     row: dict[str, Any]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CrossTableSimilarityResult:
     """The outcome of a :func:`cross_table_similarity` call.
 
@@ -490,7 +490,7 @@ DEFAULT_MAX_ITERATIONS = 20
 _KMEANS_TOLERANCE = 1e-4
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ClusterCentroid:
     """One k-means centroid + the number of rows assigned to it."""
 
@@ -499,7 +499,7 @@ class ClusterCentroid:
     size: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ClusterAssignment:
     """The cluster a single sampled row was assigned to.
 
@@ -514,7 +514,7 @@ class ClusterAssignment:
     distance: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ClusterVectorsResult:
     """The outcome of a :func:`cluster_vectors` call.
 
@@ -847,7 +847,7 @@ DEFAULT_OUTLIER_ZSCORE = 3.0
 DEFAULT_OUTLIER_MAX_RESULTS = 100
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class VectorOutlier:
     """One row flagged as an outlier by :func:`detect_vector_outliers`.
 
@@ -865,10 +865,15 @@ class VectorOutlier:
     id: Any
     cluster: int
     distance: float
-    zscore: float
+    # ``None`` encodes an infinite z-score — a singleton cluster or a
+    # zero-variance cluster where the row sits beyond the mean. (We used
+    # to store ``math.inf`` here, but that isn't representable in JSON
+    # and the structured-output schema rejects it; ``None`` is the
+    # JSON-safe "infinitely far" sentinel.)
+    zscore: float | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ClusterOutlierStats:
     """Per-cluster mean / std of within-cluster distances.
 
@@ -883,7 +888,7 @@ class ClusterOutlierStats:
     std_distance: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class VectorOutlierResult:
     """The outcome of a :func:`detect_vector_outliers` call.
 
@@ -1075,8 +1080,14 @@ async def detect_vector_outliers(
 
     # inf compares greater than every float so the sort below puts
     # zero-std outliers above finite-z ones, which is what we want.
-    flagged.sort(key=lambda o: o.zscore, reverse=True)
+    # At this point every zscore is still a float (inf for the
+    # singleton / zero-variance cases); the None mapping happens after.
+    # The key coalesces None → inf defensively so it stays total.
+    flagged.sort(key=lambda o: o.zscore if o.zscore is not None else math.inf, reverse=True)
     capped = flagged[:max_results]
+    # inf isn't JSON-representable (the structured-output schema rejects
+    # it), so map it to the None sentinel now that sorting is done.
+    capped = [replace(o, zscore=None) if o.zscore is not None and math.isinf(o.zscore) else o for o in capped]
 
     cluster_stats = [
         ClusterOutlierStats(cluster=j, size=sizes[j], mean_distance=means[j], std_distance=stds[j]) for j in range(k)
@@ -1118,7 +1129,7 @@ DEFAULT_DRIFT_THRESHOLD = 0.05
 _DRIFT_SAMPLE_OVER_FETCH = 1.5
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class EmbeddingWindowStats:
     """Distributional summary of an embedding column over a time window.
 
@@ -1137,7 +1148,7 @@ class EmbeddingWindowStats:
     centroid: list[float]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class EmbeddingDriftReport:
     """The outcome of a :func:`monitor_embedding_drift` call.
 

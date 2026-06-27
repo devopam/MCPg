@@ -49,7 +49,7 @@ def _quoted(name: str) -> str:
     return f'"{name}"'
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HypertableInfo:
     """Summary of one TimescaleDB hypertable."""
 
@@ -61,7 +61,7 @@ class HypertableInfo:
     total_size_bytes: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HypertableListResult:
     """The result of :func:`list_hypertables`.
 
@@ -73,7 +73,7 @@ class HypertableListResult:
     hypertables: list[HypertableInfo]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ChunkInfo:
     """One chunk under a hypertable."""
 
@@ -86,7 +86,7 @@ class ChunkInfo:
     is_compressed: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ChunkListResult:
     """The result of :func:`list_chunks`."""
 
@@ -94,7 +94,7 @@ class ChunkListResult:
     chunks: list[ChunkInfo]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TimescaleWriteResult:
     """The outcome of a TimescaleDB write tool call."""
 

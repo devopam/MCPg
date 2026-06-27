@@ -224,6 +224,245 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
     "list_extensions": frozenset({"result"}),
     "list_available_extensions": frozenset({"result"}),
     "list_generated_columns": frozenset({"result"}),
+    # --- Batch 5: vector / RAG / search family ---
+    "reindex_pg_search_index": frozenset(
+        {"schema", "index", "concurrently", "reindex_sql", "started_at", "completed_at", "duration_seconds"}
+    ),
+    "create_pg_search_index": frozenset(
+        {
+            "schema",
+            "table",
+            "columns",
+            "index_name",
+            "key_field",
+            "options",
+            "concurrently",
+            "create_sql",
+            "started_at",
+            "completed_at",
+            "duration_seconds",
+        }
+    ),
+    "recommend_efficiency_thresholds": frozenset(
+        {
+            "baseline_recall_low",
+            "baseline_recall_low_adapted",
+            "ranking_degraded_spearman",
+            "ranking_degraded_spearman_adapted",
+            "pruning_ineffective",
+            "pruning_ineffective_adapted",
+            "rerank_lift_flat_delta",
+            "rerank_lift_steep_low",
+            "rerank_lift_steep_high",
+            "ranking_degraded_recall",
+            "corpus_size",
+            "derived_from_corpus",
+        }
+    ),
+    "setup_efficiency_observations": frozenset({"schema_created", "table_created", "indexes_created", "setup_sql"}),
+    "setup_rag_telemetry": frozenset({"schema_created", "table_created", "indexes_created", "setup_sql"}),
+    "record_efficiency_observation": frozenset({"observation_id"}),
+    "log_rerank_event": frozenset({"event_id"}),
+    "hybrid_bm25_vector_search": frozenset({"result"}),
+    "pg_search_parse_query": frozenset({"parsed"}),
+    "pg_search_more_like_this": frozenset({"result"}),
+    "pg_search_run": frozenset({"result"}),
+    "recommend_pg_search_maintenance": frozenset({"result"}),
+    "get_pg_search_index_metadata": frozenset(
+        {
+            "schema",
+            "index",
+            "table",
+            "columns",
+            "key_field",
+            "text_fields",
+            "numeric_fields",
+            "boolean_fields",
+            "json_fields",
+            "range_fields",
+            "datetime_fields",
+            "layer_sizes",
+            "background_layer_sizes",
+            "target_segment_count",
+            "mutable_segment_rows",
+            "sort_by",
+            "search_tokenizer",
+            "index_options",
+        }
+    ),
+    "list_pg_search_indexes": frozenset({"result"}),
+    "geo_search": frozenset({"available", "matches"}),
+    "recommend_vector_quantization": frozenset({"result"}),
+    "hybrid_search": frozenset({"available", "matches"}),
+    "mmr_search": frozenset({"available", "matches"}),
+    "vector_range_search": frozenset({"available", "matches"}),
+    "vector_search": frozenset({"available", "matches"}),
+    "full_text_search": frozenset({"result"}),
+    "fuzzy_search": frozenset({"available", "matches"}),
+    "add_retention_policy": frozenset({"available", "function", "details"}),
+    "add_compression_policy": frozenset({"available", "function", "details"}),
+    "create_hypertable": frozenset({"available", "function", "details"}),
+    "list_chunks": frozenset({"available", "chunks"}),
+    "list_hypertables": frozenset({"available", "hypertables"}),
+    "monitor_embedding_drift": frozenset(
+        {
+            "available",
+            "dimension",
+            "drift_threshold",
+            "insufficient_data",
+            "drift_detected",
+            "centroid_cosine_distance",
+            "norm_mean_relative_change",
+            "norm_std_relative_change",
+            "baseline",
+            "current",
+            "notes",
+        }
+    ),
+    "detect_vector_outliers": frozenset(
+        {
+            "available",
+            "sampled_rows",
+            "dimension",
+            "metric",
+            "k",
+            "zscore_threshold",
+            "total_outliers",
+            "outliers",
+            "cluster_stats",
+        }
+    ),
+    "cluster_vectors": frozenset(
+        {
+            "available",
+            "sampled_rows",
+            "dimension",
+            "metric",
+            "iterations",
+            "converged",
+            "inertia",
+            "centroids",
+            "assignments",
+        }
+    ),
+    "cross_table_similarity": frozenset({"available", "source_embedding_found", "source_dimension", "matches"}),
+    "analyze_distance_metric": frozenset(
+        {
+            "available",
+            "sampled_rows",
+            "mean_magnitude",
+            "magnitude_std",
+            "magnitude_cv",
+            "pre_normalised",
+            "recommended_metric",
+            "rationale",
+        }
+    ),
+    "recommend_hnsw_ef_search": frozenset(
+        {
+            "available",
+            "has_hnsw_index",
+            "index_name",
+            "metric",
+            "k",
+            "target_recall",
+            "sample_queries",
+            "recommended_ef_search",
+            "sweep",
+            "detail",
+        }
+    ),
+    "migrate_vector_to_halfvec": frozenset(
+        {
+            "available",
+            "already_halfvec",
+            "column_type",
+            "dimension",
+            "row_count",
+            "estimated_bytes_per_row_before",
+            "estimated_bytes_per_row_after",
+            "estimated_total_bytes_saved",
+            "indexes",
+            "migration_sql",
+            "rollback_sql",
+            "notes",
+        }
+    ),
+    "vector_recall_at_k": frozenset({"metric", "k", "sample_size", "mean_recall"}),
+    "tune_vector_index": frozenset(
+        {"index_type", "parameters", "rationale", "create_index_sql", "row_count", "dimension"}
+    ),
+    "recommend_rerank_strategy": frozenset({"window_days", "retrieval_index", "summary", "findings"}),
+    "analyze_rerank_ndcg": frozenset(
+        {
+            "window_days",
+            "k",
+            "model",
+            "retrieval_index",
+            "labeled_query_count",
+            "ndcg_at_k_under_bi_order",
+            "ndcg_at_k_under_cross_order",
+            "delta",
+            "findings",
+        }
+    ),
+    "analyze_rerank_score_distribution": frozenset(
+        {
+            "window_days",
+            "model",
+            "retrieval_index",
+            "event_count",
+            "histogram",
+            "bucket_edges",
+            "top_decile_share",
+            "findings",
+        }
+    ),
+    "analyze_topk_stability": frozenset(
+        {
+            "window_days",
+            "k",
+            "model",
+            "retrieval_index",
+            "query_count",
+            "mean_jaccard",
+            "p25_jaccard",
+            "p75_jaccard",
+            "findings",
+        }
+    ),
+    "analyze_reranker_lift": frozenset(
+        {
+            "window_days",
+            "model",
+            "retrieval_index",
+            "query_count",
+            "mean_spearman",
+            "mean_kendall",
+            "p25_spearman",
+            "p75_spearman",
+            "interpretation",
+            "findings",
+        }
+    ),
+    "analyze_vector_search_efficiency": frozenset(
+        {
+            "schema",
+            "table",
+            "column",
+            "index_name",
+            "backend",
+            "metric",
+            "sample_size",
+            "k",
+            "recall_at_k_baseline",
+            "rerank_lift_curve",
+            "score_rank_correlation_spearman",
+            "score_rank_correlation_kendall",
+            "pages_pruned_ratio_p50",
+            "findings",
+        }
+    ),
 }
 
 
@@ -314,7 +553,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 77
+    floor = 119
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "

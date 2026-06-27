@@ -55,7 +55,7 @@ def _quoted(name: str, kind: str) -> str:
     return f'"{name}"'
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TuningRecommendation:
     """A recommended pgvector index configuration."""
 
@@ -67,7 +67,7 @@ class TuningRecommendation:
     dimension: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RecallReport:
     """Recall@k probed against an existing pgvector index."""
 
@@ -283,7 +283,7 @@ _VECTOR_TO_HALFVEC_OPCLASS = {
 }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HalfvecIndexConversion:
     """One index touched by the halfvec migration.
 
@@ -303,7 +303,7 @@ class HalfvecIndexConversion:
     conversion_supported: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HalfvecMigrationPlan:
     """A read-only DDL plan for converting a pgvector column to halfvec.
 

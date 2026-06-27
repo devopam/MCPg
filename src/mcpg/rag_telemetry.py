@@ -113,7 +113,7 @@ class RagTelemetryError(Exception):
     """Raised when a RAG telemetry operation cannot complete."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RagTelemetrySetupResult:
     """Outcome of a :func:`setup_rag_telemetry` call.
 
@@ -133,7 +133,7 @@ class RagTelemetrySetupResult:
     setup_sql: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LogRerankEventResult:
     """Outcome of a :func:`log_rerank_event` call."""
 
@@ -424,7 +424,7 @@ _SETUP_SQL_EFFICIENCY_INDEXES: tuple[tuple[str, str], ...] = (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class EfficiencyObservationsSetupResult:
     """Outcome of :func:`setup_efficiency_observations`.
 
@@ -440,14 +440,14 @@ class EfficiencyObservationsSetupResult:
     setup_sql: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RecordEfficiencyObservationResult:
     """Outcome of :func:`record_efficiency_observation`."""
 
     observation_id: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class EfficiencyThresholds:
     """Thresholds for evaluating an :func:`analyze_vector_search_efficiency` report.
 
@@ -783,7 +783,7 @@ def _rag_check_interval(value: str, *, kind: str) -> None:
         raise RagTelemetryError(str(exc)) from exc
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RagTelemetryMigrationResult:
     """Outcome of :func:`migrate_rag_telemetry_to_partitioned`."""
 
@@ -801,7 +801,7 @@ class RagTelemetryMigrationResult:
 
 # Per-table migration parameters: PK column + timestamp column +
 # qualified table + column list (for INSERT) + LZ4-target text columns.
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class _RagTableSpec:
     table: str
     pk_column: str
