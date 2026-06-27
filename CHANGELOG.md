@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`get_wal_archive_status`** — WAL-archiving health probe
+  (`mcpg.wal_archive`, roadmap **5.2**). Reads `pg_stat_archiver`
+  + the archive-mode GUCs and returns a one-call verdict on whether
+  continuous archiving is healthy. The early-warning signal for a
+  failing `archive_command` / `archive_library` (full archive
+  volume, bad object-store credentials, network partition), which
+  otherwise silently accumulates WAL in `pg_wal/` until the volume
+  fills. `healthy` is false when archiving is on and the latest
+  attempt failed (`last_failed_time` newer than `last_archived_time`).
+  The `archive_command` string is never echoed (it can carry
+  credentials) — only a boolean `archive_command_set`. Read-only;
+  never raises. Typed return → emits an `outputSchema` (manifest
+  floor 192 → 193). Companion to `read_pg_wal_records` (2.3, WAL
+  *records*); this covers the WAL *archive*. Routed to the
+  `operations_and_health` bucket.
+
 ### Changed
 
 ### Fixed
