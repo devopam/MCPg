@@ -501,6 +501,28 @@ Closes #N. <One-sentence description.>
 - **`shared_buffers` is human-readable** (`"128MB"`) — convert via `pg_size_bytes(current_setting('shared_buffers')) / current_setting('block_size')::int`.
 - **`extension_installed()` is a single round-trip** — call it once per function, not in a loop.
 
+## 12a. Roadmap-row linkage (roadmap 14.6)
+
+Every feature PR cites the roadmap row it advances in its body:
+
+```
+Advances roadmap row: 8.6
+```
+
+The id is the leading table cell in [`../feature-shortlist.md`](../feature-shortlist.md)
+(e.g. `8.6`, `15.2`). The PR template prompts for it. At review/merge,
+confirm the row exists and isn't already shipped:
+
+```bash
+python tools/roadmap_linkage.py check 8.6 --open   # exits non-zero if missing OR already shipped
+python tools/roadmap_linkage.py list               # all ids + shipped/in_progress/open status
+```
+
+When the PR *completes* a row, flip its marker to ✅ in the same PR
+(the contract-review step clears it explicitly rather than leaving the
+linkage implicit). Chore / infra PRs with no roadmap row write
+`N/A — <reason>`.
+
 ## 13. Cross-references
 
 - Real-world worked examples to copy from:

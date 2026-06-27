@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Roadmap-row linkage tooling** (roadmap **14.6**). The PR template
+  now prompts for `Advances roadmap row: N.M`, and a new
+  `tools/roadmap_linkage.py` parses `docs/feature-shortlist.md` into a
+  `{row_id: status}` map so the cited row can be validated at
+  review/merge time (`check N.M --open` exits non-zero if the row is
+  missing or already ✅; `list` prints every id with its
+  shipped/in_progress/open status). The convention is documented in
+  `docs/contributing/adding-tools.md` §12a. Makes the previously-implicit
+  PR↔roadmap linkage explicit and mechanically checkable.
+
 ### Changed
 
 - **`outputSchema` sweep — batch 6 (FDW / extensions family).**
