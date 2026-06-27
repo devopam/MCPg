@@ -8,6 +8,27 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`recommend_hnsw_ef_search`** — HNSW recall/speed advisor
+  (`mcpg.vector_tuner_advanced`). Realises roadmap **9.1**. The
+  actionable companion to the existing `analyze_hnsw_recall` (which
+  sweeps one caller-supplied query vector and returns a raw curve):
+  this one samples `sample_queries` rows (default 10) as query
+  vectors, builds an exact brute-force top-k ground truth per query
+  (via the pgvector distance *function*, which the planner does not
+  route to the ANN index), sweeps `ef_values` (default
+  16/32/64/128/256) measuring **mean recall@k + p50/p95 latency** at
+  each, and recommends the smallest value clearing `target_recall`
+  (default 0.95). Crucially it **verifies an HNSW index actually
+  exists** on the column (`has_hnsw_index=false` with guidance
+  otherwise) — the single-query tool can't tell a real index from a
+  sequential scan and silently reports recall 1.0. The query row is
+  excluded from its own results (a vector is its own nearest
+  neighbour at distance 0). Returns a typed `HnswRecallRecommendation`
+  with a `sweep` of `EfSearchSweepPoint`s. Read-only; routed to the
+  `vector_search` bucket. Coexists with `analyze_hnsw_recall` per the
+  no-deprecation rule — the raw-curve tool stays untouched. 11 new
+  unit tests.
+
 - **Configuration & sizing advisors bundle** (`mcpg.config_advisor`).
   pghero / pgtune coverage — three standalone tools filling the gaps
   `audit_database` doesn't cover. Realises roadmap **§16** (rows

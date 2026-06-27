@@ -637,6 +637,8 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "run_maintenance": "operations_and_health",
     # tune_vector_index / migrate_vector_to_halfvec are vector_search.
     "tune_vector_index": "vector_search",
+    # recommend_hnsw_ef_search — HNSW ef_search recall/speed advisor.
+    "recommend_hnsw_ef_search": "vector_search",
     "migrate_vector_to_halfvec": "vector_search",
     # setup_rag_telemetry / setup_efficiency_observations / record_efficiency_observation.
     "setup_rag_telemetry": "rag_telemetry",
