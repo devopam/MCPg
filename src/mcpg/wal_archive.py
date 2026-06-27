@@ -74,17 +74,17 @@ def _assess(
     archiving_enabled: bool,
     archived_count: int,
     failed_count: int,
-    last_archived_time: str | None,
-    last_failed_time: str | None,
+    latest_failed_more_recent: bool,
 ) -> tuple[bool, str]:
     """Return ``(healthy, detail)`` from the archiver counters.
 
     Heuristic: archiving is unhealthy when it's enabled AND the latest
-    attempt failed. We compare ISO-8601 text timestamps — they sort
-    lexicographically in the same order as chronologically when both
-    carry the same offset (Postgres renders both from the same
-    ``timestamptz`` column, so the offsets match), which is good enough
-    for "which happened more recently".
+    attempt failed. The "is the most recent attempt a failure?" decision
+    is made by the caller — ideally in SQL via ``last_failed_time >
+    last_archived_time`` on the native ``timestamptz`` columns (which
+    compares chronologically regardless of the rendered offset), rather
+    than by lexicographically comparing ISO-8601 *text*, which is only
+    correct when both strings carry the same UTC offset.
     """
     if not archiving_enabled:
         return True, "WAL archiving is disabled (archive_mode = off); nothing to monitor."
@@ -92,9 +92,6 @@ def _assess(
         return True, f"WAL archiving healthy — {archived_count} segment(s) archived, no failures."
     # There have been failures at some point. Unhealthy only if the most
     # recent attempt was a failure.
-    latest_failed_more_recent = last_failed_time is not None and (
-        last_archived_time is None or last_failed_time > last_archived_time
-    )
     if latest_failed_more_recent:
         return False, (
             f"WAL archiving is FAILING — {failed_count} failure(s); the most recent attempt failed. "
@@ -124,6 +121,8 @@ async def get_wal_archive_status(driver: SqlDriver) -> WalArchiveStatus:
             "  s.failed_count, "
             "  s.last_failed_wal, "
             "  s.last_failed_time::text AS last_failed_time, "
+            "  COALESCE(s.last_failed_time > s.last_archived_time, s.last_failed_time IS NOT NULL) "
+            "    AS latest_failed_more_recent, "
             "  s.stats_reset::text AS stats_reset "
             "FROM pg_stat_archiver s",
             force_readonly=True,
@@ -170,12 +169,23 @@ async def get_wal_archive_status(driver: SqlDriver) -> WalArchiveStatus:
     last_archived_time = c.get("last_archived_time")
     last_failed_time = c.get("last_failed_time")
 
+    # Prefer the SQL-computed comparison (correct across timezone offsets,
+    # since it runs on the native ``timestamptz`` columns). Fall back to a
+    # text comparison only when the column is absent (e.g. older callers /
+    # test fakes that don't project it).
+    latest_failed_more_recent = c.get("latest_failed_more_recent")
+    if latest_failed_more_recent is None:
+        latest_failed_more_recent = last_failed_time is not None and (
+            last_archived_time is None or last_failed_time > last_archived_time
+        )
+    else:
+        latest_failed_more_recent = bool(latest_failed_more_recent)
+
     healthy, detail = _assess(
         archiving_enabled=archiving_enabled,
         archived_count=archived_count,
         failed_count=failed_count,
-        last_archived_time=last_archived_time,
-        last_failed_time=last_failed_time,
+        latest_failed_more_recent=latest_failed_more_recent,
     )
 
     return WalArchiveStatus(
