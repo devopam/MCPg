@@ -1248,6 +1248,51 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         )
 
     @server.tool(
+        name="recommend_hnsw_ef_search",
+        description=_with_example(
+            "Recommend an `hnsw.ef_search` value for a target recall@k — "
+            "the actionable companion to `analyze_hnsw_recall`. Samples "
+            "`sample_queries` rows (default 10) as query vectors, builds an "
+            "exact brute-force top-k ground truth per query, sweeps "
+            "`ef_values` (default 16/32/64/128/256) measuring mean recall@k "
+            "and p50/p95 latency at each, and recommends the smallest value "
+            "clearing `target_recall` (default 0.95). Unlike the "
+            "single-query curve tool, this VERIFIES an HNSW index actually "
+            "exists on the column (returns `has_hnsw_index=false` with "
+            "guidance otherwise — a sweep without one just measures "
+            "sequential scans). The query row is excluded from its own "
+            "results. Requires the vector extension. Returns an object with "
+            "`available`, `has_hnsw_index`, `index_name`, `metric`, `k`, "
+            "`target_recall`, `sample_queries`, `recommended_ef_search` "
+            "(int or null), `detail`, and `sweep` (list of objects with "
+            "`ef_search`, `mean_recall_at_k`, `p50_latency_ms`, "
+            "`p95_latency_ms`, `meets_target`).",
+            "recommend_hnsw_ef_search(schema='public', table='docs', column='embedding', k=10, target_recall=0.95)",
+        ),
+    )
+    async def recommend_hnsw_ef_search(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        k: int = 10,
+        target_recall: float = 0.95,
+        sample_queries: int = 10,
+        metric: str = "l2",
+    ) -> dict[str, Any]:
+        result = await vector_tuner_advanced.recommend_hnsw_ef_search(
+            _driver(ctx),
+            schema,
+            table,
+            column,
+            k=k,
+            target_recall=target_recall,
+            sample_queries=sample_queries,
+            metric=metric,
+        )
+        return asdict(result)
+
+    @server.tool(
         name="analyze_distance_metric",
         description=(
             "Recommend a pgvector distance metric (cosine | l2 | "

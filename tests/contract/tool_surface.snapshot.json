@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 242
+    "tool_count": 243
   },
   "tools": [
     {
@@ -4766,6 +4766,53 @@
         "type": "object"
       },
       "name": "recommend_headline_tools"
+    },
+    {
+      "description": "Recommend an `hnsw.ef_search` value for a target recall@k — the actionable companion to `analyze_hnsw_recall`. Samples `sample_queries` rows (default 10) as query vectors, builds an exact brute-force top-k ground truth per query, sweeps `ef_values` (default 16/32/64/128/256) measuring mean recall@k and p50/p95 latency at each, and recommends the smallest value clearing `target_recall` (default 0.95). Unlike the single-query curve tool, this VERIFIES an HNSW index actually exists on the column (returns `has_hnsw_index=false` with guidance otherwise — a sweep without one just measures sequential scans). The query row is excluded from its own results. Requires the vector extension. Returns an object with `available`, `has_hnsw_index`, `index_name`, `metric`, `k`, `target_recall`, `sample_queries`, `recommended_ef_search` (int or null), `detail`, and `sweep` (list of objects with `ef_search`, `mean_recall_at_k`, `p50_latency_ms`, `p95_latency_ms`, `meets_target`).\n\nExample: `recommend_hnsw_ef_search(schema='public', table='docs', column='embedding', k=10, target_recall=0.95)`",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "k": {
+            "default": 10,
+            "title": "K",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "sample_queries": {
+            "default": 10,
+            "title": "Sample Queries",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "target_recall": {
+            "default": 0.95,
+            "title": "Target Recall",
+            "type": "number"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column"
+        ],
+        "title": "recommend_hnsw_ef_searchArguments",
+        "type": "object"
+      },
+      "name": "recommend_hnsw_ef_search"
     },
     {
       "description": "Sibling of `recommend_indexes` for indexes to remove. Walks `pg_stat_user_indexes` + `pg_stat_user_tables` for existing indexes that look like pure cost — large on disk but never (or barely) scanned. Three reason codes, descending strength: `never_used` (no recorded idx_scans since the last stats reset — candidate for drop, but verify before removal), `scan_no_fetch` (planner picks it but it returns no rows — usually existence-check pattern), `rarely_used` (scan rate below `low_scan_ratio` of the table's total scan activity). Primary-key / unique / exclusion-constraint indexes are excluded (dropping those would be a schema change, not a performance win); indexes below `min_index_size_bytes` are skipped too. Returns a ready-to-run `DROP INDEX CONCURRENTLY` statement per candidate. Read-only advisor — execution is on the operator.\n\nExample: `recommend_index_drops(schema='public', min_index_size_bytes=1000000, low_scan_ratio=0.01)`",

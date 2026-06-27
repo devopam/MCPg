@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 242
+    "tool_count": 243
   },
   "tools": {
     "add_compression_policy": {
@@ -1703,6 +1703,9 @@
       "kind": "scalar"
     },
     "recommend_headline_tools": {
+      "kind": "opaque"
+    },
+    "recommend_hnsw_ef_search": {
       "kind": "opaque"
     },
     "recommend_index_drops": {
