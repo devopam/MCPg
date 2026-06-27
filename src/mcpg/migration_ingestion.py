@@ -80,7 +80,7 @@ class MigrationIngestionError(Exception):
     """Raised when a migration-ingestion request is rejected."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PendingMigration:
     """One on-disk script that hasn't been applied yet.
 
@@ -96,7 +96,7 @@ class PendingMigration:
     first_comment: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PendingMigrationsReport:
     """Outcome of a :func:`list_pending_migrations` call.
 

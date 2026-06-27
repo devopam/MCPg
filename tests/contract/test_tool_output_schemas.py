@@ -557,6 +557,131 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
         }
     ),
     "list_turboquant_indexes": frozenset({"result"}),
+    # --- Batch 7: advisors / ops / data / write remainder ---
+    "drop_subscription": frozenset({"name", "if_exists", "executed_sql", "detail"}),
+    "create_subscription": frozenset(
+        {"name", "publications", "enabled", "copy_data", "create_slot", "slot_name", "executed_sql", "detail"}
+    ),
+    "drop_publication": frozenset({"name", "if_exists", "cascade", "executed_sql", "detail"}),
+    "create_publication": frozenset({"name", "all_tables", "tables", "executed_sql", "detail"}),
+    "run_ddl": frozenset({"rows", "row_count", "schema_diff"}),
+    "prune_audit_events": frozenset({"deleted", "cutoff", "remaining"}),
+    # NB: two MaintenanceResult dataclasses exist (maintenance + turboquant);
+    # run_maintenance returns mcpg.maintenance.MaintenanceResult.
+    "run_maintenance": frozenset({"operation", "target", "maintenance_sql"}),
+    "seed_table_with_sample_data": frozenset(
+        {"schema", "table", "rows_seeded", "statements_executed", "skipped_columns"}
+    ),
+    "run_write": frozenset({"rows", "row_count", "schema_diff"}),
+    "schedule_logical_backup": frozenset({"jobid", "name"}),
+    "schedule_cron_job": frozenset({"jobid", "name"}),
+    "recommend_index_drops": frozenset({"result"}),
+    "recommend_indexes": frozenset({"result"}),
+    "read_autovacuum_priority": frozenset({"available", "overdue_count", "watchlist_count", "rows", "detail"}),
+    "detect_n_plus_one": frozenset({"available", "thresholds", "candidates"}),
+    "analyze_workload": frozenset({"available", "slow_queries"}),
+    "audit_database": frozenset(
+        {
+            "timestamp",
+            "database",
+            "version",
+            "overall_health",
+            "health_score",
+            "categories",
+            "top_issues",
+            "recommendations",
+            "raw_stats_snapshot",
+        }
+    ),
+    "translate_nl_to_sql": frozenset(
+        {"sql", "explanation", "model", "provider", "executed", "rows", "columns", "row_count", "error"}
+    ),
+    "analyze_query_plan": frozenset(
+        {
+            "total_cost",
+            "estimated_rows",
+            "node_types",
+            "sequential_scans",
+            "actual_total_time_ms",
+            "actual_rows",
+            "shared_blocks_read",
+            "shared_blocks_hit",
+            "io_read_time_ms",
+            "io_write_time_ms",
+            "aio_read_blocks",
+            "aio_write_blocks",
+        }
+    ),
+    "explain_query": frozenset({"plan"}),
+    "run_select_parallel": frozenset({"outcomes"}),
+    "run_select": frozenset({"columns", "rows", "row_count", "truncated"}),
+    "list_audit_events": frozenset({"result"}),
+    "copy_table_between_databases": frozenset(
+        {
+            "schema",
+            "table",
+            "schema_copied",
+            "data_copied",
+            "dump_exit_code",
+            "restore_exit_code",
+            "dump_output_bytes",
+            "restore_output_bytes",
+            "dump_stderr_tail",
+            "restore_stderr_tail",
+            "dump_argv",
+            "restore_argv",
+            "timed_out",
+        }
+    ),
+    "restore_database": frozenset(
+        {"exit_code", "output_bytes", "output_truncated", "timed_out", "stderr_tail", "binary", "argv"}
+    ),
+    "dump_database": frozenset(
+        {"exit_code", "content", "output_bytes", "output_truncated", "timed_out", "stderr_tail", "binary", "argv"}
+    ),
+    "list_unapplied_migration_scripts": frozenset(
+        {
+            "available",
+            "framework",
+            "scripts_dir",
+            "history_table",
+            "applied_count",
+            "pending_count",
+            "pending",
+            "applied",
+            "notes",
+        }
+    ),
+    "validate_migration": frozenset(
+        {"target_schema", "sample_rows_per_table", "tables_sampled", "table_stats", "candidate_applied", "error"}
+    ),
+    "import_vectors": frozenset({"schema", "table", "format", "rows_imported"}),
+    "import_json": frozenset({"schema", "table", "format", "rows_imported"}),
+    "import_csv": frozenset({"schema", "table", "format", "rows_imported"}),
+    "export_table": frozenset({"format", "content", "row_count", "truncated"}),
+    "export_query": frozenset({"format", "content", "row_count", "truncated"}),
+    "why_is_this_slow": frozenset(
+        {"sql", "plan_summary", "explain_plan", "active_queries", "blocking_locks", "cache_hit_ratio", "suggestions"}
+    ),
+    "summarize_table": frozenset(
+        {"schema", "table", "columns", "primary_key", "foreign_keys", "constraints", "indexes", "stats", "sample_rows"}
+    ),
+    "optimize_query": frozenset({"original_sql", "optimized_sql", "findings", "explain_summary", "rationale"}),
+    "audit_settings": frozenset({"ram_aware", "findings", "examined_settings", "detail"}),
+    "audit_sequences": frozenset({"available", "total_examined", "warning_pct", "critical_pct", "sequences", "detail"}),
+    "analyze_session_cost": frozenset(
+        {"audit_table_present", "events_examined", "lookback_minutes", "findings", "detail"}
+    ),
+    "generate_test_row_for": frozenset({"schema", "table", "columns", "insert_sql"}),
+    "generate_test_data": frozenset({"schema", "table", "rows_generated", "statements", "skipped_columns"}),
+    "test_rls_for_role": frozenset(
+        {"schema", "table", "role", "rls_enabled", "active_policies", "rows_visible", "columns", "sample"}
+    ),
+    "lint_naming_conventions": frozenset({"schema", "schema_majority_style", "findings"}),
+    "find_sensitive_columns": frozenset({"schema", "columns"}),
+    "find_unused_objects": frozenset({"schema", "tables", "indexes"}),
+    "run_advisors": frozenset({"schema", "rules_run", "findings"}),
+    "compare_schemas": frozenset({"left_schema", "right_schema", "tables_added", "tables_removed", "tables_changed"}),
 }
 
 
@@ -647,7 +772,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 145
+    floor = 192
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "

@@ -140,7 +140,7 @@ class NL2SQLError(Exception):
     """Raised when NL→SQL translation is rejected or fails."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TranslationResult:
     """Result of :func:`translate_nl_to_sql`.
 
@@ -329,7 +329,7 @@ def is_valid_provider(name: str) -> bool:
     return name in _SUPPORTED_PROVIDERS
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ProviderCallParams:
     """The fully-resolved set of inputs needed to call one provider.
 

@@ -79,7 +79,7 @@ def _audit_check_interval(value: str, *, kind: str) -> None:
         raise AuditTrailError(str(exc)) from exc
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PruneResult:
     """The outcome of a :func:`prune_audit_events` call.
 
@@ -94,7 +94,7 @@ class PruneResult:
     remaining: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AuditTrailEntry:
     """A persisted SQL audit row read back from ``mcpg_audit.events``."""
 
@@ -107,7 +107,7 @@ class AuditTrailEntry:
     result: dict[str, Any] | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SchemaDiffSnapshot:
     """Structured before/after column lists for a single DDL-affected table."""
 
@@ -508,7 +508,7 @@ async def capture_columns(driver: SqlDriver, schema: str, table: str) -> list[di
 _EVENTS_NATIVE_WINDOW_DAYS = 7
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class EventsAuditMigrationResult:
     """Outcome of :func:`migrate_audit_events_to_partitioned`."""
 

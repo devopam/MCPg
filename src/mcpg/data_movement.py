@@ -48,7 +48,7 @@ class ExportError(Exception):
     """Raised when an export call is rejected or fails."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ExportResult:
     """The outcome of an export call.
 
@@ -162,7 +162,7 @@ async def export_table(
 # --- subprocess-driven half (ADR-0004) ------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DumpResult:
     """The outcome of a ``pg_dump`` invocation.
 
@@ -282,7 +282,7 @@ async def dump_database(
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RestoreResult:
     """The outcome of a ``pg_restore`` or ``psql`` invocation."""
 
@@ -385,7 +385,7 @@ async def restore_database(
 # --- cross-database table copy (subprocess; gated behind MCPG_ALLOW_SHELL) --
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CopyTableResult:
     """The outcome of a cross-database ``copy_table_between_databases`` call.
 
@@ -575,7 +575,7 @@ class ImportDataError(Exception):
     """
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ImportResult:
     """The outcome of an import call.
 

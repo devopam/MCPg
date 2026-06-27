@@ -27,7 +27,7 @@ from mcpg.introspection import (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ColumnChange:
     """A column that exists in both schemas but with different attributes.
 
@@ -41,7 +41,7 @@ class ColumnChange:
     fields_changed: list[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class IndexChange:
     """An index that exists in both schemas but with a different definition."""
 
@@ -50,7 +50,7 @@ class IndexChange:
     after: IndexInfo
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ConstraintChange:
     """A constraint that exists in both schemas but with a different definition."""
 
@@ -59,7 +59,7 @@ class ConstraintChange:
     after: ConstraintInfo
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ForeignKeyChange:
     """An FK that exists in both schemas but references different columns."""
 
@@ -68,7 +68,7 @@ class ForeignKeyChange:
     after: ForeignKeyInfo
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TableDiff:
     """The differences for a table present in both schemas."""
 
@@ -87,7 +87,7 @@ class TableDiff:
     foreign_keys_changed: list[ForeignKeyChange]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SchemaDiff:
     """The full structural diff between two schemas.
 

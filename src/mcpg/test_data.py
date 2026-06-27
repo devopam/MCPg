@@ -49,7 +49,7 @@ class TestDataError(Exception):
     __test__ = False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GeneratedDataset:
     """Result of :func:`generate_test_data`.
 
@@ -219,7 +219,7 @@ async def generate_test_data(
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SeedResult:
     """The result of seeding a table with sample data."""
 

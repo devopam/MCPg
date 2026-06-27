@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`outputSchema` sweep — batch 7 (advisors / ops / data / write
+  remainder).** Roadmap **8.6**. 47 tools converted to typed
+  frozen-dataclass returns across `advisors`, `data_movement`,
+  `config_advisor`, `query`, `workload`, `indexing`,
+  `logical_replication`, `composite`, `migrations`, `naming`, `rls`,
+  `test_data`, `test_row_factory`, `session_advisor`, `audit_trail`,
+  `audit`, `autovacuum`, `cron`, `write`, `schema_diff`,
+  `migration_ingestion`, `nl2sql`, `maintenance`. Manifest floor
+  145 → 192. `read_autovacuum_priority`'s helper module was hoisted
+  to a top-level import (its annotation can't resolve a function-local
+  import). `prepare_migration` / `validate_migration_schema` stay
+  `dict[str, Any]` — they restructure their result (isoformat the TTL,
+  flatten the nested diff) rather than return the dataclass verbatim,
+  so they remain documented opaque exceptions. Additive only.
+
 - **`outputSchema` sweep — batch 6 (FDW / extensions family).**
   Roadmap **8.6**. 26 tools across `pg_prewarm`, `turboquant`,
   `redis_fdw` converted to typed frozen-dataclass returns. Manifest

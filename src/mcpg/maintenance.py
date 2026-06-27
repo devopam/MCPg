@@ -25,7 +25,7 @@ class MaintenanceError(Exception):
     """Raised when a maintenance request is rejected or fails."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MaintenanceResult:
     """The outcome of a maintenance run.
 

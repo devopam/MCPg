@@ -33,7 +33,7 @@ from mcpg._vendor.sql import SqlDriver
 DEFAULT_INDEX_PREFIXES: tuple[str, ...] = ("idx_", "ix_", "pk_", "uq_", "fk_", "gin_", "gist_", "brin_", "hnsw_")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class NamingFinding:
     """One discrepancy detected by the linter.
 
@@ -49,7 +49,7 @@ class NamingFinding:
     message: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class NamingReport:
     """Result of :func:`lint_naming_conventions`.
 

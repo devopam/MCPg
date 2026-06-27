@@ -23,7 +23,7 @@ from mcpg.extensions import extension_installed
 DEFAULT_LIMIT = 10
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SlowQuery:
     """One entry from ``pg_stat_statements``."""
 
@@ -34,7 +34,7 @@ class SlowQuery:
     rows: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class WorkloadReport:
     """The slowest queries, or a note that the extension is unavailable."""
 
@@ -94,7 +94,7 @@ _FROM_PATTERN = re.compile(
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class NPlusOneCandidate:
     """One suspicious query template flagged by the N+1 heuristic.
 
@@ -115,7 +115,7 @@ class NPlusOneCandidate:
     reason: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class NPlusOneReport:
     """Aggregate result of :func:`detect_n_plus_one`.
 

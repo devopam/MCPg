@@ -70,7 +70,7 @@ class TestRowFactoryError(Exception):
     __test__ = False  # opt out of pytest collection — class name starts with Test
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ColumnFill:
     """One column's contribution to the generated row.
 
@@ -91,7 +91,7 @@ class ColumnFill:
     heuristic: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GeneratedTestRow:
     """Result of :func:`generate_test_row_for`.
 

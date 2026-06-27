@@ -20,6 +20,7 @@ from mcpg import (
     aio,
     audit,
     audit_trail,
+    autovacuum,
     composite,
     config_advisor,
     cron,
@@ -945,9 +946,9 @@ def _register_schema_diff(server: FastMCP[AppContext]) -> None:
             "compare_schemas(left_schema='public', right_schema='staging')",
         ),
     )
-    async def compare_schemas(ctx: _Ctx, left_schema: str, right_schema: str) -> dict[str, Any]:
+    async def compare_schemas(ctx: _Ctx, left_schema: str, right_schema: str) -> schema_diff.SchemaDiff:
         diff = await schema_diff.compare_schemas(_driver(ctx), left_schema, right_schema)
-        return asdict(diff)
+        return diff
 
 
 def _register_rag_efficiency(server: FastMCP[AppContext]) -> None:
@@ -1659,12 +1660,12 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "zone. Advisory only — no writes."
         ),
     )
-    async def run_advisors(ctx: _Ctx, schema: str) -> dict[str, Any]:
+    async def run_advisors(ctx: _Ctx, schema: str) -> advisors.AdvisorReport:
         _check_heavy_diagnostics(ctx, "run_advisors")
 
-        async def _run() -> dict[str, Any]:
+        async def _run() -> advisors.AdvisorReport:
             report = await advisors.run_advisors(_driver(ctx), schema)
-            return asdict(report)
+            return report
 
         return await _cached_call(ctx, "run_advisors", _run, schema)
 
@@ -1682,12 +1683,12 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "and `indexes` (list of candidate indexes with size and definition)."
         ),
     )
-    async def find_unused_objects(ctx: _Ctx, schema: str) -> dict[str, Any]:
+    async def find_unused_objects(ctx: _Ctx, schema: str) -> advisors.UnusedObjectsReport:
         _check_heavy_diagnostics(ctx, "find_unused_objects")
 
-        async def _run() -> dict[str, Any]:
+        async def _run() -> advisors.UnusedObjectsReport:
             report = await advisors.find_unused_objects(_driver(ctx), schema)
-            return asdict(report)
+            return report
 
         return await _cached_call(ctx, "find_unused_objects", _run, schema)
 
@@ -1707,12 +1708,12 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "category, confidence, matched_pattern}`) and `summary` counts by category."
         ),
     )
-    async def find_sensitive_columns(ctx: _Ctx, schema: str) -> dict[str, Any]:
+    async def find_sensitive_columns(ctx: _Ctx, schema: str) -> advisors.SensitiveColumnsReport:
         _check_heavy_diagnostics(ctx, "find_sensitive_columns")
 
-        async def _run() -> dict[str, Any]:
+        async def _run() -> advisors.SensitiveColumnsReport:
             report = await advisors.find_sensitive_columns(_driver(ctx), schema)
-            return asdict(report)
+            return report
 
         return await _cached_call(ctx, "find_sensitive_columns", _run, schema)
 
@@ -1732,12 +1733,12 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "non-conventional prefixes)."
         ),
     )
-    async def lint_naming_conventions(ctx: _Ctx, schema: str) -> dict[str, Any]:
+    async def lint_naming_conventions(ctx: _Ctx, schema: str) -> naming.NamingReport:
         _check_heavy_diagnostics(ctx, "lint_naming_conventions")
 
-        async def _run() -> dict[str, Any]:
+        async def _run() -> naming.NamingReport:
             report = await naming.lint_naming_conventions(_driver(ctx), schema)
-            return asdict(report)
+            return report
 
         return await _cached_call(ctx, "lint_naming_conventions", _run, schema)
 
@@ -1754,12 +1755,12 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     )
     async def test_rls_for_role(
         ctx: _Ctx, schema: str, table: str, role: str, sample_size: int = rls.DEFAULT_RLS_SAMPLE_SIZE
-    ) -> dict[str, Any]:
+    ) -> rls.RLSTestResult:
         _check_heavy_diagnostics(ctx, "test_rls_for_role")
 
-        async def _run() -> dict[str, Any]:
+        async def _run() -> rls.RLSTestResult:
             result = await rls.test_rls_for_role(_driver(ctx), schema, table, role, sample_size=sample_size)
-            return asdict(result)
+            return result
 
         return await _cached_call(ctx, "test_rls_for_role", _run, schema, table, role, sample_size)
 
@@ -1779,9 +1780,9 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     )
     async def generate_test_data(
         ctx: _Ctx, schema: str, table: str, rows: int = test_data.DEFAULT_ROW_COUNT, seed: int | None = None
-    ) -> dict[str, Any]:
+    ) -> test_data.GeneratedDataset:
         dataset = await test_data.generate_test_data(_driver(ctx), schema, table, rows=rows, seed=seed)
-        return asdict(dataset)
+        return dataset
 
     @server.tool(
         name="generate_test_row_for",
@@ -1808,8 +1809,8 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
         table: str,
         seed: int | None = None,
         follow_foreign_keys: bool = True,
-    ) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    ) -> test_row_factory.GeneratedTestRow:
+        async def _run() -> test_row_factory.GeneratedTestRow:
             row = await test_row_factory.generate_test_row_for(
                 _driver(ctx),
                 schema,
@@ -1817,7 +1818,7 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
                 seed=seed,
                 follow_foreign_keys=follow_foreign_keys,
             )
-            return asdict(row)
+            return row
 
         return await _cached_call(ctx, "generate_test_row_for", _run, schema, table, seed, follow_foreign_keys)
 
@@ -1841,12 +1842,14 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "analyze_session_cost(lookback_minutes=30, hot_threshold=15)",
         ),
     )
-    async def analyze_session_cost(ctx: _Ctx, lookback_minutes: int = 60, hot_threshold: int = 10) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    async def analyze_session_cost(
+        ctx: _Ctx, lookback_minutes: int = 60, hot_threshold: int = 10
+    ) -> session_advisor.SessionCostAnalysis:
+        async def _run() -> session_advisor.SessionCostAnalysis:
             result = await session_advisor.analyze_session_cost(
                 _driver(ctx), lookback_minutes=lookback_minutes, hot_threshold=hot_threshold
             )
-            return asdict(result)
+            return result
 
         return await _cached_call(ctx, "analyze_session_cost", _run, lookback_minutes, hot_threshold)
 
@@ -1903,12 +1906,14 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "audit_sequences(warning_pct=80, critical_pct=95)",
         ),
     )
-    async def audit_sequences(ctx: _Ctx, warning_pct: float = 80.0, critical_pct: float = 95.0) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    async def audit_sequences(
+        ctx: _Ctx, warning_pct: float = 80.0, critical_pct: float = 95.0
+    ) -> config_advisor.SequenceAuditResult:
+        async def _run() -> config_advisor.SequenceAuditResult:
             result = await config_advisor.audit_sequences(
                 _driver(ctx), warning_pct=warning_pct, critical_pct=critical_pct
             )
-            return asdict(result)
+            return result
 
         return await _cached_call(ctx, "audit_sequences", _run, warning_pct, critical_pct)
 
@@ -1929,10 +1934,10 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "audit_settings(total_ram_mb=16384)",
         ),
     )
-    async def audit_settings(ctx: _Ctx, total_ram_mb: int | None = None) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
+    async def audit_settings(ctx: _Ctx, total_ram_mb: int | None = None) -> config_advisor.SettingsAuditResult:
+        async def _run() -> config_advisor.SettingsAuditResult:
             result = await config_advisor.audit_settings(_driver(ctx), total_ram_mb=total_ram_mb)
-            return asdict(result)
+            return result
 
         return await _cached_call(ctx, "audit_settings", _run, total_ram_mb)
 
@@ -1981,12 +1986,12 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             "using EXPLAIN plan costs and index scans, returning an optimized version."
         ),
     )
-    async def optimize_query(ctx: _Ctx, sql: str) -> dict[str, Any]:
+    async def optimize_query(ctx: _Ctx, sql: str) -> advisors.OptimizationResult:
         _check_heavy_diagnostics(ctx, "optimize_query")
 
-        async def _run() -> dict[str, Any]:
+        async def _run() -> advisors.OptimizationResult:
             res = await advisors.optimize_query(_driver(ctx), sql)
-            return asdict(res)
+            return res
 
         return await _cached_call(ctx, "optimize_query", _run, sql)
 
@@ -2004,9 +2009,9 @@ def _register_composite(server: FastMCP[AppContext]) -> None:
             "summarize_table(schema='public', table='users', sample_rows=5)",
         ),
     )
-    async def summarize_table(ctx: _Ctx, schema: str, table: str, sample_rows: int = 5) -> dict[str, Any]:
+    async def summarize_table(ctx: _Ctx, schema: str, table: str, sample_rows: int = 5) -> composite.TableSummary:
         result = await composite.summarize_table(_driver(ctx), schema, table, sample_rows=sample_rows)
-        return asdict(result)
+        return result
 
     @server.tool(
         name="why_is_this_slow",
@@ -2021,12 +2026,12 @@ def _register_composite(server: FastMCP[AppContext]) -> None:
             "why_is_this_slow(sql='SELECT * FROM orders WHERE customer_id = 42')",
         ),
     )
-    async def why_is_this_slow(ctx: _Ctx, sql: str) -> dict[str, Any]:
+    async def why_is_this_slow(ctx: _Ctx, sql: str) -> composite.SlowQueryDiagnosis:
         _check_heavy_diagnostics(ctx, "why_is_this_slow")
 
-        async def _run() -> dict[str, Any]:
+        async def _run() -> composite.SlowQueryDiagnosis:
             result = await composite.why_is_this_slow(_driver(ctx), sql)
-            return asdict(result)
+            return result
 
         return await _cached_call(ctx, "why_is_this_slow", _run, sql)
 
@@ -2043,9 +2048,9 @@ def _register_data_movement(server: FastMCP[AppContext]) -> None:
     )
     async def export_query(
         ctx: _Ctx, sql: str, format: str = "csv", limit: int = data_movement.DEFAULT_EXPORT_LIMIT
-    ) -> dict[str, Any]:
+    ) -> data_movement.ExportResult:
         result = await data_movement.export_query(_driver(ctx), sql, format=format, limit=limit)
-        return asdict(result)
+        return result
 
     @server.tool(
         name="export_table",
@@ -2062,9 +2067,9 @@ def _register_data_movement(server: FastMCP[AppContext]) -> None:
         table: str,
         format: str = "csv",
         limit: int = data_movement.DEFAULT_EXPORT_LIMIT,
-    ) -> dict[str, Any]:
+    ) -> data_movement.ExportResult:
         result = await data_movement.export_table(_driver(ctx), schema, table, format=format, limit=limit)
-        return asdict(result)
+        return result
 
 
 def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
@@ -2087,7 +2092,7 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
         header: bool = True,
         delimiter: str = ",",
         columns: list[str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> data_movement.ImportResult:
         database = ctx.request_context.lifespan_context.database
         result = await data_movement.import_csv(
             database,
@@ -2099,7 +2104,7 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
             columns=columns,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="import_json",
@@ -2114,7 +2119,7 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
     )
     async def import_json(
         ctx: _Ctx, schema: str, table: str, content: str, columns: list[str] | None = None
-    ) -> dict[str, Any]:
+    ) -> data_movement.ImportResult:
         database = ctx.request_context.lifespan_context.database
         result = await data_movement.import_json(
             database,
@@ -2124,7 +2129,7 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
             columns=columns,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="import_vectors",
@@ -2152,7 +2157,7 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
         content: str,
         format: str = "json",
         id_column: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> data_movement.ImportResult:
         database = ctx.request_context.lifespan_context.database
         result = await data_movement.import_vectors(
             database,
@@ -2164,7 +2169,7 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
             id_column=id_column,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_migrations(server: FastMCP[AppContext]) -> None:
@@ -2221,14 +2226,14 @@ def _register_migrations(server: FastMCP[AppContext]) -> None:
         target_schema: str,
         candidate_sql: str,
         sample_rows_per_table: int = migrations.DEFAULT_VALIDATION_SAMPLE_ROWS,
-    ) -> dict[str, Any]:
+    ) -> migrations.ValidationResult:
         result = await migrations.validate_migration(
             _driver(ctx),
             target_schema=target_schema,
             candidate_sql=candidate_sql,
             sample_rows_per_table=sample_rows_per_table,
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="validate_migration_schema",
@@ -2317,7 +2322,7 @@ def _register_migrations(server: FastMCP[AppContext]) -> None:
         framework: str,
         scripts_dir: str,
         history_schema: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> migration_ingestion.PendingMigrationsReport:
         settings = ctx.request_context.lifespan_context.settings
         report = await migration_ingestion.list_pending_migrations(
             _driver(ctx),
@@ -2326,7 +2331,7 @@ def _register_migrations(server: FastMCP[AppContext]) -> None:
             history_schema=history_schema,
             allowed_roots=settings.migration_scripts_roots,
         )
-        return asdict(report)
+        return report
 
     @server.tool(
         name="list_pending_migrations",
@@ -2523,7 +2528,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             "unrestricted mode + MCPG_ALLOW_SHELL."
         ),
     )
-    async def dump_database(ctx: _Ctx, format: str = "plain", schema_only: bool = False) -> dict[str, Any]:
+    async def dump_database(ctx: _Ctx, format: str = "plain", schema_only: bool = False) -> data_movement.DumpResult:
         app = ctx.request_context.lifespan_context
         result = await data_movement.dump_database(
             app.settings.database_url,
@@ -2533,7 +2538,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             schema_only=schema_only,
             limits=_subprocess_limits(app.settings),
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="restore_database",
@@ -2548,7 +2553,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             "`exit_code`, `timed_out` (bool), and `output_truncated` (bool)."
         ),
     )
-    async def restore_database(ctx: _Ctx, content: str, format: str = "plain") -> dict[str, Any]:
+    async def restore_database(ctx: _Ctx, content: str, format: str = "plain") -> data_movement.RestoreResult:
         app = ctx.request_context.lifespan_context
         result = await data_movement.restore_database(
             app.settings.database_url,
@@ -2559,7 +2564,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             limits=_subprocess_limits(app.settings),
         )
         await app.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="copy_table_between_databases",
@@ -2583,7 +2588,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
         table: str,
         include_schema: bool,
         include_data: bool,
-    ) -> dict[str, Any]:
+    ) -> data_movement.CopyTableResult:
         app = ctx.request_context.lifespan_context
         result = await data_movement.copy_table_between_databases(
             source_url,
@@ -2597,7 +2602,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             limits=_subprocess_limits(app.settings),
         )
         await app.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_audit_trail(server: FastMCP[AppContext]) -> None:
@@ -2609,9 +2614,11 @@ def _register_audit_trail(server: FastMCP[AppContext]) -> None:
             "audit table yet). Optionally filter by tool name."
         ),
     )
-    async def list_audit_events(ctx: _Ctx, limit: int = 100, tool: str | None = None) -> list[dict[str, Any]]:
+    async def list_audit_events(
+        ctx: _Ctx, limit: int = 100, tool: str | None = None
+    ) -> list[audit_trail.AuditTrailEntry]:
         events = await audit_trail.list_audit_events(_driver(ctx), limit=limit, tool=tool)
-        return [asdict(event) for event in events]
+        return events
 
     @server.tool(
         name="verify_audit_chain",
@@ -2637,9 +2644,9 @@ def _register_query(server: FastMCP[AppContext]) -> None:
             "run_select(sql='SELECT id, email FROM users LIMIT 10', max_rows=1000)",
         ),
     )
-    async def run_select(ctx: _Ctx, sql: str, max_rows: int = query.DEFAULT_MAX_ROWS) -> dict[str, Any]:
+    async def run_select(ctx: _Ctx, sql: str, max_rows: int = query.DEFAULT_MAX_ROWS) -> query.QueryResult:
         result = await query.run_select(_driver(ctx), sql, max_rows=max_rows)
-        return asdict(result)
+        return result
 
     @server.tool(
         name="run_select_parallel",
@@ -2659,14 +2666,14 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         statements: list[str],
         max_rows: int = query.DEFAULT_MAX_ROWS,
         parallel_limit: int = query.DEFAULT_PARALLEL_LIMIT,
-    ) -> dict[str, Any]:
+    ) -> query.ParallelQueryResult:
         result = await query.run_select_parallel(
             _driver(ctx),
             statements,
             max_rows=max_rows,
             parallel_limit=parallel_limit,
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="open_cursor",
@@ -2744,9 +2751,9 @@ def _register_query(server: FastMCP[AppContext]) -> None:
             "explain_query(sql='SELECT * FROM orders WHERE customer_id = 42', io=true)",
         ),
     )
-    async def explain_query(ctx: _Ctx, sql: str, io: bool = False) -> dict[str, Any]:
+    async def explain_query(ctx: _Ctx, sql: str, io: bool = False) -> query.ExplainResult:
         result = await query.explain_query(_driver(ctx), sql, io=io)
-        return asdict(result)
+        return result
 
     @server.tool(
         name="analyze_query_plan",
@@ -2761,9 +2768,9 @@ def _register_query(server: FastMCP[AppContext]) -> None:
             "analyze_query_plan(sql='SELECT * FROM orders WHERE customer_id = 42', io=true)",
         ),
     )
-    async def analyze_query_plan(ctx: _Ctx, sql: str, io: bool = False) -> dict[str, Any]:
+    async def analyze_query_plan(ctx: _Ctx, sql: str, io: bool = False) -> query.QueryPlanAnalysis:
         result = await query.analyze_query_plan(_driver(ctx), sql, io=io)
-        return asdict(result)
+        return result
 
     @server.tool(
         name="translate_nl_to_sql",
@@ -2798,7 +2805,7 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         execute: bool = False,
         table_filter: list[str] | None = None,
         max_rows: int = query.DEFAULT_MAX_ROWS,
-    ) -> dict[str, Any]:
+    ) -> nl2sql.TranslationResult:
         # All NL→SQL business logic — provider selection from request
         # arg / env default / configured keys, model + base_url override
         # rules, error shaping for misconfig — lives in mcpg.nl2sql so
@@ -2817,7 +2824,7 @@ def _register_query(server: FastMCP[AppContext]) -> None:
             max_tokens=settings.nl2sql_max_tokens,
             max_rows=max_rows,
         )
-        return asdict(result)
+        return result
 
 
 def _register_health(server: FastMCP[AppContext]) -> None:
@@ -2846,12 +2853,12 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "(per-area results), `top_issues`, `recommendations`, and `raw_stats_snapshot`."
         ),
     )
-    async def audit_database(ctx: _Ctx, schema: str, log_table: str | None = None) -> dict[str, Any]:
+    async def audit_database(ctx: _Ctx, schema: str, log_table: str | None = None) -> audit.AuditReport:
         _check_heavy_diagnostics(ctx, "audit_database")
 
-        async def _run() -> dict[str, Any]:
+        async def _run() -> audit.AuditReport:
             report = await audit.audit_database(_driver(ctx), schema, log_table=log_table)
-            return asdict(report)
+            return report
 
         return await _cached_call(ctx, "audit_database", _run, schema, log_table)
 
@@ -2864,12 +2871,12 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "analyze_workload(limit=10)",
         ),
     )
-    async def analyze_workload(ctx: _Ctx, limit: int = workload.DEFAULT_LIMIT) -> dict[str, Any]:
+    async def analyze_workload(ctx: _Ctx, limit: int = workload.DEFAULT_LIMIT) -> workload.WorkloadReport:
         _check_heavy_diagnostics(ctx, "analyze_workload")
 
-        async def _run() -> dict[str, Any]:
+        async def _run() -> workload.WorkloadReport:
             report = await workload.analyze_workload(_driver(ctx), limit=limit)
-            return asdict(report)
+            return report
 
         return await _cached_call(ctx, "analyze_workload", _run, limit)
 
@@ -2894,10 +2901,10 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         max_rows_per_call: float = workload.DEFAULT_MAX_ROWS_PER_CALL,
         min_total_ms: float = workload.DEFAULT_MIN_TOTAL_MS,
         limit: int = workload.DEFAULT_NPLUSONE_LIMIT,
-    ) -> dict[str, Any]:
+    ) -> workload.NPlusOneReport:
         _check_heavy_diagnostics(ctx, "detect_n_plus_one")
 
-        async def _run() -> dict[str, Any]:
+        async def _run() -> workload.NPlusOneReport:
             report = await workload.detect_n_plus_one(
                 _driver(ctx),
                 min_calls=min_calls,
@@ -2905,7 +2912,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
                 min_total_ms=min_total_ms,
                 limit=limit,
             )
-            return asdict(report)
+            return report
 
         return await _cached_call(ctx, "detect_n_plus_one", _run, min_calls, max_rows_per_call, min_total_ms, limit)
 
@@ -2926,12 +2933,10 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "read_autovacuum_priority(limit=25)",
         ),
     )
-    async def read_autovacuum_priority(ctx: _Ctx, limit: int = 25) -> dict[str, Any]:
-        from mcpg import autovacuum
-
-        async def _run() -> dict[str, Any]:
+    async def read_autovacuum_priority(ctx: _Ctx, limit: int = 25) -> autovacuum.AutovacuumPriorityReport:
+        async def _run() -> autovacuum.AutovacuumPriorityReport:
             report = await autovacuum.read_autovacuum_priority(_driver(ctx), limit=limit)
-            return asdict(report)
+            return report
 
         return await _cached_call(ctx, "read_autovacuum_priority", _run, limit)
 
@@ -2946,12 +2951,12 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     )
     async def recommend_indexes(
         ctx: _Ctx, min_live_tuples: int = indexing.DEFAULT_MIN_LIVE_TUPLES
-    ) -> list[dict[str, Any]]:
+    ) -> list[indexing.IndexRecommendation]:
         _check_heavy_diagnostics(ctx, "recommend_indexes")
 
-        async def _run() -> list[dict[str, Any]]:
+        async def _run() -> list[indexing.IndexRecommendation]:
             recommendations = await indexing.recommend_indexes(_driver(ctx), min_live_tuples=min_live_tuples)
-            return [asdict(recommendation) for recommendation in recommendations]
+            return recommendations
 
         return await _cached_call(ctx, "recommend_indexes", _run, min_live_tuples)
 
@@ -2982,17 +2987,17 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         schema: str | None = None,
         min_index_size_bytes: int = indexing.DEFAULT_MIN_INDEX_SIZE_BYTES,
         low_scan_ratio: float = indexing.DEFAULT_LOW_SCAN_RATIO,
-    ) -> list[dict[str, Any]]:
+    ) -> list[indexing.IndexDropCandidate]:
         _check_heavy_diagnostics(ctx, "recommend_index_drops")
 
-        async def _run() -> list[dict[str, Any]]:
+        async def _run() -> list[indexing.IndexDropCandidate]:
             candidates = await indexing.recommend_index_drops(
                 _driver(ctx),
                 schema=schema,
                 min_index_size_bytes=min_index_size_bytes,
                 low_scan_ratio=low_scan_ratio,
             )
-            return [asdict(c) for c in candidates]
+            return candidates
 
         return await _cached_call(ctx, "recommend_index_drops", _run, schema, min_index_size_bytes, low_scan_ratio)
 
@@ -4366,10 +4371,10 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
             "and `schedule`."
         ),
     )
-    async def schedule_cron_job(ctx: _Ctx, name: str, schedule: str, command: str) -> dict[str, Any]:
+    async def schedule_cron_job(ctx: _Ctx, name: str, schedule: str, command: str) -> cron.ScheduleResult:
         result = await cron.schedule_cron_job(_driver(ctx), name, schedule, command)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="unschedule_cron_job",
@@ -4413,7 +4418,7 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
         compress: bool = False,
         pg_dump_path: str = "pg_dump",
         port: int = 5432,
-    ) -> dict[str, Any]:
+    ) -> cron.ScheduleResult:
         result = await cron.schedule_logical_backup(
             _driver(ctx),
             name,
@@ -4427,7 +4432,7 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
             port=port,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_pgq_reads(server: FastMCP[AppContext]) -> None:
@@ -5541,11 +5546,11 @@ def _register_write(server: FastMCP[AppContext]) -> None:
             "mcpg_audit.events for every call."
         ),
     )
-    async def run_write(ctx: _Ctx, sql: str) -> dict[str, Any]:
+    async def run_write(ctx: _Ctx, sql: str) -> write.WriteResult:
         app = ctx.request_context.lifespan_context
         result = await write.run_write(_driver(ctx), sql, audit_persist=app.settings.audit_persist)
         await app.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="seed_table_with_sample_data",
@@ -5562,7 +5567,7 @@ def _register_write(server: FastMCP[AppContext]) -> None:
         table: str,
         rows: int = test_data.DEFAULT_ROW_COUNT,
         seed: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> test_data.SeedResult:
         app = ctx.request_context.lifespan_context
         result = await test_data.seed_table_with_sample_data(
             _driver(ctx),
@@ -5572,7 +5577,7 @@ def _register_write(server: FastMCP[AppContext]) -> None:
             seed=seed,
         )
         await app.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_maintenance(server: FastMCP[AppContext]) -> None:
@@ -5585,11 +5590,11 @@ def _register_maintenance(server: FastMCP[AppContext]) -> None:
             "and `maintenance_sql` (the rendered DDL that actually ran)."
         ),
     )
-    async def run_maintenance(ctx: _Ctx, operation: str, schema: str, table: str) -> dict[str, Any]:
+    async def run_maintenance(ctx: _Ctx, operation: str, schema: str, table: str) -> maintenance.MaintenanceResult:
         database = ctx.request_context.lifespan_context.database
         result = await maintenance.run_maintenance(database, operation, schema, table)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="prune_audit_events",
@@ -5602,14 +5607,14 @@ def _register_maintenance(server: FastMCP[AppContext]) -> None:
             "signature chain). Available only in unrestricted mode."
         ),
     )
-    async def prune_audit_events(ctx: _Ctx, older_than_days: int) -> dict[str, Any]:
+    async def prune_audit_events(ctx: _Ctx, older_than_days: int) -> audit_trail.PruneResult:
         settings = ctx.request_context.lifespan_context.settings
         result = await audit_trail.prune_audit_events(
             _driver(ctx),
             older_than_days=older_than_days,
             integrity_enabled=settings.audit_integrity,
         )
-        return asdict(result)
+        return result
 
 
 def _register_backend_control(server: FastMCP[AppContext]) -> None:
@@ -5648,7 +5653,7 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
             "mcpg_audit.events for every call."
         ),
     )
-    async def run_ddl(ctx: _Ctx, sql: str, schema: str | None = None, table: str | None = None) -> dict[str, Any]:
+    async def run_ddl(ctx: _Ctx, sql: str, schema: str | None = None, table: str | None = None) -> write.WriteResult:
         app = ctx.request_context.lifespan_context
         result = await write.run_ddl(
             _driver(ctx),
@@ -5658,7 +5663,7 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
             table=table,
         )
         await app.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="enable_extension",
@@ -6092,7 +6097,7 @@ def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
         name: str,
         all_tables: bool = False,
         tables: tuple[str, ...] = (),
-    ) -> dict[str, Any]:
+    ) -> logical_replication.CreatePublicationResult:
         result = await logical_replication.create_publication(
             ctx.request_context.lifespan_context.database,
             name=name,
@@ -6100,7 +6105,7 @@ def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
             tables=tables,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="drop_publication",
@@ -6117,7 +6122,7 @@ def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
         name: str,
         if_exists: bool = False,
         cascade: bool = False,
-    ) -> dict[str, Any]:
+    ) -> logical_replication.DropPublicationResult:
         result = await logical_replication.drop_publication(
             ctx.request_context.lifespan_context.database,
             name=name,
@@ -6125,7 +6130,7 @@ def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
             cascade=cascade,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="create_subscription",
@@ -6153,7 +6158,7 @@ def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
         create_slot: bool = True,
         slot_name: str | None = None,
         synchronous_commit: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> logical_replication.CreateSubscriptionResult:
         result = await logical_replication.create_subscription(
             ctx.request_context.lifespan_context.database,
             name=name,
@@ -6166,7 +6171,7 @@ def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
             synchronous_commit=synchronous_commit,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="drop_subscription",
@@ -6183,14 +6188,14 @@ def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
         ctx: _Ctx,
         name: str,
         if_exists: bool = False,
-    ) -> dict[str, Any]:
+    ) -> logical_replication.DropSubscriptionResult:
         result = await logical_replication.drop_subscription(
             ctx.request_context.lifespan_context.database,
             name=name,
             if_exists=if_exists,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
