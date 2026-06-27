@@ -8,7 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **`check_pitr_readiness`** — point-in-time-recovery readiness
+- **`check_pitr_readiness`** — point-in-time recovery readiness
   advisor (`mcpg.pitr`, roadmap **5.3**). Composes
   `get_wal_archive_status` (5.2) with the GUCs that gate PITR
   into one verdict: continuous archiving healthy, `wal_level` >=
