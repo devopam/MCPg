@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 243
+    "tool_count": 244
   },
   "tools": [
     {
@@ -2704,6 +2704,15 @@
         "type": "object"
       },
       "name": "get_wait_for_lsn_status"
+    },
+    {
+      "description": "Report WAL-archiving health from `pg_stat_archiver` + the archive-mode GUCs — the early-warning signal for a failing `archive_command` / `archive_library` (full archive volume, bad object-store credentials, network partition), which otherwise silently accumulates WAL in `pg_wal/` until the volume fills. Companion to `read_pg_wal_records` (which inspects WAL *records*); this covers the WAL *archive*. Read-only; never raises. The `archive_command` string is NOT echoed (it can embed credentials) — only a boolean `archive_command_set`. Returns an object with `available`, `archiving_enabled`, `archive_mode`, `archive_command_set`, `archived_count`, `last_archived_wal`, `last_archived_time`, `failed_count`, `last_failed_wal`, `last_failed_time`, `stats_reset`, `healthy` (bool — false when archiving is on and the latest attempt failed), and `detail`.\n\nExample: `get_wal_archive_status()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_wal_archive_statusArguments",
+        "type": "object"
+      },
+      "name": "get_wal_archive_status"
     },
     {
       "description": "Probe the connected server for the WarehousePG (Greenplum-derived MPP) signature. Reports `available=true` only when BOTH the version string mentions WarehousePG / Greenplum AND the `gp_segment_configuration` catalog view exists. Surfaces `coordinator_role`, `segment_count` (primary segments only), and `mirroring` (bool). On vanilla PostgreSQL clusters returns `available=false` with a clean diagnostic — the rest of the `mcpg.warehousepg.*` family advertise themselves inert via this probe. Read-only; never raises.\n\nExample: `get_warehousepg_status()`",

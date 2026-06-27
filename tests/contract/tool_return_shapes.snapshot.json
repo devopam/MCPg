@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 243
+    "tool_count": 244
   },
   "tools": {
     "add_compression_policy": {
@@ -883,6 +883,9 @@
         "server_version_num"
       ],
       "kind": "scalar"
+    },
+    "get_wal_archive_status": {
+      "kind": "opaque"
     },
     "get_warehousepg_status": {
       "kind": "opaque"

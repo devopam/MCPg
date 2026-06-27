@@ -81,6 +81,7 @@ from mcpg import (
     vector_tuner_advanced,
     vector_tuning,
     wait_for_lsn,
+    wal_archive,
     walinspect,
     warehousepg,
     workload,
@@ -842,6 +843,30 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         per_record: bool = False,
     ) -> walinspect.WalStatsReport:
         return await walinspect.read_pg_wal_stats(_driver(ctx), start_lsn, end_lsn, per_record)
+
+    @server.tool(
+        name="get_wal_archive_status",
+        description=_with_example(
+            "Report WAL-archiving health from `pg_stat_archiver` + the "
+            "archive-mode GUCs — the early-warning signal for a failing "
+            "`archive_command` / `archive_library` (full archive volume, "
+            "bad object-store credentials, network partition), which "
+            "otherwise silently accumulates WAL in `pg_wal/` until the "
+            "volume fills. Companion to `read_pg_wal_records` (which "
+            "inspects WAL *records*); this covers the WAL *archive*. "
+            "Read-only; never raises. The `archive_command` string is NOT "
+            "echoed (it can embed credentials) — only a boolean "
+            "`archive_command_set`. Returns an object with `available`, "
+            "`archiving_enabled`, `archive_mode`, `archive_command_set`, "
+            "`archived_count`, `last_archived_wal`, `last_archived_time`, "
+            "`failed_count`, `last_failed_wal`, `last_failed_time`, "
+            "`stats_reset`, `healthy` (bool — false when archiving is on "
+            "and the latest attempt failed), and `detail`.",
+            "get_wal_archive_status()",
+        ),
+    )
+    async def get_wal_archive_status(ctx: _Ctx) -> wal_archive.WalArchiveStatus:
+        return await wal_archive.get_wal_archive_status(_driver(ctx))
 
     @server.tool(
         name="get_compact_schema",
