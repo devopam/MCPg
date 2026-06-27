@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.6.4] - 2026-06-27
+
+### Added
+
 - **Roadmap-row linkage tooling** (roadmap **14.6**). The PR template
   now prompts for `Advances roadmap row: N.M`, and a new
   `tools/roadmap_linkage.py` parses `docs/feature-shortlist.md` into a
@@ -647,7 +655,7 @@ adheres to [Semantic Versioning](https://semver.org/).
   `structuredContent` for every converted tool. Clients reading
   just `content` see no change.
 
-## [Unreleased]
+### Phase 3 — PG 19 readiness (was staged for the unreleased 0.6.3)
 
 ### Added
 
