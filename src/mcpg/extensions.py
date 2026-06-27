@@ -62,7 +62,7 @@ async def extension_installed(driver: SqlDriver, name: str) -> bool:
     return bool(rows)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class EnableExtensionResult:
     """The outcome of an enable_extension call."""
 

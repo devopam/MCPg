@@ -26,7 +26,7 @@ class PartmanError(Exception):
     """Raised when a pg_partman operation cannot complete."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PartmanResult:
     """Generic outcome of a pg_partman call."""
 

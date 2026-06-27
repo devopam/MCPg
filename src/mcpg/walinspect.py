@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from mcpg._vendor.sql import SqlDriver
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class WalRecordRow:
     """Detailed information for a single WAL record."""
 
@@ -24,7 +24,7 @@ class WalRecordRow:
     block_ref: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class WalRecordsReport:
     """WAL records report."""
 
@@ -32,7 +32,7 @@ class WalRecordsReport:
     records: list[WalRecordRow]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class WalStatRow:
     """Aggregated WAL statistics for a resource manager or record type."""
 
@@ -47,7 +47,7 @@ class WalStatRow:
     combined_size_percentage: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class WalStatsReport:
     """WAL statistics report."""
 

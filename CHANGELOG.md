@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`outputSchema` sweep — batch 3 (live-ops / health / catalogue
+  reads).** Realises roadmap **8.6**. 18 more tools converted from
+  `dict[str, Any]` returns to their typed frozen-dataclass returns,
+  so FastMCP auto-derives a JSON `outputSchema` LangChain / LangGraph
+  clients can validate against. Tools: `list_locks`,
+  `find_blocking_chains`, `walk_blocking_chains`, `read_pg_stat_io`,
+  `read_pg_buffercache_summary`, `read_pg_buffercache_relations`,
+  `read_pg_wal_records`, `read_pg_wal_stats`, `check_database_health`,
+  `read_migration_history`, `list_active_queries`,
+  `monitor_index_build`, `verify_connection_encryption`,
+  `cancel_query`, `terminate_backend`, `list_cron_jobs`,
+  `partman_run_maintenance`, `enable_extension`. The structured-output
+  manifest floor in `test_tool_output_schemas.py` rises 33 → 51.
+  Additive only — every dataclass field set is unchanged (the
+  `slots=True` drop is invisible on the wire), so no consumer breaks.
+
 ### Added
 
 - **`recommend_hnsw_ef_search`** — HNSW recall/speed advisor

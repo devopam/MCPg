@@ -33,7 +33,7 @@ DEFAULT_LOCK_LIMIT = 100
 DEFAULT_BLOCKING_LIMIT = 50
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LockInfo:
     """One row from ``pg_locks`` joined with ``pg_stat_activity``.
 
@@ -57,7 +57,7 @@ class LockInfo:
     query: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BlockingPair:
     """One ``(blocked, blocking)`` pair from ``pg_blocking_pids``.
 
@@ -175,7 +175,7 @@ async def find_blocking_chains(driver: SqlDriver, *, limit: int = DEFAULT_BLOCKI
     ]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BlockingChainDetail:
     """Detailed state information for a backend in a blocking chain."""
 
@@ -186,7 +186,7 @@ class BlockingChainDetail:
     state: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BlockingGraphReport:
     """The reconstructed lock-wait graph report.
 
@@ -202,7 +202,7 @@ class BlockingGraphReport:
     mermaid: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class _BlockingGraph:
     """Internal graph structure."""
 

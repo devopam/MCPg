@@ -171,6 +171,32 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
     # PG 19 in-server REPACK.
     "get_repack_status": frozenset({"available", "server_version_num", "server_version", "detail"}),
     "repack_table": frozenset({"schema", "table", "concurrently", "repack_sql"}),
+    # --- Long-tail sweep (batch 3): live-ops / health / catalogue reads ---
+    # List-returning tools auto-wrap into a {"result": [...]} envelope.
+    "list_locks": frozenset({"result"}),
+    "find_blocking_chains": frozenset({"result"}),
+    "walk_blocking_chains": frozenset({"cycles", "paths", "roots", "nodes", "mermaid"}),
+    "read_pg_stat_io": frozenset({"available", "server_version", "rows"}),
+    "read_pg_buffercache_summary": frozenset(
+        {"available", "total_buffers", "free_buffers", "used_buffers", "dirty_buffers", "average_usage_count"}
+    ),
+    "read_pg_buffercache_relations": frozenset({"available", "relations"}),
+    "read_pg_wal_records": frozenset({"available", "records"}),
+    "read_pg_wal_stats": frozenset({"available", "stats"}),
+    "check_database_health": frozenset({"status", "checks"}),
+    "read_migration_history": frozenset(
+        {"alembic", "flyway", "diesel", "django", "prisma", "golang_migrate", "goose", "sequelize"}
+    ),
+    "list_active_queries": frozenset({"result"}),
+    "monitor_index_build": frozenset({"result"}),
+    "verify_connection_encryption": frozenset(
+        {"ssl", "version", "cipher", "bits", "total_connections", "encrypted_connections", "unencrypted_connections"}
+    ),
+    "cancel_query": frozenset({"pid", "action", "succeeded"}),
+    "terminate_backend": frozenset({"pid", "action", "succeeded"}),
+    "list_cron_jobs": frozenset({"result"}),
+    "partman_run_maintenance": frozenset({"parent_table", "detail"}),
+    "enable_extension": frozenset({"name", "enabled"}),
 }
 
 
@@ -261,7 +287,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 33
+    floor = 51
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "
