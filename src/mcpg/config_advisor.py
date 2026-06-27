@@ -64,7 +64,7 @@ class ConfigAdvisorError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SequenceUsage:
     """One sequence's consumption against its ceiling.
 
@@ -84,7 +84,7 @@ class SequenceUsage:
     status: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SequenceAuditResult:
     """Roll-up of :func:`audit_sequences`.
 
@@ -240,7 +240,7 @@ async def audit_sequences(
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SettingFinding:
     """One postgresql.conf sanity-check finding.
 
@@ -257,7 +257,7 @@ class SettingFinding:
     suggestion: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SettingsAuditResult:
     """Roll-up of :func:`audit_settings`.
 
@@ -501,7 +501,7 @@ async def audit_settings(
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ConfRecommendation:
     """Recommended ``postgresql.conf`` values from :func:`recommend_postgres_conf`.
 

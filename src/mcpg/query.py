@@ -27,7 +27,7 @@ class QueryError(Exception):
     """Raised when a query is rejected as unsafe or fails to execute."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class QueryResult:
     """The outcome of a read-only query.
 
@@ -84,7 +84,7 @@ async def run_select(
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ExplainResult:
     """A query's execution plan, as returned by ``EXPLAIN``."""
 
@@ -153,7 +153,7 @@ async def explain_query(
     return ExplainResult(plan=plan)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class QueryPlanAnalysis:
     """A structured summary of a query's execution plan.
 
@@ -284,7 +284,7 @@ async def analyze_query_plan(
 DEFAULT_PARALLEL_LIMIT = 8
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ParallelQueryOutcome:
     """One slot in :class:`ParallelQueryResult`.
 
@@ -301,7 +301,7 @@ class ParallelQueryOutcome:
     error: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ParallelQueryResult:
     """Aggregate result of :func:`run_select_parallel`."""
 

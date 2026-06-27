@@ -53,7 +53,7 @@ def _check_identifier(name: str, kind: str) -> None:
 # --- summarize_table -------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TableStats:
     """Storage + maintenance stats for a single table.
 
@@ -73,7 +73,7 @@ class TableStats:
     last_autoanalyze: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TableSummary:
     """The composite shape of :func:`summarize_table`.
 
@@ -222,7 +222,7 @@ async def summarize_table(
 # --- why_is_this_slow -------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SlowQuerySuggestion:
     """One actionable recommendation from :func:`why_is_this_slow`.
 
@@ -235,7 +235,7 @@ class SlowQuerySuggestion:
     hint: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SlowQueryDiagnosis:
     """The composite shape of :func:`why_is_this_slow`.
 

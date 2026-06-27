@@ -36,7 +36,7 @@ DEFAULT_LOW_SCAN_RATIO = 0.01
 _TEXT_TYPES = frozenset({"text", "character varying", "character"})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class IndexSuggestion:
     """A suggested index for one column of a candidate table."""
 
@@ -45,7 +45,7 @@ class IndexSuggestion:
     rationale: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class IndexRecommendation:
     """A table that may benefit from indexing, with per-column suggestions.
 
@@ -187,7 +187,7 @@ DROP_REASON_SCAN_NO_FETCH = "scan_no_fetch"
 DROP_REASON_RARELY_USED = "rarely_used"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class IndexDropCandidate:
     """One index whose scan stats suggest dropping it.
 

@@ -38,7 +38,7 @@ class MigrationError(Exception):
     """Raised when a migration tool call is rejected or fails."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MigrationRecord:
     """A row from ``mcpg_migrations.staged``.
 
@@ -58,7 +58,7 @@ class MigrationRecord:
     completed_at: datetime | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PrepareResult:
     """The outcome of :func:`prepare_migration`.
 
@@ -75,7 +75,7 @@ class PrepareResult:
     diff: SchemaDiff
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CompleteResult:
     """The outcome of :func:`complete_migration`."""
 
@@ -85,7 +85,7 @@ class CompleteResult:
     statements_run: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CancelResult:
     """The outcome of :func:`cancel_migration`."""
 
@@ -93,7 +93,7 @@ class CancelResult:
     shadow_dropped: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TableSampleStat:
     """Per-table sampling stats for a validation run.
 
@@ -108,7 +108,7 @@ class TableSampleStat:
     rows_after: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ValidationResult:
     """The outcome of :func:`validate_migration`.
 
@@ -126,7 +126,7 @@ class ValidationResult:
     error: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MigrationSchemaValidationResult:
     """The outcome of :func:`validate_migration_schema`."""
 

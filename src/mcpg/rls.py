@@ -40,7 +40,7 @@ def _check_identifier(value: str, kind: str) -> None:
         raise RLSError(f"invalid {kind} {value!r}; must match [A-Za-z_][A-Za-z0-9_]*")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ActivePolicy:
     """One RLS policy that applies to the (table, role) pair under test.
 
@@ -56,7 +56,7 @@ class ActivePolicy:
     with_check_expression: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RLSTestResult:
     """Result of :func:`test_rls_for_role`.
 

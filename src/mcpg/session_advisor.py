@@ -64,7 +64,7 @@ class SessionAdvisorError(Exception):
     """Raised when the advisor can't run — e.g. the audit table is missing."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CostFinding:
     """One inefficiency surfaced by :func:`analyze_session_cost`.
 
@@ -80,7 +80,7 @@ class CostFinding:
     suggestion: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SessionCostAnalysis:
     """Roll-up of :func:`analyze_session_cost`.
 

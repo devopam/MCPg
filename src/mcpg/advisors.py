@@ -48,7 +48,7 @@ _RULES = (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Finding:
     """A single advisor finding.
 
@@ -64,7 +64,7 @@ class Finding:
     message: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AdvisorReport:
     """The aggregated result of running every advisor against a schema."""
 
@@ -347,7 +347,7 @@ async def run_advisors(driver: SqlDriver, schema: str) -> AdvisorReport:
 # --- unused-objects finder (Phase 8.2) -----------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class UnusedTable:
     """A table that has had zero scans since pg_stat was last reset.
 
@@ -367,7 +367,7 @@ class UnusedTable:
     estimated_row_count: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class UnusedIndex:
     """A user-defined index that has been scanned zero times.
 
@@ -382,7 +382,7 @@ class UnusedIndex:
     definition: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class UnusedObjectsReport:
     """The result of :func:`find_unused_objects`.
 
@@ -586,7 +586,7 @@ _COMPILED_NAME_PATTERNS = tuple(
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SensitiveColumn:
     """One column that one or more heuristics flagged as potentially sensitive.
 
@@ -605,7 +605,7 @@ class SensitiveColumn:
     reasons: list[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SensitiveColumnsReport:
     """Aggregate result of :func:`find_sensitive_columns`.
 
@@ -699,7 +699,7 @@ async def find_sensitive_columns(driver: SqlDriver, schema: str) -> SensitiveCol
     return SensitiveColumnsReport(schema=schema, columns=columns)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class OptimizationResult:
     """The result of query syntax and execution plan optimization."""
 

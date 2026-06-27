@@ -51,7 +51,7 @@ class WriteError(Exception):
     """Raised when a write is rejected or fails to execute."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class WriteResult:
     """The outcome of a write.
 

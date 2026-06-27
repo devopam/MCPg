@@ -96,7 +96,7 @@ def is_secret_key(name: str) -> bool:
     return bool(_secret_name_re.search(name))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AuditEvent:
     """A record of a single tool invocation."""
 
@@ -169,7 +169,7 @@ def record(event: AuditEvent) -> None:
 # --- DBA Database Performance Auditor (New Tier-A Feature) ----------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MetricResult:
     """Detailed facts about a single audit check."""
 
@@ -183,7 +183,7 @@ class MetricResult:
     suggestion: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CategoryResult:
     """Combined status and score for a group of related checks."""
 
@@ -193,7 +193,7 @@ class CategoryResult:
     metrics: list[MetricResult]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TopIssue:
     """A critical or high-priority issue requiring DBA triage."""
 
@@ -204,7 +204,7 @@ class TopIssue:
     suggested_action: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Recommendation:
     """A prescriptive next-step to resolve issues or optimize performance."""
 
@@ -214,7 +214,7 @@ class Recommendation:
     estimated_impact: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AuditReport:
     """The master diagnostic payload returned to the DBA."""
 
