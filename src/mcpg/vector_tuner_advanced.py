@@ -323,6 +323,28 @@ async def recommend_hnsw_ef_search(
         if truth_ids:
             truths.append((qid, qvec, truth_ids))
 
+    if not truths:
+        # Samples existed but no query had any OTHER non-null vector to
+        # compare against (e.g. the only vectors in the table are the
+        # sampled rows themselves). Sweeping would report recall 0.0
+        # everywhere and wrongly advise rebuilding the index — bail with
+        # a clear message instead (gemini review on #182).
+        return HnswRecallRecommendation(
+            available=True,
+            has_hnsw_index=True,
+            index_name=index_name,
+            metric=metric,
+            k=k,
+            target_recall=target_recall,
+            sample_queries=len(samples),
+            recommended_ef_search=None,
+            sweep=[],
+            detail=(
+                f"No other rows with non-null vectors in {schema}.{table}.{column} "
+                "to compare against — need at least k+1 vectors for a meaningful sweep."
+            ),
+        )
+
     sweep: list[EfSearchSweepPoint] = []
     recommended: int | None = None
     for ef in sorted(set(ef_values)):

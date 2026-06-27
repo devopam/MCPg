@@ -267,6 +267,20 @@ async def test_recommend_empty_table_with_index() -> None:
     assert "No non-null vectors" in result.detail
 
 
+async def test_recommend_no_other_vectors_to_compare_against() -> None:
+    """Samples exist but every query's brute-force truth is empty
+    (e.g. the only vectors are the sampled rows themselves) — bail
+    with a clear message rather than report recall 0.0 everywhere
+    and wrongly advise an index rebuild. Gemini review on #182."""
+    driver = FakeRoutingDriver(_recommend_routes(truth=[]))
+    result = await recommend_hnsw_ef_search(driver, "public", "docs", "embedding")  # type: ignore[arg-type]
+    assert result.has_hnsw_index is True
+    assert result.sample_queries == 1
+    assert result.recommended_ef_search is None
+    assert result.sweep == []
+    assert "No other rows with non-null vectors" in result.detail
+
+
 async def test_recommend_custom_ef_values_respected() -> None:
     ef_results = {
         50: [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
