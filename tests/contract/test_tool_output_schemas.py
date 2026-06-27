@@ -197,6 +197,33 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
     "list_cron_jobs": frozenset({"result"}),
     "partman_run_maintenance": frozenset({"parent_table", "detail"}),
     "enable_extension": frozenset({"name", "enabled"}),
+    # --- Batch 4: schema-introspection catalogue reads ---
+    "list_schemas": frozenset({"result"}),
+    "list_tables": frozenset({"result"}),
+    "describe_table": frozenset({"result"}),
+    "list_indexes": frozenset({"result"}),
+    "list_constraints": frozenset({"result"}),
+    "list_foreign_keys": frozenset({"result"}),
+    "list_views": frozenset({"result"}),
+    "list_functions": frozenset({"result"}),
+    "list_triggers": frozenset({"result"}),
+    "list_partitions": frozenset({"partitioned", "strategy", "partitions"}),
+    "list_roles": frozenset({"result"}),
+    "list_grants": frozenset({"result"}),
+    "list_policies": frozenset({"rls_enabled", "policies"}),
+    "list_sequences": frozenset({"result"}),
+    "list_enums": frozenset({"result"}),
+    "list_domains": frozenset({"result"}),
+    "list_composite_types": frozenset({"result"}),
+    "list_foreign_data_wrappers": frozenset({"result"}),
+    "list_foreign_servers": frozenset({"result"}),
+    "list_foreign_tables": frozenset({"result"}),
+    "list_user_mappings": frozenset({"result"}),
+    "list_publications": frozenset({"result"}),
+    "list_subscriptions": frozenset({"result"}),
+    "list_extensions": frozenset({"result"}),
+    "list_available_extensions": frozenset({"result"}),
+    "list_generated_columns": frozenset({"result"}),
 }
 
 
@@ -287,7 +314,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 51
+    floor = 77
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "

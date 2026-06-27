@@ -34,14 +34,14 @@ _PARTITION_STRATEGIES = {"r": "range", "l": "list", "h": "hash"}
 _TABLE_TYPES = {"r": "BASE TABLE", "p": "BASE TABLE", "v": "VIEW", "f": "FOREIGN"}
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SchemaInfo:
     """A database schema."""
 
     name: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TableInfo:
     """A table or view within a schema.
 
@@ -55,7 +55,7 @@ class TableInfo:
     is_partition: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ColumnInfo:
     """A column of a table.
 
@@ -70,7 +70,7 @@ class ColumnInfo:
     vector_dimension: int | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class IndexInfo:
     """An index on a table.
 
@@ -86,7 +86,7 @@ class IndexInfo:
     partitioned: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ViewInfo:
     """A view or materialized view within a schema."""
 
@@ -95,7 +95,7 @@ class ViewInfo:
     definition: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FunctionInfo:
     """A function or procedure within a schema.
 
@@ -110,7 +110,7 @@ class FunctionInfo:
     language: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TriggerInfo:
     """A user-defined trigger on a table."""
 
@@ -119,7 +119,7 @@ class TriggerInfo:
     definition: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ConstraintInfo:
     """A constraint on a table.
 
@@ -132,7 +132,7 @@ class ConstraintInfo:
     definition: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ForeignKeyInfo:
     """A foreign-key constraint resolved to its referenced columns.
 
@@ -149,7 +149,7 @@ class ForeignKeyInfo:
     to_columns: list[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PartitionInfo:
     """A partition of a partitioned table.
 
@@ -161,7 +161,7 @@ class PartitionInfo:
     bounds: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PartitionSet:
     """How a table is partitioned, with its partitions.
 
@@ -174,7 +174,7 @@ class PartitionSet:
     partitions: list[PartitionInfo]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PolicyInfo:
     """A Row-Level-Security policy on a table.
 
@@ -191,7 +191,7 @@ class PolicyInfo:
     check_expression: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PolicySet:
     """The Row-Level-Security configuration of a table.
 
@@ -204,7 +204,7 @@ class PolicySet:
     policies: list[PolicyInfo]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RoleInfo:
     """A database role and its attributes.
 
@@ -223,7 +223,7 @@ class RoleInfo:
     member_of: list[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GrantInfo:
     """A privilege granted on a table.
 
@@ -247,7 +247,7 @@ class GrantInfo:
     acl: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SequenceInfo:
     """A sequence within a schema.
 
@@ -265,7 +265,7 @@ class SequenceInfo:
     last_value: int | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class EnumInfo:
     """An enum type within a schema and its labels in sort order."""
 
@@ -273,7 +273,7 @@ class EnumInfo:
     values: list[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DomainInfo:
     """A domain type within a schema.
 
@@ -288,7 +288,7 @@ class DomainInfo:
     constraints: list[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CompositeAttribute:
     """A column of a composite type."""
 
@@ -296,7 +296,7 @@ class CompositeAttribute:
     data_type: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CompositeTypeInfo:
     """A standalone composite type within a schema (excludes table row-types)."""
 
@@ -304,7 +304,7 @@ class CompositeTypeInfo:
     attributes: list[CompositeAttribute]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ForeignDataWrapperInfo:
     """A foreign-data wrapper installed in the database.
 
@@ -318,7 +318,7 @@ class ForeignDataWrapperInfo:
     options: dict[str, str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ForeignServerInfo:
     """A foreign server defined for an FDW."""
 
@@ -329,7 +329,7 @@ class ForeignServerInfo:
     options: dict[str, str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ForeignTableInfo:
     """A foreign table within a schema."""
 
@@ -338,7 +338,7 @@ class ForeignTableInfo:
     options: dict[str, str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class UserMappingInfo:
     """A role-to-foreign-server mapping.
 
@@ -350,7 +350,7 @@ class UserMappingInfo:
     options: dict[str, str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PublicationInfo:
     """A logical-replication publication.
 
@@ -368,7 +368,7 @@ class PublicationInfo:
     tables: list[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SubscriptionInfo:
     """A logical-replication subscription.
 
@@ -385,7 +385,7 @@ class SubscriptionInfo:
     publications: list[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ExtensionInfo:
     """An installed PostgreSQL extension."""
 
@@ -393,7 +393,7 @@ class ExtensionInfo:
     version: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AvailableExtension:
     """An extension available to the database, installed or not."""
 
@@ -1103,7 +1103,7 @@ async def list_available_extensions(driver: SqlDriver) -> list[AvailableExtensio
 # --- generated columns (Phase 4.7) ---------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GeneratedColumnInfo:
     """A ``GENERATED ALWAYS AS (...) STORED`` column on a table.
 
