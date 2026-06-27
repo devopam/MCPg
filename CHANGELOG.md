@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`check_pitr_readiness`** — point-in-time-recovery readiness
+  advisor (`mcpg.pitr`, roadmap **5.3**). Composes
+  `get_wal_archive_status` (5.2) with the GUCs that gate PITR
+  into one verdict: continuous archiving healthy, `wal_level` >=
+  replica, `max_wal_senders` >= 1 (so pg_basebackup can stream a
+  base backup), and `full_page_writes` on (torn-page safety in
+  replay). Returns a per-gate breakdown (`name` / `ok` /
+  `observed` / `remediation`), an overall `ready` verdict, and an
+  ordered remediation list for the failing gates. Read-only
+  advisor — changes nothing, emits no secrets. Typed return →
+  `outputSchema` (manifest floor 193 → 194). Completes §5
+  (Backups & DR). Routed to `operations_and_health`.
+
 - **`get_wal_archive_status`** — WAL-archiving health probe
   (`mcpg.wal_archive`, roadmap **5.2**). Reads `pg_stat_archiver`
   + the archive-mode GUCs and returns a one-call verdict on whether

@@ -59,6 +59,7 @@ from mcpg import (
     pg_prewarm,
     pg_search,
     pgq,
+    pitr,
     prisma,
     query,
     rag_efficiency,
@@ -867,6 +868,29 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
     )
     async def get_wal_archive_status(ctx: _Ctx) -> wal_archive.WalArchiveStatus:
         return await wal_archive.get_wal_archive_status(_driver(ctx))
+
+    @server.tool(
+        name="check_pitr_readiness",
+        description=_with_example(
+            "Assess whether the cluster is ready for point-in-time "
+            "recovery (PITR) — the one-call 'could I actually recover to "
+            "an arbitrary point right now, and if not what's missing?' "
+            "check. Composes `get_wal_archive_status` (5.2) with the GUCs "
+            "that gate PITR: continuous archiving must be healthy, "
+            "`wal_level` >= replica, `max_wal_senders` >= 1 (so "
+            "pg_basebackup can stream a base backup), and "
+            "`full_page_writes` on (torn-page safety during replay). "
+            "Read-only advisor — changes nothing, emits no secrets. "
+            "Returns an object with `available`, `ready` (bool — true "
+            "only when all gates pass), `wal_level`, `archiving_healthy`, "
+            "`gates` (list of objects with `name`, `ok`, `observed`, "
+            "`remediation`), `remediation` (ordered fixes for failing "
+            "gates), and `detail`.",
+            "check_pitr_readiness()",
+        ),
+    )
+    async def check_pitr_readiness(ctx: _Ctx) -> pitr.PitrReadinessReport:
+        return await pitr.check_pitr_readiness(_driver(ctx))
 
     @server.tool(
         name="get_compact_schema",
