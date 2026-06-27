@@ -71,7 +71,7 @@ class RedisFdwError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RedisForeignServer:
     """A ``CREATE SERVER ... FOREIGN DATA WRAPPER redis_fdw`` row.
 
@@ -90,7 +90,7 @@ class RedisForeignServer:
     options: dict[str, str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RedisCacheTableInfo:
     """The shape of one redis-backed foreign table.
 
@@ -110,7 +110,7 @@ class RedisCacheTableInfo:
     options: dict[str, str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RedisCacheStats:
     """Best-effort metrics for a redis_fdw server.
 
@@ -126,7 +126,7 @@ class RedisCacheStats:
     detail: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CreateRedisServerResult:
     name: str
     address: str
@@ -136,7 +136,7 @@ class CreateRedisServerResult:
     created: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CreateRedisUserMappingResult:
     server: str
     user: str
@@ -144,7 +144,7 @@ class CreateRedisUserMappingResult:
     created: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CreateRedisCacheTableResult:
     schema: str
     name: str
@@ -154,7 +154,7 @@ class CreateRedisCacheTableResult:
     created: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RedisCacheRecommendation:
     """One advisor recommendation row.
 
@@ -173,7 +173,7 @@ class RedisCacheRecommendation:
     ready_to_run_sql: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RecommendRedisCacheTargetsResult:
     server: str | None
     candidates: list[RedisCacheRecommendation] = field(default_factory=list)

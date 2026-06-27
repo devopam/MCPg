@@ -463,6 +463,100 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
             "findings",
         }
     ),
+    # --- Batch 6: FDW / extensions family (pg_prewarm, turboquant, redis_fdw) ---
+    "unschedule_autowarm": frozenset({"name", "removed"}),
+    "schedule_autowarm": frozenset({"jobid", "name", "schedule"}),
+    "prewarm_recommended": frozenset({"dry_run", "total_blocks", "outcomes"}),
+    "prewarm_relation": frozenset({"schema", "relation", "mode", "blocks_prewarmed"}),
+    "list_autowarm_jobs": frozenset({"result"}),
+    "recommend_prewarm_targets": frozenset(
+        {"shared_buffers_blocks", "budget_blocks", "total_cost_blocks", "candidates"}
+    ),
+    "list_prewarmed_relations": frozenset({"result"}),
+    "get_prewarm_extension_status": frozenset(
+        {
+            "pg_prewarm_installed",
+            "pg_buffercache_installed",
+            "autoprewarm_libraries_present",
+            "shared_preload_libraries",
+        }
+    ),
+    "create_redis_cache_table": frozenset({"schema", "name", "server", "key_type", "columns", "created"}),
+    "create_redis_user_mapping": frozenset({"server", "user", "secret_ref", "created"}),
+    "create_redis_cache_server": frozenset({"name", "address", "port", "database", "tls", "created"}),
+    "recommend_redis_cache_targets": frozenset({"server", "candidates"}),
+    "get_redis_cache_stats": frozenset({"server", "available", "key_count", "used_memory_bytes", "detail"}),
+    "describe_redis_cache_table": frozenset(
+        {"schema", "name", "server", "key_type", "key_prefix", "ttl_seconds", "columns", "options"}
+    ),
+    "list_redis_foreign_servers": frozenset({"result"}),
+    "reindex_turboquant_index": frozenset(
+        {"schema", "index", "concurrently", "reindex_sql", "started_at", "completed_at", "duration_seconds"}
+    ),
+    "create_turboquant_index": frozenset(
+        {
+            "schema",
+            "table",
+            "column",
+            "index_name",
+            "metric",
+            "options",
+            "concurrently",
+            "create_sql",
+            "started_at",
+            "completed_at",
+            "duration_seconds",
+        }
+    ),
+    "maintain_turboquant_index": frozenset(
+        {
+            "schema",
+            "index",
+            "started_at",
+            "completed_at",
+            "duration_seconds",
+            "delta_merge_performed",
+            "merged_delta_count",
+            "recycled_delta_page_count",
+            "raw",
+        }
+    ),
+    "recommend_turboquant_query_knobs": frozenset(
+        {"probes", "oversample_factor", "max_visited_codes", "max_visited_pages"}
+    ),
+    "turboquant_rerank_candidates": frozenset({"result"}),
+    "turboquant_approx_candidates": frozenset({"result"}),
+    "recommend_turboquant_maintenance": frozenset({"result"}),
+    # Optional (DataClass | None) returns are enveloped by FastMCP into {"result": ...} too.
+    "get_turboquant_last_scan_stats": frozenset({"result"}),
+    "get_turboquant_heap_stats": frozenset({"schema", "index", "row_count", "raw"}),
+    "get_turboquant_index_metadata": frozenset(
+        {
+            "schema",
+            "index",
+            "table",
+            "column",
+            "access_method",
+            "opclass",
+            "input_type",
+            "heap_relation",
+            "heap_live_rows_estimate",
+            "capabilities",
+            "operability",
+            "delta_enabled",
+            "delta_live_count",
+            "delta_batch_page_count",
+            "delta_head_block",
+            "delta_tail_block",
+            "delta_page_depth",
+            "delta_live_fraction",
+            "delta_merge_recommended",
+            "delta_merge_thresholds",
+            "raw_metadata",
+            "index_options",
+        }
+    ),
+    "list_turboquant_indexes": frozenset({"result"}),
 }
 
 
@@ -553,7 +647,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 119
+    floor = 145
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "

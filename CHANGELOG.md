@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`outputSchema` sweep — batch 6 (FDW / extensions family).**
+  Roadmap **8.6**. 26 tools across `pg_prewarm`, `turboquant`,
+  `redis_fdw` converted to typed frozen-dataclass returns. Manifest
+  floor 119 → 145. Optional (`DataClass | None`) returns — like
+  list returns — are enveloped by FastMCP into a top-level
+  `{"result": ...}`, so the manifest pins the `result` key for those
+  (`get_turboquant_last_scan_stats`). Additive only.
+
 - **`outputSchema` sweep — batch 5 (vector / RAG / search family).**
   Roadmap **8.6**. 42 tools across `vector_ops`, `vector_tuning`,
   `vector_tuner_advanced`, `rag_efficiency`, `rag_telemetry`,
