@@ -197,6 +197,10 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
     "list_cron_jobs": frozenset({"result"}),
     "partman_run_maintenance": frozenset({"parent_table", "detail"}),
     "enable_extension": frozenset({"name", "enabled"}),
+    # PITR readiness (roadmap 5.3).
+    "check_pitr_readiness": frozenset(
+        {"available", "ready", "wal_level", "archiving_healthy", "gates", "remediation", "detail"}
+    ),
     # WAL archive health (roadmap 5.2).
     "get_wal_archive_status": frozenset(
         {
@@ -790,7 +794,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 193
+    floor = 194
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "

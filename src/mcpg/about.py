@@ -620,6 +620,8 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "verify_connection_encryption": "operations_and_health",
     # get_wal_archive_status — WAL-archiving health probe.
     "get_wal_archive_status": "operations_and_health",
+    # check_pitr_readiness — point-in-time-recovery readiness advisor.
+    "check_pitr_readiness": "operations_and_health",
     # verify_audit_chain stays in audit_trail (the name-pattern would route to ops).
     "verify_audit_chain": "audit_trail",
     # enable_extension is operations setup.

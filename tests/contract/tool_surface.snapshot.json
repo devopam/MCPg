@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 244
+    "tool_count": 245
   },
   "tools": [
     {
@@ -583,6 +583,15 @@
         "type": "object"
       },
       "name": "check_database_health"
+    },
+    {
+      "description": "Assess whether the cluster is ready for point-in-time recovery (PITR) — the one-call 'could I actually recover to an arbitrary point right now, and if not what's missing?' check. Composes `get_wal_archive_status` (5.2) with the GUCs that gate PITR: continuous archiving must be healthy, `wal_level` >= replica, `max_wal_senders` >= 1 (so pg_basebackup can stream a base backup), and `full_page_writes` on (torn-page safety during replay). Read-only advisor — changes nothing, emits no secrets. Returns an object with `available`, `ready` (bool — true only when all gates pass), `wal_level`, `archiving_healthy`, `gates` (list of objects with `name`, `ok`, `observed`, `remediation`), `remediation` (ordered fixes for failing gates), and `detail`.\n\nExample: `check_pitr_readiness()`",
+      "inputSchema": {
+        "properties": {},
+        "title": "check_pitr_readinessArguments",
+        "type": "object"
+      },
+      "name": "check_pitr_readiness"
     },
     {
       "description": "Walk `gp_segment_configuration` and surface MPP segment posture. Returns per-segment `status` ('u' = up), `mode` ('s' = sync / 'n' = not-in-sync / 'c' = changetracking), and `role` vs `preferred_role` to detect post-failover state. Top-level `unhealthy_count` + `out_of_sync_count` let agents branch without walking the segments array. Read-only. On vanilla PG returns `available=false`.\n\nExample: `check_segment_health()`",

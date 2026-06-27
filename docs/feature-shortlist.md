@@ -78,7 +78,7 @@ not covered there:
 |---|---|---|---|---|
 | 5.1 ✅ | Scheduled logical backups via `pg_cron` + `dump_database` | S | Medium | Shipped as `schedule_logical_backup`: composes `cron.schedule` with `COPY TO PROGRAM 'pg_dump ...'`. Tight allowlist on `destination`/`pg_dump_path`/`database`. PostgreSQL-superuser-only at runtime. |
 | 5.2 | ✅ **Shipped.** **`get_wal_archive_status`** — WAL-archiving health from `pg_stat_archiver` + the archive-mode GUCs. The early-warning signal for a failing `archive_command` / `archive_library` (full volume, bad object-store credentials, network partition) that otherwise silently accumulates WAL in `pg_wal/` until the volume fills. Computes a `healthy` verdict (false when archiving is on and the latest attempt failed) + human-readable `detail`. The `archive_command` string is never echoed (credentials) — only a boolean `archive_command_set`. Read-only; never raises. Lives in `mcpg.wal_archive`; `operations_and_health` bucket; typed return → emits an `outputSchema`. | M | Low | Niche; only useful where WAL archiving is configured. |
-| 5.3 | Point-in-time recovery prep helpers | M | Low-Medium | Heavy lift for a narrow audience. |
+| 5.3 | ✅ **Shipped.** **`check_pitr_readiness`** — composes `get_wal_archive_status` (5.2) with the PITR-gating GUCs (`wal_level` >= replica, `max_wal_senders` >= 1, `full_page_writes` on) into a single readiness verdict + per-gate breakdown + ordered remediation list. Read-only advisor; scoped as a focused readiness checker rather than full recovery orchestration. Lives in `mcpg.pitr`; `operations_and_health` bucket; typed return. Completes §5. | M | Low-Medium | Heavy lift for a narrow audience. |
 
 ## 6. Schema design / quality
 
