@@ -142,7 +142,7 @@ async def analyze_hnsw_recall(
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class EfSearchSweepPoint:
     """One ``ef_search`` value's measured behaviour.
 
@@ -159,7 +159,7 @@ class EfSearchSweepPoint:
     meets_target: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HnswRecallRecommendation:
     """Roll-up of :func:`recommend_hnsw_ef_search`.
 

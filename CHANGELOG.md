@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`outputSchema` sweep — batch 5 (vector / RAG / search family).**
+  Roadmap **8.6**. 42 tools across `vector_ops`, `vector_tuning`,
+  `vector_tuner_advanced`, `rag_efficiency`, `rag_telemetry`,
+  `pg_search`, `textsearch`, `timescaledb` converted to typed
+  frozen-dataclass returns. Manifest floor 77 → 119. While converting,
+  the now-enforced structured-output schema surfaced a latent
+  JSON-safety bug in `detect_vector_outliers`: the `VectorOutlier.zscore`
+  field stored `math.inf` for singleton / zero-variance clusters, which
+  isn't representable in JSON and the schema rejected. Fixed by typing
+  the field `float | None` and emitting the `None` sentinel for the
+  infinite case (field name unchanged → no consumer break; `inf` was
+  never valid JSON anyway).
+
 - **`outputSchema` sweep — batch 4 (schema-introspection catalogue
   reads).** Roadmap **8.6**. 26 introspection tools converted to typed
   frozen-dataclass returns: `list_schemas`, `list_tables`,

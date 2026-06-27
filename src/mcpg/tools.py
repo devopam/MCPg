@@ -981,7 +981,7 @@ def _register_rag_efficiency(server: FastMCP[AppContext]) -> None:
         sample_size: int = 30,
         candidate_multipliers: list[int] | None = None,
         metric: str = "cosine",
-    ) -> dict[str, Any]:
+    ) -> rag_efficiency.VectorEfficiencyReport:
         report = await rag_efficiency.analyze_vector_search_efficiency(
             _driver(ctx),
             schema,
@@ -994,7 +994,7 @@ def _register_rag_efficiency(server: FastMCP[AppContext]) -> None:
             candidate_multipliers=tuple(candidate_multipliers) if candidate_multipliers else (1, 2, 4, 10),
             metric=metric,
         )
-        return asdict(report)
+        return report
 
 
 def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
@@ -1017,11 +1017,11 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
         days: int = 7,
         model: str | None = None,
         retrieval_index: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> rag_efficiency.RerankerLiftReport:
         report = await rag_efficiency.analyze_reranker_lift(
             _driver(ctx), days=days, model=model, retrieval_index=retrieval_index
         )
-        return asdict(report)
+        return report
 
     @server.tool(
         name="analyze_topk_stability",
@@ -1041,11 +1041,11 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
         k: int = 10,
         model: str | None = None,
         retrieval_index: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> rag_efficiency.TopKStabilityReport:
         report = await rag_efficiency.analyze_topk_stability(
             _driver(ctx), days=days, k=k, model=model, retrieval_index=retrieval_index
         )
-        return asdict(report)
+        return report
 
     @server.tool(
         name="analyze_rerank_score_distribution",
@@ -1066,7 +1066,7 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
         model: str | None = None,
         retrieval_index: str | None = None,
         n_buckets: int = 20,
-    ) -> dict[str, Any]:
+    ) -> rag_efficiency.RerankScoreDistributionReport:
         report = await rag_efficiency.analyze_rerank_score_distribution(
             _driver(ctx),
             days=days,
@@ -1074,7 +1074,7 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
             retrieval_index=retrieval_index,
             n_buckets=n_buckets,
         )
-        return asdict(report)
+        return report
 
     @server.tool(
         name="analyze_rerank_ndcg",
@@ -1095,11 +1095,11 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
         k: int = 10,
         model: str | None = None,
         retrieval_index: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> rag_efficiency.NDCGReport:
         report = await rag_efficiency.analyze_rerank_ndcg(
             _driver(ctx), days=days, k=k, model=model, retrieval_index=retrieval_index
         )
-        return asdict(report)
+        return report
 
     @server.tool(
         name="recommend_rerank_strategy",
@@ -1117,11 +1117,11 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
         ctx: _Ctx,
         days: int = 7,
         retrieval_index: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> rag_efficiency.RerankRecommendation:
         report = await rag_efficiency.recommend_rerank_strategy(
             _driver(ctx), days=days, retrieval_index=retrieval_index
         )
-        return asdict(report)
+        return report
 
 
 def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
@@ -1141,11 +1141,11 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         column: str,
         index_type: str = "hnsw",
         metric: str = "l2",
-    ) -> dict[str, Any]:
+    ) -> vector_tuning.TuningRecommendation:
         result = await vector_tuning.tune_vector_index(
             _driver(ctx), schema, table, column, index_type=index_type, metric=metric
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="vector_recall_at_k",
@@ -1165,7 +1165,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         k: int = 10,
         sample_size: int = 20,
         metric: str = "l2",
-    ) -> dict[str, Any]:
+    ) -> vector_tuning.RecallReport:
         report = await vector_tuning.vector_recall_at_k(
             _driver(ctx),
             schema,
@@ -1176,7 +1176,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             sample_size=sample_size,
             metric=metric,
         )
-        return asdict(report)
+        return report
 
     @server.tool(
         name="migrate_vector_to_halfvec",
@@ -1205,9 +1205,9 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         schema: str,
         table: str,
         column: str,
-    ) -> dict[str, Any]:
+    ) -> vector_tuning.HalfvecMigrationPlan:
         plan = await vector_tuning.migrate_vector_to_halfvec(_driver(ctx), schema, table, column)
-        return asdict(plan)
+        return plan
 
     @server.tool(
         name="analyze_hnsw_recall",
@@ -1270,7 +1270,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         target_recall: float = 0.95,
         sample_queries: int = 10,
         metric: str = "l2",
-    ) -> dict[str, Any]:
+    ) -> vector_tuner_advanced.HnswRecallRecommendation:
         result = await vector_tuner_advanced.recommend_hnsw_ef_search(
             _driver(ctx),
             schema,
@@ -1281,7 +1281,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             sample_queries=sample_queries,
             metric=metric,
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="analyze_distance_metric",
@@ -1305,7 +1305,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         table: str,
         column: str,
         sample_size: int = vector_ops.DEFAULT_SAMPLE_SIZE,
-    ) -> dict[str, Any]:
+    ) -> vector_ops.DistanceMetricRecommendation:
         result = await vector_ops.analyze_distance_metric(
             _driver(ctx),
             schema,
@@ -1313,7 +1313,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             column,
             sample_size=sample_size,
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="cross_table_similarity",
@@ -1345,7 +1345,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         target_embedding_column: str,
         k: int = vector_ops.DEFAULT_K,
         metric: str = "l2",
-    ) -> dict[str, Any]:
+    ) -> vector_ops.CrossTableSimilarityResult:
         result = await vector_ops.cross_table_similarity(
             _driver(ctx),
             source_schema=source_schema,
@@ -1359,7 +1359,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             k=k,
             metric=metric,
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="cluster_vectors",
@@ -1391,7 +1391,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         max_iterations: int = vector_ops.DEFAULT_MAX_ITERATIONS,
         metric: str = "l2",
         seed: int = 42,
-    ) -> dict[str, Any]:
+    ) -> vector_ops.ClusterVectorsResult:
         result = await vector_ops.cluster_vectors(
             _driver(ctx),
             schema,
@@ -1404,7 +1404,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             metric=metric,
             seed=seed,
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="detect_vector_outliers",
@@ -1442,7 +1442,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         metric: str = "l2",
         seed: int = 42,
         max_results: int = vector_ops.DEFAULT_OUTLIER_MAX_RESULTS,
-    ) -> dict[str, Any]:
+    ) -> vector_ops.VectorOutlierResult:
         result = await vector_ops.detect_vector_outliers(
             _driver(ctx),
             schema,
@@ -1457,7 +1457,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             seed=seed,
             max_results=max_results,
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="monitor_embedding_drift",
@@ -1497,7 +1497,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         current_end: str,
         sample_size: int = vector_ops.DEFAULT_DRIFT_SAMPLE_SIZE,
         drift_threshold: float = vector_ops.DEFAULT_DRIFT_THRESHOLD,
-    ) -> dict[str, Any]:
+    ) -> vector_ops.EmbeddingDriftReport:
         report = await vector_ops.monitor_embedding_drift(
             _driver(ctx),
             schema,
@@ -1511,7 +1511,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             sample_size=sample_size,
             drift_threshold=drift_threshold,
         )
-        return asdict(report)
+        return report
 
 
 def _register_prisma(server: FastMCP[AppContext]) -> None:
@@ -2364,9 +2364,9 @@ def _register_timescaledb_reads(server: FastMCP[AppContext]) -> None:
             "(list of `{schema, table, num_chunks, compression_enabled, total_size_bytes}`)."
         ),
     )
-    async def list_hypertables(ctx: _Ctx) -> dict[str, Any]:
+    async def list_hypertables(ctx: _Ctx) -> timescaledb.HypertableListResult:
         result = await timescaledb.list_hypertables(_driver(ctx))
-        return asdict(result)
+        return result
 
     @server.tool(
         name="list_chunks",
@@ -2378,9 +2378,9 @@ def _register_timescaledb_reads(server: FastMCP[AppContext]) -> None:
             "(list of `{chunk_name, range_start, range_end, is_compressed, total_size_bytes}`)."
         ),
     )
-    async def list_chunks(ctx: _Ctx, schema: str, table: str) -> dict[str, Any]:
+    async def list_chunks(ctx: _Ctx, schema: str, table: str) -> timescaledb.ChunkListResult:
         result = await timescaledb.list_chunks(_driver(ctx), schema, table)
-        return asdict(result)
+        return result
 
 
 def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
@@ -2403,7 +2403,7 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
         time_column: str,
         chunk_time_interval: str = "7 days",
         if_not_exists: bool = True,
-    ) -> dict[str, Any]:
+    ) -> timescaledb.TimescaleWriteResult:
         result = await timescaledb.create_hypertable(
             _driver(ctx),
             schema,
@@ -2413,7 +2413,7 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
             if_not_exists=if_not_exists,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="add_compression_policy",
@@ -2429,10 +2429,10 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
     )
     async def add_compression_policy(
         ctx: _Ctx, schema: str, table: str, compress_after: str = "7 days"
-    ) -> dict[str, Any]:
+    ) -> timescaledb.TimescaleWriteResult:
         result = await timescaledb.add_compression_policy(_driver(ctx), schema, table, compress_after=compress_after)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="add_retention_policy",
@@ -2442,10 +2442,12 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
             "unrestricted mode + MCPG_ALLOW_DDL."
         ),
     )
-    async def add_retention_policy(ctx: _Ctx, schema: str, table: str, drop_after: str = "30 days") -> dict[str, Any]:
+    async def add_retention_policy(
+        ctx: _Ctx, schema: str, table: str, drop_after: str = "30 days"
+    ) -> timescaledb.TimescaleWriteResult:
         result = await timescaledb.add_retention_policy(_driver(ctx), schema, table, drop_after=drop_after)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_listen(server: FastMCP[AppContext]) -> None:
@@ -3015,11 +3017,11 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         mode: str = textsearch.DEFAULT_FUZZY_MODE,
         limit: int = textsearch.DEFAULT_LIMIT,
         threshold: float = textsearch.DEFAULT_THRESHOLD,
-    ) -> dict[str, Any]:
+    ) -> textsearch.FuzzySearchResult:
         result = await textsearch.fuzzy_search(
             _driver(ctx), schema, table, column, term, mode=mode, limit=limit, threshold=threshold
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="full_text_search",
@@ -3040,11 +3042,11 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         search_query: str,
         config: str = textsearch.DEFAULT_TEXT_CONFIG,
         limit: int = textsearch.DEFAULT_LIMIT,
-    ) -> list[dict[str, Any]]:
+    ) -> list[textsearch.FullTextMatch]:
         matches = await textsearch.full_text_search(
             _driver(ctx), schema, table, column, search_query, config=config, limit=limit
         )
-        return [asdict(match) for match in matches]
+        return matches
 
     @server.tool(
         name="vector_search",
@@ -3064,11 +3066,11 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         query_vector: list[float],
         metric: str = textsearch.DEFAULT_VECTOR_METRIC,
         limit: int = textsearch.DEFAULT_LIMIT,
-    ) -> dict[str, Any]:
+    ) -> textsearch.VectorSearchResult:
         result = await textsearch.vector_search(
             _driver(ctx), schema, table, column, query_vector, metric=metric, limit=limit
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="vector_range_search",
@@ -3090,7 +3092,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         max_distance: float,
         metric: str = textsearch.DEFAULT_VECTOR_METRIC,
         limit: int = textsearch.DEFAULT_LIMIT,
-    ) -> dict[str, Any]:
+    ) -> textsearch.VectorSearchResult:
         result = await textsearch.vector_range_search(
             _driver(ctx),
             schema,
@@ -3101,7 +3103,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             metric=metric,
             limit=limit,
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="mmr_search",
@@ -3131,7 +3133,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         fetch_k: int | None = None,
         lambda_mult: float = textsearch.DEFAULT_MMR_LAMBDA,
         metric: str = textsearch.DEFAULT_VECTOR_METRIC,
-    ) -> dict[str, Any]:
+    ) -> textsearch.MmrSearchResult:
         result = await textsearch.mmr_search(
             _driver(ctx),
             schema,
@@ -3143,7 +3145,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             lambda_mult=lambda_mult,
             metric=metric,
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="hybrid_search",
@@ -3174,7 +3176,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         text_config: str = textsearch.DEFAULT_TEXT_CONFIG,
         limit: int = textsearch.DEFAULT_LIMIT,
         candidate_pool: int = 50,
-    ) -> dict[str, Any]:
+    ) -> textsearch.HybridSearchResult:
         result = await textsearch.hybrid_search(
             _driver(ctx),
             schema,
@@ -3188,7 +3190,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             limit=limit,
             candidate_pool=candidate_pool,
         )
-        return asdict(result)
+        return result
 
     @server.tool(
         name="recommend_vector_quantization",
@@ -3202,9 +3204,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "wouldn't justify the migration."
         ),
     )
-    async def recommend_vector_quantization(ctx: _Ctx, schema: str) -> list[dict[str, Any]]:
+    async def recommend_vector_quantization(ctx: _Ctx, schema: str) -> list[textsearch.QuantizationRecommendation]:
         recommendations = await textsearch.recommend_vector_quantization(_driver(ctx), schema)
-        return [asdict(rec) for rec in recommendations]
+        return recommendations
 
     @server.tool(
         name="geo_search",
@@ -3221,9 +3223,9 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         longitude: float,
         latitude: float,
         limit: int = textsearch.DEFAULT_LIMIT,
-    ) -> dict[str, Any]:
+    ) -> textsearch.GeoSearchResult:
         result = await textsearch.geo_search(_driver(ctx), schema, table, column, longitude, latitude, limit=limit)
-        return asdict(result)
+        return result
 
 
 def _register_liveops(server: FastMCP[AppContext]) -> None:
@@ -3512,9 +3514,9 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
             "is not installed."
         ),
     )
-    async def list_pg_search_indexes(ctx: _Ctx) -> list[dict[str, Any]]:
+    async def list_pg_search_indexes(ctx: _Ctx) -> list[pg_search.PgSearchIndexInfo]:
         infos = await pg_search.list_pg_search_indexes(_driver(ctx))
-        return [asdict(info) for info in infos]
+        return infos
 
     @server.tool(
         name="get_pg_search_index_metadata",
@@ -3529,9 +3531,9 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
             "and `index_options` (raw reloptions dict for forward-compat)."
         ),
     )
-    async def get_pg_search_index_metadata(ctx: _Ctx, schema: str, index: str) -> dict[str, Any]:
+    async def get_pg_search_index_metadata(ctx: _Ctx, schema: str, index: str) -> pg_search.PgSearchIndexInfo:
         info = await pg_search.get_pg_search_index_metadata(_driver(ctx), schema, index)
-        return asdict(info)
+        return info
 
     @server.tool(
         name="recommend_pg_search_maintenance",
@@ -3548,9 +3550,9 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
             "``pg_search BM25 Indexes`` category in audit_database."
         ),
     )
-    async def recommend_pg_search_maintenance(ctx: _Ctx) -> list[dict[str, Any]]:
+    async def recommend_pg_search_maintenance(ctx: _Ctx) -> list[pg_search.PgSearchAdvisorFinding]:
         findings = await pg_search.recommend_pg_search_maintenance(_driver(ctx))
-        return [asdict(f) for f in findings]
+        return findings
 
     @server.tool(
         name="pg_search_run",
@@ -3584,7 +3586,7 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         snippet_start_tag: str = "<b>",
         snippet_end_tag: str = "</b>",
         snippet_max_num_chars: int = 150,
-    ) -> list[dict[str, Any]]:
+    ) -> list[pg_search.PgSearchHit]:
         hits = await pg_search.pg_search_run(
             _driver(ctx),
             schema,
@@ -3599,7 +3601,7 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
             snippet_end_tag=snippet_end_tag,
             snippet_max_num_chars=snippet_max_num_chars,
         )
-        return [asdict(hit) for hit in hits]
+        return hits
 
     @server.tool(
         name="pg_search_more_like_this",
@@ -3632,7 +3634,7 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         max_word_length: int | None = None,
         boost_factor: float | None = None,
         stop_words: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[pg_search.PgSearchHit]:
         hits = await pg_search.pg_search_more_like_this(
             _driver(ctx),
             schema,
@@ -3650,7 +3652,7 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
             boost_factor=boost_factor,
             stop_words=stop_words,
         )
-        return [asdict(hit) for hit in hits]
+        return hits
 
     @server.tool(
         name="pg_search_parse_query",
@@ -3668,14 +3670,14 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         query_string: str,
         lenient: bool = False,
         conjunction_mode: bool = False,
-    ) -> dict[str, Any]:
+    ) -> pg_search.PgSearchParsedQuery:
         parsed = await pg_search.pg_search_parse_query(
             _driver(ctx),
             query_string,
             lenient=lenient,
             conjunction_mode=conjunction_mode,
         )
-        return asdict(parsed)
+        return parsed
 
     @server.tool(
         name="hybrid_bm25_vector_search",
@@ -3711,7 +3713,7 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         bm25_weight: float = pg_search.HYBRID_DEFAULT_WEIGHT,
         vector_weight: float = pg_search.HYBRID_DEFAULT_WEIGHT,
         per_leg_limit: int = pg_search.HYBRID_DEFAULT_PER_LEG_LIMIT,
-    ) -> list[dict[str, Any]]:
+    ) -> list[pg_search.HybridHit]:
         hits = await pg_search.hybrid_bm25_vector_search(
             _driver(ctx),
             schema,
@@ -3728,7 +3730,7 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
             per_leg_limit=per_leg_limit,
             final_limit=final_limit,
         )
-        return [asdict(hit) for hit in hits]
+        return hits
 
 
 def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
@@ -3783,7 +3785,7 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
         used_in_context: bool = False,
         ground_truth_relevance: int | None = None,
         extra: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> rag_telemetry.LogRerankEventResult:
         result = await rag_telemetry.log_rerank_event(
             _driver(ctx),
             query_hash=query_hash,
@@ -3800,7 +3802,7 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
             extra=extra,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="record_efficiency_observation",
@@ -3838,7 +3840,7 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
         pages_pruned_ratio_p50: float | None,
         duration_seconds: float | None,
         extra: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> rag_telemetry.RecordEfficiencyObservationResult:
         result = await rag_telemetry.record_efficiency_observation(
             _driver(ctx),
             schema_name=schema_name,
@@ -3858,7 +3860,7 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
             extra=extra,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_rag_telemetry_ddl(server: FastMCP[AppContext]) -> None:
@@ -3874,11 +3876,11 @@ def _register_rag_telemetry_ddl(server: FastMCP[AppContext]) -> None:
             "Performs DDL — requires unrestricted mode + MCPG_ALLOW_DDL."
         ),
     )
-    async def setup_rag_telemetry(ctx: _Ctx) -> dict[str, Any]:
+    async def setup_rag_telemetry(ctx: _Ctx) -> rag_telemetry.RagTelemetrySetupResult:
         database = ctx.request_context.lifespan_context.database
         result = await rag_telemetry.setup_rag_telemetry(database)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="setup_efficiency_observations",
@@ -3893,11 +3895,11 @@ def _register_rag_telemetry_ddl(server: FastMCP[AppContext]) -> None:
             "mode + MCPG_ALLOW_DDL."
         ),
     )
-    async def setup_efficiency_observations(ctx: _Ctx) -> dict[str, Any]:
+    async def setup_efficiency_observations(ctx: _Ctx) -> rag_telemetry.EfficiencyObservationsSetupResult:
         database = ctx.request_context.lifespan_context.database
         result = await rag_telemetry.setup_efficiency_observations(database)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_rag_telemetry_efficiency_read(server: FastMCP[AppContext]) -> None:
@@ -3929,7 +3931,7 @@ def _register_rag_telemetry_efficiency_read(server: FastMCP[AppContext]) -> None
         backend: str | None = None,
         metric: str | None = None,
         k: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> rag_telemetry.EfficiencyThresholds:
         result = await rag_telemetry.recommend_efficiency_thresholds(
             _driver(ctx),
             days=days,
@@ -3937,7 +3939,7 @@ def _register_rag_telemetry_efficiency_read(server: FastMCP[AppContext]) -> None
             metric=metric,
             k=k,
         )
-        return asdict(result)
+        return result
 
 
 def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
@@ -4053,7 +4055,7 @@ def _register_pg_search_ddl(server: FastMCP[AppContext]) -> None:
         sort_by: str | None = None,
         search_tokenizer: dict[str, Any] | None = None,
         concurrently: bool = True,
-    ) -> dict[str, Any]:
+    ) -> pg_search.CreatePgSearchIndexResult:
         database = ctx.request_context.lifespan_context.database
         result = await pg_search.create_pg_search_index(
             database,
@@ -4077,7 +4079,7 @@ def _register_pg_search_ddl(server: FastMCP[AppContext]) -> None:
             concurrently=concurrently,
         )
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="reindex_pg_search_index",
@@ -4098,11 +4100,11 @@ def _register_pg_search_ddl(server: FastMCP[AppContext]) -> None:
         schema: str,
         index: str,
         concurrently: bool = True,
-    ) -> dict[str, Any]:
+    ) -> pg_search.ReindexPgSearchResult:
         database = ctx.request_context.lifespan_context.database
         result = await pg_search.reindex_pg_search_index(database, schema, index, concurrently=concurrently)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_redis_fdw_reads(server: FastMCP[AppContext]) -> None:

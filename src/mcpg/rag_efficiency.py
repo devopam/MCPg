@@ -245,7 +245,7 @@ def _knob_value_for_multiplier(backend: str, k: int, multiplier: int) -> int:
 # --- dataclasses -----------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RerankLiftPoint:
     """One point on the rerank-lift curve."""
 
@@ -257,7 +257,7 @@ class RerankLiftPoint:
     p95_latency_ms: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class VectorEfficiencyFinding:
     """An advisor finding produced from the computed metrics."""
 
@@ -267,7 +267,7 @@ class VectorEfficiencyFinding:
     suggested_action: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class VectorEfficiencyReport:
     """End-to-end retrieval-quality report for one ANN index."""
 
@@ -1145,7 +1145,7 @@ def _histogram(values: list[float], n_buckets: int = 20) -> list[int]:
 # --- dataclasses ----------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RerankerLiftReport:
     window_days: int
     model: str | None
@@ -1159,7 +1159,7 @@ class RerankerLiftReport:
     findings: list[VectorEfficiencyFinding] = field(default_factory=list)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TopKStabilityReport:
     window_days: int
     k: int
@@ -1172,7 +1172,7 @@ class TopKStabilityReport:
     findings: list[VectorEfficiencyFinding] = field(default_factory=list)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RerankScoreDistributionReport:
     window_days: int
     model: str | None
@@ -1184,7 +1184,7 @@ class RerankScoreDistributionReport:
     findings: list[VectorEfficiencyFinding] = field(default_factory=list)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class NDCGReport:
     window_days: int
     k: int
@@ -1197,7 +1197,7 @@ class NDCGReport:
     findings: list[VectorEfficiencyFinding] = field(default_factory=list)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RerankRecommendation:
     """Roll-up advisor — pulls in the four analytics and picks the
     most actionable finding for the window."""

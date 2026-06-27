@@ -105,7 +105,7 @@ _INT_OPTIONS: frozenset[str] = frozenset({"target_segment_count", "mutable_segme
 # through unchanged.
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PgSearchIndexInfo:
     """A BM25 index and the reloptions ``pg_class`` reports for it.
 
@@ -371,7 +371,7 @@ def _validate_bool(value: bool, kind: str) -> None:
         raise PgSearchError(f"{kind} must be a bool; got {value!r}")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PgSearchHit:
     """A single row returned by :func:`pg_search_run` or :func:`pg_search_more_like_this`.
 
@@ -389,7 +389,7 @@ class PgSearchHit:
     snippets: list[str] = field(default_factory=list)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PgSearchParsedQuery:
     """The string form of a parsed ``pdb.query``.
 
@@ -877,7 +877,7 @@ async def pg_search_parse_query(
 _PGVECTOR_DISTANCE_OPS: frozenset[str] = frozenset({"<=>", "<->", "<#>"})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HybridHit:
     """A single row returned by :func:`hybrid_bm25_vector_search`.
 
@@ -1175,7 +1175,7 @@ _TARGET_SEGMENT_COUNT_MIN, _TARGET_SEGMENT_COUNT_MAX = 1, 100_000
 _MUTABLE_SEGMENT_ROWS_MIN, _MUTABLE_SEGMENT_ROWS_MAX = 1, 100_000_000
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CreatePgSearchIndexResult:
     """Outcome of a :func:`create_pg_search_index` call.
 
@@ -1199,7 +1199,7 @@ class CreatePgSearchIndexResult:
     duration_seconds: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReindexPgSearchResult:
     """Outcome of a :func:`reindex_pg_search_index` call."""
 
@@ -1503,7 +1503,7 @@ async def reindex_pg_search_index(
 # here.
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PgSearchAdvisorFinding:
     """A single rule-table hit produced by :func:`recommend_pg_search_maintenance`.
 

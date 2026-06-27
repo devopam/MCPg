@@ -45,7 +45,7 @@ class SearchError(Exception):
     """Raised when a search request is invalid."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FuzzyMatch:
     """One fuzzy-search hit, with its trigram similarity score."""
 
@@ -53,7 +53,7 @@ class FuzzyMatch:
     score: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FuzzySearchResult:
     """The outcome of a fuzzy search.
 
@@ -64,7 +64,7 @@ class FuzzySearchResult:
     matches: list[FuzzyMatch]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FullTextMatch:
     """One full-text-search hit, with its ``ts_rank`` score."""
 
@@ -72,7 +72,7 @@ class FullTextMatch:
     rank: float
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class VectorMatch:
     """One vector-search hit: the row (minus the embedding) and its distance."""
 
@@ -80,7 +80,7 @@ class VectorMatch:
     row: dict[str, Any]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class VectorSearchResult:
     """The outcome of a vector search.
 
@@ -92,7 +92,7 @@ class VectorSearchResult:
     matches: list[VectorMatch]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MmrMatch:
     """One MMR-reranked hit.
 
@@ -108,7 +108,7 @@ class MmrMatch:
     rank: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MmrSearchResult:
     """The outcome of an MMR search.
 
@@ -120,7 +120,7 @@ class MmrSearchResult:
     matches: list[MmrMatch]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GeoMatch:
     """One geo-search hit: the row (minus the geometry column) and distance."""
 
@@ -128,7 +128,7 @@ class GeoMatch:
     row: dict[str, Any]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GeoSearchResult:
     """The outcome of a geo search.
 
@@ -514,7 +514,7 @@ async def mmr_search(
 # --- hybrid search (Phase 11.1) ------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HybridMatch:
     """One hybrid-search hit with the per-source ranks and fused score.
 
@@ -532,7 +532,7 @@ class HybridMatch:
     row: dict[str, Any]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HybridSearchResult:
     """The outcome of a hybrid search.
 
@@ -736,7 +736,7 @@ def _fuse_rrf(
 # --- vector-quantization advisor (Phase 11.3) ----------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class QuantizationRecommendation:
     """Advice for converting a vector column to a more compact type.
 
