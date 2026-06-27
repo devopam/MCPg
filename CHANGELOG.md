@@ -8,6 +8,54 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Configuration & sizing advisors bundle** (`mcpg.config_advisor`).
+  pghero / pgtune coverage — three standalone tools filling the gaps
+  `audit_database` doesn't cover. Realises roadmap **§16** (rows
+  16.1 + 16.2 + 16.3):
+
+    - **`audit_sequences(warning_pct=80, critical_pct=95)`** (16.1) —
+      walks `pg_sequences` for serial / identity / explicit sequences
+      nearing their ceiling. Sequence overflow is catastrophic and
+      silent until the next `nextval()` raises "reached maximum
+      value" — the int4 `serial` ceiling (2³¹-1) is hit far more
+      often than operators expect. Lists only at-risk sequences
+      (sorted by `used_pct` desc) with absolute `remaining` headroom;
+      never-advanced sequences (NULL `last_value`) are counted but
+      not flagged. `available=false` on PG < 10. Pure read.
+
+    - **`audit_settings(total_ram_mb=None)`** (16.2) — sanity-sweeps
+      `postgresql.conf` via `pg_settings`. Flags dangerous toggles
+      (`fsync=off`, `full_page_writes=off`, `autovacuum=off`,
+      `synchronous_commit=off`), cross-setting issues
+      (`maintenance_work_mem` < `work_mem`, tiny `shared_buffers`,
+      low `checkpoint_completion_target`), and — when `total_ram_mb`
+      is supplied (PostgreSQL can't see host RAM itself) — RAM-relative
+      ratio checks for `shared_buffers` / `effective_cache_size`.
+      Memory GUCs are read in bytes via
+      `pg_size_bytes(current_setting(...))` so the pg_settings unit
+      column never has to be decoded by hand. Each finding carries a
+      stable `code` and a one-line `suggestion`. Pure read.
+
+    - **`recommend_postgres_conf(total_ram_mb, cpu_count=4,
+      workload='mixed', storage='ssd', max_connections=None)`** (16.3)
+      — a pure pgtune-style calculator (no DB connection). Returns
+      recommended values for `shared_buffers`, `effective_cache_size`,
+      `work_mem`, `maintenance_work_mem`, `wal_buffers`,
+      `min_wal_size` / `max_wal_size`, `checkpoint_completion_target`,
+      `default_statistics_target`, `random_page_cost`,
+      `effective_io_concurrency`, and the parallel-worker knobs
+      (which only lift above PG defaults when `cpu_count >= 4`).
+      Memory fields are postgres-ready strings; `settings` mirrors
+      everything as a flat `{guc: value}` dict for direct rendering.
+      Pairs with `audit_settings` — audit first, then size.
+
+  All three classify under the `advisors` bucket. 30 new unit tests.
+  Standalone (not `audit_database` categories) by deliberate scope
+  choice — folding into that subsystem's bespoke scoring is a clean
+  follow-up. Most of pghero's surface (index suggestions, slow
+  queries, bloat, replication lag, vacuum stats) is already covered
+  by existing tools; these three are the strict net-new gaps.
+
 - **Agent-surface controls bundle** — two related tools touching
   `describe_self` / agent ergonomics. Realises roadmap rows
   **8.8** + **14.4**:

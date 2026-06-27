@@ -21,6 +21,7 @@ from mcpg import (
     audit,
     audit_trail,
     composite,
+    config_advisor,
     cron,
     cursors,
     cypher,
@@ -1848,6 +1849,94 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
             return asdict(report)
 
         return await _cached_call(ctx, "recommend_headline_tools", _run, lookback_days, top_n)
+
+    @server.tool(
+        name="audit_sequences",
+        description=_with_example(
+            "Flag sequences nearing their ceiling — serial / identity / "
+            "explicit sequences whose `last_value / max_value` exceeds "
+            "`warning_pct` (default 80) or `critical_pct` (default 95). "
+            "Sequence overflow is catastrophic and silent until the next "
+            "`nextval()` raises 'reached maximum value' — the int4 `serial` "
+            "ceiling (2^31-1) is hit far more often than expected. Pure "
+            "read; `available=false` on PG < 10 (no pg_sequences). Returns "
+            "an object with `available`, `total_examined`, `warning_pct`, "
+            "`critical_pct`, `detail`, and `sequences` (at-risk only, "
+            "sorted by `used_pct` desc — each with `schema`, `sequence`, "
+            "`last_value`, `max_value`, `used_pct`, `remaining`, `status`).",
+            "audit_sequences(warning_pct=80, critical_pct=95)",
+        ),
+    )
+    async def audit_sequences(ctx: _Ctx, warning_pct: float = 80.0, critical_pct: float = 95.0) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            result = await config_advisor.audit_sequences(
+                _driver(ctx), warning_pct=warning_pct, critical_pct=critical_pct
+            )
+            return asdict(result)
+
+        return await _cached_call(ctx, "audit_sequences", _run, warning_pct, critical_pct)
+
+    @server.tool(
+        name="audit_settings",
+        description=_with_example(
+            "Sanity-sweep `postgresql.conf` via `pg_settings`. Flags "
+            "dangerous toggles (`fsync=off`, `full_page_writes=off`, "
+            "`autovacuum=off`, `synchronous_commit=off`), cross-setting "
+            "issues (`maintenance_work_mem` < `work_mem`, tiny "
+            "`shared_buffers`, low `checkpoint_completion_target`), and — "
+            "when `total_ram_mb` is supplied — RAM-relative ratios for "
+            "`shared_buffers` / `effective_cache_size` (PostgreSQL can't "
+            "see host RAM itself). Pure read. Returns an object with "
+            "`ram_aware` (bool), `examined_settings` (list), `detail`, and "
+            "`findings` (tripped rules only — each with `code`, `setting`, "
+            "`current`, `status`, `suggestion`).",
+            "audit_settings(total_ram_mb=16384)",
+        ),
+    )
+    async def audit_settings(ctx: _Ctx, total_ram_mb: int | None = None) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            result = await config_advisor.audit_settings(_driver(ctx), total_ram_mb=total_ram_mb)
+            return asdict(result)
+
+        return await _cached_call(ctx, "audit_settings", _run, total_ram_mb)
+
+    @server.tool(
+        name="recommend_postgres_conf",
+        description=_with_example(
+            "Compute pgtune-style `postgresql.conf` recommendations. Pure "
+            "calculator — touches no database. Given `total_ram_mb` "
+            "(required), `cpu_count` (default 4), `workload` (one of "
+            "`web`/`oltp`/`dw`/`desktop`/`mixed`, default `mixed`), "
+            "`storage` (one of `ssd`/`hdd`/`san`, default `ssd`), and an "
+            "optional `max_connections` override, returns recommended "
+            "values for `shared_buffers`, `effective_cache_size`, "
+            "`work_mem`, `maintenance_work_mem`, `wal_buffers`, "
+            "`min_wal_size`/`max_wal_size`, `checkpoint_completion_target`, "
+            "`default_statistics_target`, `random_page_cost`, "
+            "`effective_io_concurrency`, and the parallel-worker knobs. "
+            "Memory fields are postgres-ready strings; `settings` is the "
+            "same data as a flat {guc: value} dict for direct rendering. "
+            "Pair with `audit_settings` (audit first, then size).",
+            "recommend_postgres_conf(total_ram_mb=16384, cpu_count=8, workload='oltp', storage='ssd')",
+        ),
+    )
+    async def recommend_postgres_conf(
+        ctx: _Ctx,
+        total_ram_mb: int,
+        cpu_count: int = 4,
+        workload: str = "mixed",
+        storage: str = "ssd",
+        max_connections: int | None = None,
+    ) -> dict[str, Any]:
+        del ctx  # pure calculator — no DB, no cache key needed
+        result = config_advisor.recommend_postgres_conf(
+            total_ram_mb=total_ram_mb,
+            cpu_count=cpu_count,
+            workload=workload,
+            storage=storage,
+            max_connections=max_connections,
+        )
+        return asdict(result)
 
     @server.tool(
         name="optimize_query",

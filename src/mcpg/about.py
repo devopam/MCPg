@@ -559,6 +559,10 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     # recommend_headline_tools is observability — empirical curation
     # for describe_self's headline_tools tuples.
     "recommend_headline_tools": "observability",
+    # config & sizing advisors (§16) — pghero / pgtune coverage.
+    "audit_sequences": "advisors",
+    "audit_settings": "advisors",
+    "recommend_postgres_conf": "advisors",
     # analyze_query_plan / analyze_workload are query/advisors not vector.
     "analyze_query_plan": "query_execution",
     "analyze_workload": "advisors",

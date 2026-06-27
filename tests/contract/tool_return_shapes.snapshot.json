@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 239
+    "tool_count": 242
   },
   "tools": {
     "add_compression_policy": {
@@ -160,6 +160,12 @@
         "version"
       ],
       "kind": "scalar"
+    },
+    "audit_sequences": {
+      "kind": "opaque"
+    },
+    "audit_settings": {
+      "kind": "opaque"
     },
     "cancel_migration": {
       "dataclass": "CancelResult",
@@ -1751,6 +1757,9 @@
         "suggested_action"
       ],
       "kind": "list"
+    },
+    "recommend_postgres_conf": {
+      "kind": "opaque"
     },
     "recommend_prewarm_targets": {
       "dataclass": "RecommendPrewarmTargetsResult",
