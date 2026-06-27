@@ -20,7 +20,7 @@ class CronError(Exception):
     """Raised when a pg_cron operation cannot complete."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CronJob:
     """A scheduled pg_cron job.
 
@@ -40,7 +40,7 @@ class CronJob:
     jobname: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ScheduleResult:
     """The outcome of scheduling a new cron job."""
 

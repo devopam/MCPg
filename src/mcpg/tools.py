@@ -741,9 +741,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "owning backend, and the first 200 chars of its query. Read-only."
         ),
     )
-    async def list_locks(ctx: _Ctx, limit: int = locks.DEFAULT_LOCK_LIMIT) -> list[dict[str, Any]]:
-        rows = await locks.list_locks(_driver(ctx), limit=limit)
-        return [asdict(row) for row in rows]
+    async def list_locks(ctx: _Ctx, limit: int = locks.DEFAULT_LOCK_LIMIT) -> list[locks.LockInfo]:
+        return await locks.list_locks(_driver(ctx), limit=limit)
 
     @server.tool(
         name="find_blocking_chains",
@@ -754,9 +753,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "possible (A blocks B, B blocks A); render with care. Read-only."
         ),
     )
-    async def find_blocking_chains(ctx: _Ctx, limit: int = locks.DEFAULT_BLOCKING_LIMIT) -> list[dict[str, Any]]:
-        rows = await locks.find_blocking_chains(_driver(ctx), limit=limit)
-        return [asdict(row) for row in rows]
+    async def find_blocking_chains(ctx: _Ctx, limit: int = locks.DEFAULT_BLOCKING_LIMIT) -> list[locks.BlockingPair]:
+        return await locks.find_blocking_chains(_driver(ctx), limit=limit)
 
     @server.tool(
         name="walk_blocking_chains",
@@ -769,9 +767,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "with per-backend lock detail), and `mermaid` (the pre-rendered flowchart string)."
         ),
     )
-    async def walk_blocking_chains(ctx: _Ctx, limit: int = locks.DEFAULT_BLOCKING_LIMIT) -> dict[str, Any]:
-        report = await locks.walk_blocking_chains(_driver(ctx), limit=limit)
-        return asdict(report)
+    async def walk_blocking_chains(ctx: _Ctx, limit: int = locks.DEFAULT_BLOCKING_LIMIT) -> locks.BlockingGraphReport:
+        return await locks.walk_blocking_chains(_driver(ctx), limit=limit)
 
     @server.tool(
         name="read_pg_stat_io",
@@ -784,9 +781,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "returns available=false and an empty list."
         ),
     )
-    async def read_pg_stat_io(ctx: _Ctx) -> dict[str, Any]:
-        report = await io_stats.read_pg_stat_io(_driver(ctx))
-        return asdict(report)
+    async def read_pg_stat_io(ctx: _Ctx) -> io_stats.IOStatsReport:
+        return await io_stats.read_pg_stat_io(_driver(ctx))
 
     @server.tool(
         name="read_pg_buffercache_summary",
@@ -796,9 +792,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "Requires the pg_buffercache extension. If not installed, returns available=false."
         ),
     )
-    async def read_pg_buffercache_summary(ctx: _Ctx) -> dict[str, Any]:
-        report = await io_stats.read_pg_buffercache_summary(_driver(ctx))
-        return asdict(report)
+    async def read_pg_buffercache_summary(ctx: _Ctx) -> io_stats.BufferCacheSummaryReport:
+        return await io_stats.read_pg_buffercache_summary(_driver(ctx))
 
     @server.tool(
         name="read_pg_buffercache_relations",
@@ -813,9 +808,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         ctx: _Ctx,
         schema: str | None = None,
         limit: int = 100,
-    ) -> dict[str, Any]:
-        report = await io_stats.read_pg_buffercache_relations(_driver(ctx), schema=schema, limit=limit)
-        return asdict(report)
+    ) -> io_stats.BufferCacheRelationsReport:
+        return await io_stats.read_pg_buffercache_relations(_driver(ctx), schema=schema, limit=limit)
 
     @server.tool(
         name="read_pg_wal_records",
@@ -829,9 +823,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         start_lsn: str,
         end_lsn: str | None = None,
         limit: int = 100,
-    ) -> dict[str, Any]:
-        report = await walinspect.read_pg_wal_records(_driver(ctx), start_lsn, end_lsn, limit)
-        return asdict(report)
+    ) -> walinspect.WalRecordsReport:
+        return await walinspect.read_pg_wal_records(_driver(ctx), start_lsn, end_lsn, limit)
 
     @server.tool(
         name="read_pg_wal_stats",
@@ -846,9 +839,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         start_lsn: str,
         end_lsn: str | None = None,
         per_record: bool = False,
-    ) -> dict[str, Any]:
-        report = await walinspect.read_pg_wal_stats(_driver(ctx), start_lsn, end_lsn, per_record)
-        return asdict(report)
+    ) -> walinspect.WalStatsReport:
+        return await walinspect.read_pg_wal_stats(_driver(ctx), start_lsn, end_lsn, per_record)
 
     @server.tool(
         name="get_compact_schema",
@@ -876,9 +868,8 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
             "`{version_num}`; flyway has `{installed_rank, version, description, type, ...}`)."
         ),
     )
-    async def read_migration_history(ctx: _Ctx, schema: str | None = None) -> dict[str, Any]:
-        report = await migration_history.read_migration_history(_driver(ctx), schema=schema)
-        return asdict(report)
+    async def read_migration_history(ctx: _Ctx, schema: str | None = None) -> migration_history.MigrationHistoryReport:
+        return await migration_history.read_migration_history(_driver(ctx), schema=schema)
 
 
 def _register_diagrams(server: FastMCP[AppContext]) -> None:
@@ -2838,9 +2829,8 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "check_database_health()",
         ),
     )
-    async def check_database_health(ctx: _Ctx) -> dict[str, Any]:
-        report = await health.check_database_health(_driver(ctx))
-        return asdict(report)
+    async def check_database_health(ctx: _Ctx) -> health.HealthReport:
+        return await health.check_database_health(_driver(ctx))
 
     @server.tool(
         name="audit_database",
@@ -3247,9 +3237,8 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
             "`blocked_by` (list of PIDs holding locks this backend is waiting on)."
         ),
     )
-    async def list_active_queries(ctx: _Ctx) -> list[dict[str, Any]]:
-        queries = await liveops.list_active_queries(_driver(ctx))
-        return [asdict(active) for active in queries]
+    async def list_active_queries(ctx: _Ctx) -> list[liveops.ActiveQuery]:
+        return await liveops.list_active_queries(_driver(ctx))
 
     @server.tool(
         name="verify_connection_encryption",
@@ -3263,8 +3252,8 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
             "connection actually came up encrypted."
         ),
     )
-    async def verify_connection_encryption(ctx: _Ctx) -> dict[str, Any]:
-        return asdict(await liveops.verify_connection_encryption(_driver(ctx)))
+    async def verify_connection_encryption(ctx: _Ctx) -> liveops.ConnectionEncryption:
+        return await liveops.verify_connection_encryption(_driver(ctx))
 
     @server.tool(
         name="monitor_index_build",
@@ -3282,9 +3271,8 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
             "`tuples_total`, and `progress_pct` (null when no denominator is reported)."
         ),
     )
-    async def monitor_index_build(ctx: _Ctx) -> list[dict[str, Any]]:
-        builds = await liveops.monitor_index_build(_driver(ctx))
-        return [asdict(b) for b in builds]
+    async def monitor_index_build(ctx: _Ctx) -> list[liveops.IndexBuildProgress]:
+        return await liveops.monitor_index_build(_driver(ctx))
 
     @server.tool(
         name="list_replicas",
@@ -3310,9 +3298,8 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
             "List the pg_cron jobs registered in the database. Returns an empty list when pg_cron is not installed."
         ),
     )
-    async def list_cron_jobs(ctx: _Ctx) -> list[dict[str, Any]]:
-        jobs = await cron.list_cron_jobs(_driver(ctx))
-        return [asdict(job) for job in jobs]
+    async def list_cron_jobs(ctx: _Ctx) -> list[cron.CronJob]:
+        return await cron.list_cron_jobs(_driver(ctx))
 
 
 def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
@@ -5510,10 +5497,10 @@ def _register_partman(server: FastMCP[AppContext]) -> None:
             "all) and `detail` (maintenance summary string)."
         ),
     )
-    async def partman_run_maintenance(ctx: _Ctx, parent_table: str | None = None) -> dict[str, Any]:
+    async def partman_run_maintenance(ctx: _Ctx, parent_table: str | None = None) -> partman.PartmanResult:
         result = await partman.partman_run_maintenance(_driver(ctx), parent_table)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
     @server.tool(
         name="partman_drop_partition",
@@ -5632,9 +5619,8 @@ def _register_backend_control(server: FastMCP[AppContext]) -> None:
             "Returns an object with `pid`, `action` ('cancel'), and `succeeded` (bool)."
         ),
     )
-    async def cancel_query(ctx: _Ctx, pid: int) -> dict[str, Any]:
-        result = await liveops.cancel_query(_driver(ctx), pid)
-        return asdict(result)
+    async def cancel_query(ctx: _Ctx, pid: int) -> liveops.BackendActionResult:
+        return await liveops.cancel_query(_driver(ctx), pid)
 
     @server.tool(
         name="terminate_backend",
@@ -5644,9 +5630,8 @@ def _register_backend_control(server: FastMCP[AppContext]) -> None:
             "Returns an object with `pid`, `action` ('terminate'), and `succeeded` (bool)."
         ),
     )
-    async def terminate_backend(ctx: _Ctx, pid: int) -> dict[str, Any]:
-        result = await liveops.terminate_backend(_driver(ctx), pid)
-        return asdict(result)
+    async def terminate_backend(ctx: _Ctx, pid: int) -> liveops.BackendActionResult:
+        return await liveops.terminate_backend(_driver(ctx), pid)
 
 
 def _register_ddl(server: FastMCP[AppContext]) -> None:
@@ -5682,10 +5667,10 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
             "Returns an object with `name` and `enabled` (bool)."
         ),
     )
-    async def enable_extension(ctx: _Ctx, name: str) -> dict[str, Any]:
+    async def enable_extension(ctx: _Ctx, name: str) -> extensions.EnableExtensionResult:
         result = await extensions.enable_extension(_driver(ctx), name)
         await ctx.request_context.lifespan_context.cache.clear()
-        return asdict(result)
+        return result
 
 
 def _register_graphs_reads(server: FastMCP[AppContext]) -> None:

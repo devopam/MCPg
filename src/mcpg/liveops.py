@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from mcpg._vendor.sql import SqlDriver
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BackendActionResult:
     """The outcome of cancelling a query or terminating a backend.
 
@@ -24,7 +24,7 @@ class BackendActionResult:
     succeeded: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ActiveQuery:
     """A query currently executing on the server.
 
@@ -108,7 +108,7 @@ async def terminate_backend(driver: SqlDriver, pid: int) -> BackendActionResult:
     return BackendActionResult(pid=pid, action="terminate_backend", succeeded=succeeded)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ConnectionEncryption:
     """TLS status of the MCPg→PostgreSQL connection (+ cluster overview).
 
@@ -168,7 +168,7 @@ async def verify_connection_encryption(driver: SqlDriver) -> ConnectionEncryptio
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class IndexBuildProgress:
     """Progress snapshot for one in-flight ``CREATE INDEX`` operation.
 

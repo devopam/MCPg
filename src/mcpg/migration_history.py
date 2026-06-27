@@ -8,14 +8,14 @@ from typing import Any
 from mcpg._vendor.sql import SqlDriver
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AlembicMigration:
     """A row from ``alembic_version``."""
 
     version_num: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FlywayMigration:
     """A row from ``flyway_schema_history``."""
 
@@ -31,7 +31,7 @@ class FlywayMigration:
     success: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DieselMigration:
     """A row from ``__diesel_schema_migrations``."""
 
@@ -39,7 +39,7 @@ class DieselMigration:
     run_on: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DjangoMigration:
     """A row from ``django_migrations``."""
 
@@ -49,7 +49,7 @@ class DjangoMigration:
     applied: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PrismaMigration:
     """A row from ``_prisma_migrations``."""
 
@@ -63,7 +63,7 @@ class PrismaMigration:
     applied_steps_count: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GolangMigrateMigration:
     """A row from ``schema_migrations``."""
 
@@ -71,7 +71,7 @@ class GolangMigrateMigration:
     dirty: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GooseMigration:
     """A row from ``goose_db_version``."""
 
@@ -81,14 +81,14 @@ class GooseMigration:
     tstamp: str | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SequelizeMigration:
     """A row from ``SequelizeMeta``."""
 
     name: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MigrationHistoryReport:
     """Report summarizing discovered migration histories."""
 

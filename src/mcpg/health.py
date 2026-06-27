@@ -22,7 +22,7 @@ _OK = "ok"
 _WARNING = "warning"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HealthCheck:
     """The result of a single health check."""
 
@@ -31,7 +31,7 @@ class HealthCheck:
     detail: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class HealthReport:
     """The combined result of every health check."""
 

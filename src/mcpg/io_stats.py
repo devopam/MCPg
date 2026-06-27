@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from mcpg._vendor.sql import SqlDriver
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class IOStatRow:
     """One row from ``pg_stat_io``.
 
@@ -44,7 +44,7 @@ class IOStatRow:
     fsyncs: int | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class IOStatsReport:
     """Aggregate result of :func:`read_pg_stat_io`.
 
@@ -129,7 +129,7 @@ def _maybe_float(value: object) -> float | None:
     return float(value)  # type: ignore[arg-type]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BufferCacheSummaryReport:
     """High-level shared buffer cache usage summary."""
 
@@ -141,7 +141,7 @@ class BufferCacheSummaryReport:
     average_usage_count: float | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BufferCacheRelationRow:
     """Buffer cache usage for one database relation (table or index)."""
 
@@ -156,7 +156,7 @@ class BufferCacheRelationRow:
     dirty_pages: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BufferCacheRelationsReport:
     """Relations taking up space in the shared buffer cache."""
 
