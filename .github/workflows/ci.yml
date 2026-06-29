@@ -15,7 +15,7 @@ jobs:
     name: Lint & type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -33,7 +33,7 @@ jobs:
     name: Security audit (SAST & Dependencies)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -75,7 +75,7 @@ jobs:
           - postgres: "warehousepg-latest"
             experimental: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The ubuntu-latest runner ships an older PostgreSQL client by
       # default; `pg_dump` refuses to dump from a newer server (PG 17 /
       # 18 in this matrix). Install the matching client tools from the
