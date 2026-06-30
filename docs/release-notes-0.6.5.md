@@ -46,6 +46,21 @@ not the reserved `primary`; and a secondary that fails to open at
 startup is marked unavailable (surfaced by `list_databases`) rather than
 aborting startup — mirroring the existing read-replica tolerance.
 
+## Also in this release: container images on GHCR
+
+Pre-built images now publish to the GitHub Container Registry on every
+tagged release, so container users can pull instead of building from
+source:
+
+```bash
+docker pull ghcr.io/devopam/mcpg:0.6.5   # or :latest
+```
+
+The image build is the same production-grade multi-stage `Dockerfile`
+(non-root `uid 10001`, slim runtime). The push runs only after the
+maintainer-approved PyPI publish, so the container tracks the approved
+release.
+
 ## Upgrade
 
 ```bash
