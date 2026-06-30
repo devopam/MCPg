@@ -586,6 +586,9 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "describe_tool": "observability",
     # check_database_health is operations.
     "check_database_health": "operations_and_health",
+    # Multi-database selector (roadmap 13.1) — discovery of configured
+    # primary + read-only secondary databases.
+    "list_databases": "operations_and_health",
     # read_autovacuum_priority is operations — shortlists tables for ops attention.
     "read_autovacuum_priority": "operations_and_health",
     # get_warehousepg_status is a status probe — same bucket as the other

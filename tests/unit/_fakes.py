@@ -119,7 +119,12 @@ class FakeDatabase:
     async def close(self) -> None:
         self.is_connected = False
 
-    def driver(self) -> FakeDriver:
+    def driver(self, database_id: str | None = None) -> FakeDriver:
+        # ``database_id`` mirrors the real ``Database.driver`` signature
+        # (multi-database selector, roadmap 13.1). The fake ignores it and
+        # always returns the single canned driver; tests asserting selector
+        # behaviour use a real ``Database`` with injected pools instead.
+        del database_id
         return self._driver
 
     async def run_unmanaged(self, sql: str) -> None:

@@ -78,6 +78,7 @@ _KNOWN_HELPER_MODULES = (
     "maintenance",
     "migration_history",
     "migrations",
+    "multidb",
     "naming",
     "nl2sql",
     "partman",
