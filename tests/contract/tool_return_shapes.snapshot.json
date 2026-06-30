@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 248
+    "tool_count": 251
   },
   "tools": {
     "add_compression_policy": {
@@ -102,6 +102,18 @@
     },
     "analyze_session_cost": {
       "kind": "opaque"
+    },
+    "analyze_table_bloat": {
+      "dataclass": "TableBloatReport",
+      "fields": [
+        "available",
+        "detail",
+        "indexes",
+        "method",
+        "schema",
+        "tables"
+      ],
+      "kind": "scalar"
     },
     "analyze_topk_stability": {
       "dataclass": "TopKStabilityReport",
@@ -469,6 +481,22 @@
     },
     "drop_subscription": {
       "kind": "opaque"
+    },
+    "dry_run_ddl": {
+      "dataclass": "DdlDryRunResult",
+      "fields": [
+        "detail",
+        "duration_ms",
+        "eligible",
+        "error",
+        "executed",
+        "lock_timed_out",
+        "locks",
+        "max_lock_mode",
+        "rolled_back",
+        "wal_bytes"
+      ],
+      "kind": "scalar"
     },
     "dump_database": {
       "dataclass": "DumpResult",
@@ -2007,6 +2035,9 @@
       "kind": "opaque"
     },
     "run_select_parallel": {
+      "kind": "opaque"
+    },
+    "run_select_tuned": {
       "kind": "opaque"
     },
     "run_write": {

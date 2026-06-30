@@ -740,6 +740,12 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "get_current_wal_lsn": "operations_and_health",
     "wait_for_lsn": "operations_and_health",
     "recommend_read_your_writes": "operations_and_health",
+    # Live-ops bundle (roadmap 2.7 / 2.8). Bloat analysis sits next to
+    # check_database_health; dry_run_ddl is an operational impact probe
+    # (it executes DDL then rolls back). run_select_tuned (2.9) needs no
+    # entry — its run_select_* name already routes to query_execution.
+    "analyze_table_bloat": "operations_and_health",
+    "dry_run_ddl": "operations_and_health",
 }
 
 

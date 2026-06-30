@@ -661,6 +661,23 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
     "explain_query": frozenset({"plan"}),
     "run_select_parallel": frozenset({"outcomes"}),
     "run_select": frozenset({"columns", "rows", "row_count", "truncated"}),
+    # Live-ops bundle (roadmap 2.7 / 2.8 / 2.9).
+    "run_select_tuned": frozenset({"columns", "rows", "row_count", "truncated"}),
+    "analyze_table_bloat": frozenset({"available", "schema", "method", "tables", "indexes", "detail"}),
+    "dry_run_ddl": frozenset(
+        {
+            "eligible",
+            "executed",
+            "rolled_back",
+            "lock_timed_out",
+            "locks",
+            "max_lock_mode",
+            "duration_ms",
+            "wal_bytes",
+            "error",
+            "detail",
+        }
+    ),
     "list_audit_events": frozenset({"result"}),
     "copy_table_between_databases": frozenset(
         {
@@ -818,7 +835,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 197
+    floor = 200
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "

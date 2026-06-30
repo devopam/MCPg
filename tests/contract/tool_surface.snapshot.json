@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 248
+    "tool_count": 251
   },
   "tools": [
     {
@@ -454,6 +454,46 @@
         "type": "object"
       },
       "name": "analyze_session_cost"
+    },
+    {
+      "description": "Rank a schema's tables and indexes by estimated bloat, worst first. By default uses a cheap catalog-only estimate (relpages vs a reltuples/row-width floor) plus the dead-tuple ratio from pg_stat_user_tables. Set `precise=true` to use pgstattuple / pgstatindex for an exact (but I/O-heavy) read when the extension is installed — it falls back to the estimate and reports `method='estimate'` if it isn't. Returns `tables` and `indexes` (each capped at `limit`) with per-object `est_bloat_pct`, plus `available` and `method`.\n\nExample: `analyze_table_bloat(schema='public', limit=20, precise=false)`",
+      "inputSchema": {
+        "properties": {
+          "database": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "title": "Database"
+          },
+          "limit": {
+            "default": 20,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "precise": {
+            "default": false,
+            "title": "Precise",
+            "type": "boolean"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "analyze_table_bloatArguments",
+        "type": "object"
+      },
+      "name": "analyze_table_bloat"
     },
     {
       "description": "Jaccard overlap between top-K-by-bi-rank and top-K-by-cross-rank per query, aggregated. High mean Jaccard means the reranker isn't actually changing the top-K membership. Surfaces ``topk_stable`` (WARNING) when the rerank is barely earning its place at this K. Reads from mcpg_rag.rerank_events; returns a report with zero counts when the table doesn't exist or the window is empty.",
@@ -2118,6 +2158,28 @@
         "type": "object"
       },
       "name": "drop_subscription"
+    },
+    {
+      "description": "Run a DDL statement inside a transaction with a bounded lock_timeout, measure its impact — lock modes held (`max_lock_mode`), wall-clock `duration_ms`, and `wal_bytes` generated — then ALWAYS roll back so NOTHING persists. Use it to see the blast radius of an ALTER TABLE before committing on a busy table. IMPORTANT: rollback undoes the catalog change, but a *rewriting* DDL (e.g. a type change that rewrites every row) still does the rewrite work and holds its lock for the full duration before the rollback — the dry run measures impact by incurring it. CONCURRENTLY / non-transactional statements (CREATE INDEX CONCURRENTLY, VACUUM, ALTER SYSTEM) cannot run in the wrapping transaction and are reported as `eligible=false`. On a lock_timeout it returns `lock_timed_out=true`; other errors land in `error`. Available only with MCPG_ALLOW_DDL enabled.",
+      "inputSchema": {
+        "properties": {
+          "ddl_sql": {
+            "title": "Ddl Sql",
+            "type": "string"
+          },
+          "lock_timeout_ms": {
+            "default": 5000,
+            "title": "Lock Timeout Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ddl_sql"
+        ],
+        "title": "dry_run_ddlArguments",
+        "type": "object"
+      },
+      "name": "dry_run_ddl"
     },
     {
       "description": "Run pg_dump against the connected database and return the SQL dump as a string (for `format='plain'`) or base64-encoded bytes (for `custom`/`tar`). Credentials pass through libpq env vars, never on the command line. The result includes `output_truncated` and `timed_out` flags so the caller can re-run with a higher cap or a narrower scope. Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL.",
@@ -7763,6 +7825,58 @@
         "type": "object"
       },
       "name": "run_select_parallel"
+    },
+    {
+      "description": "Run a read-only SELECT with an elevated, bounded `work_mem` (and optionally `maintenance_work_mem`) for THIS statement only. Useful for heavy analytical SELECTs (large sorts / hash joins / GROUP BY) that spill to disk under the default work_mem. The knob is set via `SET LOCAL` inside the same read-only transaction, so it never leaks back into the pool. Both knobs must match `^\\d+(kB|MB|GB)$` and are hard-capped at 2GB (unbounded values are an OOM risk). SQL is validated read-only by the same allowlist as run_select. SET LOCAL only affects transactional statements — non-transactional maintenance (CREATE INDEX CONCURRENTLY, VACUUM) is out of scope.\n\nExample: `run_select_tuned(sql='SELECT a, count(*) FROM big GROUP BY a', work_mem='256MB')`",
+      "inputSchema": {
+        "properties": {
+          "database": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "title": "Database"
+          },
+          "maintenance_work_mem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maintenance Work Mem"
+          },
+          "max_rows": {
+            "default": 1000,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          },
+          "work_mem": {
+            "title": "Work Mem",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql",
+          "work_mem"
+        ],
+        "title": "run_select_tunedArguments",
+        "type": "object"
+      },
+      "name": "run_select_tuned"
     },
     {
       "description": "Execute a single INSERT, UPDATE, or DELETE statement in a read-write transaction. Add a RETURNING clause to receive affected rows. Available only in unrestricted access mode. When MCPG_AUDIT_PERSIST is on, one row is appended to mcpg_audit.events for every call.",
