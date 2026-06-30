@@ -251,7 +251,16 @@ the permitted schemas, emit a refusal sentinel the caller can detect.
 the prompt hardening only reduces the chance of a socially-engineered
 (but technically valid) SELECT.
 
-**Env vars to add:** none (prompt-template change; behaviour on by
+**Implementation note — refusal sentinel.** Pin the sentinel once so
+handling stays consistent: the model must emit a single line
+`-- MCPG_REFUSED: <reason>` (and nothing else) when it declines. The
+translator detects that exact prefix, returns a typed
+`Nl2SqlResult(refused=True, reason=…, sql=None)` (never passes the text
+on to `SafeSqlDriver`), and the tool surfaces it as a structured refusal
+rather than an error. Defining the sentinel + the result field up front
+avoids each provider branch inventing its own ad-hoc handling.
+
+**Env vars to add:** none (prompt-template change; behaviour is on by
 default).
 
 **Effort:** small (system-prompt edit + refusal-path handling + 3-5
@@ -274,6 +283,19 @@ table before running it. `EXPLAIN` without `ANALYZE` does not execute the
 query, so this is cheap and side-effect-free. (Distinct from the existing
 `io=True` path on `explain_query`, which deliberately *does* run
 `ANALYZE`.)
+
+**Implementation notes — permissions & cost.**
+- *Permissions:* `EXPLAIN` (no `ANALYZE`) needs the same `SELECT`
+  privileges the query itself needs, so any role that could run the
+  generated SELECT can plan it — no extra grant. Treat a permission
+  error from the pre-flight as "not authorised", surfaced like any other
+  planner error, not as a hard failure of the tool.
+- *Cost / configurability:* planning is normally sub-millisecond, but a
+  query over many partitions or a deeply-nested view can take longer, so
+  the pre-flight inherits the existing `statement_timeout` and must
+  degrade gracefully (treat a pre-flight timeout as "skipped, proceed"
+  rather than blocking). Make it bypassable via the `explain_preflight`
+  arg (default on) for callers that don't want the extra round trip.
 
 **Env vars to add:** likely none (could gate behind an
 `explain_preflight` arg, default on).
