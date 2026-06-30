@@ -23,6 +23,12 @@ from mcpg.secrets import SecretsError, build_secrets_provider
 # is rejected up front rather than allowed to inject.
 _ROLE_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
+# Secondary-database ids are inlined into tool descriptions and used as dict
+# keys; we pin them to a conservative, lowercase, simple-identifier shape so
+# they're unambiguous as a ``database`` argument value. ``primary`` is the
+# reserved implicit id of ``MCPG_DATABASE_URL``.
+_SECONDARY_DB_NAME = re.compile(r"\A[a-z0-9_]+\Z")
+
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 _TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
 _FALSE_VALUES = frozenset({"false", "0", "no", "off"})
@@ -129,6 +135,17 @@ class Settings:
     # failure the call falls back to the primary once and the
     # replica is degraded for 30s.
     replica_urls: tuple[str, ...] = ()
+    # Multi-database selector (roadmap 13.1). Additional named, READ-ONLY
+    # secondary databases this one server can serve. Configured via
+    # ``MCPG_SECONDARY_DATABASE_URLS`` as ``name=dsn`` entries (comma- or
+    # newline-separated). Each name is a simple identifier (``[a-z0-9_]+``),
+    # unique, and not the reserved ``primary`` id (which is the implicit id
+    # of ``MCPG_DATABASE_URL``). Stored as an ordered tuple of (name, dsn)
+    # pairs so ``Settings`` stays frozen/hashable. Read-capable tools accept
+    # an optional ``database`` param to target one of these; writes / DDL /
+    # shell / listen / migrate always target the primary. Read-only is
+    # Postgres-enforced (see :mod:`mcpg.multidb`).
+    secondary_database_urls: tuple[tuple[str, str], ...] = ()
     # NL→SQL helper.
     # ``nl2sql_provider`` is the DEFAULT provider used when the
     # ``translate_nl_to_sql`` tool is called without an explicit ``provider``
@@ -281,6 +298,8 @@ class Settings:
             f"default_role={self.default_role!r}, "
             f"allowed_roles={self.allowed_roles!r}, "
             f"replica_urls={tuple(obfuscate_password(u) for u in self.replica_urls)!r}, "
+            f"secondary_database_urls="
+            f"{tuple((n, obfuscate_password(d)) for n, d in self.secondary_database_urls)!r}, "
             f"nl2sql_provider={self.nl2sql_provider!r}, "
             f"nl2sql_api_keys={sorted(p for p, _ in self.nl2sql_api_keys)!r}, "
             f"nl2sql_model={self.nl2sql_model!r}, "
@@ -687,6 +706,40 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             raise ConfigError("MCPG_REPLICA_URLS must not be blank when set")
         replica_urls = urls
 
+    # Multi-database selector (roadmap 13.1). Parse ``name=dsn`` entries,
+    # comma- or newline-separated. Names must be simple identifiers, unique,
+    # and not collide with the reserved ``primary`` id. DSNs get the same TLS
+    # enforcement as the primary further down (alongside the replica check).
+    secondary_database_urls: tuple[tuple[str, str], ...] = ()
+    if (raw := env.get("MCPG_SECONDARY_DATABASE_URLS")) is not None:
+        entries = [piece.strip() for piece in re.split(r"[,\n]", raw) if piece.strip()]
+        if not entries:
+            raise ConfigError("MCPG_SECONDARY_DATABASE_URLS must not be blank when set")
+        seen: set[str] = set()
+        pairs: list[tuple[str, str]] = []
+        for entry in entries:
+            name, sep, dsn = entry.partition("=")
+            name = name.strip()
+            dsn = dsn.strip()
+            if not sep:
+                raise ConfigError(f"MCPG_SECONDARY_DATABASE_URLS entry {entry!r} is not in name=dsn form")
+            if not name:
+                raise ConfigError(f"MCPG_SECONDARY_DATABASE_URLS entry {entry!r} has an empty name")
+            if not dsn:
+                raise ConfigError(f"MCPG_SECONDARY_DATABASE_URLS entry for {name!r} has an empty DSN")
+            if not _SECONDARY_DB_NAME.match(name):
+                raise ConfigError(
+                    f"MCPG_SECONDARY_DATABASE_URLS name {name!r} must match [a-z0-9_]+ "
+                    "(lowercase letters, digits, underscores)"
+                )
+            if name == "primary":
+                raise ConfigError("MCPG_SECONDARY_DATABASE_URLS name 'primary' is reserved for MCPG_DATABASE_URL")
+            if name in seen:
+                raise ConfigError(f"MCPG_SECONDARY_DATABASE_URLS has a duplicate name {name!r}")
+            seen.add(name)
+            pairs.append((name, dsn))
+        secondary_database_urls = tuple(pairs)
+
     nl2sql_provider: str | None = None
     if (raw := env.get("MCPG_NL2SQL_PROVIDER")) is not None:
         candidate = raw.strip().lower()
@@ -859,6 +912,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         _require_tls_or_loopback("MCPG_DATABASE_URL", database_url)
         for idx, replica_dsn in enumerate(replica_urls):
             _require_tls_or_loopback(f"MCPG_REPLICA_URLS[{idx}]", replica_dsn)
+        for sec_name, sec_dsn in secondary_database_urls:
+            _require_tls_or_loopback(f"MCPG_SECONDARY_DATABASE_URLS[{sec_name}]", sec_dsn)
 
     statement_timeout_ms = 30000
     if (raw := env.get("MCPG_STATEMENT_TIMEOUT_MS")) is not None:
@@ -1081,6 +1136,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         default_role=default_role,
         allowed_roles=allowed_roles,
         replica_urls=replica_urls,
+        secondary_database_urls=secondary_database_urls,
         nl2sql_provider=nl2sql_provider,
         nl2sql_api_keys=nl2sql_api_keys,
         nl2sql_model=nl2sql_model,

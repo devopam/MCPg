@@ -178,7 +178,7 @@ documented return conditions.
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 13.1 | One MCPg server, multiple `MCPG_DATABASE_URL`s — tool-level db selector | L | Medium | Today: one server = one DSN. Multi-DB means a per-tool param, a pool-per-DB, and rethinking gates. Big lift; no concrete demand yet. |
+| 13.1 | One MCPg server, multiple `MCPG_DATABASE_URL`s — tool-level db selector | L | Medium | ✅ Shipped. `MCPG_SECONDARY_DATABASE_URLS` adds named, **read-only** secondary databases; every read-capable tool takes an optional `database` arg, `list_databases` discovers them. Read-only is PostgreSQL-enforced (every secondary query runs in a `READ ONLY` transaction), which sidesteps per-DB write/DDL gating — writes / DDL / shell / migrate stay primary-only. |
 
 ## 14. Release engineering & hygiene
 
@@ -251,8 +251,10 @@ non-overlapping gaps worth filling.
 
 ## Currently deferred (no commitments)
 
-- **Multi-database support** (13.1 above) — very ambitious;
-  preferred shape today is one MCPg instance per database.
+- **Multi-database support beyond read-only secondaries** — 13.1 ships
+  named, read-only secondaries (`MCPG_SECONDARY_DATABASE_URLS`); writable
+  secondaries with per-DB write/DDL gating remain deferred (the
+  read-only boundary deliberately sidesteps that complexity for now).
 - **Backups & DR** beyond what `dump_database` /
   `restore_database` already cover — narrow audience.
 - **Alembic / Flyway / Liquibase script ingestion** (7.1) — large

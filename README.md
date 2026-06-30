@@ -233,6 +233,12 @@ everything else has a safe default.
 |---|---|---|
 | `MCPG_REPLICA_URLS` | — | Comma-separated replica DSNs. `force_readonly` queries round-robin across healthy replicas; primary fallback on failure; 30 s degraded-replica retry window. |
 
+#### Multiple databases (read-only secondaries)
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCPG_SECONDARY_DATABASE_URLS` | — | Comma- or newline-separated `name=dsn` entries naming additional **read-only** databases this one server can serve (e.g. `analytics=postgresql://…?sslmode=require,reporting=postgresql://…?sslmode=require`). Read-capable tools accept an optional `database` argument selecting a secondary by name; omit it for the primary. Secondaries are read-only — **PostgreSQL-enforced** (every query runs in a `READ ONLY` transaction), so writes / DDL / shell / migrate always target the primary. Names must be simple identifiers (`[a-z0-9_]+`), unique, and not `primary` (the reserved id of `MCPG_DATABASE_URL`). Same TLS rules as the primary DSN. Call `list_databases` to discover the configured ids and their reachability. |
+
 #### Pool / timeouts / TLS
 
 | Variable | Default | Description |

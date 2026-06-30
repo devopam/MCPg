@@ -184,6 +184,8 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
     "read_pg_wal_records": frozenset({"available", "records"}),
     "read_pg_wal_stats": frozenset({"available", "stats"}),
     "check_database_health": frozenset({"status", "checks"}),
+    # Multi-database selector (roadmap 13.1).
+    "list_databases": frozenset({"primary_id", "database_ids", "databases"}),
     "read_migration_history": frozenset(
         {"alembic", "flyway", "diesel", "django", "prisma", "golang_migrate", "goose", "sequelize"}
     ),
@@ -794,7 +796,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 194
+    floor = 195
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "

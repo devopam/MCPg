@@ -193,6 +193,138 @@ async def test_get_server_info_is_callable_from_an_mcp_client() -> None:
     assert result.structuredContent["database_connected"] is True
 
 
+async def test_list_databases_primary_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no secondaries, list_databases reports just the primary."""
+    from mcpg._vendor.sql import SqlDriver
+
+    db = Database(_SETTINGS, pool=FakePool())  # type: ignore[arg-type]
+
+    class _OkDriver:
+        async def execute_query(self, *a: Any, **k: Any) -> list[SqlDriver.RowResult]:
+            return [SqlDriver.RowResult(cells={"?column?": 1})]
+
+    monkeypatch.setattr(db, "driver", lambda database_id=None: _OkDriver())
+    server = create_server(_SETTINGS, database=db)
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool("list_databases", {})
+
+    assert result.isError is False
+    content = result.structuredContent
+    assert content is not None
+    assert content["primary_id"] == "primary"
+    assert content["database_ids"] == ["primary"]
+    assert len(content["databases"]) == 1
+    assert content["databases"][0]["is_primary"] is True
+    assert content["databases"][0]["read_only"] is False
+
+
+async def test_list_databases_lists_secondaries(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcpg._vendor.sql import SqlDriver
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_SECONDARY_DATABASE_URLS": "analytics=postgresql://u:p@localhost/an",
+        }
+    )
+    db = Database(
+        settings,
+        pool=FakePool(),  # type: ignore[arg-type]
+        secondary_pools={"analytics": FakePool()},  # type: ignore[arg-type]
+    )
+
+    class _OkDriver:
+        async def execute_query(self, *a: Any, **k: Any) -> list[SqlDriver.RowResult]:
+            return [SqlDriver.RowResult(cells={"?column?": 1})]
+
+    monkeypatch.setattr(db, "driver", lambda database_id=None: _OkDriver())
+    server = create_server(settings, database=db)
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool("list_databases", {})
+
+    content = result.structuredContent
+    assert content is not None
+    assert content["database_ids"] == ["primary", "analytics"]
+    secondary = next(d for d in content["databases"] if d["id"] == "analytics")
+    assert secondary["read_only"] is True
+    assert secondary["is_primary"] is False
+
+
+async def test_list_databases_surfaces_unreachable_secondary(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcpg._vendor.sql import SqlDriver
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_SECONDARY_DATABASE_URLS": "analytics=postgresql://u:p@localhost/an",
+        }
+    )
+    db = Database(
+        settings,
+        pool=FakePool(),  # type: ignore[arg-type]
+        secondary_pools={"analytics": FakePool()},  # type: ignore[arg-type]
+    )
+
+    class _OkDriver:
+        async def execute_query(self, *a: Any, **k: Any) -> list[SqlDriver.RowResult]:
+            return [SqlDriver.RowResult(cells={"?column?": 1})]
+
+    class _FailDriver:
+        async def execute_query(self, *a: Any, **k: Any) -> list[SqlDriver.RowResult]:
+            raise RuntimeError("connection refused")
+
+    def _driver(database_id: str | None = None) -> Any:
+        return _FailDriver() if database_id == "analytics" else _OkDriver()
+
+    monkeypatch.setattr(db, "driver", _driver)
+    server = create_server(settings, database=db)
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool("list_databases", {})
+
+    content = result.structuredContent
+    assert content is not None
+    secondary = next(d for d in content["databases"] if d["id"] == "analytics")
+    assert secondary["reachable"] is False
+    assert secondary["detail"] is not None
+
+
+async def test_read_tool_threads_database_param_to_driver(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A read tool's ``database`` arg must select the secondary's driver."""
+    from mcpg._vendor.sql import SqlDriver
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_SECONDARY_DATABASE_URLS": "analytics=postgresql://u:p@localhost/an",
+        }
+    )
+    db = Database(
+        settings,
+        pool=FakePool(),  # type: ignore[arg-type]
+        secondary_pools={"analytics": FakePool()},  # type: ignore[arg-type]
+    )
+    seen: list[str | None] = []
+
+    class _OkDriver:
+        async def execute_query(self, *a: Any, **k: Any) -> list[SqlDriver.RowResult]:
+            return []
+
+    def _driver(database_id: str | None = None) -> Any:
+        seen.append(database_id)
+        return _OkDriver()
+
+    monkeypatch.setattr(db, "driver", _driver)
+    server = create_server(settings, database=db)
+
+    async with create_connected_server_and_client_session(server) as client:
+        await client.call_tool("list_schemas", {"database": "analytics"})
+
+    assert "analytics" in seen
+
+
 def _server_for(access_mode: AccessMode) -> object:
     settings = load_settings(
         {

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 245
+    "tool_count": 246
   },
   "tools": {
     "add_compression_policy": {
@@ -1062,6 +1062,9 @@
       "kind": "list"
     },
     "list_cursors": {
+      "kind": "opaque"
+    },
+    "list_databases": {
       "kind": "opaque"
     },
     "list_distribution_policies": {
