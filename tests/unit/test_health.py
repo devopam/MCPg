@@ -150,7 +150,7 @@ def _bloat_routes(
     routes: dict[str, list[dict[str, object]]] = {
         "pg_extension": [{"present": 1}] if pgstattuple else [],
         "pgstattuple(t.relid)": precise_tables or [],
-        "pgstatindex(c.oid)": precise_indexes or [],
+        "pgstatindex(idx.relid)": precise_indexes or [],
         "pg_total_relation_size(t.relid)": tables,
         "pg_index i ON i.indexrelid": indexes,
     }

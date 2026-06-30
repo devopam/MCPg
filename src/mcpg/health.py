@@ -282,7 +282,9 @@ SELECT
     GREATEST(0.0, ps.dead_tuple_percent + ps.free_percent) AS est_bloat_pct,
     COALESCE(st.n_dead_tup, 0) AS n_dead_tup,
     COALESCE(st.n_live_tup, 0) AS n_live_tup,
-    ps.dead_tuple_percent AS dead_tuple_pct,
+    -- Same dead/live-tuple ratio as estimate mode so dead_tuple_pct means the
+    -- same thing in both; pgstattuple's physical share informs est_bloat_pct.
+    (COALESCE(st.n_dead_tup, 0)::numeric / GREATEST(COALESCE(st.n_live_tup, 0), 1)) * 100.0 AS dead_tuple_pct,
     pg_total_relation_size(t.relid) AS table_bytes
 FROM t
 CROSS JOIN LATERAL pgstattuple(t.relid) ps
@@ -291,22 +293,30 @@ LEFT JOIN pg_stat_user_tables st ON st.relid = t.relid
 
 
 # Precise btree-index bloat via pgstatindex — 100 - avg_leaf_density is the
-# wasted share of leaf pages. Non-btree indexes (where pgstatindex errors)
-# are skipped by the relam filter.
+# wasted share of leaf pages. Eligible indexes are filtered in the CTE FIRST
+# (btree, non-empty, in-schema) so pgstatindex is only ever called on them:
+# non-btree indexes error, and pgstatindex on an empty index (relpages = 0)
+# raises "index is empty" — filtering before the LATERAL avoids both, since a
+# WHERE on the cross-product can't be relied on to gate the function call.
 _INDEX_BLOAT_PRECISE_SQL = """
+WITH idx AS (
+    SELECT c.oid AS relid, n.nspname AS schema, t.relname AS tbl, c.relname AS idx_name,
+           pg_relation_size(c.oid) AS index_bytes
+    FROM pg_class c
+    JOIN pg_index i ON i.indexrelid = c.oid
+    JOIN pg_class t ON t.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_am am ON am.oid = c.relam
+    WHERE c.relkind = 'i' AND am.amname = 'btree' AND c.relpages > 0 AND n.nspname = %s
+)
 SELECT
-    n.nspname AS schema,
-    t.relname AS "table",
-    c.relname AS index,
+    idx.schema,
+    idx.tbl AS "table",
+    idx.idx_name AS index,
     GREATEST(0.0, 100.0 - psi.avg_leaf_density) AS est_bloat_pct,
-    pg_relation_size(c.oid) AS index_bytes
-FROM pg_class c
-JOIN pg_index i ON i.indexrelid = c.oid
-JOIN pg_class t ON t.oid = i.indrelid
-JOIN pg_namespace n ON n.oid = c.relnamespace
-JOIN pg_am am ON am.oid = c.relam
-CROSS JOIN LATERAL pgstatindex(c.oid) psi
-WHERE c.relkind = 'i' AND am.amname = 'btree' AND n.nspname = %s
+    idx.index_bytes
+FROM idx
+CROSS JOIN LATERAL pgstatindex(idx.relid) psi
 """
 
 
