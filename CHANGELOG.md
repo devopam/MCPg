@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.6.5] - 2026-06-30
+
+### Added
+
 - **Multi-database selector with read-only secondaries** (roadmap
   **13.1**). One MCPg server can now serve multiple databases. The
   primary (`MCPG_DATABASE_URL`) stays the default target of every tool;
