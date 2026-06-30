@@ -8,8 +8,10 @@ from mcpg.config import load_settings
 from mcpg.server import create_server
 from mcpg.vector_tuner_advanced import (
     HnswRecallRecommendation,
+    IvfflatProbesRecommendation,
     analyze_hnsw_recall,
     recommend_hnsw_ef_search,
+    recommend_ivfflat_probes,
 )
 from mcpg.vector_tuning import VectorTuningError
 
@@ -305,3 +307,148 @@ async def test_recommend_tool_is_registered() -> None:
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
     assert "recommend_hnsw_ef_search" in listed
+
+
+# ---------------------------------------------------------------------------
+# recommend_ivfflat_probes (roadmap 9.12 advisor)
+# ---------------------------------------------------------------------------
+
+
+def _probes_routes(
+    *,
+    has_index: bool = True,
+    samples: list[dict[str, object]] | None = None,
+    truth: list[dict[str, object]] | None = None,
+    probe_results: dict[int, list[dict[str, object]]] | None = None,
+) -> dict[str, list[dict[str, object]]]:
+    """Build FakeRoutingDriver routes for recommend_ivfflat_probes.
+
+    Substrings are mutually exclusive across the query types the tool
+    issues (extension probe, PK detect, index detect, sample fetch,
+    brute-force truth, per-probes approx)."""
+    routes: dict[str, list[dict[str, object]]] = {
+        "pg_extension": [{"present": 1}],
+        "indisprimary = true": [{"pk_column": "id"}],
+        "am.amname AS index_method": (
+            [{"index_name": "docs_embedding_ivfflat", "index_method": "ivfflat", "index_def": "CREATE INDEX ..."}]
+            if has_index
+            else []
+        ),
+        "IS NOT NULL ORDER BY": samples if samples is not None else [{"id": 1, "vec": "[0.1,0.2]"}],
+        "l2_distance(": truth if truth is not None else [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
+    }
+    for probes, rows in (probe_results or {}).items():
+        routes[f"ivfflat.probes = {probes}"] = rows
+    return routes
+
+
+async def test_recommend_probes_unavailable_when_extension_absent() -> None:
+    driver = FakeRoutingDriver({"pg_extension": []})
+    result = await recommend_ivfflat_probes(driver, "public", "docs", "embedding")  # type: ignore[arg-type]
+    assert isinstance(result, IvfflatProbesRecommendation)
+    assert result.available is False
+    assert result.recommended_probes is None
+
+
+async def test_recommend_probes_rejects_bad_metric() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    with pytest.raises(VectorTuningError, match="unknown metric"):
+        await recommend_ivfflat_probes(driver, "public", "docs", "embedding", metric="nope")  # type: ignore[arg-type]
+
+
+async def test_recommend_probes_rejects_target_recall_out_of_range() -> None:
+    driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
+    with pytest.raises(VectorTuningError, match="target_recall"):
+        await recommend_ivfflat_probes(driver, "public", "docs", "embedding", target_recall=1.5)  # type: ignore[arg-type]
+
+
+async def test_recommend_probes_reports_missing_ivfflat_index() -> None:
+    driver = FakeRoutingDriver(_probes_routes(has_index=False))
+    result = await recommend_ivfflat_probes(driver, "public", "docs", "embedding")  # type: ignore[arg-type]
+    assert result.available is True
+    assert result.has_ivfflat_index is False
+    assert result.recommended_probes is None
+    assert "No IVFFlat index" in result.detail
+
+
+async def test_recommend_probes_picks_smallest_probes_meeting_target() -> None:
+    # truth = {2,3,4,5} (k=4). probes=1 → 2/4, probes=2 → 3/4, probes=5+ → 4/4.
+    probe_results = {
+        1: [{"id": 2}, {"id": 3}],
+        2: [{"id": 2}, {"id": 3}, {"id": 4}],
+        5: [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
+        10: [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
+        20: [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
+        50: [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
+    }
+    driver = FakeRoutingDriver(_probes_routes(probe_results=probe_results))
+    result = await recommend_ivfflat_probes(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "docs",
+        "embedding",
+        k=4,
+        target_recall=0.95,
+    )
+    assert result.has_ivfflat_index is True
+    assert result.index_name == "docs_embedding_ivfflat"
+    assert len(result.sweep) == 6
+    assert result.sweep[0].mean_recall_at_k == 0.5
+    assert result.sweep[1].mean_recall_at_k == 0.75
+    assert result.sweep[2].mean_recall_at_k == 1.0
+    # 5 is the smallest clearing 0.95.
+    assert result.recommended_probes == 5
+    assert result.sweep[2].meets_target is True
+    assert result.sweep[0].meets_target is False
+
+
+async def test_recommend_probes_none_when_target_unreachable() -> None:
+    # Every probes value returns only 1 of 4 → recall 0.25 everywhere.
+    probe_results = {p: [{"id": 2}] for p in (1, 2, 5, 10, 20, 50)}
+    driver = FakeRoutingDriver(_probes_routes(probe_results=probe_results))
+    result = await recommend_ivfflat_probes(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "docs",
+        "embedding",
+        k=4,
+        target_recall=0.95,
+    )
+    assert result.recommended_probes is None
+    assert "No swept probes reached" in result.detail
+    assert all(p.meets_target is False for p in result.sweep)
+
+
+async def test_recommend_probes_empty_table_with_index() -> None:
+    driver = FakeRoutingDriver(_probes_routes(samples=[]))
+    result = await recommend_ivfflat_probes(driver, "public", "docs", "embedding")  # type: ignore[arg-type]
+    assert result.has_ivfflat_index is True
+    assert result.sample_queries == 0
+    assert result.recommended_probes is None
+    assert "No non-null vectors" in result.detail
+
+
+async def test_recommend_probes_custom_probe_values_respected() -> None:
+    probe_results = {
+        3: [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
+        7: [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}],
+    }
+    driver = FakeRoutingDriver(_probes_routes(probe_results=probe_results))
+    result = await recommend_ivfflat_probes(
+        driver,  # type: ignore[arg-type]
+        "public",
+        "docs",
+        "embedding",
+        k=4,
+        target_recall=0.9,
+        probe_values=(3, 7),
+    )
+    assert [p.probes for p in result.sweep] == [3, 7]
+    assert result.recommended_probes == 3
+
+
+async def test_recommend_probes_tool_is_registered() -> None:
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "recommend_ivfflat_probes" in listed

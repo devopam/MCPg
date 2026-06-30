@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 246
+    "tool_count": 248
   },
   "tools": [
     {
@@ -6733,6 +6733,66 @@
       "name": "recommend_io_method"
     },
     {
+      "description": "Recommend an `ivfflat.probes` value for a target recall@k — the IVFFlat analogue of `recommend_hnsw_ef_search`. Samples `sample_queries` rows (default 10) as query vectors, builds an exact brute-force top-k ground truth per query, sweeps `probe_values` (default 1/2/5/10/20/50) measuring mean recall@k and p50/p95 latency at each, and recommends the smallest value clearing `target_recall` (default 0.95). VERIFIES an IVFFlat index actually exists on the column (returns `has_ivfflat_index=false` with guidance otherwise — a sweep without one just measures sequential scans). The query row is excluded from its own results. Requires the vector extension. Returns an object with `available`, `has_ivfflat_index`, `index_name`, `metric`, `k`, `target_recall`, `sample_queries`, `recommended_probes` (int or null), `detail`, and `sweep` (list of objects with `probes`, `mean_recall_at_k`, `p50_latency_ms`, `p95_latency_ms`, `meets_target`).\n\nExample: `recommend_ivfflat_probes(schema='public', table='docs', column='embedding', k=10, target_recall=0.95)`",
+      "inputSchema": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "database": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "title": "Database"
+          },
+          "k": {
+            "default": 10,
+            "title": "K",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "sample_queries": {
+            "default": 10,
+            "title": "Sample Queries",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          },
+          "target_recall": {
+            "default": 0.95,
+            "title": "Target Recall",
+            "type": "number"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "column"
+        ],
+        "title": "recommend_ivfflat_probesArguments",
+        "type": "object"
+      },
+      "name": "recommend_ivfflat_probes"
+    },
+    {
       "description": "Walk every pg_search BM25 index and emit advisor findings. Rules currently surfaced: ``missing_key_field`` (CRITICAL — the key_field reloption is required by upstream; an index without it can't satisfy queries) and ``no_field_configs`` (WARNING — none of the six *_fields reloptions are set, so the index falls back to default tokenization for every indexed column). Each finding carries a ready-to-run ``suggested_action`` SQL statement. Returns an empty list when the extension is not installed. Also feeds the ``pg_search BM25 Indexes`` category in audit_database.",
       "inputSchema": {
         "properties": {
@@ -7397,6 +7457,79 @@
         "type": "object"
       },
       "name": "restore_database"
+    },
+    {
+      "description": "Context-packed k-NN retrieval (a one-shot RAG building block). Runs a pgvector k-NN against schema.table.embedding_column for a caller-supplied `query_vector` (no embedding model needed), then expands each hit one hop along foreign keys and returns the hit row + its related parent / child records in one object. Parents (when `include_parents`, default true) are the rows a hit references via outbound FKs; children (when `include_children`, default true) are rows referencing the hit via inbound FKs, capped at `max_related` (default 5) per FK. Limitations: 1 hop only; inbound (child) expansion is same-schema only. The embedding column is dropped from every returned row. Requires the vector extension. Returns `available`, `dimension`, `detail`, and `hits` (each with `distance`, `row`, and `related` — a list of `fk_name`/`direction`/`related_schema`/`related_table`/`rows`).\n\nExample: `retrieve_with_context(schema='public', table='docs', embedding_column='embedding', query_vector=[0.1, 0.2, 0.3], k=5)`",
+      "inputSchema": {
+        "properties": {
+          "database": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "title": "Database"
+          },
+          "embedding_column": {
+            "title": "Embedding Column",
+            "type": "string"
+          },
+          "include_children": {
+            "default": true,
+            "title": "Include Children",
+            "type": "boolean"
+          },
+          "include_parents": {
+            "default": true,
+            "title": "Include Parents",
+            "type": "boolean"
+          },
+          "k": {
+            "default": 5,
+            "title": "K",
+            "type": "integer"
+          },
+          "max_related": {
+            "default": 5,
+            "title": "Max Related",
+            "type": "integer"
+          },
+          "metric": {
+            "default": "l2",
+            "title": "Metric",
+            "type": "string"
+          },
+          "query_vector": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Query Vector",
+            "type": "array"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema",
+          "table",
+          "embedding_column",
+          "query_vector"
+        ],
+        "title": "retrieve_with_contextArguments",
+        "type": "object"
+      },
+      "name": "retrieve_with_context"
     },
     {
       "description": "Run a set of catalog-driven advisor rules against a schema and return the aggregated findings. Rules cover missing primary keys, unindexed foreign keys, duplicate indexes, and nullable timestamps without time zone. Advisory only — no writes.",

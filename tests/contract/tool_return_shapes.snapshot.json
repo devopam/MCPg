@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 246
+    "tool_count": 248
   },
   "tools": {
     "add_compression_policy": {
@@ -1784,6 +1784,9 @@
       ],
       "kind": "scalar"
     },
+    "recommend_ivfflat_probes": {
+      "kind": "opaque"
+    },
     "recommend_pg_search_maintenance": {
       "dataclass": "PgSearchAdvisorFinding",
       "fields": [
@@ -1947,6 +1950,16 @@
         "output_truncated",
         "stderr_tail",
         "timed_out"
+      ],
+      "kind": "scalar"
+    },
+    "retrieve_with_context": {
+      "dataclass": "RetrieveWithContextResult",
+      "fields": [
+        "available",
+        "detail",
+        "dimension",
+        "hits"
       ],
       "kind": "scalar"
     },

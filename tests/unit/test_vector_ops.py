@@ -18,9 +18,12 @@ from mcpg.vector_ops import (
     DEFAULT_OUTLIER_ZSCORE,
     DEFAULT_SAMPLE_SIZE,
     ClusterVectorsResult,
+    ContextHit,
     CrossTableMatch,
     CrossTableSimilarityResult,
     DistanceMetricRecommendation,
+    RelatedRecords,
+    RetrieveWithContextResult,
     VectorOpsError,
     VectorOutlierResult,
     _cosine_distance,
@@ -36,6 +39,7 @@ from mcpg.vector_ops import (
     cross_table_similarity,
     detect_vector_outliers,
     monitor_embedding_drift,
+    retrieve_with_context,
 )
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
@@ -1785,3 +1789,265 @@ async def test_monitor_embedding_drift_caps_probability_at_one() -> None:
     ]
     for params in sample_calls:
         assert params[2] == 1.0  # p clamped
+
+
+# --- retrieve_with_context ------------------------------------------------
+
+
+_DIM_LOOKUP = "FROM pg_attribute a"
+_FK_LOOKUP = "c.contype = 'f'"
+_KNN = "mcpg_distance"
+
+
+def _fk_row(
+    *,
+    name: str,
+    from_table: str,
+    from_columns: list[str],
+    to_schema: str,
+    to_table: str,
+    to_columns: list[str],
+) -> dict[str, object]:
+    return {
+        "name": name,
+        "from_table": from_table,
+        "from_columns": from_columns,
+        "to_schema": to_schema,
+        "to_table": to_table,
+        "to_columns": to_columns,
+    }
+
+
+def _ctx_routes(
+    *,
+    dim: int | None = 3,
+    fks: list[dict[str, object]] | None = None,
+    knn_rows: list[dict[str, object]] | None = None,
+    parent_rows: list[dict[str, object]] | None = None,
+    child_rows: list[dict[str, object]] | None = None,
+) -> dict[tuple[str, tuple[object, ...] | None], list[dict[str, object]]]:
+    dim_row: list[dict[str, object]] = [{"type_name": "vector", "type_mod": dim}] if dim is not None else []
+    return {
+        ("pg_extension", None): [{"present": 1}],
+        (_DIM_LOOKUP, None): dim_row,
+        (_FK_LOOKUP, None): fks or [],
+        (_KNN, None): knn_rows or [],
+        ('"authors"', None): parent_rows or [],
+        ('"comments"', None): child_rows or [],
+    }
+
+
+async def test_retrieve_with_context_unavailable_without_pgvector() -> None:
+    driver = FakeParamRoutingDriver({("pg_extension", None): []})
+    result = await retrieve_with_context(
+        driver,  # type: ignore[arg-type]
+        schema="public",
+        table="posts",
+        embedding_column="embedding",
+        query_vector=[0.1, 0.2, 0.3],
+    )
+    assert result == RetrieveWithContextResult(available=False, dimension=0, hits=[], detail=result.detail)
+    assert result.available is False
+
+
+async def test_retrieve_with_context_dimension_mismatch_raises() -> None:
+    driver = FakeParamRoutingDriver(_ctx_routes(dim=4))
+    with pytest.raises(VectorOpsError, match="query_vector has 3 dimensions but"):
+        await retrieve_with_context(
+            driver,  # type: ignore[arg-type]
+            schema="public",
+            table="posts",
+            embedding_column="embedding",
+            query_vector=[0.1, 0.2, 0.3],
+        )
+
+
+async def test_retrieve_with_context_not_a_vector_column_raises() -> None:
+    driver = FakeParamRoutingDriver(_ctx_routes(dim=None))
+    with pytest.raises(VectorOpsError, match="not a pgvector vector"):
+        await retrieve_with_context(
+            driver,  # type: ignore[arg-type]
+            schema="public",
+            table="posts",
+            embedding_column="embedding",
+            query_vector=[0.1, 0.2, 0.3],
+        )
+
+
+async def test_retrieve_with_context_packs_parents_and_children() -> None:
+    fks = [
+        _fk_row(
+            name="posts_author_fk",
+            from_table="posts",
+            from_columns=["author_id"],
+            to_schema="public",
+            to_table="authors",
+            to_columns=["id"],
+        ),
+        _fk_row(
+            name="comments_post_fk",
+            from_table="comments",
+            from_columns=["post_id"],
+            to_schema="public",
+            to_table="posts",
+            to_columns=["id"],
+        ),
+    ]
+    knn = [
+        {"id": 1, "author_id": 7, "title": "alpha", "embedding": "[0.1,0.2,0.3]", "mcpg_distance": 0.0},
+    ]
+    driver = FakeParamRoutingDriver(
+        _ctx_routes(
+            fks=fks,
+            knn_rows=knn,
+            parent_rows=[{"id": 7, "name": "Ada"}],
+            child_rows=[{"id": 100, "post_id": 1, "body": "nice"}, {"id": 101, "post_id": 1, "body": "great"}],
+        )
+    )
+
+    result = await retrieve_with_context(
+        driver,  # type: ignore[arg-type]
+        schema="public",
+        table="posts",
+        embedding_column="embedding",
+        query_vector=[0.1, 0.2, 0.3],
+        k=1,
+    )
+
+    assert result.available is True
+    assert result.dimension == 3
+    assert len(result.hits) == 1
+    hit = result.hits[0]
+    assert isinstance(hit, ContextHit)
+    assert hit.distance == 0.0
+    # Embedding column stripped, mcpg_distance stripped.
+    assert hit.row == {"id": 1, "author_id": 7, "title": "alpha"}
+    assert "embedding" not in hit.row
+    assert hit.related == [
+        RelatedRecords(
+            fk_name="posts_author_fk",
+            direction="parent",
+            related_schema="public",
+            related_table="authors",
+            rows=[{"id": 7, "name": "Ada"}],
+        ),
+        RelatedRecords(
+            fk_name="comments_post_fk",
+            direction="child",
+            related_schema="public",
+            related_table="comments",
+            rows=[{"id": 100, "post_id": 1, "body": "nice"}, {"id": 101, "post_id": 1, "body": "great"}],
+        ),
+    ]
+
+
+async def test_retrieve_with_context_include_flags_suppress_expansion() -> None:
+    fks = [
+        _fk_row(
+            name="posts_author_fk",
+            from_table="posts",
+            from_columns=["author_id"],
+            to_schema="public",
+            to_table="authors",
+            to_columns=["id"],
+        ),
+        _fk_row(
+            name="comments_post_fk",
+            from_table="comments",
+            from_columns=["post_id"],
+            to_schema="public",
+            to_table="posts",
+            to_columns=["id"],
+        ),
+    ]
+    knn = [{"id": 1, "author_id": 7, "embedding": "[0.1,0.2,0.3]", "mcpg_distance": 0.0}]
+    driver = FakeParamRoutingDriver(
+        _ctx_routes(fks=fks, knn_rows=knn, parent_rows=[{"id": 7}], child_rows=[{"id": 100, "post_id": 1}])
+    )
+
+    result = await retrieve_with_context(
+        driver,  # type: ignore[arg-type]
+        schema="public",
+        table="posts",
+        embedding_column="embedding",
+        query_vector=[0.1, 0.2, 0.3],
+        k=1,
+        include_parents=False,
+        include_children=False,
+    )
+    assert result.hits[0].related == []
+
+
+async def test_retrieve_with_context_skips_parent_when_fk_value_null() -> None:
+    fks = [
+        _fk_row(
+            name="posts_author_fk",
+            from_table="posts",
+            from_columns=["author_id"],
+            to_schema="public",
+            to_table="authors",
+            to_columns=["id"],
+        ),
+    ]
+    knn = [{"id": 1, "author_id": None, "embedding": "[0.1,0.2,0.3]", "mcpg_distance": 0.0}]
+    driver = FakeParamRoutingDriver(_ctx_routes(fks=fks, knn_rows=knn, parent_rows=[{"id": 7}]))
+
+    result = await retrieve_with_context(
+        driver,  # type: ignore[arg-type]
+        schema="public",
+        table="posts",
+        embedding_column="embedding",
+        query_vector=[0.1, 0.2, 0.3],
+        k=1,
+    )
+    # NULL FK value -> no parent lookup at all.
+    assert result.hits[0].related == []
+
+
+async def test_retrieve_with_context_child_limit_bound() -> None:
+    fks = [
+        _fk_row(
+            name="comments_post_fk",
+            from_table="comments",
+            from_columns=["post_id"],
+            to_schema="public",
+            to_table="posts",
+            to_columns=["id"],
+        ),
+    ]
+    knn = [{"id": 1, "embedding": "[0.1,0.2,0.3]", "mcpg_distance": 0.0}]
+    driver = FakeParamRoutingDriver(_ctx_routes(fks=fks, knn_rows=knn, child_rows=[{"id": 100, "post_id": 1}]))
+
+    await retrieve_with_context(
+        driver,  # type: ignore[arg-type]
+        schema="public",
+        table="posts",
+        embedding_column="embedding",
+        query_vector=[0.1, 0.2, 0.3],
+        k=1,
+        max_related=3,
+    )
+    child_call = next(call for call in driver.calls if 'FROM "public"."comments"' in call[0])
+    # Bind order: to_value(s) then max_related LIMIT.
+    assert child_call[1] == [1, 3]
+
+
+async def test_retrieve_with_context_rejects_unsafe_identifier() -> None:
+    driver = FakeParamRoutingDriver(_ctx_routes())
+    with pytest.raises(VectorOpsError, match="invalid"):
+        await retrieve_with_context(
+            driver,  # type: ignore[arg-type]
+            schema="public",
+            table="posts; DROP",
+            embedding_column="embedding",
+            query_vector=[0.1, 0.2, 0.3],
+        )
+
+
+async def test_retrieve_with_context_tool_is_registered() -> None:
+    from _fakes import FakeDriver
+
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        listed = {tool.name for tool in (await client.list_tools()).tools}
+    assert "retrieve_with_context" in listed

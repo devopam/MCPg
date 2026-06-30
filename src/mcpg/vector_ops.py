@@ -23,6 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
+from mcpg import introspection
 from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
 
@@ -1495,3 +1496,236 @@ async def monitor_embedding_drift(
         current=current_stats,
         notes=notes,
     )
+
+
+# --- retrieve_with_context ------------------------------------------------
+
+
+DEFAULT_CONTEXT_K = 5
+DEFAULT_MAX_RELATED = 5
+
+
+@dataclass(frozen=True)
+class RelatedRecords:
+    """One foreign-key-related group attached to a hit.
+
+    ``direction`` is ``"parent"`` (a row this hit references via an
+    outbound FK) or ``"child"`` (rows that reference this hit via an
+    inbound FK). ``rows`` carries the related records, capped at
+    ``max_related`` for children.
+    """
+
+    fk_name: str
+    direction: str
+    related_schema: str
+    related_table: str
+    rows: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class ContextHit:
+    """One k-NN hit plus its 1-hop foreign-key context.
+
+    ``distance`` follows the pgvector metric semantics (smaller = closer
+    for l2 / cosine, more negative = closer for inner_product). ``row``
+    is the hit row minus its embedding column. ``related`` packs the
+    parent / child records expanded along foreign keys.
+    """
+
+    distance: float
+    row: dict[str, Any]
+    related: list[RelatedRecords]
+
+
+@dataclass(frozen=True)
+class RetrieveWithContextResult:
+    """The outcome of a :func:`retrieve_with_context` call.
+
+    ``available`` is ``False`` when the pgvector extension isn't
+    installed. ``dimension`` is the declared ``N`` of the embedding
+    ``vector(N)`` column. ``hits`` are the k nearest rows, each packed
+    with its foreign-key context.
+    """
+
+    available: bool
+    dimension: int
+    hits: list[ContextHit]
+    detail: str = ""
+
+
+async def retrieve_with_context(
+    driver: SqlDriver,
+    *,
+    schema: str,
+    table: str,
+    embedding_column: str,
+    query_vector: list[float],
+    k: int = DEFAULT_CONTEXT_K,
+    metric: str = "l2",
+    include_parents: bool = True,
+    include_children: bool = True,
+    max_related: int = DEFAULT_MAX_RELATED,
+) -> RetrieveWithContextResult:
+    """One-shot context-packed retrieval: k-NN + 1-hop FK expansion.
+
+    Runs a pgvector k-NN against ``schema.table.embedding_column`` for a
+    caller-supplied ``query_vector`` (no embedding model needed), then
+    expands each hit one hop along foreign keys and packs the result +
+    related records into a single structured object — a building block
+    for one-shot RAG where the model wants the matching row *and* the
+    rows it links to.
+
+    For each hit:
+
+    - **parents** (when ``include_parents``): the rows this hit
+      references via outbound FKs (``from_table == table``). One parent
+      row per FK; skipped when any from-column value is NULL.
+    - **children** (when ``include_children``): rows that reference this
+      hit via inbound FKs (``to_table == table`` and
+      ``to_schema == schema``). Up to ``max_related`` rows per FK.
+
+    Limitations: 1 hop only (multi-hop is deferred); inbound (child)
+    expansion is same-schema only in this version; ``max_related`` caps
+    the number of child rows returned per inbound FK. The embedding
+    column is dropped from every returned row to keep payloads lean.
+
+    Raises:
+        VectorOpsError: On invalid identifiers, an unknown ``metric``,
+            non-positive ``k`` / ``max_related``, a column that isn't a
+            pgvector ``vector(N)``, or a ``query_vector`` whose length
+            doesn't match the column dimension.
+    """
+    if metric not in _VECTOR_METRICS:
+        raise VectorOpsError(f"unknown vector metric: {metric!r}")
+    if k < 1:
+        raise VectorOpsError("k must be at least 1")
+    if max_related < 1:
+        raise VectorOpsError("max_related must be at least 1")
+    _checked(schema, "schema")
+    _checked(table, "table")
+    _checked(embedding_column, "column")
+
+    if not await extension_installed(driver, "vector"):
+        return RetrieveWithContextResult(
+            available=False, dimension=0, hits=[], detail="pgvector extension is not installed"
+        )
+
+    dimension = await _vector_column_dimension(driver, schema, table, embedding_column)
+    if dimension is None:
+        raise VectorOpsError(
+            f"{schema}.{table}.{embedding_column} is not a pgvector vector(N) column (column missing or wrong type)"
+        )
+    if len(query_vector) != dimension:
+        raise VectorOpsError(
+            f"query_vector has {len(query_vector)} dimensions but "
+            f"{schema}.{table}.{embedding_column} is vector({dimension})"
+        )
+
+    operator = _VECTOR_METRICS[metric]
+    relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
+    emb_col = _quoted(embedding_column, "column")
+    literal = _vector_literal(query_vector)
+    hit_rows = await driver.execute_query(
+        f"SELECT *, {emb_col} {operator} %s::vector AS mcpg_distance "
+        f"FROM {relation} ORDER BY {emb_col} {operator} %s::vector LIMIT %s",
+        params=[literal, literal, k],
+        force_readonly=True,
+    )
+
+    # Foreign keys are loaded once and partitioned into outbound (parent)
+    # and inbound (child) edges for this table.
+    foreign_keys = await introspection.list_foreign_keys(driver, schema)
+    parent_fks = [fk for fk in foreign_keys if fk.from_table == table] if include_parents else []
+    child_fks = (
+        [fk for fk in foreign_keys if fk.to_table == table and fk.to_schema == schema] if include_children else []
+    )
+
+    hits: list[ContextHit] = []
+    for row in hit_rows or []:
+        cells = dict(row.cells)
+        distance = cells.pop("mcpg_distance")
+        cells.pop(embedding_column, None)  # strip the embedding column
+
+        related: list[RelatedRecords] = []
+        if parent_fks:
+            related.extend(await _expand_parents(driver, parent_fks, row.cells))
+        if child_fks:
+            related.extend(await _expand_children(driver, schema, child_fks, row.cells, max_related, embedding_column))
+
+        hits.append(ContextHit(distance=distance, row=cells, related=related))
+
+    return RetrieveWithContextResult(available=True, dimension=dimension, hits=hits)
+
+
+async def _expand_parents(
+    driver: SqlDriver,
+    parent_fks: list[introspection.ForeignKeyInfo],
+    hit_cells: dict[str, Any],
+) -> list[RelatedRecords]:
+    """Read the single parent row referenced by each outbound FK.
+
+    Skips an FK when any of the hit row's from-column values is NULL
+    (a NULL FK references nothing). Identifiers come from the catalog
+    but are still quote-validated before interpolation.
+    """
+    out: list[RelatedRecords] = []
+    for fk in parent_fks:
+        from_values = [hit_cells.get(c) for c in fk.from_columns]
+        if any(v is None for v in from_values):
+            continue
+        rel = f"{_quoted(fk.to_schema, 'schema')}.{_quoted(fk.to_table, 'table')}"
+        conditions = " AND ".join(f"{_quoted(c, 'column')} = %s" for c in fk.to_columns)
+        rows = await driver.execute_query(
+            f"SELECT * FROM {rel} WHERE {conditions} LIMIT 1",
+            params=from_values,
+            force_readonly=True,
+        )
+        out.append(
+            RelatedRecords(
+                fk_name=fk.name,
+                direction="parent",
+                related_schema=fk.to_schema,
+                related_table=fk.to_table,
+                rows=[dict(r.cells) for r in rows or []],
+            )
+        )
+    return out
+
+
+async def _expand_children(
+    driver: SqlDriver,
+    schema: str,
+    child_fks: list[introspection.ForeignKeyInfo],
+    hit_cells: dict[str, Any],
+    max_related: int,
+    embedding_column: str,
+) -> list[RelatedRecords]:
+    """Read up to ``max_related`` child rows for each inbound FK.
+
+    A child references the hit via ``from_columns`` pointing at the
+    hit's ``to_columns``. The child table lives in the audited
+    ``schema`` (inbound expansion is same-schema only in this version).
+    Identifiers come from the catalog but are still quote-validated.
+    """
+    out: list[RelatedRecords] = []
+    for fk in child_fks:
+        to_values = [hit_cells.get(c) for c in fk.to_columns]
+        if any(v is None for v in to_values):
+            continue
+        rel = f"{_quoted(schema, 'schema')}.{_quoted(fk.from_table, 'table')}"
+        conditions = " AND ".join(f"{_quoted(c, 'column')} = %s" for c in fk.from_columns)
+        rows = await driver.execute_query(
+            f"SELECT * FROM {rel} WHERE {conditions} LIMIT %s",
+            params=[*to_values, max_related],
+            force_readonly=True,
+        )
+        out.append(
+            RelatedRecords(
+                fk_name=fk.name,
+                direction="child",
+                related_schema=schema,
+                related_table=fk.from_table,
+                rows=[dict(r.cells) for r in rows or []],
+            )
+        )
+    return out

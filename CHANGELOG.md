@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`retrieve_with_context`** — context-packed hybrid retrieval / "one-shot
+  RAG" (roadmap **9.11**). Runs a pgvector k-NN for a caller-supplied query
+  vector, then expands each hit **1 hop along foreign keys** — parent rows
+  (outbound FKs) and up to `max_related` child rows (inbound, same-schema
+  FKs) — and packs each hit plus its related records into one structured
+  context object, so an agent gets the matching row *and* its surrounding
+  relational context in a single call. Read-only; the embedding column is
+  dropped from returned rows. Typed return → `outputSchema`. Lives in
+  `mcpg.vector_ops`; `vector_search` bucket. (1-hop only + same-schema
+  inbound expansion in this first cut.)
+- **`recommend_ivfflat_probes`** — IVFFlat counterpart to
+  `recommend_hnsw_ef_search` (roadmap **9.12**). Samples query vectors,
+  builds an exact brute-force top-k ground truth, sweeps `ivfflat.probes`
+  measuring mean recall@k + p50/p95 latency, and recommends the smallest
+  `probes` clearing `target_recall`. Verifies an IVFFlat index exists on the
+  column (`has_ivfflat_index=false` with guidance otherwise). Typed return →
+  `outputSchema`. Lives in `mcpg.vector_tuner_advanced`; `vector_search` bucket.
+
 ### Changed
 
 - **`audit_database` now folds in the sequence-exhaustion (16.1) and
