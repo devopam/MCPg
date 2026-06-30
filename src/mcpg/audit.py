@@ -1366,6 +1366,9 @@ async def _audit_sequences_category(driver: SqlDriver) -> CategoryResult | None:
             metrics=metrics,
         )
     except Exception:
+        # Never break the comprehensive scan on a folded-in advisor, but
+        # leave a debug breadcrumb so the skip is discoverable.
+        audit_logger.debug("Sequence-exhaustion audit category skipped", exc_info=True)
         return None
 
 
@@ -1423,6 +1426,9 @@ async def _audit_settings_category(driver: SqlDriver) -> CategoryResult | None:
             metrics=metrics,
         )
     except Exception:
+        # Never break the comprehensive scan on a folded-in advisor, but
+        # leave a debug breadcrumb so the skip is discoverable.
+        audit_logger.debug("Configuration-settings audit category skipped", exc_info=True)
         return None
 
 

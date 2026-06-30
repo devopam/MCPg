@@ -77,6 +77,10 @@ async def test_audit_database_with_clean_metrics_yields_score_100() -> None:
     assert len(report.categories) == 7
     assert any(c.category == "Configuration Settings" for c in report.categories)
     assert not any(c.category == "Sequence Exhaustion" for c in report.categories)
+    # The folded-in config category must not cost a clean cluster any points.
+    cfg_cat = next(c for c in report.categories if c.category == "Configuration Settings")
+    assert cfg_cat.status == "GOOD"
+    assert cfg_cat.score == 100
 
     # Check Cache Hit metric
     cache_cat = next(c for c in report.categories if c.category == "Memory & I/O Efficiency")
