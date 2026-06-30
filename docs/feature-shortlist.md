@@ -165,14 +165,16 @@ Full planning doc in
 [`plans/bm25-integration.md`](plans/bm25-integration.md). A three-way
 comparison of `pg_search` (ParadeDB), `pg_textsearch` (Tiger Data),
 and `pg_tokenizer` + `vchord_bm25` (VectorChord) selected `pg_search`
-as the first integration target. The other two are deferred with
-documented return conditions.
+as the first integration target. With `pg_search` now shipped (12.1)
+covering BM25 for the project's needs, the other two candidates
+(`pg_textsearch` / Tiger Data and `pg_tokenizer` + `vchord_bm25` /
+VectorChord) were evaluated and consciously **dropped** rather than
+added as redundant backends. They can be revisited from the planning
+doc if a concrete need arises (e.g. CJK / multilingual tokenisation).
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
 | 12.1 | ✅ **Shipped.** **`pg_search` (ParadeDB) wrapper** — five-phase integration, all live in `mcpg.pg_search` (155 unit tests): BM-1 observability (`list_pg_search_indexes`, `get_pg_search_index_metadata`), BM-2 search execution (`pg_search_run`, `pg_search_more_like_this`, `pg_search_parse_query`), BM-3 hybrid BM25+pgvector composition (`hybrid_bm25_vector_search`), BM-4 DDL (`create_pg_search_index`, `reindex_pg_search_index`), BM-5 advisor (`recommend_pg_search_maintenance`) + audit category (`audit_pg_search_indexes`, wired into `audit_database`). Composes naturally with the RAG efficiency suite. | L | High | Selected over the alternatives for PG 14-18 coverage + pre-built binaries + stable v2 API + documented hybrid pattern. |
-| 12.2 | **`pg_textsearch` (Tiger Data) wrapper — deferred.** PG 17/18-only today; no phrase queries. Returns when PG 14-16 support lands or when TimescaleDB integration motivates the lineage match. | L | Medium-High | Strong fallback. |
-| 12.3 | **`pg_tokenizer` + `vchord_bm25` wrapper — deferred.** Pre-1.0 (0.3.0); split-extension install; no documented pgvector hybrid pattern. Strong CJK tokenizer story (Jieba, Lindera, BERT). Returns when CJK / multilingual is a top-line goal. | L | Medium | Strong third choice. |
 
 ## 13. Multi-database support
 
