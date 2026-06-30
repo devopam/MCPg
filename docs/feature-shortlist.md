@@ -178,7 +178,7 @@ documented return conditions.
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 13.1 | One MCPg server, multiple `MCPG_DATABASE_URL`s — tool-level db selector | L | Medium | ✅ Shipped. `MCPG_SECONDARY_DATABASE_URLS` adds named, **read-only** secondary databases; every read-capable tool takes an optional `database` arg, `list_databases` discovers them. Read-only is PostgreSQL-enforced (every secondary query runs in a `READ ONLY` transaction), which sidesteps per-DB write/DDL gating — writes / DDL / shell / migrate stay primary-only. |
+| 13.1 | ✅ **Shipped.** One MCPg server, multiple `MCPG_DATABASE_URL`s — tool-level db selector | L | Medium | `MCPG_SECONDARY_DATABASE_URLS` adds named, **read-only** secondary databases; every read-capable tool takes an optional `database` arg, `list_databases` discovers them. Read-only is PostgreSQL-enforced (every secondary query runs in a `READ ONLY` transaction), which sidesteps per-DB write/DDL gating — writes / DDL / shell / migrate stay primary-only. |
 
 ## 14. Release engineering & hygiene
 
