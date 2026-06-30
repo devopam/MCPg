@@ -1418,6 +1418,51 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         return result
 
     @server.tool(
+        name="recommend_ivfflat_probes",
+        description=_with_example(
+            "Recommend an `ivfflat.probes` value for a target recall@k — "
+            "the IVFFlat analogue of `recommend_hnsw_ef_search`. Samples "
+            "`sample_queries` rows (default 10) as query vectors, builds an "
+            "exact brute-force top-k ground truth per query, sweeps "
+            "`probe_values` (default 1/2/5/10/20/50) measuring mean recall@k "
+            "and p50/p95 latency at each, and recommends the smallest value "
+            "clearing `target_recall` (default 0.95). VERIFIES an IVFFlat "
+            "index actually exists on the column (returns "
+            "`has_ivfflat_index=false` with guidance otherwise — a sweep "
+            "without one just measures sequential scans). The query row is "
+            "excluded from its own results. Requires the vector extension. "
+            "Returns an object with `available`, `has_ivfflat_index`, "
+            "`index_name`, `metric`, `k`, `target_recall`, `sample_queries`, "
+            "`recommended_probes` (int or null), `detail`, and `sweep` (list "
+            "of objects with `probes`, `mean_recall_at_k`, `p50_latency_ms`, "
+            "`p95_latency_ms`, `meets_target`).",
+            "recommend_ivfflat_probes(schema='public', table='docs', column='embedding', k=10, target_recall=0.95)",
+        ),
+    )
+    async def recommend_ivfflat_probes(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        column: str,
+        k: int = 10,
+        target_recall: float = 0.95,
+        sample_queries: int = 10,
+        metric: str = "l2",
+        database: _DatabaseArg = None,
+    ) -> vector_tuner_advanced.IvfflatProbesRecommendation:
+        result = await vector_tuner_advanced.recommend_ivfflat_probes(
+            _driver(ctx, database),
+            schema,
+            table,
+            column,
+            k=k,
+            target_recall=target_recall,
+            sample_queries=sample_queries,
+            metric=metric,
+        )
+        return result
+
+    @server.tool(
         name="analyze_distance_metric",
         description=(
             "Recommend a pgvector distance metric (cosine | l2 | "
@@ -1494,6 +1539,56 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
             target_embedding_column=target_embedding_column,
             k=k,
             metric=metric,
+        )
+        return result
+
+    @server.tool(
+        name="retrieve_with_context",
+        description=_with_example(
+            "Context-packed k-NN retrieval (a one-shot RAG building "
+            "block). Runs a pgvector k-NN against "
+            "schema.table.embedding_column for a caller-supplied "
+            "`query_vector` (no embedding model needed), then expands "
+            "each hit one hop along foreign keys and returns the hit row "
+            "+ its related parent / child records in one object. Parents "
+            "(when `include_parents`, default true) are the rows a hit "
+            "references via outbound FKs; children (when "
+            "`include_children`, default true) are rows referencing the "
+            "hit via inbound FKs, capped at `max_related` (default 5) "
+            "per FK. Limitations: 1 hop only; inbound (child) expansion "
+            "is same-schema only. The embedding column is dropped from "
+            "every returned row. Requires the vector extension. Returns "
+            "`available`, `dimension`, `detail`, and `hits` (each with "
+            "`distance`, `row`, and `related` — a list of "
+            "`fk_name`/`direction`/`related_schema`/`related_table`/`rows`).",
+            "retrieve_with_context(schema='public', table='docs', embedding_column='embedding', "
+            "query_vector=[0.1, 0.2, 0.3], k=5)",
+        ),
+    )
+    async def retrieve_with_context(
+        ctx: _Ctx,
+        schema: str,
+        table: str,
+        embedding_column: str,
+        query_vector: list[float],
+        k: int = vector_ops.DEFAULT_CONTEXT_K,
+        metric: str = "l2",
+        include_parents: bool = True,
+        include_children: bool = True,
+        max_related: int = vector_ops.DEFAULT_MAX_RELATED,
+        database: _DatabaseArg = None,
+    ) -> vector_ops.RetrieveWithContextResult:
+        result = await vector_ops.retrieve_with_context(
+            _driver(ctx, database),
+            schema=schema,
+            table=table,
+            embedding_column=embedding_column,
+            query_vector=query_vector,
+            k=k,
+            metric=metric,
+            include_parents=include_parents,
+            include_children=include_children,
+            max_related=max_related,
         )
         return result
 

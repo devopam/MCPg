@@ -396,6 +396,28 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
             "detail",
         }
     ),
+    "recommend_ivfflat_probes": frozenset(
+        {
+            "available",
+            "has_ivfflat_index",
+            "index_name",
+            "metric",
+            "k",
+            "target_recall",
+            "sample_queries",
+            "recommended_probes",
+            "sweep",
+            "detail",
+        }
+    ),
+    "retrieve_with_context": frozenset(
+        {
+            "available",
+            "dimension",
+            "hits",
+            "detail",
+        }
+    ),
     "migrate_vector_to_halfvec": frozenset(
         {
             "available",
@@ -796,7 +818,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 195
+    floor = 197
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "
