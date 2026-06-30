@@ -8,14 +8,6 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Container images on GHCR.** The release workflow now builds the
-  `Dockerfile` and pushes it to `ghcr.io/devopam/mcpg` on every tagged
-  release (`:<version>` + `:latest`), so container users can
-  `docker pull ghcr.io/devopam/mcpg:latest` instead of building from
-  source. The push runs only after the human-approved PyPI publish
-  succeeds, so the image tracks the approved release; it authenticates
-  with the built-in `GITHUB_TOKEN` (no new secrets).
-
 ### Changed
 
 ### Fixed
@@ -23,6 +15,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 ## [0.6.5] - 2026-06-30
 
 ### Added
+
+- **Container images on GHCR.** The release workflow now builds the
+  `Dockerfile` and pushes it to `ghcr.io/devopam/mcpg` on every tagged
+  release (`:<version>` + `:latest`), so container users can
+  `docker pull ghcr.io/devopam/mcpg:latest` instead of building from
+  source. The push runs only after the human-approved PyPI publish
+  succeeds, so the image tracks the approved release; it authenticates
+  with the built-in `GITHUB_TOKEN` (no new secrets).
 
 - **Multi-database selector with read-only secondaries** (roadmap
   **13.1**). One MCPg server can now serve multiple databases. The
