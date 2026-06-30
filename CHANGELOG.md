@@ -10,6 +10,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`audit_database` now folds in the sequence-exhaustion (16.1) and
+  `postgresql.conf` sanity (16.2) advisors** as two new scorecard
+  categories — "Sequence Exhaustion" and "Configuration Settings". The
+  comprehensive scan now surfaces sequences nearing their ceiling and
+  dangerous / mis-sized GUCs (e.g. `fsync=off`, `maintenance_work_mem` <
+  `work_mem`) directly in its top issues + recommendations, without a
+  separate `audit_sequences` / `audit_settings` call. Both categories
+  degrade gracefully: "Sequence Exhaustion" is omitted entirely when
+  `pg_sequences` is unavailable (PG < 10), and either category drops out
+  on any driver error rather than breaking the scan. The standalone
+  tools remain available unchanged. `audit_database`'s return shape
+  (`AuditReport`) is unchanged.
+
 ### Fixed
 
 ## [0.6.5] - 2026-06-30
