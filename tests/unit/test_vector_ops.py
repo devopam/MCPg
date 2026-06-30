@@ -1900,8 +1900,11 @@ async def test_retrieve_with_context_packs_parents_and_children() -> None:
         _ctx_routes(
             fks=fks,
             knn_rows=knn,
-            parent_rows=[{"id": 7, "name": "Ada"}],
-            child_rows=[{"id": 100, "post_id": 1, "body": "nice"}, {"id": 101, "post_id": 1, "body": "great"}],
+            parent_rows=[{"id": 7, "name": "Ada", "embedding": "[9,9,9]"}],
+            child_rows=[
+                {"id": 100, "post_id": 1, "body": "nice", "embedding": "[1,1,1]"},
+                {"id": 101, "post_id": 1, "body": "great"},
+            ],
         )
     )
 
@@ -1923,6 +1926,8 @@ async def test_retrieve_with_context_packs_parents_and_children() -> None:
     # Embedding column stripped, mcpg_distance stripped.
     assert hit.row == {"id": 1, "author_id": 7, "title": "alpha"}
     assert "embedding" not in hit.row
+    # The searched embedding column is stripped from related rows too,
+    # not just the hit row (matters for self-referential FK chunk tables).
     assert hit.related == [
         RelatedRecords(
             fk_name="posts_author_fk",
@@ -1939,6 +1944,7 @@ async def test_retrieve_with_context_packs_parents_and_children() -> None:
             rows=[{"id": 100, "post_id": 1, "body": "nice"}, {"id": 101, "post_id": 1, "body": "great"}],
         ),
     ]
+    assert all("embedding" not in r for rec in hit.related for r in rec.rows)
 
 
 async def test_retrieve_with_context_include_flags_suppress_expansion() -> None:

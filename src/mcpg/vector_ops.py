@@ -1586,8 +1586,11 @@ async def retrieve_with_context(
 
     Limitations: 1 hop only (multi-hop is deferred); inbound (child)
     expansion is same-schema only in this version; ``max_related`` caps
-    the number of child rows returned per inbound FK. The embedding
-    column is dropped from every returned row to keep payloads lean.
+    the number of child rows returned per inbound FK. A column named
+    ``embedding_column`` is dropped from the matched row and from every
+    related (parent/child) row to keep payloads lean — related rows from
+    other tables that carry a *differently*-named embedding are returned
+    as-is (we don't introspect every related table's vector columns).
 
     Raises:
         VectorOpsError: On invalid identifiers, an unknown ``metric``,
@@ -1648,7 +1651,7 @@ async def retrieve_with_context(
 
         related: list[RelatedRecords] = []
         if parent_fks:
-            related.extend(await _expand_parents(driver, parent_fks, row.cells))
+            related.extend(await _expand_parents(driver, parent_fks, row.cells, embedding_column))
         if child_fks:
             related.extend(await _expand_children(driver, schema, child_fks, row.cells, max_related, embedding_column))
 
@@ -1661,12 +1664,15 @@ async def _expand_parents(
     driver: SqlDriver,
     parent_fks: list[introspection.ForeignKeyInfo],
     hit_cells: dict[str, Any],
+    embedding_column: str,
 ) -> list[RelatedRecords]:
     """Read the single parent row referenced by each outbound FK.
 
     Skips an FK when any of the hit row's from-column values is NULL
     (a NULL FK references nothing). Identifiers come from the catalog
-    but are still quote-validated before interpolation.
+    but are still quote-validated before interpolation. A column named
+    ``embedding_column`` is stripped from each parent row (keeps payloads
+    lean on self-referential FKs where the parent carries the embedding).
     """
     out: list[RelatedRecords] = []
     for fk in parent_fks:
@@ -1686,7 +1692,7 @@ async def _expand_parents(
                 direction="parent",
                 related_schema=fk.to_schema,
                 related_table=fk.to_table,
-                rows=[dict(r.cells) for r in rows or []],
+                rows=[{c: v for c, v in r.cells.items() if c != embedding_column} for r in rows or []],
             )
         )
     return out
@@ -1705,7 +1711,10 @@ async def _expand_children(
     A child references the hit via ``from_columns`` pointing at the
     hit's ``to_columns``. The child table lives in the audited
     ``schema`` (inbound expansion is same-schema only in this version).
-    Identifiers come from the catalog but are still quote-validated.
+    Identifiers come from the catalog but are still quote-validated. A
+    column named ``embedding_column`` is stripped from each child row to
+    keep payloads lean (child tables that share the searched embedding
+    column name — e.g. self-referential chunk tables — don't ship it).
     """
     out: list[RelatedRecords] = []
     for fk in child_fks:
@@ -1725,7 +1734,7 @@ async def _expand_children(
                 direction="child",
                 related_schema=schema,
                 related_table=fk.from_table,
-                rows=[dict(r.cells) for r in rows or []],
+                rows=[{c: v for c, v in r.cells.items() if c != embedding_column} for r in rows or []],
             )
         )
     return out
