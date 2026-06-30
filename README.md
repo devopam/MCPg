@@ -88,12 +88,22 @@ mcpg --version
 
 ### Docker
 
+Pull the pre-built image from the GitHub Container Registry (published
+on every tagged release — `:latest` tracks the newest, or pin a version
+like `:0.6.5`):
+
 ```bash
-docker build -t mcpg https://github.com/devopam/MCPg.git
+docker pull ghcr.io/devopam/mcpg:latest
 docker run --rm -p 8000:8000 \
     -e MCPG_DATABASE_URL=postgresql://user:pass@host:5432/db \
     -e MCPG_ACCESS_MODE=read-only \
-    mcpg
+    ghcr.io/devopam/mcpg:latest
+```
+
+Or build it yourself from source:
+
+```bash
+docker build -t mcpg https://github.com/devopam/MCPg.git
 ```
 
 Multi-stage image: runtime stage drops the build toolchain, runs as
