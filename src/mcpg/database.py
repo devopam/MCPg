@@ -7,13 +7,17 @@ typed errors, and async-context-manager support, so the server owns a single
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from types import TracebackType
 from typing import Any
 
 from mcpg._vendor.sql import DbConnPool, SqlDriver, obfuscate_password
 from mcpg.config import Settings
+from mcpg.multidb import PRIMARY_DATABASE_ID, make_read_only_driver
 from mcpg.replicas import ReplicaPool, RoutedSqlDriver, _make_driver_for_pool
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseError(Exception):
@@ -29,6 +33,7 @@ class Database:
         *,
         pool: DbConnPool | None = None,
         replica_pool: ReplicaPool | None = None,
+        secondary_pools: dict[str, DbConnPool] | None = None,
     ) -> None:
         self._settings = settings
         self._pool = (
@@ -53,6 +58,24 @@ class Database:
             )
         else:
             self._replica_pool = None
+        # Multi-database selector (roadmap 13.1). One read-only pool per
+        # configured secondary. Tests may inject pre-built pools via
+        # ``secondary_pools`` (keyed by name); otherwise we build one
+        # ``DbConnPool`` per ``MCPG_SECONDARY_DATABASE_URLS`` entry. A
+        # secondary that fails to connect at startup is marked unavailable
+        # (tracked in ``_secondary_available``) but does NOT abort startup.
+        if secondary_pools is not None:
+            self._secondary_pools: dict[str, DbConnPool] = dict(secondary_pools)
+        else:
+            self._secondary_pools = {
+                name: DbConnPool(
+                    dsn,
+                    min_size=settings.pool_min_size,
+                    max_size=settings.pool_max_size,
+                )
+                for name, dsn in settings.secondary_database_urls
+            }
+        self._secondary_available: dict[str, bool] = dict.fromkeys(self._secondary_pools, False)
         self._connected = False
 
     @property
@@ -77,12 +100,32 @@ class Database:
             # individually; they don't abort startup. See
             # ``ReplicaPool.connect``.
             await self._replica_pool.connect()
+        # Secondary databases (roadmap 13.1): a connect failure marks that
+        # secondary unavailable but does NOT abort startup — mirrors the
+        # replica-pool tolerance. ``list_databases`` surfaces the state.
+        for name, pool in self._secondary_pools.items():
+            try:
+                await pool.pool_connect()
+            except Exception as exc:
+                self._secondary_available[name] = False
+                logger.warning(
+                    "Secondary database %r failed to open: %s",
+                    name,
+                    obfuscate_password(str(exc)),
+                )
+            else:
+                self._secondary_available[name] = True
         self._connected = True
 
     async def close(self) -> None:
         """Close the connection pool. Safe to call when not connected."""
         if self._replica_pool is not None:
             await self._replica_pool.close()
+        for name, pool in self._secondary_pools.items():
+            try:
+                await pool.close()
+            except Exception as exc:
+                logger.warning("Error closing secondary database %r pool: %s", name, exc)
         await self._pool.close()
         self._connected = False
 
@@ -91,10 +134,21 @@ class Database:
         """The configured :class:`ReplicaPool`, or ``None`` when unset."""
         return self._replica_pool
 
-    def driver(self) -> SqlDriver:
-        """Return a SQL driver bound to the pool.
+    def driver(self, database_id: str | None = None) -> SqlDriver:
+        """Return a SQL driver bound to the selected database.
 
-        Composes three optional behaviours:
+        ``database_id`` selects which configured database to target:
+
+        * ``None`` or ``"primary"`` → the primary driver (UNCHANGED path —
+          composes tenancy + replica routing exactly as before).
+        * a configured secondary name → a **read-only** driver bound to that
+          secondary's pool. Read-only is PostgreSQL-enforced (every query
+          runs inside ``BEGIN TRANSACTION READ ONLY``; see
+          :class:`mcpg.multidb.ReadOnlySqlDriver`). No tenancy or replica
+          layering is applied to secondaries.
+        * an unknown name → :class:`DatabaseError` listing the valid ids.
+
+        The primary path composes three optional behaviours:
 
         * **Tenancy** — when ``settings.default_role`` or
           ``allowed_roles`` is set, the underlying driver is
@@ -113,6 +167,18 @@ class Database:
         """
         if not self._connected:
             raise DatabaseError("database is not connected; call connect() first")
+        # Secondary-database selector (roadmap 13.1). Any explicit, non-primary
+        # id routes to a read-only secondary driver; an unknown id is a hard
+        # error listing the valid ids so the agent can self-correct.
+        if database_id is not None and database_id != PRIMARY_DATABASE_ID:
+            pool = self._secondary_pools.get(database_id)
+            if pool is None:
+                raise DatabaseError(f"unknown database id {database_id!r}; valid ids: {', '.join(self.database_ids())}")
+            return make_read_only_driver(
+                pool,
+                statement_timeout_ms=self._settings.statement_timeout_ms,
+                lock_timeout_ms=self._settings.lock_timeout_ms,
+            )
         enable_tenancy = self._settings.default_role is not None or bool(self._settings.allowed_roles)
         primary = _make_driver_for_pool(
             self._pool,
@@ -141,6 +207,44 @@ class Database:
         )
         driver.settings = self._settings  # type: ignore[attr-defined]
         return driver
+
+    def database_ids(self) -> list[str]:
+        """Return every configured database id, primary first.
+
+        The primary's id is always :data:`mcpg.multidb.PRIMARY_DATABASE_ID`;
+        secondaries follow in ``MCPG_SECONDARY_DATABASE_URLS`` order.
+        """
+        return [PRIMARY_DATABASE_ID, *self._secondary_pools.keys()]
+
+    async def probe(self, database_id: str | None = None) -> tuple[bool, str | None]:
+        """Probe one database with ``SELECT 1``.
+
+        Returns ``(reachable, detail)`` — ``detail`` is an obfuscated error
+        string when the probe failed, else ``None``. An unknown id raises
+        :class:`DatabaseError` (same contract as :meth:`driver`).
+        """
+        try:
+            driver = self.driver(database_id)
+            await driver.execute_query("SELECT 1", force_readonly=True)
+        except DatabaseError:
+            raise
+        except Exception as exc:
+            return False, obfuscate_password(str(exc))
+        return True, None
+
+    async def describe_databases(self) -> list[tuple[str, bool, bool, bool, str | None]]:
+        """Describe every configured database for ``list_databases``.
+
+        Yields one ``(id, is_primary, read_only, reachable, detail)`` tuple
+        per database, primary first. ``reachable`` is a live ``SELECT 1``
+        probe; secondaries are always ``read_only=True``.
+        """
+        out: list[tuple[str, bool, bool, bool, str | None]] = []
+        for db_id in self.database_ids():
+            is_primary = db_id == PRIMARY_DATABASE_ID
+            reachable, detail = await self.probe(db_id)
+            out.append((db_id, is_primary, not is_primary, reachable, detail))
+        return out
 
     async def copy_from_stdin(self, sql: str, data: bytes) -> int:
         """Stream ``data`` into a ``COPY ... FROM STDIN`` statement.

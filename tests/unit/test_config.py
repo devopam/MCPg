@@ -519,6 +519,116 @@ def test_replica_repr_obfuscates_passwords() -> None:
     assert "supersecret" not in rendered
 
 
+# ---------------------------------------------------------------------------
+# Multi-database selector — MCPG_SECONDARY_DATABASE_URLS (roadmap 13.1)
+# ---------------------------------------------------------------------------
+
+
+def test_secondary_database_urls_default_empty() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).secondary_database_urls == ()
+
+
+def test_secondary_database_urls_parses_name_dsn_pairs() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_SECONDARY_DATABASE_URLS": (
+                "analytics=postgresql://u:p@localhost/an, reporting=postgresql://u:p@localhost/rep"
+            ),
+        }
+    )
+    assert settings.secondary_database_urls == (
+        ("analytics", "postgresql://u:p@localhost/an"),
+        ("reporting", "postgresql://u:p@localhost/rep"),
+    )
+
+
+def test_secondary_database_urls_accepts_newline_separator() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_SECONDARY_DATABASE_URLS": "a=postgresql://u:p@localhost/a\nb=postgresql://u:p@localhost/b",
+        }
+    )
+    assert [name for name, _ in settings.secondary_database_urls] == ["a", "b"]
+
+
+def test_secondary_database_urls_blank_raises() -> None:
+    with pytest.raises(ConfigError, match="MCPG_SECONDARY_DATABASE_URLS must not be blank"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_SECONDARY_DATABASE_URLS": "  ,  "})
+
+
+def test_secondary_database_urls_missing_equals_raises() -> None:
+    with pytest.raises(ConfigError, match="not in name=dsn form"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_SECONDARY_DATABASE_URLS": "justaname"})
+
+
+def test_secondary_database_urls_empty_dsn_raises() -> None:
+    with pytest.raises(ConfigError, match="empty DSN"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_SECONDARY_DATABASE_URLS": "a="})
+
+
+def test_secondary_database_urls_duplicate_name_raises() -> None:
+    with pytest.raises(ConfigError, match="duplicate name 'a'"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_SECONDARY_DATABASE_URLS": ("a=postgresql://u:p@localhost/x,a=postgresql://u:p@localhost/y"),
+            }
+        )
+
+
+def test_secondary_database_urls_reserved_primary_name_raises() -> None:
+    with pytest.raises(ConfigError, match="'primary' is reserved"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_SECONDARY_DATABASE_URLS": "primary=postgresql://u:p@localhost/x",
+            }
+        )
+
+
+def test_secondary_database_urls_bad_identifier_raises() -> None:
+    with pytest.raises(ConfigError, match=r"must match \[a-z0-9_\]"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_SECONDARY_DATABASE_URLS": "Bad-Name=postgresql://u:p@localhost/x",
+            }
+        )
+
+
+def test_secondary_database_urls_enforces_tls_like_primary() -> None:
+    with pytest.raises(ConfigError, match=r"MCPG_SECONDARY_DATABASE_URLS\[an\].*sslmode"):
+        load_settings(
+            {
+                "MCPG_DATABASE_URL": _DB_URL,
+                "MCPG_SECONDARY_DATABASE_URLS": "an=postgresql://u:p@remote.example/db?sslmode=disable",
+            }
+        )
+
+
+def test_secondary_database_urls_tls_bypass_with_allow_insecure() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_ALLOW_INSECURE_TLS": "true",
+            "MCPG_SECONDARY_DATABASE_URLS": "an=postgresql://u:p@remote.example/db?sslmode=disable",
+        }
+    )
+    assert settings.secondary_database_urls == (("an", "postgresql://u:p@remote.example/db?sslmode=disable"),)
+
+
+def test_secondary_database_urls_repr_obfuscates_passwords() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_SECONDARY_DATABASE_URLS": "an=postgresql://u:supersecret@localhost/an",
+        }
+    )
+    assert "supersecret" not in repr(settings)
+
+
 # --- OIDC auth (Shortlist 6.5) -------------------------------------------
 
 
