@@ -4,7 +4,7 @@
 
 **A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
 server for PostgreSQL.** Lets AI agents safely inspect, query, operate, and
-tune a Postgres database — over 100 tools spanning catalog introspection,
+tune a Postgres database — over 240 tools spanning catalog introspection,
 query intelligence, natural-language SQL, structural diffs, hybrid search,
 graph queries, data movement, live ops, and more.
 
@@ -17,7 +17,7 @@ graph queries, data movement, live ops, and more.
 
 ### 📍 Listed On
 
-- **[Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.devopam%2Fmcpg/versions/0.6.1)**  
+- **[Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.devopam%2Fmcpg/versions/0.6.5)**  
 - **[mcp.so](https://mcp.so/server/mcpg---production-grade-postgresql-mcp-server/Devopam%20Mittra)**  
 - **[mcpservers.org](https://mcpservers.org/servers/devopam/mcpg)**
 - **[![Glama](https://glama.ai/mcp/servers/devopam/MCPg/badges/score.svg)](https://glama.ai/mcp/servers/devopam/MCPg)**
@@ -28,7 +28,7 @@ graph queries, data movement, live ops, and more.
 | Safety              | Read-only default + AST validation |
 | Transport           | stdio + HTTP/SSE                  |
 | Install             | `pip install mcpg`                |
-| Postgres Versions   | 14–18                             |
+| Postgres Versions   | 14–19                             |
 | Key Differentiator  | Production observability + multi-tenancy |
 
 ## Why MCPg
@@ -58,17 +58,12 @@ graph queries, data movement, live ops, and more.
   HTTP transport surfaces `mcpg_tool_calls_total{tool,status}` +
   `mcpg_tool_duration_seconds`. Every tool call records a structured
   audit event with credential-redacted arguments.
-- **Test-driven, multi-version.** 800+ unit tests plus an integration
+- **Test-driven, multi-version.** 2,500+ unit tests plus an integration
   suite that runs against a real PostgreSQL container in CI — matrix
   covers PG **14, 15, 16, 17, 18** on every push, plus PG **19 (beta)**
   as an experimental (non-blocking) entry tracked under issue #120.
 
 ---
-
-### Featured In
-- mcp.so  
-- mcpservers.org  
-- Official MCP Registry (coming soon)
 
 ## Install
 
