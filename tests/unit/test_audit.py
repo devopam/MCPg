@@ -66,9 +66,21 @@ async def test_audit_database_with_clean_metrics_yields_score_100() -> None:
     assert "PostgreSQL 16.4" in report.version
     assert report.overall_health == "GOOD"
     assert report.health_score == 100
-    # 6 baseline categories: memory_io, transactions_connections,
-    # concurrency_locks, cleanliness_bloat, slow_queries, authentication.
-    assert len(report.categories) == 6
+    # 6 always-on baseline categories: memory_io, transactions_connections,
+    # concurrency_locks, cleanliness_bloat, slow_queries, authentication —
+    # plus the folded-in "Configuration Settings" category (16.2). The fake
+    # driver returns no rows for pg_settings, so audit_settings finds nothing
+    # dangerous and the category lands GOOD (score 100, no dilution). The
+    # sequence-exhaustion category (16.1) is *omitted* here: the fake has no
+    # pg_sequences route, so the advisor reports available=False and its
+    # adapter degrades to None — keeping the count deterministic.
+    assert len(report.categories) == 7
+    assert any(c.category == "Configuration Settings" for c in report.categories)
+    assert not any(c.category == "Sequence Exhaustion" for c in report.categories)
+    # The folded-in config category must not cost a clean cluster any points.
+    cfg_cat = next(c for c in report.categories if c.category == "Configuration Settings")
+    assert cfg_cat.status == "GOOD"
+    assert cfg_cat.score == 100
 
     # Check Cache Hit metric
     cache_cat = next(c for c in report.categories if c.category == "Memory & I/O Efficiency")
@@ -169,6 +181,63 @@ async def test_audit_database_with_failing_metrics_drops_scores() -> None:
     # Recommmendations should suggest clean-ups
     assert len(report.recommendations) > 0
     assert any("Kill" in rec.action or "autovacuum" in rec.action.lower() for rec in report.recommendations)
+
+
+async def test_audit_database_folds_in_sequence_and_settings_findings() -> None:
+    # Fake that answers the folded-in config-advisor probes (16.1 / 16.2):
+    # an at-risk sequence (99 of 100 -> ~98.9% used -> CRITICAL) and a
+    # dangerous toggle (fsync=off -> CRITICAL).
+    driver = FakeRoutingDriver(
+        {
+            "SELECT version()": [{"version": "PostgreSQL 16.4", "dbname": "prod"}],
+            "to_regclass": [{"present": True}],
+            "FROM pg_sequences": [
+                {
+                    "schemaname": "public",
+                    "sequencename": "orders_id_seq",
+                    "last_value": 99,
+                    "min_value": 1,
+                    "max_value": 100,
+                    "increment_by": 1,
+                }
+            ],
+            "current_setting('fsync')": [
+                {
+                    "fsync": "off",
+                    "full_page_writes": "on",
+                    "autovacuum": "on",
+                    "synchronous_commit": "on",
+                    "shared_buffers": 256 * 1024 * 1024,
+                    "effective_cache_size": 1024 * 1024 * 1024,
+                    "work_mem": 4 * 1024 * 1024,
+                    "maintenance_work_mem": 64 * 1024 * 1024,
+                    "max_connections": 100,
+                    "checkpoint_completion_target": 0.9,
+                }
+            ],
+        }
+    )
+
+    report = await audit_database(driver, "public")  # type: ignore[arg-type]
+
+    # Both folded-in categories appear.
+    seq_cat = next(c for c in report.categories if c.category == "Sequence Exhaustion")
+    cfg_cat = next(c for c in report.categories if c.category == "Configuration Settings")
+
+    # The at-risk sequence surfaces as a CRITICAL metric inside the category...
+    seq_metric = next(m for m in seq_cat.metrics if m.name == "public.orders_id_seq")
+    assert seq_metric.status == "CRITICAL"
+    assert seq_cat.score < 90
+
+    # ...and the dangerous fsync toggle as a CRITICAL setting finding.
+    fsync_metric = next(m for m in cfg_cat.metrics if m.name == "fsync")
+    assert fsync_metric.status == "CRITICAL"
+    assert fsync_metric.evidence == "fsync_off"
+    assert cfg_cat.score < 90
+
+    # Both must bubble up into the report-level top_issues.
+    assert any(issue.issue == "public.orders_id_seq" for issue in report.top_issues)
+    assert any(issue.issue == "fsync" for issue in report.top_issues)
 
 
 async def test_audit_database_log_scanning_skips_if_not_present() -> None:

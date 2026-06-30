@@ -1311,6 +1311,127 @@ async def _check_custom_logs(driver: SqlDriver, log_table: str | None) -> list[T
     return issues
 
 
+async def _audit_sequences_category(driver: SqlDriver) -> CategoryResult | None:
+    """Fold :func:`mcpg.config_advisor.audit_sequences` into a scorecard category.
+
+    Returns ``None`` (omit, like the extension-gated categories) when the
+    advisor is unavailable (``pg_sequences`` absent on PG < 10) or when any
+    driver error occurs — the comprehensive scan must never break on this.
+    """
+    try:
+        from mcpg.config_advisor import audit_sequences
+
+        result = await audit_sequences(driver)
+        if not result.available:
+            return None
+
+        metrics: list[MetricResult] = []
+        score = 100
+        for seq in result.sequences:
+            is_critical = seq.status == "CRITICAL"
+            score -= 15 if is_critical else 8
+            metrics.append(
+                MetricResult(
+                    name=f"{seq.schema}.{seq.sequence}",
+                    value=round(seq.used_pct, 1),
+                    unit="%",
+                    target=f"< {result.warning_pct:.0f}%",
+                    status=seq.status,
+                    severity=3 if is_critical else 2,
+                    evidence=(f"{seq.remaining} values left (last_value {seq.last_value} of {seq.max_value})"),
+                    suggestion=("Migrate the column to bigint/bigserial or reset the sequence before it overflows."),
+                )
+            )
+
+        if not metrics:
+            metrics.append(
+                MetricResult(
+                    name="sequence headroom",
+                    value=result.total_examined,
+                    unit="sequences",
+                    target="none near ceiling",
+                    status="GOOD",
+                    severity=0,
+                    evidence=f"{result.total_examined} sequence(s) examined; none near their ceiling.",
+                    suggestion="No action needed.",
+                )
+            )
+
+        cat_score = max(score, 0)
+        status_label = "GOOD" if cat_score >= 90 else ("WARNING" if cat_score >= 70 else "CRITICAL")
+        return CategoryResult(
+            category="Sequence Exhaustion",
+            status=status_label,
+            score=cat_score,
+            metrics=metrics,
+        )
+    except Exception:
+        # Never break the comprehensive scan on a folded-in advisor, but
+        # leave a debug breadcrumb so the skip is discoverable.
+        audit_logger.debug("Sequence-exhaustion audit category skipped", exc_info=True)
+        return None
+
+
+async def _audit_settings_category(driver: SqlDriver) -> CategoryResult | None:
+    """Fold :func:`mcpg.config_advisor.audit_settings` into a scorecard category.
+
+    Called without ``total_ram_mb`` so the RAM-relative ratio checks are
+    skipped (PostgreSQL can't see host RAM from inside the server), but the
+    dangerous-toggle and cross-setting checks still run. Returns ``None`` on
+    any driver error so the comprehensive scan never breaks.
+    """
+    try:
+        from mcpg.config_advisor import audit_settings
+
+        result = await audit_settings(driver)
+
+        metrics: list[MetricResult] = []
+        score = 100
+        for finding in result.findings:
+            is_critical = finding.status == "CRITICAL"
+            score -= 15 if is_critical else 8
+            metrics.append(
+                MetricResult(
+                    name=finding.setting,
+                    value=finding.current,
+                    unit="",
+                    target="safe value",
+                    status=finding.status,
+                    severity=3 if is_critical else 2,
+                    evidence=finding.code,
+                    suggestion=finding.suggestion,
+                )
+            )
+
+        if not metrics:
+            metrics.append(
+                MetricResult(
+                    name="postgresql.conf sanity",
+                    value="ok",
+                    unit="",
+                    target="no dangerous settings",
+                    status="GOOD",
+                    severity=0,
+                    evidence=f"{len(result.examined_settings)} settings checked",
+                    suggestion="No action needed.",
+                )
+            )
+
+        cat_score = max(score, 0)
+        status_label = "GOOD" if cat_score >= 90 else ("WARNING" if cat_score >= 70 else "CRITICAL")
+        return CategoryResult(
+            category="Configuration Settings",
+            status=status_label,
+            score=cat_score,
+            metrics=metrics,
+        )
+    except Exception:
+        # Never break the comprehensive scan on a folded-in advisor, but
+        # leave a debug breadcrumb so the skip is discoverable.
+        audit_logger.debug("Configuration-settings audit category skipped", exc_info=True)
+        return None
+
+
 async def audit_database(driver: SqlDriver, schema: str, log_table: str | None = None) -> AuditReport:
     """Execute comprehensive performance checks, compile scores, recommendations, and issues."""
     from mcpg.pg_search import audit_pg_search_indexes
@@ -1327,6 +1448,13 @@ async def audit_database(driver: SqlDriver, schema: str, log_table: str | None =
     cat_slow = await audit_slow_queries(driver)
     cat_auth = await audit_authentication(driver)
 
+    # Folded-in config advisors (roadmap 16.1 / 16.2). Each adapter
+    # returns None when its advisor is unavailable (e.g. pg_sequences
+    # absent on PG < 10) or on any driver error, so they degrade like
+    # the extension-gated categories and never break the scan.
+    cat_sequences = await _audit_sequences_category(driver)
+    cat_settings = await _audit_settings_category(driver)
+
     # Optional categories — only included when the relevant extension
     # is installed, so a stock cluster's scorecard isn't padded with
     # empty sections and the overall score isn't diluted.
@@ -1336,6 +1464,10 @@ async def audit_database(driver: SqlDriver, schema: str, log_table: str | None =
     cat_rag_pipeline = await audit_rag_pipeline(driver)
 
     categories = [cat_mem, cat_tx, cat_lock, cat_bloat, cat_slow, cat_auth]
+    if cat_sequences is not None:
+        categories.append(cat_sequences)
+    if cat_settings is not None:
+        categories.append(cat_settings)
     if cat_turboquant is not None:
         categories.append(cat_turboquant)
     if cat_pg_search is not None:
