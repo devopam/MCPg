@@ -8,6 +8,34 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Multi-database selector with read-only secondaries** (roadmap
+  **13.1**). One MCPg server can now serve multiple databases. The
+  primary (`MCPG_DATABASE_URL`) stays the default target of every tool;
+  additional named, **read-only** secondaries are configured via the new
+  `MCPG_SECONDARY_DATABASE_URLS` env var (comma- or newline-separated
+  `name=dsn` entries, e.g.
+  `analytics=postgresql://…,reporting=postgresql://…`). Every
+  read-capable tool gains an optional `database` argument that selects a
+  secondary by name; omitting it targets the primary, so the
+  primary-only path is unchanged when the var is unset.
+
+  Secondaries are **read-only, enforced at the PostgreSQL level**: every
+  query against a secondary runs inside a `BEGIN TRANSACTION READ ONLY`,
+  so even a stray write is rejected by Postgres rather than by
+  convention. Write / DDL / shell / listen / migrate tools always target
+  the primary. A secondary that fails to open at startup is marked
+  unavailable but does not abort startup (mirrors the read-replica
+  tolerance). Secondary DSNs get the same TLS enforcement as the primary;
+  names must be simple identifiers (`[a-z0-9_]+`), unique, and not the
+  reserved `primary`.
+
+  New **`list_databases`** READ tool (typed return → `outputSchema`,
+  routed to `operations_and_health`) reports every configured database
+  id (primary first), which is the primary, each `read_only` flag, and a
+  live `SELECT 1` reachability probe + `detail`. New `mcpg.multidb`
+  module owns the read-only driver and the discovery shapes. Closes
+  13.1.
+
 ### Changed
 
 ### Fixed

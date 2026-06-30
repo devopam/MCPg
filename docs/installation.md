@@ -182,6 +182,7 @@ the minimum set per common scenario.
 | **Slow-call logging** | `MCPG_SLOW_CALL_THRESHOLD_MS=500` (any tool slower than this logs a structured record); `MCPG_LOG_FORMAT=json` for structured logging |
 | **Multi-tenant SaaS** | `MCPG_DEFAULT_ROLE=tenant_a` + `MCPG_ALLOWED_ROLES=tenant_a,tenant_b,…` |
 | **Read-replica fan-out** | `MCPG_REPLICA_URLS=postgresql://…?sslmode=require,postgresql://…?sslmode=require` |
+| **Multiple databases (read-only secondaries)** | `MCPG_SECONDARY_DATABASE_URLS=analytics=postgresql://…?sslmode=require,reporting=postgresql://…?sslmode=require` — read-capable tools take an optional `database` arg; secondaries are read-only (PostgreSQL-enforced). Call `list_databases` to discover ids. |
 | **NL→SQL** — single provider | Set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` / `GEMINI_API_KEY`). MCPg auto-picks the default. |
 | **NL→SQL** — multi-provider routing | Set all the vendor keys you want active; callers pass `provider="anthropic"\|"openai"\|"gemini"` per call. |
 | **Audit persistence** | `MCPG_AUDIT_PERSIST=true` |
@@ -190,8 +191,8 @@ the minimum set per common scenario.
 ### TLS enforcement (important)
 
 By default MCPg **refuses to start** if `MCPG_DATABASE_URL` (or any
-entry in `MCPG_REPLICA_URLS`) points at a **non-loopback host**
-without TLS enforcement. PostgreSQL's libpq accepts plaintext
+entry in `MCPG_REPLICA_URLS` / `MCPG_SECONDARY_DATABASE_URLS`) points
+at a **non-loopback host** without TLS enforcement. PostgreSQL's libpq accepts plaintext
 fallback under `sslmode=disable | allow | prefer` (and an unset
 `sslmode` defaults to `prefer`) — which means a misconfigured
 production DSN can leak credentials over the network without anyone
@@ -215,7 +216,8 @@ export MCPG_ALLOW_INSECURE_TLS=true
 
 The startup error message names exactly which DSN failed the check
 (including the replica index if it was one of your
-`MCPG_REPLICA_URLS` entries).
+`MCPG_REPLICA_URLS` entries, or the secondary name if it was an
+`MCPG_SECONDARY_DATABASE_URLS` entry).
 
 ### HTTP transport TLS / mTLS
 
