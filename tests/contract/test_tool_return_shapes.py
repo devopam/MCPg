@@ -70,6 +70,7 @@ _KNOWN_HELPER_MODULES = (
     "graph",
     "graph_diagram",
     "graph_mgmt",
+    "graph_projection",
     "health",
     "indexing",
     "introspection",

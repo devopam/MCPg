@@ -737,6 +737,19 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
     ),
     "generate_test_row_for": frozenset({"schema", "table", "columns", "insert_sql"}),
     "generate_test_data": frozenset({"schema", "table", "rows_generated", "statements", "skipped_columns"}),
+    "generate_graph_projection": frozenset(
+        {
+            "available",
+            "schema",
+            "graph_name",
+            "row_limit",
+            "node_labels",
+            "edge_types",
+            "cypher_statements",
+            "warnings",
+            "detail",
+        }
+    ),
     "test_rls_for_role": frozenset(
         {"schema", "table", "role", "rls_enabled", "active_policies", "rows_visible", "columns", "sample"}
     ),
@@ -835,7 +848,7 @@ def test_converted_tool_count_grows_monotonically() -> None:
     never decrement it without a deliberate "we're rolling back
     structured output for tool X" conversation in the PR.
     """
-    floor = 200
+    floor = 201
     actual = len(_TOOLS_WITH_STRUCTURED_OUTPUT)
     assert actual >= floor, (
         f"structured-output manifest dropped from at-least-{floor} tools "

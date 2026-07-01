@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 251
+    "tool_count": 252
   },
   "tools": [
     {
@@ -2771,6 +2771,61 @@
         "type": "object"
       },
       "name": "generate_graph_diagram"
+    },
+    {
+      "description": "Generate openCypher CREATE/MERGE statements that project a relational schema into an Apache AGE property graph — rows become vertices (one label per table), foreign keys become edges. EMITS the Cypher for review; NEVER executes it (like `generate_test_data`). With `row_limit=0` (default) it returns a schema-level template plan (one CREATE per label, one MERGE per edge type, `$prop` placeholders) reading only the catalog. With `row_limit>0` it also emits concrete per-row statements (values escaped, NULLs omitted, capped at 1000 rows/table). Tables without a primary key still get node CREATEs but their edges are skipped (they can't be reliably MATCHed). NOTE: AGE materialises the data (this is a LOAD, not a virtual view); run the node statements before the edge statements; the projection is 1-hop faithful to the FK graph. Returns an object with `available` (AGE installed, advisory), `schema`, `graph_name`, `row_limit`, `node_labels` (list of `label`, `source_table`, `key_columns`, `property_columns`), `edge_types` (list of `edge_type`, `from_label`, `to_label`, `from_key`, `to_key`, `fk_name`), `cypher_statements` (generated, never executed), `warnings`, and `detail`.\n\nExample: `generate_graph_projection(schema='public', graph_name='g', row_limit=0)`",
+      "inputSchema": {
+        "properties": {
+          "database": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "title": "Database"
+          },
+          "graph_name": {
+            "default": "g",
+            "title": "Graph Name",
+            "type": "string"
+          },
+          "row_limit": {
+            "default": 0,
+            "title": "Row Limit",
+            "type": "integer"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "tables": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tables"
+          }
+        },
+        "required": [
+          "schema"
+        ],
+        "title": "generate_graph_projectionArguments",
+        "type": "object"
+      },
+      "name": "generate_graph_projection"
     },
     {
       "description": "Read a PostgreSQL schema and emit a jooq-codegen configuration XML pointing at it. Unlike the other exporters, jOOQ generates Java code itself from a live database — the artefact here is the configuration file the user feeds to mvn jooq-codegen:generate (or the Gradle task). The XML lists every base table explicitly via an <includes> regex, excludes MCPg's bookkeeping tables, and emits a <forcedType> for every json / jsonb column so they map to org.jooq.JSON / org.jooq.JSONB out of the box. Default Java package is com.example.jooq; override via the target_package arg.",
