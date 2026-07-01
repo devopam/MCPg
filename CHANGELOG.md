@@ -107,6 +107,22 @@ adheres to [Semantic Versioning](https://semver.org/).
   stale again. The checked-in `server.json` is also bumped to `0.6.5` to
   match current state.
 
+- **`Tests (PG warehousepg-latest)` CI lane failing on every run since it
+  was added (roadmap 15.8).** The pinned image, `warehousepg/warehousepg:latest`,
+  never existed on Docker Hub (confirmed 404 — "repository does not exist");
+  the Docker build failed at the very first `FROM` line on every single CI
+  run, masked by the matrix entry's `continue-on-error: true`. Repointed
+  `.github/ci-postgres-warehousepg.Dockerfile` at the real, actively-published
+  `woblerr/warehousepg:7.4.1-WHPG`; switched its env vars from the (unread)
+  `POSTGRES_*` names to the `GREENPLUM_*` ones that image's entrypoint
+  actually honours; and taught `ci.yml` that this lane's superuser is
+  `gpadmin`, not `postgres`, with a longer readiness poll for the slower
+  Greenplum-family single-node cluster init. Considered and rejected
+  EnterpriseDB's `warehouse-pg-docker` as the base image — it publishes no
+  pre-built image and needs an EDB auth token for the RPM build, so it
+  can't run in an unauthenticated public CI pipeline. The lane stays
+  `continue-on-error: true` — non-gating either way.
+
 ## [0.6.5] - 2026-06-30
 
 ### Added

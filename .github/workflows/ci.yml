@@ -67,11 +67,13 @@ jobs:
           - postgres: "19"
             experimental: true
           # WarehousePG (Greenplum-derived MPP) characterisation lane.
-          # `continue-on-error: true` while the upstream community image
-          # landscape stabilises — see roadmap row 15.8 and
+          # Pinned to woblerr/warehousepg:7.4.1-WHPG — see
           # .github/ci-postgres-warehousepg.Dockerfile (single source of
-          # truth for the upstream image tag; pin a specific tag here
-          # once the WarehousePG release cadence stabilises).
+          # truth for the upstream image tag) and roadmap row 15.8.
+          # `continue-on-error: true` stays on: it's a single community
+          # image with no fallback, and a single-node Greenplum-family
+          # cluster is inherently slower/heavier to bring up in CI than a
+          # plain postgres container.
           - postgres: "warehousepg-latest"
             experimental: true
     steps:
@@ -161,12 +163,30 @@ jobs:
             sleep "$backoff"
             attempt=$((attempt + 1))
           done
+          # -e POSTGRES_* is inert for the WarehousePG lane — that image's
+          # entrypoint reads GREENPLUM_*-prefixed vars instead (baked into
+          # ci-postgres-warehousepg.Dockerfile), so its superuser is
+          # `gpadmin`, not `postgres`. Harmless to still pass these; every
+          # other matrix entry needs them.
           docker run -d --name mcpg-db -p 5432:5432 \
             -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
             -e POSTGRES_DB=mcpg_test mcpg-ci-db
-          for _ in $(seq 1 30); do
-            docker exec mcpg-db pg_isready -U postgres && break
-            sleep 2
+          if [ "${{ matrix.postgres }}" = "warehousepg-latest" ]; then
+            DB_USER=gpadmin
+            # A single-node Greenplum-family coordinator+segment cluster
+            # takes much longer to initialize than a plain postgres
+            # container, so this lane gets a longer, coarser poll.
+            max_attempts=90
+            sleep_secs=4
+          else
+            DB_USER=postgres
+            max_attempts=30
+            sleep_secs=2
+          fi
+          echo "DB_USER=$DB_USER" >> "$GITHUB_ENV"
+          for _ in $(seq 1 "$max_attempts"); do
+            docker exec mcpg-db pg_isready -U "$DB_USER" && break
+            sleep "$sleep_secs"
           done
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -178,5 +198,5 @@ jobs:
       # gate (fail_under = 90, authored code only) against each PG version.
       - name: pytest
         env:
-          MCPG_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mcpg_test
+          MCPG_TEST_DATABASE_URL: postgresql://${{ env.DB_USER }}:postgres@localhost:5432/mcpg_test
         run: uv run pytest -q --cov
