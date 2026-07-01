@@ -14,7 +14,7 @@ _SCHEMA = "mcpg_composite_it"
 
 
 @pytest.fixture
-async def populated_schema(connected_database: Database) -> AsyncIterator[str]:
+async def populated_schema(connected_database: Database, distributed_replicated_clause: str) -> AsyncIterator[str]:
     driver = connected_database.driver()
     await driver.execute_query(f"DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE")
     await driver.execute_query(f"CREATE SCHEMA {_SCHEMA}")
@@ -24,6 +24,7 @@ async def populated_schema(connected_database: Database) -> AsyncIterator[str]:
         "name text NOT NULL UNIQUE, "
         "qty integer NOT NULL DEFAULT 0, "
         "metadata jsonb)"
+        f"{distributed_replicated_clause}"
     )
     await driver.execute_query(f"CREATE INDEX widget_qty_idx ON {_SCHEMA}.widget(qty)")
     await driver.execute_query(f"CREATE INDEX widget_unused_idx ON {_SCHEMA}.widget(name, qty)")

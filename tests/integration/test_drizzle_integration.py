@@ -13,7 +13,7 @@ _SCHEMA = "mcpg_drizzle_it"
 
 
 @pytest.fixture
-async def drizzle_schema(connected_database: Database) -> AsyncIterator[str]:
+async def drizzle_schema(connected_database: Database, distributed_replicated_clause: str) -> AsyncIterator[str]:
     driver = connected_database.driver()
     await driver.execute_query(f"DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE")
     await driver.execute_query(f"CREATE SCHEMA {_SCHEMA}")
@@ -32,6 +32,7 @@ async def drizzle_schema(connected_database: Database) -> AsyncIterator[str]:
         "quantity integer NOT NULL DEFAULT 0, "
         f"state {_SCHEMA}.status NOT NULL DEFAULT 'active', "
         "extras jsonb)"
+        f"{distributed_replicated_clause}"
     )
     try:
         yield _SCHEMA

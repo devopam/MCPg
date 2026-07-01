@@ -73,7 +73,7 @@ async def test_run_advisors_reports_every_seeded_violation(connected_database: D
 
 
 async def test_run_advisors_does_not_flag_indexes_that_differ_in_uniqueness_or_predicate(
-    connected_database: Database, advisors_schema: str
+    connected_database: Database, advisors_schema: str, distributed_replicated_clause: str
 ) -> None:
     # Two indexes covering the same column but with different semantics
     # (plain vs UNIQUE, plain vs partial) must NOT be reported as
@@ -82,6 +82,7 @@ async def test_run_advisors_does_not_flag_indexes_that_differ_in_uniqueness_or_p
     driver = connected_database.driver()
     await driver.execute_query(
         f"CREATE TABLE {advisors_schema}.with_unique (id integer PRIMARY KEY, code text NOT NULL)"
+        f"{distributed_replicated_clause}"
     )
     await driver.execute_query(f"CREATE INDEX with_unique_code_idx ON {advisors_schema}.with_unique (code)")
     await driver.execute_query(f"CREATE UNIQUE INDEX with_unique_code_uq ON {advisors_schema}.with_unique (code)")

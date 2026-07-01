@@ -17,6 +17,7 @@ if sys.platform == "win32":
 
 from mcpg.config import load_settings
 from mcpg.database import Database
+from mcpg.warehousepg import get_warehousepg_status
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -45,3 +46,25 @@ async def connected_database(database_url: str) -> AsyncIterator[Database]:
         yield database
     finally:
         await database.close()
+
+
+@pytest.fixture
+async def is_warehousepg(connected_database: Database) -> bool:
+    """Whether the connected server is WarehousePG/Greenplum."""
+    status = await get_warehousepg_status(connected_database.driver())
+    return status.available
+
+
+@pytest.fixture
+async def distributed_replicated_clause(is_warehousepg: bool) -> str:
+    """DDL suffix for tables needing >1 independent UNIQUE/PK constraint.
+
+    WarehousePG requires every UNIQUE/PRIMARY KEY constraint on a table to
+    be a superset of its distribution key, which two disjoint single-column
+    keys can never satisfy under ordinary (sharded) distribution.
+    ``DISTRIBUTED REPLICATED`` sidesteps the whole constraint (the table is
+    copied to every segment) — the right call for these small, 0-3-row test
+    fixtures. A no-op on vanilla PostgreSQL, where the syntax is invalid, so
+    this must stay conditional rather than always-on.
+    """
+    return " DISTRIBUTED REPLICATED" if is_warehousepg else ""
