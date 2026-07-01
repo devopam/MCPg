@@ -167,6 +167,29 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+      - name: Sync server.json version to the release tag
+        # server.json is checked in with a fixed version (bumped manually at
+        # the 0.6.1 registry launch and never since — every subsequent
+        # release silently re-submitted "0.6.1" and the registry rejected it
+        # as a duplicate). Deriving the version from the tag here means this
+        # step can never go stale again, the same way the sdist/wheel build
+        # derives its version from pyproject.toml rather than a hand-maintained
+        # constant.
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          python3 -c "
+          import json
+          path = 'server.json'
+          with open(path) as f:
+              data = json.load(f)
+          data['version'] = '$VER'
+          for pkg in data.get('packages', []):
+              pkg['version'] = '$VER'
+          with open(path, 'w') as f:
+              json.dump(data, f, indent=2)
+              f.write('\n')
+          "
+          cat server.json
       - name: Install mcp-publisher
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
