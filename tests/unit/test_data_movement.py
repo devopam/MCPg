@@ -321,6 +321,94 @@ async def test_dump_database_requires_a_database_name_in_the_url() -> None:
         await dump_database("postgresql://user@host:5432/", timeout_sec=10, max_output_bytes=1024)
 
 
+async def test_dump_database_schemas_emits_one_schema_flag_per_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_run(binary: str, *argv: str, **kwargs: object) -> SubprocessResult:
+        captured["argv"] = list(argv)
+        return SubprocessResult(
+            binary=binary,
+            argv=list(argv),
+            exit_code=0,
+            stdout=b"-- PostgreSQL database dump\n",
+            stderr=b"",
+            output_bytes=29,
+            output_truncated=False,
+            timed_out=False,
+            env_redacted={},
+        )
+
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", fake_run)
+
+    await dump_database(
+        "postgresql://u:p@h:5432/db",
+        timeout_sec=10,
+        max_output_bytes=1024,
+        schemas=["public", "app"],
+    )
+
+    argv = captured["argv"]
+    assert isinstance(argv, list)
+    assert "--schema=public" in argv
+    assert "--schema=app" in argv
+
+
+async def test_dump_database_default_schemas_none_emits_no_schema_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_run(binary: str, *argv: str, **kwargs: object) -> SubprocessResult:
+        captured["argv"] = list(argv)
+        return SubprocessResult(
+            binary=binary,
+            argv=list(argv),
+            exit_code=0,
+            stdout=b"-- PostgreSQL database dump\n",
+            stderr=b"",
+            output_bytes=29,
+            output_truncated=False,
+            timed_out=False,
+            env_redacted={},
+        )
+
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", fake_run)
+
+    await dump_database(
+        "postgresql://u:p@h:5432/db",
+        timeout_sec=10,
+        max_output_bytes=1024,
+    )
+
+    argv = captured["argv"]
+    assert isinstance(argv, list)
+    assert not any(a.startswith("--schema=") for a in argv)
+
+
+async def test_dump_database_rejects_invalid_schema_name_without_running_pg_dump(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = False
+
+    async def fake_run(binary: str, *argv: str, **kwargs: object) -> SubprocessResult:
+        nonlocal called
+        called = True
+        raise AssertionError("run_pg_binary should not be called for an invalid schema name")
+
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", fake_run)
+
+    with pytest.raises(ShellError, match="invalid schema name"):
+        await dump_database(
+            "postgresql://u:p@h:5432/db",
+            timeout_sec=10,
+            max_output_bytes=1024,
+            schemas=["public", "bad;name"],
+        )
+    assert called is False
+
+
 # --- tool wiring: dump_database is shell-gated ----------------------------
 
 

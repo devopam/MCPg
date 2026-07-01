@@ -13,7 +13,7 @@ _SCHEMA = "mcpg_sqlc_it"
 
 
 @pytest.fixture
-async def sqlc_schema(connected_database: Database) -> AsyncIterator[str]:
+async def sqlc_schema(connected_database: Database, distributed_replicated_clause: str) -> AsyncIterator[str]:
     driver = connected_database.driver()
     await driver.execute_query(f"DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE")
     await driver.execute_query(f"CREATE SCHEMA {_SCHEMA}")
@@ -31,6 +31,7 @@ async def sqlc_schema(connected_database: Database) -> AsyncIterator[str]:
         "name text NOT NULL UNIQUE, "
         "quantity integer NOT NULL DEFAULT 0, "
         "extras jsonb)"
+        f"{distributed_replicated_clause}"
     )
     await driver.execute_query(f"CREATE INDEX widget_name_lower_idx ON {_SCHEMA}.widget (lower(name))")
     try:

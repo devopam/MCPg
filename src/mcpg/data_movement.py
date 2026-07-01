@@ -217,6 +217,7 @@ async def dump_database(
     max_output_bytes: int,
     format: str = "plain",
     schema_only: bool = False,
+    schemas: list[str] | None = None,
     limits: SubprocessLimits | None = None,
 ) -> DumpResult:
     """Run ``pg_dump`` against the database in ``database_url`` and capture stdout.
@@ -226,22 +227,33 @@ async def dump_database(
     the command line. The dump shape is controlled by ``format`` (only
     ``plain`` returns parseable text; the binary formats land as
     base64-stringified bytes in the result and need a corresponding
-    ``pg_restore`` call to consume them).
+    ``pg_restore`` call to consume them). Pass ``schemas`` to scope the
+    dump to specific schemas (one ``--schema=NAME`` flag per entry)
+    instead of the whole database — useful to re-run with a narrower
+    scope, or to sidestep schemas the caller doesn't want captured
+    (e.g. an MPP catalog schema like WarehousePG's ``gp_toolkit``).
 
     Raises:
         ShellError: ``pg_dump`` is not on the allowlist or PATH, the
-            URL is unparseable, the format is not supported, or the
-            subprocess fails to spawn.
+            URL is unparseable, the format is not supported, a name in
+            ``schemas`` is not a valid identifier, or the subprocess
+            fails to spawn.
     """
     if format not in _PG_DUMP_FORMATS:
         raise ShellError(f"unsupported pg_dump format {format!r}; expected one of {sorted(_PG_DUMP_FORMATS)}")
     env = _libpq_env_from_url(database_url)
     if "PGDATABASE" not in env:
         raise ShellError("database_url must specify a database name")
+    if schemas is not None:
+        for name in schemas:
+            if not _IDENTIFIER.match(name):
+                raise ShellError(f"invalid schema name: {name!r}")
 
     argv = [f"--format={format}"]
     if schema_only:
         argv.append("--schema-only")
+    if schemas is not None:
+        argv.extend(f"--schema={name}" for name in schemas)
     # Always pipe to stdout (the default for plain/custom/tar; directory
     # writes to disk and isn't supported in v1).
     if format == "directory":

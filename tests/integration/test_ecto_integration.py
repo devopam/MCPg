@@ -13,7 +13,7 @@ _SCHEMA = "mcpg_ecto_it"
 
 
 @pytest.fixture
-async def ecto_schema(connected_database: Database) -> AsyncIterator[str]:
+async def ecto_schema(connected_database: Database, distributed_replicated_clause: str) -> AsyncIterator[str]:
     driver = connected_database.driver()
     await driver.execute_query(f"DROP SCHEMA IF EXISTS {_SCHEMA} CASCADE")
     await driver.execute_query(f"CREATE SCHEMA {_SCHEMA}")
@@ -23,6 +23,7 @@ async def ecto_schema(connected_database: Database) -> AsyncIterator[str]:
         "email text NOT NULL UNIQUE, "
         "inserted_at timestamptz NOT NULL DEFAULT now(), "
         "updated_at timestamptz NOT NULL DEFAULT now())"
+        f"{distributed_replicated_clause}"
     )
     await driver.execute_query(
         f"CREATE TABLE {_SCHEMA}.widgets ("

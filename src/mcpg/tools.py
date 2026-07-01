@@ -2830,11 +2830,17 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             "`custom`/`tar`). Credentials pass through libpq env vars, never on "
             "the command line. The result includes `output_truncated` and "
             "`timed_out` flags so the caller can re-run with a higher cap or a "
-            "narrower scope. Performs subprocess execution — requires "
-            "unrestricted mode + MCPG_ALLOW_SHELL."
+            "narrower scope. Pass `schemas` to scope the dump to specific "
+            "schemas instead of the whole database. Performs subprocess "
+            "execution — requires unrestricted mode + MCPG_ALLOW_SHELL."
         ),
     )
-    async def dump_database(ctx: _Ctx, format: str = "plain", schema_only: bool = False) -> data_movement.DumpResult:
+    async def dump_database(
+        ctx: _Ctx,
+        format: str = "plain",
+        schema_only: bool = False,
+        schemas: list[str] | None = None,
+    ) -> data_movement.DumpResult:
         app = ctx.request_context.lifespan_context
         result = await data_movement.dump_database(
             app.settings.database_url,
@@ -2842,6 +2848,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
             max_output_bytes=app.settings.shell_max_output_bytes,
             format=format,
             schema_only=schema_only,
+            schemas=schemas,
             limits=_subprocess_limits(app.settings),
         )
         return result
