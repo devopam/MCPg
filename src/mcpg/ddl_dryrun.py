@@ -185,7 +185,10 @@ async def dry_run_ddl(
     async with acquirer() as conn:
         try:
             async with conn.cursor() as cur:
-                await cur.execute(f"SET LOCAL lock_timeout = '{int(lock_timeout_ms)}ms'")
+                # set_config(..., is_local=true) is the parameterized equivalent
+                # of `SET LOCAL lock_timeout` — `SET` itself can't take a bind
+                # parameter, so this avoids building SQL from the value at all.
+                await cur.execute("SELECT set_config('lock_timeout', %s, true)", [f"{int(lock_timeout_ms)}ms"])
                 await cur.execute("SELECT pg_current_wal_lsn() AS lsn")
                 baseline_lsn = (await cur.fetchone())[0]
 

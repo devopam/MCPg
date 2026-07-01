@@ -148,7 +148,7 @@ async def test_dry_run_executes_alter_then_rolls_back() -> None:
     assert result.wal_bytes == 512
     assert result.duration_ms is not None
     # The DDL ran, a lock_timeout was set, and the statement was issued.
-    assert any("SET LOCAL lock_timeout" in s for s in cursor.executed)
+    assert any("set_config('lock_timeout'" in s for s in cursor.executed)
     assert ddl in cursor.executed
 
 
