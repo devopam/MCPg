@@ -9,20 +9,27 @@
 # configuration, gp_distribution_policy, pg_appendonly, etc.) so the
 # WarehousePG-specific tools have real catalog rows to read.
 #
-# The image tag here is a starting placeholder. WarehousePG has only
-# recently been published as a community fork; if the upstream tag changes
-# or moves, update the FROM line below. The CI matrix entry is gated with
-# `continue-on-error: true` precisely so a missing tag doesn't block the
-# main suite while the upstream image landscape stabilises.
+# Image: `woblerr/warehousepg` (https://github.com/woblerr/docker-greenplum),
+# an actively CI-built, publicly published single-node WarehousePG sandbox.
+# The previous `warehousepg/warehousepg:latest` reference never existed on
+# Docker Hub (confirmed 404 — "repository does not exist"), so every build
+# of this Dockerfile failed at the very first `FROM` line since the day the
+# WarehousePG CI lane was added; this was masked by `continue-on-error` on
+# the matrix entry. EnterpriseDB's `warehouse-pg-docker` repo was considered
+# and rejected: it publishes no pre-built image (build-your-own via a
+# Makefile) and needs an EDB auth token for the RPM-based build, so it can't
+# be used in an unauthenticated public CI pipeline.
+FROM woblerr/warehousepg:7.4.1-WHPG
 
-FROM warehousepg/warehousepg:latest
-
-# Surface the default WarehousePG port + credentials. The CI workflow
-# expects POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB env vars to drive
-# the wire-compatible interface — WarehousePG honours these because the
-# coordinator is just a customised libpq backend.
-ENV POSTGRES_USER=postgres \
-    POSTGRES_PASSWORD=postgres \
-    POSTGRES_DB=mcpg_test
+# This image's entrypoint reads GREENPLUM_*-prefixed env vars, NOT the
+# POSTGRES_* ones the ci.yml `docker run` step passes for every other
+# matrix entry (those are harmlessly ignored here). GREENPLUM_USER defaults
+# to `gpadmin` — the conventional Greenplum-family superuser / OS account —
+# left at its default rather than renamed, to match the documented,
+# best-tested behaviour as closely as possible.
+#   https://github.com/woblerr/docker-greenplum#readme
+ENV GREENPLUM_PASSWORD=postgres \
+    GREENPLUM_DATABASE_NAME=mcpg_test \
+    GREENPLUM_DEPLOYMENT=singlenode
 
 EXPOSE 5432
