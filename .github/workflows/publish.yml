@@ -90,26 +90,43 @@ jobs:
             --format requirements-txt > /tmp/mcpg-deps.txt
           python -m pip install -r /tmp/mcpg-deps.txt
       - name: Wait for TestPyPI to index the upload
-        # Trusted Publishing returns 200 the moment the file lands,
-        # but the simple index is eventually consistent (~30s typical).
+        # Trusted Publishing returns 200 the moment the file lands, but the
+        # PEP 503 *simple index* pip actually installs from is a SEPARATE,
+        # independently-consistent system from the JSON API. Polling the
+        # JSON API (as this step used to) can report "ready" before the
+        # simple index has caught up — observed on the v0.6.6 release: the
+        # JSON check passed on its very first attempt, then the immediately
+        # following pip install 404'd because 0.6.6 wasn't in the simple
+        # index yet. Poll the simple index itself instead.
         run: |
           VER="${GITHUB_REF_NAME#v}"
-          for i in $(seq 1 12); do
-            if curl -fsSL "https://test.pypi.org/pypi/mcpg/${VER}/json" >/dev/null 2>&1; then
-              echo "TestPyPI sees mcpg==${VER}"
+          for i in $(seq 1 18); do
+            if curl -fsSL "https://test.pypi.org/simple/mcpg/" 2>/dev/null | grep -q "mcpg-${VER}"; then
+              echo "TestPyPI simple index sees mcpg==${VER}"
               exit 0
             fi
-            echo "TestPyPI not ready (attempt $i/12)..."
+            echo "TestPyPI simple index not ready (attempt $i/18)..."
             sleep 10
           done
-          echo "::error::TestPyPI never reported mcpg==${VER}"
+          echo "::error::TestPyPI simple index never listed mcpg==${VER}"
           exit 1
       - name: Install mcpg from TestPyPI (no deps)
+        # A short retry on the install itself too: even after the simple
+        # index origin has the version, a CDN edge cache in front of it can
+        # lag a few more seconds.
         run: |
           VER="${GITHUB_REF_NAME#v}"
-          python -m pip install --no-deps \
-            --index-url https://test.pypi.org/simple/ \
-            "mcpg==${VER}"
+          for i in 1 2 3; do
+            if python -m pip install --no-deps \
+                --index-url https://test.pypi.org/simple/ \
+                "mcpg==${VER}"; then
+              exit 0
+            fi
+            echo "pip install attempt $i/3 failed; retrying in 10s..."
+            sleep 10
+          done
+          echo "::error::pip install mcpg==${VER} from TestPyPI failed after 3 attempts"
+          exit 1
       - name: Import + CLI smoke
         run: |
           python -c "import mcpg; print(mcpg.__version__)"
