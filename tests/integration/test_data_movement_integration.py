@@ -335,9 +335,12 @@ async def test_copy_table_between_databases_round_trips_against_real_pg(
         try:
             await connected_database.run_unmanaged(f"DROP DATABASE IF EXISTS {dest_db} WITH (FORCE)")
         except Exception:
+            # No force_readonly here: this is a state-changing admin signal,
+            # and force_readonly could route it to a read replica (if
+            # MCPG_REPLICA_URLS is configured) where the target pid doesn't
+            # exist — it must always run against the primary.
             await connected_database.driver().execute_query(
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid()",
                 params=[dest_db],
-                force_readonly=True,
             )
             await connected_database.run_unmanaged(f"DROP DATABASE IF EXISTS {dest_db}")
