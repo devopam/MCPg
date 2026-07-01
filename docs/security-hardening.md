@@ -303,6 +303,38 @@ query, so this is cheap and side-effect-free. (Distinct from the existing
 **Effort:** small (one pre-flight helper + wiring into
 `translate_nl_to_sql` + 4-6 tests).
 
+### ✅ Pin PID-targeted backend actions to the primary (never replica-routed)
+**Shipped.** **Problem.** `mcpg.liveops.cancel_query` / `terminate_backend`
+sent `pg_cancel_backend(pid)` / `pg_terminate_backend(pid)` via
+`driver.execute_query(..., force_readonly=True)`. That flag is meant to
+mark a query as *safe to route to a read replica* — but a PID is scoped to
+whichever physical server process it names, not portable across servers.
+When `MCPG_REPLICA_URLS` is configured, `RoutedSqlDriver` could send a
+cancel/terminate signal to a **different backend on a replica** than the
+one the caller actually intended (sourced from `list_active_queries`,
+`pg_stat_activity`, or an operator's own knowledge of the primary) —
+silently: a PID that doesn't exist on the routed-to server just returns
+`succeeded=False`, and a PID that *coincidentally* exists there (a
+different, unrelated backend) would be cancelled/terminated instead, with
+no error at all. Surfaced 2026-07-01 during review of an unrelated PR
+(`force_readonly=True` on a `pg_terminate_backend` call in test cleanup
+code, fixed there; this was the equivalent, pre-existing issue in the real
+product tools).
+
+**Solution.** Dropped `force_readonly=True` from both calls in
+`mcpg.liveops` — a PID-targeted admin signal is a primary-only action by
+nature (same category as DDL/write tools), not a "safe to read from a
+replica" query, so it's never eligible for replica routing regardless of
+replica config. If replica-side PID actions are ever genuinely wanted,
+that should be an explicit, opt-in target (consistent with the `database`
+selector pattern from roadmap 13.1), not implicit routing via a flag whose
+real purpose is unrelated.
+
+**Env vars to add:** none (removed an incorrect flag; no new surface).
+
+**Effort:** small — two-line change in `mcpg.liveops` + two regression
+tests asserting the calls are never marked `force_readonly`.
+
 ---
 
 ## Posture summary

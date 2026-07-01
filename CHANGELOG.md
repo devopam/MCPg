@@ -118,6 +118,18 @@ adheres to [Semantic Versioning](https://semver.org/).
   lingering backends via `pg_terminate_backend` followed by a plain
   `DROP DATABASE`, preserving the original FORCE intent without needing the
   syntax.
+- **`cancel_query` / `terminate_backend` could be replica-routed to the
+  wrong server.** Both sent their `pg_cancel_backend(pid)` /
+  `pg_terminate_backend(pid)` signal with `force_readonly=True`, which
+  marks a query "safe to route to a read replica" — but a PID names a
+  specific backend process on whichever physical server it lives on, not
+  something portable across a replica. With `MCPG_REPLICA_URLS`
+  configured, this could silently target the wrong server (a PID not found
+  there just returns `succeeded=False`; a coincidentally-matching PID
+  would be cancelled/terminated instead, with no error at all). Dropped
+  the flag from both calls in `mcpg.liveops` — a PID-targeted admin
+  signal is a primary-only action by nature, never eligible for replica
+  routing.
 - **MCP Registry publish step failing silently on every release since
   0.6.1.** `server.json` (the manifest `mcp-publisher` reads) was checked in
   with a fixed `version: "0.6.1"` at registry launch and never bumped again,

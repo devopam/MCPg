@@ -87,10 +87,29 @@ async def test_cancel_query_reports_the_signal_outcome() -> None:
     assert driver.calls[0][1] == [4242]
 
 
+async def test_cancel_query_never_marks_the_call_force_readonly() -> None:
+    # A PID names a backend on a specific physical server; force_readonly
+    # would make this eligible for replica routing, which could target the
+    # wrong server. Must always go through the primary-bound path.
+    driver = FakeDriver([{"ok": True}])
+
+    await cancel_query(driver, 4242)
+
+    assert driver.calls[0][2] is False
+
+
 async def test_cancel_query_reports_failure_for_an_unknown_backend() -> None:
     result = await cancel_query(FakeDriver([{"ok": False}]), 999999)
 
     assert result.succeeded is False
+
+
+async def test_terminate_backend_never_marks_the_call_force_readonly() -> None:
+    driver = FakeDriver([{"ok": True}])
+
+    await terminate_backend(driver, 7000)
+
+    assert driver.calls[0][2] is False
 
 
 async def test_terminate_backend_reports_the_signal_outcome() -> None:

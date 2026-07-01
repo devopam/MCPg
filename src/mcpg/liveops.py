@@ -83,11 +83,16 @@ async def cancel_query(driver: SqlDriver, pid: int) -> BackendActionResult:
 
     Sends a cancel signal via ``pg_cancel_backend``; the connection itself
     stays open. ``succeeded`` is ``False`` if no such backend exists.
+
+    Deliberately NOT ``force_readonly`` — a PID names a specific backend
+    process on whichever physical server it lives on, which isn't portable
+    across a read replica. Marking this "safe to replica-route" could send
+    the signal to the wrong server, silently no-op'ing (PID not found there)
+    or, worse, hitting an unrelated backend that happens to share the PID.
     """
     rows = await driver.execute_query(
         "SELECT pg_cancel_backend(%s) AS ok",
         params=[pid],
-        force_readonly=True,
     )
     succeeded = bool((rows or [])[0].cells["ok"])
     return BackendActionResult(pid=pid, action="cancel_query", succeeded=succeeded)
@@ -98,11 +103,12 @@ async def terminate_backend(driver: SqlDriver, pid: int) -> BackendActionResult:
 
     Sends a terminate signal via ``pg_terminate_backend``. ``succeeded`` is
     ``False`` if no such backend exists.
+
+    Deliberately NOT ``force_readonly`` — see :func:`cancel_query`.
     """
     rows = await driver.execute_query(
         "SELECT pg_terminate_backend(%s) AS ok",
         params=[pid],
-        force_readonly=True,
     )
     succeeded = bool((rows or [])[0].cells["ok"])
     return BackendActionResult(pid=pid, action="terminate_backend", succeeded=succeeded)
