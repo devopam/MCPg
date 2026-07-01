@@ -327,7 +327,17 @@ async def test_copy_table_between_databases_round_trips_against_real_pg(
             (3, "gamma, with comma"),
         ]
     finally:
-        # FORCE drop the target DB even if connections lingered (the
-        # test pool's been closed above, but pg_dump/pg_restore may have
-        # left backends in TERMINATING). FORCE is PG 13+.
-        await connected_database.run_unmanaged(f"DROP DATABASE IF EXISTS {dest_db} WITH (FORCE)")
+        # FORCE drop the target DB even if connections lingered. WITH (FORCE)
+        # is PG 13+ syntax some forks (e.g. WarehousePG's older merge-base)
+        # don't parse — fall back to explicitly terminating other backends on
+        # that database, then a plain drop, which is the FORCE behaviour
+        # without the syntax.
+        try:
+            await connected_database.run_unmanaged(f"DROP DATABASE IF EXISTS {dest_db} WITH (FORCE)")
+        except Exception:
+            await connected_database.driver().execute_query(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid()",
+                params=[dest_db],
+                force_readonly=True,
+            )
+            await connected_database.run_unmanaged(f"DROP DATABASE IF EXISTS {dest_db}")
