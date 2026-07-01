@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.6.6] - 2026-07-01
+
+### Added
+
 - **`generate_graph_projection`** — relational → Apache AGE graph-projection
   mapper (roadmap **2.10**). Given a schema (and optional table subset), emits
   the openCypher `CREATE` / `MERGE` statements that project rows→vertices (one
