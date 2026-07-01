@@ -38,6 +38,7 @@ from mcpg import (
     graph,
     graph_diagram,
     graph_mgmt,
+    graph_projection,
     health,
     indexing,
     introspection,
@@ -2034,6 +2035,46 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
     ) -> test_data.GeneratedDataset:
         dataset = await test_data.generate_test_data(_driver(ctx, database), schema, table, rows=rows, seed=seed)
         return dataset
+
+    @server.tool(
+        name="generate_graph_projection",
+        description=_with_example(
+            "Generate openCypher CREATE/MERGE statements that project a "
+            "relational schema into an Apache AGE property graph — rows become "
+            "vertices (one label per table), foreign keys become edges. EMITS "
+            "the Cypher for review; NEVER executes it (like `generate_test_data`). "
+            "With `row_limit=0` (default) it returns a schema-level template plan "
+            "(one CREATE per label, one MERGE per edge type, `$prop` placeholders) "
+            "reading only the catalog. With `row_limit>0` it also emits concrete "
+            "per-row statements (values escaped, NULLs omitted, capped at 1000 "
+            "rows/table). Tables without a primary key still get node CREATEs but "
+            "their edges are skipped (they can't be reliably MATCHed). NOTE: AGE "
+            "materialises the data (this is a LOAD, not a virtual view); run the "
+            "node statements before the edge statements; the projection is 1-hop "
+            "faithful to the FK graph. Returns an object with `available` (AGE "
+            "installed, advisory), `schema`, `graph_name`, `row_limit`, "
+            "`node_labels` (list of `label`, `source_table`, `key_columns`, "
+            "`property_columns`), `edge_types` (list of `edge_type`, `from_label`, "
+            "`to_label`, `from_key`, `to_key`, `fk_name`), `cypher_statements` "
+            "(generated, never executed), `warnings`, and `detail`.",
+            "generate_graph_projection(schema='public', graph_name='g', row_limit=0)",
+        ),
+    )
+    async def generate_graph_projection(
+        ctx: _Ctx,
+        schema: str,
+        tables: list[str] | None = None,
+        graph_name: str = "g",
+        row_limit: int = 0,
+        database: _DatabaseArg = None,
+    ) -> graph_projection.GraphProjection:
+        return await graph_projection.generate_graph_projection(
+            _driver(ctx, database),
+            schema,
+            tables=tables,
+            graph_name=graph_name,
+            row_limit=row_limit,
+        )
 
     @server.tool(
         name="generate_test_row_for",

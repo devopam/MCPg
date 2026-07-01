@@ -549,6 +549,8 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "describe_graph": "graph_operations",
     # generate_fk_cascade_graph is graph_operations (derives a graph).
     "generate_fk_cascade_graph": "graph_operations",
+    # generate_graph_projection emits Cypher to project relations into AGE.
+    "generate_graph_projection": "graph_operations",
     # generate_test_data / seed_table_with_sample_data are data_movement.
     "generate_test_data": "data_movement",
     "generate_test_row_for": "data_movement",
