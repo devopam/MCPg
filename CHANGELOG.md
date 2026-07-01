@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`generate_graph_projection`** — relational → Apache AGE graph-projection
+  mapper (roadmap **2.10**). Given a schema (and optional table subset), emits
+  the openCypher `CREATE` / `MERGE` statements that project rows→vertices (one
+  label per table) and FKs→edges into an AGE graph, reusing
+  `introspection.describe_table` + `introspection.list_foreign_keys` and a
+  primary-key probe. Emit-for-review, **never executed** (like
+  `generate_test_data` / `recommend_redistribute`): `row_limit=0` (default)
+  returns a schema-level template plan (one CREATE per label, one MERGE per
+  edge type, `$prop` placeholders) reading only the catalog; `row_limit>0`
+  also emits concrete per-row statements (values escaped `'`→`''`, NULL
+  properties omitted, capped at 1000 rows/table). Tables without a primary key
+  still get node CREATEs but their edges are skipped with a warning (they
+  can't be reliably `MATCH`ed). AGE presence is an advisory `available` flag —
+  statements are emitted regardless. **Caveat surfaced in the tool +
+  warnings:** AGE *materialises* the projection (a graph-load, not a virtual
+  view); run node statements before edge statements. Read-only; every schema /
+  table / graph name is identifier-validated. Typed return → `outputSchema`.
+  Lives in `mcpg.graph_projection`; `graph_operations` bucket. Closes the
+  roadmap.
 - **`retrieve_with_context`** — context-packed hybrid retrieval / "one-shot
   RAG" (roadmap **9.11**). Runs a pgvector k-NN for a caller-supplied query
   vector, then expands each hit **1 hop along foreign keys** — parent rows
