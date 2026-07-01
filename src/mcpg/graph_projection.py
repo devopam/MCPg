@@ -35,6 +35,7 @@ Security posture:
 
 from __future__ import annotations
 
+import numbers
 import re
 from dataclasses import dataclass
 
@@ -137,7 +138,7 @@ class GraphProjection:
     ``available`` is the advisory AGE-installed flag (statements are emitted
     regardless). ``cypher_statements`` are the generated
     ``SELECT * FROM cypher(...)`` wrappers — for review, NEVER executed by
-    this tool. ``warnings`` flags keyless tables, the AGE materialisation
+    this tool. ``warnings`` flags keyless tables, the AGE materialization
     caveat, and ordering guidance.
     """
 
@@ -173,7 +174,9 @@ def _render_value(value: object, column: ColumnInfo) -> str:
     base = column.data_type.lower().split("(", 1)[0].strip()
     if base in _BOOLEAN_TYPES:
         return "true" if value else "false"
-    if base in _NUMERIC_TYPES and isinstance(value, (int, float)):
+    # numbers.Number covers int / float AND decimal.Decimal (how psycopg maps
+    # PostgreSQL numeric / decimal), so numeric columns render bare, not quoted.
+    if base in _NUMERIC_TYPES and isinstance(value, numbers.Number):
         return str(value)
     escaped = str(value).replace("'", "''")
     return f"'{escaped}'"
@@ -254,11 +257,23 @@ def _edge_merge(
     )
 
 
-async def _sample_rows(driver: SqlDriver, schema: str, table: str, limit: int) -> list[dict[str, object]]:
-    """Read up to ``limit`` rows from a table (read-only, quoted identifiers)."""
+async def _sample_rows(
+    driver: SqlDriver, schema: str, table: str, limit: int, order_by: list[str]
+) -> list[dict[str, object]]:
+    """Read up to ``limit`` rows from a table (read-only, quoted identifiers).
+
+    ``order_by`` (the table's primary-key columns, when known) makes the sample
+    deterministic across runs so the generated statements are stable; an empty
+    list falls back to unordered.
+    """
     # ``limit`` is a validated int and ``schema`` / ``table`` are
     # identifier-validated + double-quoted by the caller.
-    sql = f'SELECT * FROM "{schema}"."{table}" LIMIT {int(limit)}'
+    if order_by:
+        cols = ", ".join(f'"{c}"' for c in order_by)
+        order_clause = f" ORDER BY {cols}"
+    else:
+        order_clause = ""
+    sql = f'SELECT * FROM "{schema}"."{table}"{order_clause} LIMIT {int(limit)}'
     rows = await driver.execute_query(sql, force_readonly=True)
     # Python-side cap as belt-and-braces in case the server ignores LIMIT.
     return [dict(row.cells) for row in (rows or [])[:limit]]
@@ -303,13 +318,19 @@ async def generate_graph_projection(
     _check_identifier(graph_name, "graph_name")
     if row_limit < 0:
         raise GraphProjectionError("row_limit must be >= 0")
-    if row_limit > HARD_ROW_CAP:
-        raise GraphProjectionError(f"row_limit exceeds hard cap of {HARD_ROW_CAP}")
+    # "capped" contract: clamp rather than reject an over-cap request, and note
+    # the clamp in warnings so the truncation is visible.
+    row_limit_clamped = row_limit > HARD_ROW_CAP
+    row_limit = min(row_limit, HARD_ROW_CAP)
 
     base_tables = await _list_base_tables(driver, schema)
     base_set = set(base_tables)
 
     if tables is None:
+        # Catalog-derived names still get identifier-validated — a table created
+        # with a quoted non-identifier name must not reach a generated string.
+        for table in base_tables:
+            _check_identifier(table, "table")
         selected = base_tables
     else:
         selected = []
@@ -325,12 +346,14 @@ async def generate_graph_projection(
     warnings: list[str] = []
     node_labels: list[NodeLabel] = []
     columns_by_table: dict[str, list[ColumnInfo]] = {}
+    pk_by_table: dict[str, list[str]] = {}
     keyless: set[str] = set()
 
     for table in selected:
         columns = await describe_table(driver, schema, table)
         columns_by_table[table] = columns
         pk = await _primary_key_columns(driver, schema, table)
+        pk_by_table[table] = pk
         if not pk:
             keyless.add(table)
         node_labels.append(
@@ -384,13 +407,13 @@ async def generate_graph_projection(
         )
     else:
         for node in node_labels:
-            rows = await _sample_rows(driver, schema, node.label, row_limit)
+            rows = await _sample_rows(driver, schema, node.label, row_limit, node.key_columns)
             for row in rows:
                 cypher_statements.append(_wrap(graph_name, _node_create(node.label, columns_by_table[node.label], row)))
         for edge in edge_types:
             child_cols = {c.name: c for c in columns_by_table[edge.from_label]}
             parent_cols = {c.name: c for c in columns_by_table[edge.to_label]}
-            rows = await _sample_rows(driver, schema, edge.from_label, row_limit)
+            rows = await _sample_rows(driver, schema, edge.from_label, row_limit, pk_by_table[edge.from_label])
             for row in rows:
                 statement = _edge_merge(edge, child_cols, parent_cols, row)
                 if statement is not None:
@@ -402,8 +425,10 @@ async def generate_graph_projection(
             f"properties omitted; statements are for review, not executed."
         )
 
+    if row_limit_clamped:
+        warnings.append(f"row_limit was clamped to the hard cap of {HARD_ROW_CAP} rows per table.")
     warnings.append(
-        "AGE materialises this projection — running the statements LOADS a copy of the data "
+        "AGE materializes this projection — running the statements LOADS a copy of the data "
         "into the graph (it is not a virtual view over the tables)."
     )
     warnings.append("Run the statements in order: all node CREATE statements before the edge MERGE statements.")

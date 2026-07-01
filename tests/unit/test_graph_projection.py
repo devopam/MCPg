@@ -9,6 +9,7 @@ from _fakes import FakeRoutingDriver
 
 from mcpg._vendor.sql import SqlDriver
 from mcpg.graph_projection import (
+    HARD_ROW_CAP,
     EdgeType,
     GraphProjectionError,
     NodeLabel,
@@ -268,12 +269,15 @@ async def test_row_limit_bounds() -> None:
     driver = _SchemaDriver()
     with pytest.raises(GraphProjectionError, match="row_limit must be"):
         await generate_graph_projection(driver, "public", row_limit=-1)  # type: ignore[arg-type]
-    with pytest.raises(GraphProjectionError, match="hard cap"):
-        await generate_graph_projection(driver, "public", row_limit=99999)  # type: ignore[arg-type]
+    # An over-cap row_limit is clamped (not rejected) — matching the "capped"
+    # contract — and the clamp is surfaced in warnings.
+    clamped = await generate_graph_projection(driver, "public", row_limit=99999)  # type: ignore[arg-type]
+    assert clamped.row_limit == HARD_ROW_CAP
+    assert any("clamped to the hard cap" in w for w in clamped.warnings)
 
 
 async def test_ordering_and_materialise_warnings_present() -> None:
     driver = _SchemaDriver()
     result = await generate_graph_projection(driver, "public", row_limit=0)  # type: ignore[arg-type]
-    assert any("materialises" in w for w in result.warnings)
+    assert any("materializes" in w for w in result.warnings)
     assert any("node CREATE statements before the edge MERGE" in w for w in result.warnings)

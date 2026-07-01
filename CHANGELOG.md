@@ -22,7 +22,7 @@ adheres to [Semantic Versioning](https://semver.org/).
   still get node CREATEs but their edges are skipped with a warning (they
   can't be reliably `MATCH`ed). AGE presence is an advisory `available` flag —
   statements are emitted regardless. **Caveat surfaced in the tool +
-  warnings:** AGE *materialises* the projection (a graph-load, not a virtual
+  warnings:** AGE *materializes* the projection (a graph-load, not a virtual
   view); run node statements before edge statements. Read-only; every schema /
   table / graph name is identifier-validated. Typed return → `outputSchema`.
   Lives in `mcpg.graph_projection`; `graph_operations` bucket. Closes the
