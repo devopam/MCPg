@@ -94,6 +94,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **MCP Registry publish step failing silently on every release since
+  0.6.1.** `server.json` (the manifest `mcp-publisher` reads) was checked in
+  with a fixed `version: "0.6.1"` at registry launch and never bumped again,
+  so every subsequent release re-submitted "0.6.1" and the registry
+  correctly rejected it as a duplicate version — while PyPI / GHCR / the
+  GitHub Release all kept succeeding, so the failure went unnoticed. The
+  `publish-mcp-registry` job now patches `server.json`'s `version` (and
+  `packages[].version`) to the release tag before calling `mcp-publisher
+  publish`, the same way the sdist/wheel build derives its version from
+  `pyproject.toml` rather than a hand-maintained constant — this can't go
+  stale again. The checked-in `server.json` is also bumped to `0.6.5` to
+  match current state.
+
 ## [0.6.5] - 2026-06-30
 
 ### Added
