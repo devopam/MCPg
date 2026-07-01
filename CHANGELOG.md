@@ -91,9 +91,33 @@ adheres to [Semantic Versioning](https://semver.org/).
   on any driver error rather than breaking the scan. The standalone
   tools remain available unchanged. `audit_database`'s return shape
   (`AuditReport`) is unchanged.
+- **`dump_database` gains an optional `schemas` parameter** (roadmap
+  **15.11**) to scope a `pg_dump` to specific schemas instead of the whole
+  database — one repeatable `--schema=NAME` flag per entry, each validated
+  against the existing identifier regex (`ShellError` on a bad name). Purely
+  additive: `schemas=None` (the default, and every existing caller) emits no
+  `--schema=` flag and is byte-for-byte unchanged. Threaded through the
+  `dump_database` tool. Sidesteps schema collisions on restore when the
+  source database has schemas the caller doesn't want captured (e.g.
+  WarehousePG's built-in `gp_toolkit`), and is generally useful for scoping
+  large dumps.
 
 ### Fixed
 
+- **WarehousePG/Greenplum MPP-dialect test-fixture portability** (roadmap
+  **15.9**, **15.10**), root-caused from real `warehousepg-latest` CI
+  failures. (15.9) Six integration-test tables with an independent
+  `PRIMARY KEY` plus a separate `UNIQUE` constraint/index (a shape WarehousePG
+  rejects — every `UNIQUE`/`PRIMARY KEY` must be a superset of the table's
+  distribution key) now append a conditional `DISTRIBUTED REPLICATED` clause
+  via new `is_warehousepg` / `distributed_replicated_clause` fixtures in
+  `tests/integration/conftest.py` — a no-op on vanilla PostgreSQL. (15.10)
+  `test_copy_table_between_databases_round_trips_against_real_pg`'s
+  `DROP DATABASE ... WITH (FORCE)` cleanup (PG 13+ syntax, unsupported on
+  WarehousePG's older merge-base) now falls back to explicitly terminating
+  lingering backends via `pg_terminate_backend` followed by a plain
+  `DROP DATABASE`, preserving the original FORCE intent without needing the
+  syntax.
 - **MCP Registry publish step failing silently on every release since
   0.6.1.** `server.json` (the manifest `mcp-publisher` reads) was checked in
   with a fixed `version: "0.6.1"` at registry launch and never bumped again,
