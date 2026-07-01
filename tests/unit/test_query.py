@@ -17,6 +17,7 @@ from mcpg.query import (
     explain_query,
     run_select,
     run_select_parallel,
+    run_select_tuned,
 )
 from mcpg.server import create_server
 
@@ -95,6 +96,105 @@ async def test_run_select_tool_is_callable_from_a_client() -> None:
     assert result.structuredContent is not None
     assert result.structuredContent["row_count"] == 1
     assert result.structuredContent["truncated"] is False
+
+
+# --- run_select_tuned (roadmap 2.9) ----------------------------------------
+
+
+async def test_run_select_tuned_runs_and_returns_query_result() -> None:
+    driver = FakeDriver([{"a": 1, "n": 2}])
+
+    result = await run_select_tuned(driver, "SELECT a, count(*) AS n FROM t GROUP BY a", work_mem="256MB")
+
+    assert result == QueryResult(columns=["a", "n"], rows=[{"a": 1, "n": 2}], row_count=1, truncated=False)
+
+
+async def test_run_select_tuned_emits_set_local_prefix_in_one_call() -> None:
+    driver = FakeDriver([{"a": 1}])
+
+    await run_select_tuned(
+        driver,
+        "SELECT a FROM t",
+        work_mem="128MB",
+        maintenance_work_mem="512MB",
+    )
+
+    # The tuned knobs + the SELECT must travel in a single execute_query
+    # call so SET LOCAL applies to the same transaction; force_readonly on.
+    assert len(driver.calls) == 1
+    sql, _params, force_readonly = driver.calls[0]
+    assert sql.startswith("SET LOCAL work_mem = '128MB'; ")
+    assert "SET LOCAL maintenance_work_mem = '512MB'; " in sql
+    assert sql.endswith("SELECT a FROM t")
+    assert force_readonly is True
+
+
+async def test_run_select_tuned_omits_maintenance_knob_when_unset() -> None:
+    driver = FakeDriver([{"a": 1}])
+
+    await run_select_tuned(driver, "SELECT a FROM t", work_mem="64MB")
+
+    sql, _params, _force = driver.calls[0]
+    assert "maintenance_work_mem" not in sql
+
+
+@pytest.mark.parametrize(
+    "bad_work_mem",
+    [
+        "256",  # no unit
+        "256 MB",  # space
+        "256mb; DROP TABLE t",  # injection attempt
+        "0MB",  # non-positive
+        "-1MB",  # negative (regex rejects)
+        "4GB",  # over the 2GB cap
+        "2097153kB",  # one kB over 2GiB
+    ],
+)
+async def test_run_select_tuned_rejects_invalid_or_oversized_work_mem(bad_work_mem: str) -> None:
+    with pytest.raises(QueryError):
+        await run_select_tuned(FakeDriver(), "SELECT 1", work_mem=bad_work_mem)
+
+
+async def test_run_select_tuned_accepts_the_2gb_boundary() -> None:
+    driver = FakeDriver([{"x": 1}])
+
+    result = await run_select_tuned(driver, "SELECT 1 AS x", work_mem="2GB")
+
+    assert result.row_count == 1
+
+
+async def test_run_select_tuned_validates_maintenance_work_mem_too() -> None:
+    with pytest.raises(QueryError, match="maintenance_work_mem"):
+        await run_select_tuned(FakeDriver(), "SELECT 1", work_mem="64MB", maintenance_work_mem="9GB")
+
+
+@pytest.mark.parametrize(
+    "unsafe_sql",
+    ["DROP TABLE t", "DELETE FROM t", "UPDATE t SET a = 1", "INSERT INTO t (a) VALUES (1)"],
+)
+async def test_run_select_tuned_rejects_non_select(unsafe_sql: str) -> None:
+    with pytest.raises(QueryError):
+        await run_select_tuned(FakeDriver(), unsafe_sql, work_mem="64MB")
+
+
+async def test_run_select_tuned_rejects_non_positive_max_rows() -> None:
+    with pytest.raises(QueryError, match="max_rows"):
+        await run_select_tuned(FakeDriver(), "SELECT 1", work_mem="64MB", max_rows=0)
+
+
+async def test_run_select_tuned_tool_is_callable_from_a_client() -> None:
+    database = FakeDatabase(FakeDriver([{"one": 1}]))
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool(
+            "run_select_tuned",
+            {"sql": "SELECT 1 AS one", "work_mem": "128MB"},
+        )
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["row_count"] == 1
 
 
 async def test_explain_query_returns_the_plan() -> None:

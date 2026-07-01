@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
@@ -21,6 +22,16 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 
 # Default cap on the number of rows returned to the caller.
 DEFAULT_MAX_ROWS = 1000
+
+# A PostgreSQL memory-size GUC value: digits + a unit. Anchored so a value
+# like ``256MB`` is accepted but ``256MB; DROP TABLE`` is not — the knob is
+# interpolated into SQL, so this regex is also the injection guard.
+_MEMORY_SIZE_RE = re.compile(r"^\d+(kB|MB|GB)$", re.IGNORECASE)
+
+# Hard ceiling on a tuned memory knob: 2 GiB. work_mem / maintenance_work_mem
+# are *per-operation* — a runaway value is a real OOM risk under concurrency,
+# so we refuse anything larger rather than trust the caller.
+_MEMORY_CAP_KB = 2 * 1024 * 1024  # 2 GiB expressed in kB
 
 
 class QueryError(Exception):
@@ -69,6 +80,110 @@ async def run_select(
     try:
         # SafeSqlDriver parses and validates this runtime SQL before running it.
         rows = await safe_driver.execute_query(sql)
+    except Exception as exc:
+        raise QueryError(str(exc)) from exc
+
+    all_rows = [dict(row.cells) for row in rows or []]
+    truncated = len(all_rows) > max_rows
+    result_rows = all_rows[:max_rows]
+    columns = list(result_rows[0].keys()) if result_rows else []
+    return QueryResult(
+        columns=columns,
+        rows=result_rows,
+        row_count=len(result_rows),
+        truncated=truncated,
+    )
+
+
+_UNIT_TO_KB = {"KB": 1, "MB": 1024, "GB": 1024 * 1024}
+
+
+def _validate_memory_knob(value: str, name: str) -> str:
+    """Validate a work_mem-style GUC value against the format + hard cap.
+
+    Returns the canonicalised value on success.
+
+    Raises:
+        QueryError: When ``value`` doesn't match ``^\\d+(kB|MB|GB)$``, is
+            non-positive, or exceeds the 2 GiB cap.
+    """
+    candidate = value.strip()
+    match = _MEMORY_SIZE_RE.match(candidate)
+    if not match:
+        raise QueryError(f"{name} must look like '256MB' (digits + kB/MB/GB); got {value!r}")
+    magnitude = int(candidate[: match.start(1)])
+    if magnitude <= 0:
+        raise QueryError(f"{name} must be positive; got {value!r}")
+    size_kb = magnitude * _UNIT_TO_KB[match.group(1).upper()]
+    if size_kb > _MEMORY_CAP_KB:
+        raise QueryError(f"{name} exceeds the 2GB cap (got {value!r}); pick a smaller bound")
+    return candidate
+
+
+async def run_select_tuned(
+    driver: SqlDriver,
+    sql: str,
+    *,
+    work_mem: str,
+    maintenance_work_mem: str | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    max_rows: int = DEFAULT_MAX_ROWS,
+) -> QueryResult:
+    """Run a read-only SELECT with an elevated, bounded ``work_mem``.
+
+    Heavy analytical SELECTs (large sorts, hash joins, ``DISTINCT`` /
+    ``GROUP BY`` over millions of rows) spill to disk when ``work_mem`` is
+    too small. This raises it — and optionally ``maintenance_work_mem`` —
+    for **this one statement only** via ``SET LOCAL`` inside the same
+    read-only transaction, so the bump never leaks back into the pool.
+
+    Both knobs are validated against ``^\\d+(kB|MB|GB)$`` and a hard 2 GiB
+    cap (unbounded values are an OOM risk). The SQL is validated read-only
+    by the same parser as :func:`run_select`. The knob + query are issued
+    as a single ``execute_query`` call so ``SET LOCAL`` applies to the same
+    transaction.
+
+    ``SET LOCAL`` only affects transactional statements — non-transactional
+    maintenance (CREATE INDEX CONCURRENTLY, VACUUM) is out of scope here.
+
+    Raises:
+        QueryError: When ``max_rows`` is not positive, a memory knob is
+            malformed / oversized, or the query is rejected as unsafe or
+            fails to execute.
+    """
+    if max_rows < 1:
+        raise QueryError("max_rows must be at least 1")
+
+    work_mem_value = _validate_memory_knob(work_mem, "work_mem")
+    maintenance_value = (
+        _validate_memory_knob(maintenance_work_mem, "maintenance_work_mem")
+        if maintenance_work_mem is not None
+        else None
+    )
+
+    # Prove the caller SQL is a read-only SELECT (parse-only). We can't run
+    # it through SafeSqlDriver because that driver forbids the SET LOCAL
+    # prefix — but its validator is purely a pglast parse, independent of
+    # the underlying connection.
+    safe_driver = SafeSqlDriver(sql_driver=driver, timeout=timeout)
+    try:
+        safe_driver._validate(sql)
+    except Exception as exc:
+        raise QueryError(str(exc)) from exc
+
+    prefix = f"SET LOCAL work_mem = '{work_mem_value}'; "
+    if maintenance_value is not None:
+        prefix += f"SET LOCAL maintenance_work_mem = '{maintenance_value}'; "
+    tuned_sql = f"{prefix}{sql}"
+
+    try:
+        # One call so SET LOCAL and the SELECT share a transaction;
+        # force_readonly wraps it in BEGIN READ ONLY. Reinstate the timeout
+        # bound the raw driver doesn't apply itself.
+        rows = await asyncio.wait_for(
+            driver.execute_query(tuned_sql, force_readonly=True),
+            timeout=timeout,
+        )
     except Exception as exc:
         raise QueryError(str(exc)) from exc
 

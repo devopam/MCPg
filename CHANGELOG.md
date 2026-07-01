@@ -25,6 +25,38 @@ adheres to [Semantic Versioning](https://semver.org/).
   `probes` clearing `target_recall`. Verifies an IVFFlat index exists on the
   column (`has_ivfflat_index=false` with guidance otherwise). Typed return →
   `outputSchema`. Lives in `mcpg.vector_tuner_advanced`; `vector_search` bucket.
+- **`analyze_table_bloat`** — live table + index bloat analysis with targeting
+  (roadmap **2.7**). Returns per-table **and** per-index estimated bloat %
+  (catalog-only estimate by default; precise `pgstattuple` / `pgstatindex`
+  mode when the extension is installed, otherwise it falls back to the
+  estimate and reports `method="estimate"`), plus per-table dead-tuple %,
+  live/dead tuple counts, and byte sizes — sorted worst-first and capped by
+  `limit` — so the agent targets VACUUM / REPACK precisely. Read-only;
+  `available=false` only on driver failure. Typed return → `outputSchema`.
+  Lives in `mcpg.health`; `operations_and_health` bucket.
+- **`dry_run_ddl`** — DDL lock / WAL impact dry-run (roadmap **2.8**, DDL-gated).
+  Runs a proposed `ALTER TABLE` / non-concurrent `CREATE INDEX` inside a
+  transaction under a tight `lock_timeout`, captures the lock modes held
+  (`max_lock_mode`, e.g. `AccessExclusiveLock`), wall-clock `duration_ms`, and
+  WAL bytes generated (`pg_wal_lsn_diff` delta), then **always rolls back** so
+  nothing persists. CONCURRENTLY / non-transactional statements are rejected
+  up front as `eligible=false` (reusing the migrations non-transactional
+  regex); lock-timeout (SQLSTATE 55P03) and other errors return as structured
+  results rather than raising. Honest caveat documented: a *rewriting* DDL
+  still does the rewrite work — and holds its lock — before the rollback, so
+  the dry-run measures impact by incurring it. Requires `MCPG_ALLOW_DDL`.
+  Typed return → `outputSchema`. New `mcpg.ddl_dryrun` module;
+  `operations_and_health` bucket.
+- **`run_select_tuned`** — heavy read-only SELECT with elevated, bounded
+  `work_mem` (roadmap **2.9**). Validates `work_mem` (and optional
+  `maintenance_work_mem`) against `^\d+(kB|MB|GB)$` and a hard 2 GiB cap
+  (unbounded values are an OOM risk), validates the SQL is read-only via the
+  same allowlist as `run_select`, then issues `SET LOCAL work_mem='…'; <sql>`
+  in a single read-only transaction so the knob applies to that one statement
+  and never leaks back into the pool. `SET LOCAL` is transactional-only, so
+  non-transactional maintenance (CREATE INDEX CONCURRENTLY / VACUUM) is out of
+  scope. Returns a `QueryResult` like `run_select`. Lives in `mcpg.query`;
+  `query_execution` bucket.
 
 ### Changed
 

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 248
+    "tool_count": 251
   },
   "tools": {
     "add_compression_policy": {
@@ -53,7 +53,22 @@
       "kind": "opaque"
     },
     "analyze_query_plan": {
-      "kind": "opaque"
+      "dataclass": "QueryPlanAnalysis",
+      "fields": [
+        "actual_rows",
+        "actual_total_time_ms",
+        "aio_read_blocks",
+        "aio_write_blocks",
+        "estimated_rows",
+        "io_read_time_ms",
+        "io_write_time_ms",
+        "node_types",
+        "sequential_scans",
+        "shared_blocks_hit",
+        "shared_blocks_read",
+        "total_cost"
+      ],
+      "kind": "scalar"
     },
     "analyze_rerank_ndcg": {
       "dataclass": "NDCGReport",
@@ -102,6 +117,18 @@
     },
     "analyze_session_cost": {
       "kind": "opaque"
+    },
+    "analyze_table_bloat": {
+      "dataclass": "TableBloatReport",
+      "fields": [
+        "available",
+        "detail",
+        "indexes",
+        "method",
+        "schema",
+        "tables"
+      ],
+      "kind": "scalar"
     },
     "analyze_topk_stability": {
       "dataclass": "TopKStabilityReport",
@@ -470,6 +497,22 @@
     "drop_subscription": {
       "kind": "opaque"
     },
+    "dry_run_ddl": {
+      "dataclass": "DdlDryRunResult",
+      "fields": [
+        "detail",
+        "duration_ms",
+        "eligible",
+        "error",
+        "executed",
+        "lock_timed_out",
+        "locks",
+        "max_lock_mode",
+        "rolled_back",
+        "wal_bytes"
+      ],
+      "kind": "scalar"
+    },
     "dump_database": {
       "dataclass": "DumpResult",
       "fields": [
@@ -521,7 +564,11 @@
       "kind": "scalar"
     },
     "explain_query": {
-      "kind": "opaque"
+      "dataclass": "ExplainResult",
+      "fields": [
+        "plan"
+      ],
+      "kind": "scalar"
     },
     "export_query": {
       "dataclass": "ExportResult",
@@ -2004,10 +2051,31 @@
       "kind": "scalar"
     },
     "run_select": {
-      "kind": "opaque"
+      "dataclass": "QueryResult",
+      "fields": [
+        "columns",
+        "row_count",
+        "rows",
+        "truncated"
+      ],
+      "kind": "scalar"
     },
     "run_select_parallel": {
-      "kind": "opaque"
+      "dataclass": "ParallelQueryResult",
+      "fields": [
+        "outcomes"
+      ],
+      "kind": "scalar"
+    },
+    "run_select_tuned": {
+      "dataclass": "QueryResult",
+      "fields": [
+        "columns",
+        "row_count",
+        "rows",
+        "truncated"
+      ],
+      "kind": "scalar"
     },
     "run_write": {
       "dataclass": "WriteResult",

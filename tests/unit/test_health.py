@@ -5,6 +5,10 @@ from mcp.shared.memory import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.health import (
+    IndexBloat,
+    TableBloat,
+    TableBloatReport,
+    analyze_table_bloat,
     check_cache_hit_ratio,
     check_connections,
     check_database_health,
@@ -127,3 +131,168 @@ async def test_check_database_health_tool_is_callable_from_a_client() -> None:
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["status"] == "ok"
+
+
+# --- analyze_table_bloat (roadmap 2.7) -------------------------------------
+
+
+def _bloat_routes(
+    *,
+    tables: list[dict[str, object]],
+    indexes: list[dict[str, object]],
+    pgstattuple: bool = False,
+    precise_tables: list[dict[str, object]] | None = None,
+    precise_indexes: list[dict[str, object]] | None = None,
+) -> FakeRoutingDriver:
+    # Substrings are unique per query so the first-match router is
+    # deterministic. Precise queries are matched ahead of the estimate ones
+    # by their pgstattuple/pgstatindex call signatures.
+    routes: dict[str, list[dict[str, object]]] = {
+        "pg_extension": [{"present": 1}] if pgstattuple else [],
+        "pgstattuple(t.relid)": precise_tables or [],
+        "pgstatindex(idx.relid)": precise_indexes or [],
+        "pg_total_relation_size(t.relid)": tables,
+        "pg_index i ON i.indexrelid": indexes,
+    }
+    return FakeRoutingDriver(routes)
+
+
+async def test_analyze_table_bloat_ranks_tables_and_indexes_worst_first() -> None:
+    driver = _bloat_routes(
+        tables=[
+            {
+                "schema": "public",
+                "table": "low",
+                "est_bloat_pct": 5.0,
+                "dead_tuple_pct": 1.0,
+                "n_dead_tup": 1,
+                "n_live_tup": 100,
+                "table_bytes": 1000,
+            },
+            {
+                "schema": "public",
+                "table": "high",
+                "est_bloat_pct": 60.0,
+                "dead_tuple_pct": 30.0,
+                "n_dead_tup": 30,
+                "n_live_tup": 100,
+                "table_bytes": 9000,
+            },
+        ],
+        indexes=[
+            {"schema": "public", "table": "high", "index": "idx_a", "est_bloat_pct": 10.0, "index_bytes": 500},
+            {"schema": "public", "table": "high", "index": "idx_b", "est_bloat_pct": 40.0, "index_bytes": 800},
+        ],
+    )
+
+    report = await analyze_table_bloat(driver, "public")  # type: ignore[arg-type]
+
+    assert report.available is True
+    assert report.method == "estimate"
+    assert [t.table for t in report.tables] == ["high", "low"]
+    assert [i.index for i in report.indexes] == ["idx_b", "idx_a"]
+    assert isinstance(report.tables[0], TableBloat)
+    assert isinstance(report.indexes[0], IndexBloat)
+
+
+async def test_analyze_table_bloat_caps_each_list_at_limit() -> None:
+    driver = _bloat_routes(
+        tables=[
+            {
+                "schema": "public",
+                "table": f"t{n}",
+                "est_bloat_pct": float(n),
+                "dead_tuple_pct": 0.0,
+                "n_dead_tup": 0,
+                "n_live_tup": 1,
+                "table_bytes": 1,
+            }
+            for n in range(5)
+        ],
+        indexes=[],
+    )
+
+    report = await analyze_table_bloat(driver, "public", limit=2)  # type: ignore[arg-type]
+
+    assert len(report.tables) == 2
+    # Worst-first: t4 (4.0) then t3 (3.0).
+    assert [t.table for t in report.tables] == ["t4", "t3"]
+
+
+async def test_analyze_table_bloat_empty_schema_is_available_with_empty_lists() -> None:
+    driver = _bloat_routes(tables=[], indexes=[])
+
+    report = await analyze_table_bloat(driver, "empty")  # type: ignore[arg-type]
+
+    assert report == TableBloatReport(
+        available=True,
+        schema="empty",
+        method="estimate",
+        tables=[],
+        indexes=[],
+        detail="0 tables, 0 indexes analysed (estimate)",
+    )
+
+
+async def test_analyze_table_bloat_uses_pgstattuple_when_present_and_precise() -> None:
+    driver = _bloat_routes(
+        tables=[],
+        indexes=[],
+        pgstattuple=True,
+        precise_tables=[
+            {
+                "schema": "public",
+                "table": "t",
+                "est_bloat_pct": 22.5,
+                "dead_tuple_pct": 12.5,
+                "n_dead_tup": 5,
+                "n_live_tup": 40,
+                "table_bytes": 4096,
+            }
+        ],
+        precise_indexes=[
+            {"schema": "public", "table": "t", "index": "t_pkey", "est_bloat_pct": 15.0, "index_bytes": 2048}
+        ],
+    )
+
+    report = await analyze_table_bloat(driver, "public", precise=True)  # type: ignore[arg-type]
+
+    assert report.method == "pgstattuple"
+    assert report.tables[0].est_bloat_pct == 22.5
+    assert report.indexes[0].index == "t_pkey"
+
+
+async def test_analyze_table_bloat_falls_back_to_estimate_without_extension() -> None:
+    driver = _bloat_routes(tables=[], indexes=[], pgstattuple=False)
+
+    report = await analyze_table_bloat(driver, "public", precise=True)  # type: ignore[arg-type]
+
+    assert report.method == "estimate"
+
+
+async def test_analyze_table_bloat_reports_unavailable_on_driver_failure() -> None:
+    report = await analyze_table_bloat(FakeDriver([], fail=True), "public")
+
+    assert report.available is False
+    assert "failed" in report.detail
+
+
+async def test_analyze_table_bloat_rejects_non_positive_limit() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="limit must be at least 1"):
+        await analyze_table_bloat(FakeDriver([]), "public", limit=0)
+
+
+async def test_analyze_table_bloat_tool_is_callable_from_a_client() -> None:
+    driver = _bloat_routes(tables=[], indexes=[])
+    database = FakeDatabase(driver)  # type: ignore[arg-type]
+    server = create_server(_SETTINGS, database=database)  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool("analyze_table_bloat", {"schema": "public"})
+
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["available"] is True
+    assert result.structuredContent["method"] == "estimate"

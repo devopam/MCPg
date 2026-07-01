@@ -28,6 +28,7 @@ from mcpg import (
     cursors,
     cypher,
     data_movement,
+    ddl_dryrun,
     diagrams,
     diesel,
     drizzle,
@@ -2915,6 +2916,40 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         return result
 
     @server.tool(
+        name="run_select_tuned",
+        description=_with_example(
+            "Run a read-only SELECT with an elevated, bounded `work_mem` (and "
+            "optionally `maintenance_work_mem`) for THIS statement only. "
+            "Useful for heavy analytical SELECTs (large sorts / hash joins / "
+            "GROUP BY) that spill to disk under the default work_mem. The "
+            "knob is set via `SET LOCAL` inside the same read-only "
+            "transaction, so it never leaks back into the pool. Both knobs "
+            "must match `^\\d+(kB|MB|GB)$` and are hard-capped at 2GB "
+            "(unbounded values are an OOM risk). SQL is validated read-only "
+            "by the same allowlist as run_select. SET LOCAL only affects "
+            "transactional statements — non-transactional maintenance "
+            "(CREATE INDEX CONCURRENTLY, VACUUM) is out of scope.",
+            "run_select_tuned(sql='SELECT a, count(*) FROM big GROUP BY a', work_mem='256MB')",
+        ),
+    )
+    async def run_select_tuned(
+        ctx: _Ctx,
+        sql: str,
+        work_mem: str,
+        maintenance_work_mem: str | None = None,
+        max_rows: int = query.DEFAULT_MAX_ROWS,
+        database: _DatabaseArg = None,
+    ) -> query.QueryResult:
+        result = await query.run_select_tuned(
+            _driver(ctx, database),
+            sql,
+            work_mem=work_mem,
+            maintenance_work_mem=maintenance_work_mem,
+            max_rows=max_rows,
+        )
+        return result
+
+    @server.tool(
         name="run_select_parallel",
         description=(
             "Run up to parallel_limit read-only SELECTs concurrently. Each "
@@ -3112,6 +3147,35 @@ def _register_health(server: FastMCP[AppContext]) -> None:
     )
     async def check_database_health(ctx: _Ctx, database: _DatabaseArg = None) -> health.HealthReport:
         return await health.check_database_health(_driver(ctx, database))
+
+    @server.tool(
+        name="analyze_table_bloat",
+        description=_with_example(
+            "Rank a schema's tables and indexes by estimated bloat, worst "
+            "first. By default uses a cheap catalog-only estimate (relpages "
+            "vs a reltuples/row-width floor) plus the dead-tuple ratio from "
+            "pg_stat_user_tables. Set `precise=true` to use pgstattuple / "
+            "pgstatindex for an exact (but I/O-heavy) read when the extension "
+            "is installed — it falls back to the estimate and reports "
+            "`method='estimate'` if it isn't. Returns `tables` and `indexes` "
+            "(each capped at `limit`) with per-object `est_bloat_pct`, plus "
+            "`available` and `method`.",
+            "analyze_table_bloat(schema='public', limit=20, precise=false)",
+        ),
+    )
+    async def analyze_table_bloat(
+        ctx: _Ctx,
+        schema: str,
+        limit: int = health.DEFAULT_BLOAT_LIMIT,
+        precise: bool = False,
+        database: _DatabaseArg = None,
+    ) -> health.TableBloatReport:
+        _check_heavy_diagnostics(ctx, "analyze_table_bloat")
+
+        async def _run() -> health.TableBloatReport:
+            return await health.analyze_table_bloat(_driver(ctx, database), schema, limit=limit, precise=precise)
+
+        return await _cached_call(ctx, "analyze_table_bloat", _run, schema, limit, precise)
 
     @server.tool(
         name="list_databases",
@@ -6044,6 +6108,31 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
         result = await extensions.enable_extension(_driver(ctx), name)
         await ctx.request_context.lifespan_context.cache.clear()
         return result
+
+    @server.tool(
+        name="dry_run_ddl",
+        description=(
+            "Run a DDL statement inside a transaction with a bounded "
+            "lock_timeout, measure its impact — lock modes held "
+            "(`max_lock_mode`), wall-clock `duration_ms`, and `wal_bytes` "
+            "generated — then ALWAYS roll back so NOTHING persists. Use it to "
+            "see the blast radius of an ALTER TABLE before committing on a "
+            "busy table. IMPORTANT: rollback undoes the catalog change, but a "
+            "*rewriting* DDL (e.g. a type change that rewrites every row) "
+            "still does the rewrite work and holds its lock for the full "
+            "duration before the rollback — the dry run measures impact by "
+            "incurring it. CONCURRENTLY / non-transactional statements "
+            "(CREATE INDEX CONCURRENTLY, VACUUM, ALTER SYSTEM) cannot run in "
+            "the wrapping transaction and are reported as `eligible=false`. "
+            "On a lock_timeout it returns `lock_timed_out=true`; other errors "
+            "land in `error`. Available only with MCPG_ALLOW_DDL enabled."
+        ),
+    )
+    async def dry_run_ddl(
+        ctx: _Ctx, ddl_sql: str, lock_timeout_ms: int = ddl_dryrun.DEFAULT_LOCK_TIMEOUT_MS
+    ) -> ddl_dryrun.DdlDryRunResult:
+        database = ctx.request_context.lifespan_context.database
+        return await ddl_dryrun.dry_run_ddl(database, ddl_sql, lock_timeout_ms=lock_timeout_ms)
 
 
 def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
