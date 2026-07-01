@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 251
+    "tool_count": 252
   },
   "tools": {
     "add_compression_policy": {
@@ -657,6 +657,21 @@
     },
     "generate_graph_diagram": {
       "kind": "opaque"
+    },
+    "generate_graph_projection": {
+      "dataclass": "GraphProjection",
+      "fields": [
+        "available",
+        "cypher_statements",
+        "detail",
+        "edge_types",
+        "graph_name",
+        "node_labels",
+        "row_limit",
+        "schema",
+        "warnings"
+      ],
+      "kind": "scalar"
     },
     "generate_jooq_config": {
       "kind": "opaque"
