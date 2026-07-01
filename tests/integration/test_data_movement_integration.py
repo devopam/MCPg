@@ -225,6 +225,7 @@ async def test_dump_then_restore_round_trip_against_real_pg(connected_database: 
         max_output_bytes=settings.shell_max_output_bytes,
         format="plain",
         schema_only=True,
+        schemas=[export_schema],
     )
     assert dump.exit_code == 0
     assert "widget" in dump.content

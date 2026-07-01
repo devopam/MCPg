@@ -2182,7 +2182,7 @@
       "name": "dry_run_ddl"
     },
     {
-      "description": "Run pg_dump against the connected database and return the SQL dump as a string (for `format='plain'`) or base64-encoded bytes (for `custom`/`tar`). Credentials pass through libpq env vars, never on the command line. The result includes `output_truncated` and `timed_out` flags so the caller can re-run with a higher cap or a narrower scope. Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL.",
+      "description": "Run pg_dump against the connected database and return the SQL dump as a string (for `format='plain'`) or base64-encoded bytes (for `custom`/`tar`). Credentials pass through libpq env vars, never on the command line. The result includes `output_truncated` and `timed_out` flags so the caller can re-run with a higher cap or a narrower scope. Pass `schemas` to scope the dump to specific schemas instead of the whole database. Performs subprocess execution — requires unrestricted mode + MCPG_ALLOW_SHELL.",
       "inputSchema": {
         "properties": {
           "format": {
@@ -2194,6 +2194,21 @@
             "default": false,
             "title": "Schema Only",
             "type": "boolean"
+          },
+          "schemas": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schemas"
           }
         },
         "title": "dump_databaseArguments",
