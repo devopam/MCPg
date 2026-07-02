@@ -30,6 +30,8 @@ field on the helper is caught by *both* tests in concert.
 
 from __future__ import annotations
 
+import warnings
+
 from mcp.server.fastmcp import FastMCP
 
 from mcpg.config import load_settings
@@ -832,6 +834,35 @@ def test_converted_tools_output_schemas_carry_expected_fields() -> None:
         + "\n  ".join(drift)
         + "\nUpdate the manifest if the rename is intentional; otherwise revert the helper change."
     )
+
+
+def test_output_schema_build_emits_no_pydantic_schema_field_shadow_warnings() -> None:
+    """Building every tool's output_schema must not leak pydantic's
+    "Field name ... shadows an attribute in parent BaseModel" warning.
+
+    Every dataclass with a ``schema`` field (the natural name for "which
+    Postgres schema") trips this the moment pydantic dynamically builds a
+    model from it — ``mcpg.PYDANTIC_SCHEMA_FIELD_SHADOW_WARNING`` filters
+    it at import time. This applies that exact pattern fresh (pytest
+    resets ``warnings.filters`` per test) against the full tool surface,
+    so a future pydantic wording change or an uncovered attribute name
+    would show up here instead of leaking to users at runtime.
+    """
+    import mcpg
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warnings.filterwarnings(
+            "ignore",
+            message=mcpg.PYDANTIC_SCHEMA_FIELD_SHADOW_WARNING,
+            category=UserWarning,
+        )
+        server = _build_maximal_server()
+        for tool in server._tool_manager.list_tools():
+            _ = tool.output_schema
+
+    shadow_warnings = [w for w in caught if "shadows an attribute in parent" in str(w.message)]
+    assert not shadow_warnings, [str(w.message) for w in shadow_warnings]
 
 
 def test_converted_tool_count_grows_monotonically() -> None:
