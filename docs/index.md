@@ -12,6 +12,9 @@ them" — pick the section that matches what you're trying to do.
 
 - [**Installation**](installation.md) — `pip install mcpg`, the
   Docker image, and what the environment variables mean.
+- [**Demo dataset**](demo.md) — `mcpg --demo` seeds a curated
+  playground schema; a captured walkthrough shows the pivotal tools
+  finding its planted flaws.
 - [**Tour**](tour.md) — a guided walkthrough of every MCP tool MCPg
   ships, grouped by capability area.
 - [**Cookbook**](cookbook.md) — short, copy-pasteable recipes for

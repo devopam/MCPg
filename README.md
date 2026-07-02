@@ -150,6 +150,20 @@ You can ask Claude things like:
 > *"Why is this query slow?
 > `SELECT * FROM orders WHERE customer_id = 42 ORDER BY created_at DESC`"*
 
+### No interesting data yet? Seed the demo dataset
+
+```bash
+MCPG_DATABASE_URL=postgresql://... mcpg --demo
+```
+
+One command seeds a small, curated e-commerce dataset (3,000 orders,
+900 product reviews, deliberately planted flaws) into an `mcpg_demo`
+schema — engineered so the index advisor, query-plan analysis,
+full-text search, PII audit, and graph projection all have something
+real to find on your first try. See the
+[guided tour](docs/demo.md) for a captured walkthrough, and remove it
+any time with `mcpg --demo-drop`.
+
 ### Run as an HTTP server (for IDE integrations, web apps, etc.)
 
 ```bash
@@ -168,8 +182,9 @@ Then point any MCP-aware client at `http://localhost:8000`. Set
 ## Configuration
 
 MCPg is configured **entirely through environment variables** — no
-config file, no flags. The only required one is `MCPG_DATABASE_URL`;
-everything else has a safe default.
+config file, no flags (the CLI's `--version` / `--demo` / `--demo-drop`
+are one-shot commands, not configuration). The only required one is
+`MCPG_DATABASE_URL`; everything else has a safe default.
 
 ### Common scenarios
 
