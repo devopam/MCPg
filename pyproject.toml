@@ -147,6 +147,14 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "integration: requires a live PostgreSQL (set MCPG_TEST_DATABASE_URL)",
 ]
+filterwarnings = [
+    # pytest resets warnings.filters per test, so the runtime filter
+    # mcpg/__init__.py installs (same pattern, kept in sync manually)
+    # doesn't survive into test collection — repeat it here so the ~180
+    # tool-return dataclasses with a `schema` field don't spam every test
+    # that touches Tool.output_schema.
+    'ignore:Field name ".*" in ".*" shadows an attribute in parent "BaseModel":UserWarning',
+]
 
 [tool.coverage.run]
 source = ["src/mcpg"]
