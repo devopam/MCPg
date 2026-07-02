@@ -36,6 +36,7 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: SQL",
     "Topic :: Database",
     "Topic :: Database :: Database Engines/Servers",
@@ -180,7 +181,7 @@ select = ["E", "F", "I", "B", "W", "N", "UP", "RUF"]
 known-first-party = ["mcpg"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 # Vendored code keeps its own (looser) typing; do not gate on it.
 exclude = ["src/mcpg/_vendor/", "tests/vendor/", "scratch/"]

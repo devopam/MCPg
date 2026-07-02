@@ -10,6 +10,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Runtime moves to Python 3.14.** The Docker image, CI (`lint`,
+  `security`, and the full PG 14-19 + WarehousePG test matrix), and the
+  publish workflow all now build/run on Python 3.14 (previously 3.13).
+  `pyproject.toml` still declares `requires-python = ">=3.12"` and
+  classifies 3.12/3.13/3.14 as supported — this is a change to which
+  version *we* build and test with, not a narrowing of what versions
+  `pip install mcpg` accepts.
+
 ### Fixed
 
 ## [0.6.6] - 2026-07-01
