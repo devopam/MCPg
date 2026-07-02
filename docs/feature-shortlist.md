@@ -258,6 +258,16 @@ non-overlapping gaps worth filling.
 
 **Why not a wholesale pghero port**: pghero's "queries", "indexes", "vacuum", "connections", "replication" panels overlap directly with existing MCPg tools; porting them would create surface duplication that violates the no-deprecation rule (callers couldn't tell `recommend_indexes` apart from a hypothetical `pghero_recommend_indexes`). The three rows above are the strict net-new surface.
 
+## 17. Onboarding & demos
+
+First-run experience: a new user's first five minutes with MCPg were
+previously spent against whatever data they happened to have (often an
+empty scratch database), which shows off none of the tool surface.
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 17.1 | ✅ **Shipped.** **`mcpg --demo` / `mcpg --demo-drop`** — seeds a small, deterministic, *curated* e-commerce dataset (400 customers / 120 products / 3,000 orders / 900 reviews) into an `mcpg_demo` schema in the configured database, with planted teaching moments: an un-indexed FK (`orders.customer_id`) for `analyze_query_plan` / `recommend_indexes`, PII-shaped columns for `find_sensitive_columns`, a camelCase column for the naming linter, FTS-worthy review prose, and an optional pgvector `embedding` column (added only when the extension is already installed). Ownership marker (schema comment) makes `--demo-drop` refuse to touch schemas MCPg didn't create; re-seed refuses rather than clobbers; whole seed is one transaction. Companion walkthrough `docs/demo.md` is *captured from real tool runs* (regenerate via `tools/generate_demo_walkthrough.py`) and its planted findings are pinned by `tests/integration/test_demo_integration.py`, so the doc can't silently rot. CLI-only surface — no new MCP tools, tool snapshot unchanged. | M | High | Skipped on the WarehousePG lane (targets stock PostgreSQL). |
+
 ---
 
 ## Currently deferred (no commitments)
