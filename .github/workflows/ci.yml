@@ -200,3 +200,38 @@ jobs:
         env:
           MCPG_TEST_DATABASE_URL: postgresql://${{ env.DB_USER }}:postgres@localhost:5432/mcpg_test
         run: uv run pytest -q --cov
+
+  test-python314:
+    name: Tests (Python 3.14, PG 17) — experimental
+    runs-on: ubuntu-latest
+    # Exploratory lane: proves out the dependency stack (psycopg[binary],
+    # pglast, cryptography — the compiled ones) under the next CPython
+    # release before anything commits to it. CI only ever installs 3.13
+    # elsewhere (see the ``test`` job above, ``lint``, ``security``); this
+    # is deliberately non-gating (continue-on-error) — a failure here is a
+    # signal to investigate, not a merge blocker. One PG version is enough
+    # since the point is Python-level compatibility, not another full PG
+    # matrix sweep.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start PostgreSQL (pgvector + PostGIS)
+        run: |
+          docker build -f .github/ci-postgres.Dockerfile --build-arg PG_MAJOR=17 -t mcpg-ci-db-py314 .
+          docker run -d --name mcpg-db-py314 -p 5432:5432 \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=mcpg_test mcpg-ci-db-py314
+          for _ in $(seq 1 30); do
+            docker exec mcpg-db-py314 pg_isready -U postgres && break
+            sleep 2
+          done
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: pytest
+        env:
+          MCPG_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mcpg_test
+        run: uv run pytest -q
