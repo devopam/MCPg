@@ -39,7 +39,9 @@ graph queries, data movement, live ops, and more.
   `[A-Za-z_][A-Za-z0-9_]*` regex — a design constraint that means
   user input never reaches the database through string concatenation.
   Capabilities like DDL, shell, and `LISTEN/NOTIFY` are off until you
-  opt in.
+  opt in. Every tool publishes MCP `ToolAnnotations` (`readOnlyHint`,
+  `openWorldHint`) derived from those same gates, so clients can
+  auto-approve reads and gate writes without guessing.
 - **One server, broad surface.** Application data access (queries, search,
   cursors, NL→SQL) *and* DBA-grade operations (health checks, index tuning,
   EXPLAIN analysis, locks, vacuum, dumps, replicas, migrations) in a

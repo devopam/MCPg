@@ -13,6 +13,7 @@ from typing import Annotated, Any, TypeVar, cast
 
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from mcpg import (
@@ -6401,7 +6402,9 @@ def _register_prompts(server: FastMCP[AppContext]) -> None:
             "structured reporting checklist at the end."
         ),
     )
-    def diagnose_slow_query_prompt(sql: str) -> str:
+    def diagnose_slow_query_prompt(
+        sql: Annotated[str, Field(description="The slow SQL statement to investigate, verbatim.")],
+    ) -> str:
         return mcpg_prompts._build_diagnose_slow_query(sql)
 
     # ------------------------------------------------------------------
@@ -6419,9 +6422,15 @@ def _register_prompts(server: FastMCP[AppContext]) -> None:
         ),
     )
     def bisect_slow_migration_prompt(
-        migration_id: str,
-        baseline_schema: str,
-        current_schema: str,
+        migration_id: Annotated[
+            str, Field(description="Identifier of the suspect migration (as tracked by the migration tool in use).")
+        ],
+        baseline_schema: Annotated[
+            str, Field(description="Schema name representing the pre-migration (known-good) state.")
+        ],
+        current_schema: Annotated[
+            str, Field(description="Schema name representing the post-migration (regressed) state.")
+        ],
     ) -> str:
         return mcpg_prompts._build_bisect_slow_migration(migration_id, baseline_schema, current_schema)
 
@@ -6440,7 +6449,10 @@ def _register_prompts(server: FastMCP[AppContext]) -> None:
             "not apply them."
         ),
     )
-    def review_rls_policy_prompt(schema: str, table: str) -> str:
+    def review_rls_policy_prompt(
+        schema: Annotated[str, Field(description="Schema containing the table to audit.")],
+        table: Annotated[str, Field(description="Table whose row-level-security coverage should be reviewed.")],
+    ) -> str:
         return mcpg_prompts._build_review_rls_policy(schema, table)
 
 
@@ -6709,6 +6721,52 @@ def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
         return result
 
 
+# Tools that reach outside the connected PostgreSQL server. Everything
+# else in MCPg talks to a closed domain (the database), so it gets
+# ``openWorldHint=False``; these are the exceptions (external LLM APIs).
+_OPEN_WORLD_TOOLS = frozenset({"translate_nl_to_sql"})
+
+
+def _apply_tool_annotations(server: FastMCP[AppContext], read_only_names: set[str]) -> None:
+    """Stamp MCP ``ToolAnnotations`` derived from the capability gates.
+
+    MCPg already classifies every tool as READ / WRITE / DDL / SHELL /
+    LISTEN via the registration gates in :func:`register_tools`; this
+    puts that classification on the wire, where clients use it to
+    decide which calls to auto-approve (``readOnlyHint``) and whether
+    the tool leaves the database's closed world (``openWorldHint``).
+    Derived, not hand-written, so a tool moved between gates can never
+    ship a stale hint. ``destructiveHint`` is deliberately left unset
+    for non-read tools: the MCP default (true) is the cautious reading,
+    and MCPg doesn't currently track per-tool destructiveness more
+    precisely than the gate does.
+
+    Uses the sync ``_tool_manager`` accessor for the same reason the
+    session-intent filter does: this runs in synchronous startup code.
+
+    Merge semantics: annotations a registration set explicitly always
+    win — the derived values only fill fields that are still ``None``.
+    (No call site passes ``annotations=`` today, but a future per-tool
+    override — e.g. ``destructiveHint=False`` on a maintenance tool —
+    must not be silently clobbered by this sweep.)
+    """
+    for tool in server._tool_manager.list_tools():
+        existing = tool.annotations
+        if existing is None:
+            tool.annotations = ToolAnnotations(
+                readOnlyHint=tool.name in read_only_names,
+                openWorldHint=tool.name in _OPEN_WORLD_TOOLS,
+            )
+            continue
+        derived: dict[str, bool] = {}
+        if existing.readOnlyHint is None:
+            derived["readOnlyHint"] = tool.name in read_only_names
+        if existing.openWorldHint is None:
+            derived["openWorldHint"] = tool.name in _OPEN_WORLD_TOOLS
+        if derived:
+            tool.annotations = existing.model_copy(update=derived)
+
+
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     """Register the MCP tools permitted by the configured access mode.
 
@@ -6757,6 +6815,9 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_wait_for_lsn_reads(server)
         _register_wait_for_lsn_writes(server)
         _register_warehousepg_reads(server)
+    # Everything registered so far sits behind (at most) the READ gate —
+    # this snapshot is what ``readOnlyHint=True`` is derived from below.
+    read_only_names = {tool.name for tool in server._tool_manager.list_tools()}
     if is_permitted(settings.access_mode, Capability.WRITE):
         _register_write(server)
         _register_maintenance(server)
@@ -6787,6 +6848,8 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_data_movement_shell(server)
     if is_permitted(settings.access_mode, Capability.LISTEN) and settings.allow_listen:
         _register_listen(server)
+
+    _apply_tool_annotations(server, read_only_names)
 
     # Session-intent surface filter (roadmap 8.8). Runs LAST so every
     # tool that would otherwise be registered has already been added —

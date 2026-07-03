@@ -8,6 +8,30 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.6.7] - 2026-07-03
+
+### Added
+
+- **MCP `ToolAnnotations` on every tool** — all 252 tools now publish
+  `readOnlyHint` (185 read-only / 67 write-capable) and `openWorldHint`
+  on the wire, derived mechanically from the same READ / WRITE / DDL /
+  SHELL / LISTEN capability gates that already enforce access, so a
+  moved tool can never ship a stale hint. Clients like Claude Desktop
+  use these to decide which calls to auto-approve — MCPg's safety
+  classification is now visible to them, not just internal.
+  `openWorldHint` is `false` everywhere except `translate_nl_to_sql`
+  (the one tool that calls an external LLM API). `destructiveHint` is
+  deliberately left unset for write-capable tools: the MCP default
+  (true) is the cautious reading. A contract test pins the derivation
+  exhaustively: the hinted read-only set must equal the surface
+  actually reachable in read-only access mode.
+- **Prompt argument descriptions** — all 7 arguments across the 3 MCP
+  prompts (`diagnose_slow_query`, `bisect_slow_migration`,
+  `review_rls_policy`) now carry wire-visible descriptions.
 - **`mcpg --demo` / `mcpg --demo-drop`** (roadmap **17.1**) — one-shot CLI
   commands that seed / remove a small, deterministic, curated e-commerce
   demo dataset (400 customers, 120 products, 3,000 orders, 900 reviews)
@@ -35,6 +59,22 @@ adheres to [Semantic Versioning](https://semver.org/).
   `pip install mcpg` accepts.
 
 ### Fixed
+
+- **Startup warning noise eliminated.** Running MCPg printed a wall of
+  benign pydantic `Field name "schema" ... shadows an attribute in
+  parent "BaseModel"` warnings on the first `tools/list` call (the
+  `mcp` SDK builds a pydantic model from each tool-return dataclass,
+  and `schema` — the natural name for "which Postgres schema" — collides
+  with a deprecated pydantic v1 shim). The specific message is now
+  suppressed at import time; renaming the field would have broken every
+  affected tool's JSON output shape. A contract test builds the full
+  tool surface and asserts zero shadow warnings leak.
+- **TestPyPI smoke-test race in the publish pipeline.** The
+  wait-for-indexing step polled TestPyPI's JSON API, which can report a
+  release "ready" before the PEP 503 simple index (what `pip install`
+  actually reads) catches up — observed on the v0.6.6 release, which
+  needed a manual re-run. The step now polls the simple index directly
+  and retry-wraps the install.
 
 ## [0.6.6] - 2026-07-01
 
