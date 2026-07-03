@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`mcpg --demo` / `mcpg --demo-drop`** (roadmap **17.1**) — one-shot CLI
+  commands that seed / remove a small, deterministic, curated e-commerce
+  demo dataset (400 customers, 120 products, 3,000 orders, 900 reviews)
+  in an `mcpg_demo` schema inside the configured database. The dataset
+  plants teaching moments for the pivotal tools — an un-indexed foreign
+  key that `analyze_query_plan` / `recommend_indexes` catch, PII-shaped
+  columns for `find_sensitive_columns`, a camelCase naming violation for
+  `lint_naming_conventions`, review prose for `full_text_search`, and an
+  optional pgvector `embedding` column when the extension is installed.
+  Safety: the seed is a single transaction, re-seeding refuses rather
+  than clobbers, and `--demo-drop` only removes a schema carrying the
+  MCPg ownership marker. A captured walkthrough of the pivotal tools
+  running against this dataset ships as `docs/demo.md`, generated from
+  real runs by `tools/generate_demo_walkthrough.py` and pinned by
+  integration tests so it cannot silently go stale.
+
 ### Changed
 
 - **Runtime moves to Python 3.14.** The Docker image, CI (`lint`,
