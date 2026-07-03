@@ -2,7 +2,7 @@
 
 import warnings
 
-__version__ = "0.6.6"
+__version__ = "0.6.7"
 
 # ``schema`` is the natural field name for "which Postgres schema" across
 # ~180 tool-return dataclasses. The ``mcp`` SDK dynamically builds a
