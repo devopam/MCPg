@@ -6743,12 +6743,28 @@ def _apply_tool_annotations(server: FastMCP[AppContext], read_only_names: set[st
 
     Uses the sync ``_tool_manager`` accessor for the same reason the
     session-intent filter does: this runs in synchronous startup code.
+
+    Merge semantics: annotations a registration set explicitly always
+    win — the derived values only fill fields that are still ``None``.
+    (No call site passes ``annotations=`` today, but a future per-tool
+    override — e.g. ``destructiveHint=False`` on a maintenance tool —
+    must not be silently clobbered by this sweep.)
     """
     for tool in server._tool_manager.list_tools():
-        tool.annotations = ToolAnnotations(
-            readOnlyHint=tool.name in read_only_names,
-            openWorldHint=tool.name in _OPEN_WORLD_TOOLS,
-        )
+        existing = tool.annotations
+        if existing is None:
+            tool.annotations = ToolAnnotations(
+                readOnlyHint=tool.name in read_only_names,
+                openWorldHint=tool.name in _OPEN_WORLD_TOOLS,
+            )
+            continue
+        derived: dict[str, bool] = {}
+        if existing.readOnlyHint is None:
+            derived["readOnlyHint"] = tool.name in read_only_names
+        if existing.openWorldHint is None:
+            derived["openWorldHint"] = tool.name in _OPEN_WORLD_TOOLS
+        if derived:
+            tool.annotations = existing.model_copy(update=derived)
 
 
 def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:

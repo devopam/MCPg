@@ -79,8 +79,10 @@ def test_spot_check_anchor_tools() -> None:
     server = _build_server("unrestricted")
     by_name = {t.name: t for t in server._tool_manager.list_tools()}
     for name in _MUST_BE_READ_ONLY:
+        assert name in by_name, f"anchor tool missing from the unrestricted surface: {name}"
         assert by_name[name].annotations is not None and by_name[name].annotations.readOnlyHint is True, name
     for name in _MUST_NOT_BE_READ_ONLY:
+        assert name in by_name, f"anchor tool missing from the unrestricted surface: {name}"
         assert by_name[name].annotations is not None and by_name[name].annotations.readOnlyHint is False, name
 
 
@@ -101,8 +103,42 @@ async def test_annotations_reach_the_wire_via_list_tools() -> None:
     sample = {t.name: t for t in wire_tools}
     assert sample["run_select"].annotations is not None
     assert sample["run_select"].annotations.readOnlyHint is True
+    assert sample["run_select"].annotations.openWorldHint is False
     assert sample["run_ddl"].annotations is not None
     assert sample["run_ddl"].annotations.readOnlyHint is False
+    assert sample["translate_nl_to_sql"].annotations is not None
+    assert sample["translate_nl_to_sql"].annotations.openWorldHint is True
+
+
+def test_sweep_preserves_annotations_a_registration_set_explicitly() -> None:
+    """Derived hints fill gaps; they must never clobber explicit ones.
+
+    No call site passes ``annotations=`` today, but a future per-tool
+    override (say ``destructiveHint=False`` on a maintenance tool) has
+    to survive the sweep — explicit beats derived, field by field.
+    """
+    from mcp.types import ToolAnnotations
+
+    from mcpg.tools import _apply_tool_annotations
+
+    server: FastMCP = FastMCP("mcpg-annotations-merge-fixture")
+
+    @server.tool(
+        name="preexisting_annotated_tool",
+        description="fixture",
+        annotations=ToolAnnotations(title="Keep me", destructiveHint=False, readOnlyHint=False),
+    )
+    def preexisting() -> str:
+        return "x"
+
+    _apply_tool_annotations(server, read_only_names={"preexisting_annotated_tool"})
+
+    annotations = {t.name: t.annotations for t in server._tool_manager.list_tools()}["preexisting_annotated_tool"]
+    assert annotations is not None
+    assert annotations.title == "Keep me"  # preserved
+    assert annotations.destructiveHint is False  # preserved
+    assert annotations.readOnlyHint is False  # explicit False beats the derived True
+    assert annotations.openWorldHint is False  # unset -> filled by the derivation
 
 
 async def test_every_prompt_argument_has_a_description() -> None:

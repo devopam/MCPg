@@ -61,9 +61,9 @@ silently rot.
 - **Runtime moves to Python 3.14** — Docker image, the full CI matrix,
   and the publish pipeline. `requires-python` stays `>=3.12`;
   installing on 3.12/3.13 is unchanged.
-- **Startup warning noise eliminated** — the wall of benign pydantic
+- **Startup warning noise eliminated** — the benign pydantic
   "Field name `schema` shadows an attribute in parent BaseModel"
-  warnings on first `tools/list` is suppressed (narrowly, by message
+  warnings on first `tools/list` are suppressed (narrowly, by message
   pattern), with a contract test guarding the full tool surface.
 - **Release-pipeline hardening** — the TestPyPI smoke test now polls
   the PEP 503 simple index (what `pip install` actually reads) instead
