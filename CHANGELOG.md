@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **MCP `ToolAnnotations` on every tool** — all 252 tools now publish
+  `readOnlyHint` (185 read-only / 67 write-capable) and `openWorldHint`
+  on the wire, derived mechanically from the same READ / WRITE / DDL /
+  SHELL / LISTEN capability gates that already enforce access, so a
+  moved tool can never ship a stale hint. Clients like Claude Desktop
+  use these to decide which calls to auto-approve — MCPg's safety
+  classification is now visible to them, not just internal.
+  `openWorldHint` is `false` everywhere except `translate_nl_to_sql`
+  (the one tool that calls an external LLM API). `destructiveHint` is
+  deliberately left unset for write-capable tools: the MCP default
+  (true) is the cautious reading. A contract test pins the derivation
+  exhaustively: the hinted read-only set must equal the surface
+  actually reachable in read-only access mode.
+- **Prompt argument descriptions** — all 7 arguments across the 3 MCP
+  prompts (`diagnose_slow_query`, `bisect_slow_migration`,
+  `review_rls_policy`) now carry wire-visible descriptions.
 - **`mcpg --demo` / `mcpg --demo-drop`** (roadmap **17.1**) — one-shot CLI
   commands that seed / remove a small, deterministic, curated e-commerce
   demo dataset (400 customers, 120 products, 3,000 orders, 900 reviews)
