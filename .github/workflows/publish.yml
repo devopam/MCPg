@@ -171,7 +171,20 @@ jobs:
           # release body. Falls back to a stub if the section is
           # missing so the release still ships — the maintainer can
           # edit the body afterwards on the GitHub side.
-          awk "/^## \[${VER}\]/,/^## \[/" CHANGELOG.md | sed '$d' > /tmp/notes.md
+          #
+          # NOT an awk range pattern: GNU awk treats a line matching
+          # both endpoints as a single-line range, and "## [X.Y.Z]"
+          # matches both /^## \[X.Y.Z\]/ and /^## \[/ — so the old
+          # range-based extraction returned only the header line and
+          # every release body silently fell back to the stub
+          # (observed on v0.6.7 and all earlier releases). A flag
+          # variable sidesteps that; index() avoids regex-escaping
+          # the dots in the version.
+          awk -v ver="$VER" '
+            index($0, "## [" ver "]") == 1 { in_section = 1; next }
+            in_section && /^## \[/ { exit }
+            in_section
+          ' CHANGELOG.md > /tmp/notes.md
           [ -s /tmp/notes.md ] || echo "See CHANGELOG.md" > /tmp/notes.md
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "MCPg ${GITHUB_REF_NAME}" \
