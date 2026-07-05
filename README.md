@@ -123,7 +123,17 @@ More detail in the [Installation Guide](https://github.com/devopam/MCPg/blob/mai
 
 ## Quick start
 
-### Wire MCPg into Claude Desktop (stdio transport)
+### One-click install in Claude Desktop (.mcpb)
+
+Download `mcpg-<version>.mcpb` from the
+[latest release](https://github.com/devopam/MCPg/releases/latest) and
+double-click it (or drag it into Claude Desktop's Settings →
+Extensions). You'll be prompted for your PostgreSQL connection URL —
+stored in the OS keychain — and an access mode (defaults to
+read-only). That's the whole install: the bundle is ~2 kB and the
+host resolves the pinned `mcpg` release from PyPI for your platform.
+
+### Or wire it up manually (stdio transport)
 
 Drop this into your `claude_desktop_config.json` (macOS:
 `~/Library/Application Support/Claude/claude_desktop_config.json`;

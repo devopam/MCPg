@@ -1,0 +1,72 @@
+{
+  "manifest_version": "0.4",
+  "name": "mcpg",
+  "display_name": "MCPg — PostgreSQL",
+  "version": "0.6.7",
+  "description": "Production-grade PostgreSQL MCP server: 252 tools for querying, tuning, and operating Postgres — read-only by default.",
+  "long_description": "MCPg lets AI agents safely inspect, query, operate, and tune a PostgreSQL database. 252 tools spanning catalog introspection, query intelligence, natural-language SQL, structural diffs, hybrid search, graph queries, live ops, and more.\n\n**Safe by default**: read-only access mode, AST-validated SQL, and every tool publishes MCP annotations (`readOnlyHint`/`destructiveHint`) so the client knows exactly which calls are safe. Write, DDL, shell, and LISTEN capabilities stay off until explicitly enabled via environment variables.\n\nNo data yet? Run `mcpg --demo` against a scratch database to seed a curated demo dataset and take the tools for a spin — see the guided tour at https://github.com/devopam/MCPg/blob/main/docs/demo.md.",
+  "author": {
+    "name": "Devopam Mittra",
+    "email": "devopam@gmail.com",
+    "url": "https://github.com/devopam"
+  },
+  "homepage": "https://github.com/devopam/MCPg",
+  "documentation": "https://github.com/devopam/MCPg#documentation",
+  "support": "https://github.com/devopam/MCPg/issues",
+  "license": "MIT",
+  "keywords": [
+    "postgresql",
+    "postgres",
+    "database",
+    "sql",
+    "dba",
+    "pgvector",
+    "rag"
+  ],
+  "server": {
+    "type": "uv",
+    "entry_point": "server/main.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "server/main.py"
+      ],
+      "env": {
+        "MCPG_DATABASE_URL": "${user_config.database_url}",
+        "MCPG_ACCESS_MODE": "${user_config.access_mode}"
+      }
+    }
+  },
+  "user_config": {
+    "database_url": {
+      "type": "string",
+      "title": "PostgreSQL connection URL",
+      "description": "e.g. postgresql://user:password@localhost:5432/mydb — remote hosts need ?sslmode=require. Stored securely by the OS keychain.",
+      "sensitive": true,
+      "required": true
+    },
+    "access_mode": {
+      "type": "string",
+      "title": "Access mode",
+      "description": "read-only (default, safe) | restricted (allows write tools) | unrestricted (DBA surface; pair with MCPG_ALLOW_DDL etc. via env).",
+      "default": "read-only",
+      "required": false
+    }
+  },
+  "tools_generated": true,
+  "prompts_generated": true,
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.12,<4"
+    }
+  }
+}

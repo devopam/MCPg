@@ -6726,41 +6726,192 @@ def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
 # ``openWorldHint=False``; these are the exceptions (external LLM APIs).
 _OPEN_WORLD_TOOLS = frozenset({"translate_nl_to_sql"})
 
+# Per-tool destructiveness, spec sense: "may perform destructive
+# (irreversible / data-losing) updates", meaningful only for tools with
+# ``readOnlyHint=False``. The two sets below must exactly partition the
+# write-capable surface — a contract test enforces it — so adding a
+# write tool forces a conscious classification, and an unclassified new
+# tool defaults to the cautious reading (destructive) rather than
+# silently landing in the safe bucket.
+_DESTRUCTIVE_TOOLS = frozenset(
+    {
+        # Arbitrary/overwriting mutations.
+        "run_ddl",
+        "run_write",
+        "restore_database",
+        "complete_migration",  # executes migration SQL, which may drop/alter
+        "copy_table_between_databases",  # creates and force-drops databases
+        # Kills work in flight.
+        "cancel_query",
+        "terminate_backend",
+        # Removes objects or data.
+        "drop_graph",
+        "drop_property_graph",
+        "drop_publication",
+        "drop_subscription",
+        "partman_drop_partition",
+        "partman_run_maintenance",  # applies retention config: may detach/drop old partitions
+        "prune_audit_events",
+        "add_retention_policy",  # schedules future data deletion
+        "disable_data_checksums",  # removes a cluster integrity property
+        # Structural rewrites of existing partitions.
+        "merge_partitions",
+        "split_partition",
+    }
+)
+_NON_DESTRUCTIVE_WRITE_TOOLS = frozenset(
+    {
+        # Additive object creation (fails on conflict, destroys nothing).
+        "add_compression_policy",
+        "partman_create_parent",
+        "create_graph",
+        "create_hypertable",
+        "create_pg_search_index",
+        "create_property_graph",
+        "create_publication",
+        "create_redis_cache_server",
+        "create_redis_cache_table",
+        "create_redis_user_mapping",
+        "create_subscription",
+        "create_turboquant_index",
+        "enable_data_checksums",
+        "enable_extension",
+        "enable_logical_replication_on_demand",
+        "enable_redis_fdw",
+        # Additive data loads.
+        "import_csv",
+        "import_json",
+        "import_vectors",
+        "seed_table_with_sample_data",
+        # Maintenance: data preserved by design.
+        "maintain_turboquant_index",
+        "reindex_pg_search_index",
+        "reindex_turboquant_index",
+        "repack_table",
+        "run_maintenance",
+        "prewarm_recommended",
+        "prewarm_relation",
+        # Always rolls back.
+        "dry_run_ddl",
+        # Writes files / schedules, never touches table data.
+        "dump_database",
+        "schedule_logical_backup",
+        "schedule_autowarm",
+        "unschedule_autowarm",
+        "schedule_cron_job",
+        "unschedule_cron_job",
+        # Migration bookkeeping (no migration SQL is executed).
+        "prepare_migration",
+        "cancel_migration",
+        "validate_migration",
+        "validate_migration_schema",
+        "validate_check_constraint",
+        "list_pending_migrations",
+        "list_unapplied_migration_scripts",
+        # Telemetry / session-scoped state.
+        "log_rerank_event",
+        "record_efficiency_observation",
+        "setup_efficiency_observations",
+        "setup_rag_telemetry",
+        "subscribe_channel",
+        "unsubscribe_channel",
+        "poll_notifications",
+        "list_notification_subscriptions",
+    }
+)
 
-def _apply_tool_annotations(server: FastMCP[AppContext], read_only_names: set[str]) -> None:
-    """Stamp MCP ``ToolAnnotations`` derived from the capability gates.
+# Acronyms / product names the auto-derived titles must render properly;
+# any token not listed is used as-is (lowercase, sentence case overall).
+_TITLE_TOKENS: dict[str, str] = {
+    "sql": "SQL",
+    "ddl": "DDL",
+    "rls": "RLS",
+    "wal": "WAL",
+    "io": "IO",
+    "aio": "AIO",
+    "nl": "NL",
+    "lsn": "LSN",
+    "fdw": "FDW",
+    "fk": "FK",
+    "csv": "CSV",
+    "json": "JSON",
+    "bm25": "BM25",
+    "pgq": "PGQ",
+    "mpp": "MPP",
+    "rag": "RAG",
+    "pitr": "PITR",
+    "mmr": "MMR",
+    "ndcg": "NDCG",
+    "hnsw": "HNSW",
+    "ivfflat": "IVFFlat",
+    "ao": "AO",
+    "pg": "PG",
+    "pg19": "PG 19",
+    "select": "SELECT",
+    "topk": "top-k",
+    "postgres": "Postgres",
+    "redis": "Redis",
+    "prisma": "Prisma",
+    "drizzle": "Drizzle",
+    "diesel": "Diesel",
+    "ecto": "Ecto",
+    "ent": "Ent",
+    "jooq": "jOOQ",
+    "sqlalchemy": "SQLAlchemy",
+    "turboquant": "TurboQuant",
+    "warehousepg": "WarehousePG",
+    "cypher": "Cypher",
+}
+
+
+def _humanize_tool_name(name: str) -> str:
+    """``recommend_ivfflat_probes`` → ``Recommend IVFFlat probes``."""
+    words = [_TITLE_TOKENS.get(token, token) for token in name.split("_")]
+    title = " ".join(words)
+    return title[0].upper() + title[1:]
+
+
+def _apply_tool_wire_metadata(server: FastMCP[AppContext], read_only_names: set[str]) -> None:
+    """Stamp titles + MCP ``ToolAnnotations`` derived from the gates.
 
     MCPg already classifies every tool as READ / WRITE / DDL / SHELL /
     LISTEN via the registration gates in :func:`register_tools`; this
     puts that classification on the wire, where clients use it to
-    decide which calls to auto-approve (``readOnlyHint``) and whether
-    the tool leaves the database's closed world (``openWorldHint``).
-    Derived, not hand-written, so a tool moved between gates can never
-    ship a stale hint. ``destructiveHint`` is deliberately left unset
-    for non-read tools: the MCP default (true) is the cautious reading,
-    and MCPg doesn't currently track per-tool destructiveness more
-    precisely than the gate does.
+    decide which calls to auto-approve (``readOnlyHint``), how risky a
+    write is (``destructiveHint``, from the curated partition above),
+    and whether the tool leaves the database's closed world
+    (``openWorldHint``). Derived, not hand-written, so a tool moved
+    between gates can never ship a stale hint. Human-readable titles
+    are auto-derived from the snake_case name (directory listings —
+    e.g. the Claude connector directory — require one per tool).
 
     Uses the sync ``_tool_manager`` accessor for the same reason the
     session-intent filter does: this runs in synchronous startup code.
 
-    Merge semantics: annotations a registration set explicitly always
-    win — the derived values only fill fields that are still ``None``.
-    (No call site passes ``annotations=`` today, but a future per-tool
-    override — e.g. ``destructiveHint=False`` on a maintenance tool —
-    must not be silently clobbered by this sweep.)
+    Merge semantics: metadata a registration set explicitly always
+    wins — the derived values only fill fields that are still ``None``.
+    (No call site passes ``annotations=`` or ``title=`` today, but a
+    future per-tool override must not be silently clobbered.)
     """
     for tool in server._tool_manager.list_tools():
+        if tool.title is None:
+            tool.title = _humanize_tool_name(tool.name)
+        read_only = tool.name in read_only_names
         existing = tool.annotations
         if existing is None:
             tool.annotations = ToolAnnotations(
-                readOnlyHint=tool.name in read_only_names,
+                readOnlyHint=read_only,
+                # None (not False) for reads: the hint is only meaningful
+                # on write-capable tools per the MCP spec.
+                destructiveHint=None if read_only else tool.name not in _NON_DESTRUCTIVE_WRITE_TOOLS,
                 openWorldHint=tool.name in _OPEN_WORLD_TOOLS,
             )
             continue
         derived: dict[str, bool] = {}
         if existing.readOnlyHint is None:
-            derived["readOnlyHint"] = tool.name in read_only_names
+            derived["readOnlyHint"] = read_only
+        if not read_only and existing.destructiveHint is None:
+            derived["destructiveHint"] = tool.name not in _NON_DESTRUCTIVE_WRITE_TOOLS
         if existing.openWorldHint is None:
             derived["openWorldHint"] = tool.name in _OPEN_WORLD_TOOLS
         if derived:
@@ -6849,7 +7000,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     if is_permitted(settings.access_mode, Capability.LISTEN) and settings.allow_listen:
         _register_listen(server)
 
-    _apply_tool_annotations(server, read_only_names)
+    _apply_tool_wire_metadata(server, read_only_names)
 
     # Session-intent surface filter (roadmap 8.8). Runs LAST so every
     # tool that would otherwise be registered has already been added —

@@ -105,7 +105,24 @@ mcpg
 
 ## Wire it into an MCP client
 
-### Claude Desktop (`stdio`)
+### Claude Desktop — one-click extension (recommended)
+
+Download `mcpg-<version>.mcpb` from the
+[latest GitHub release](https://github.com/devopam/MCPg/releases/latest)
+and open it with Claude Desktop (double-click, or Settings →
+Extensions → drag it in). The install dialog prompts for:
+
+- **PostgreSQL connection URL** — stored in the operating system's
+  keychain (never in plain-text config).
+- **Access mode** — defaults to `read-only`.
+
+The bundle is a ~2 kB `uv`-type MCPB: Claude Desktop resolves the
+pinned `mcpg` release from PyPI for your platform at install time, so
+there is nothing else to install. Additional environment variables
+(replicas, capability gates, NL→SQL keys) can still be layered on via
+the manual config below if you need them.
+
+### Claude Desktop (`stdio`, manual config)
 
 `claude_desktop_config.json` (macOS:
 `~/Library/Application Support/Claude/claude_desktop_config.json`;
