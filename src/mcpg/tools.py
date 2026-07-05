@@ -3132,7 +3132,8 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         description=_with_example(
             "Translate a natural-language question into a read-only "
             "PostgreSQL query against `schema`. The LLM provider "
-            "(anthropic / openai / gemini) sees a compact brief of "
+            "(anthropic / openai / gemini / deepseek / qwen / "
+            "openrouter / perplexity) sees a compact brief of "
             "the schema (tables, columns, foreign keys) and is "
             "instructed to return JSON with `sql` and `explanation`. "
             "When execute=true, the generated SQL goes through the "
@@ -3143,11 +3144,12 @@ def _register_query(server: FastMCP[AppContext]) -> None:
             "row_count. table_filter narrows the brief to a known "
             "subset when the question is clearly scoped. "
             "`provider`, when supplied, selects which configured "
-            "LLM provider to call (use this to route between "
-            "anthropic / openai / gemini per-call when multiple are "
+            "LLM provider to call (use this to route between the "
+            "configured vendors per-call when multiple are "
             "configured); when omitted, MCPg uses the default "
             "(MCPG_NL2SQL_PROVIDER, otherwise the first available "
-            "in preference order anthropic → openai → gemini). Call "
+            "in preference order anthropic → openai → gemini → "
+            "deepseek → qwen → openrouter → perplexity). Call "
             "get_server_info to see which providers are configured.",
             "translate_nl_to_sql(question='top 10 customers by revenue last month', schema='public', execute=true)",
         ),

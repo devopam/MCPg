@@ -293,12 +293,22 @@ callable through the tool:
 | `anthropic` | `ANTHROPIC_API_KEY` | provider's recent Claude Sonnet |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
 | `gemini` | `GEMINI_API_KEY` (falls back to `GOOGLE_API_KEY`) | provider's recent Gemini Flash |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` |
+| `qwen` | `DASHSCOPE_API_KEY` (falls back to `QWEN_API_KEY`) | `qwen-plus` |
+| `openrouter` | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` (any OpenRouter model via `MCPG_NL2SQL_MODEL`) |
+| `perplexity` | `PERPLEXITY_API_KEY` | `sonar` |
+
+The last four are OpenAI-compatible vendors: MCPg drives them through
+the same chat-completions client with vendor-preset endpoints.
+Self-hosted OpenAI-compatible stacks (Ollama, vLLM, LM Studio) work by
+pointing the `openai` provider at them via `MCPG_NL2SQL_BASE_URL`.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...      # configures anthropic
 export OPENAI_API_KEY=sk-...             # configures openai too
 # Both available; MCPg auto-picks anthropic as the default
-# (preference order: anthropic → openai → gemini).
+# (preference order: anthropic → openai → gemini → deepseek
+# → qwen → openrouter → perplexity).
 ```
 
 To pin a specific default, set `MCPG_NL2SQL_PROVIDER` explicitly:

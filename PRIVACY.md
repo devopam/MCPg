@@ -17,8 +17,9 @@ you.
 - **One documented exception — NL→SQL.** The `translate_nl_to_sql`
   tool sends your natural-language question plus relevant schema
   context (table/column names, not row data) to the LLM provider whose
-  API key *you* configured (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
-  `GEMINI_API_KEY`). It is the only tool that contacts an external
+  API key *you* configured (Anthropic, OpenAI, Gemini, DeepSeek, Qwen,
+  OpenRouter, or Perplexity — via the vendor's conventional env
+  var). It is the only tool that contacts an external
   service. It is flagged `openWorldHint: true` in its MCP annotations
   and does nothing until you both set a key and call it.
 

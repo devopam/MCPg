@@ -15,7 +15,7 @@ from os import environ
 from os.path import isabs
 
 from mcpg._vendor.sql import obfuscate_password
-from mcpg.nl2sql import VENDOR_ENV_VAR_HINT
+from mcpg.nl2sql import AUTO_PICK_ORDER, VENDOR_ENV_VAR_HINT
 from mcpg.secrets import SecretsError, build_secrets_provider
 
 # PG role names must be safe identifiers — we inline them into
@@ -745,8 +745,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         candidate = raw.strip().lower()
         if not candidate:
             raise ConfigError("MCPG_NL2SQL_PROVIDER must not be blank when set")
-        if candidate not in {"anthropic", "openai", "gemini"}:
-            raise ConfigError(f"MCPG_NL2SQL_PROVIDER must be one of: anthropic, openai, gemini (got {raw!r})")
+        if candidate not in AUTO_PICK_ORDER:
+            raise ConfigError(f"MCPG_NL2SQL_PROVIDER must be one of: {', '.join(AUTO_PICK_ORDER)} (got {raw!r})")
         nl2sql_provider = candidate
 
     # Discover every provider whose conventional vendor env var is set.
@@ -762,6 +762,18 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     gemini_key = (secrets.get("GEMINI_API_KEY") or "").strip() or (secrets.get("GOOGLE_API_KEY") or "").strip()
     if gemini_key:
         api_keys["gemini"] = gemini_key
+    # OpenAI-compatible vendors (DeepSeek / Qwen / OpenRouter /
+    # Perplexity) — discovered the same way, driven through the same
+    # chat-completions client with vendor-preset endpoints (nl2sql.py).
+    if deepseek_key := (secrets.get("DEEPSEEK_API_KEY") or "").strip():
+        api_keys["deepseek"] = deepseek_key
+    qwen_key = (secrets.get("DASHSCOPE_API_KEY") or "").strip() or (secrets.get("QWEN_API_KEY") or "").strip()
+    if qwen_key:
+        api_keys["qwen"] = qwen_key
+    if openrouter_key := (secrets.get("OPENROUTER_API_KEY") or "").strip():
+        api_keys["openrouter"] = openrouter_key
+    if perplexity_key := (secrets.get("PERPLEXITY_API_KEY") or "").strip():
+        api_keys["perplexity"] = perplexity_key
 
     if (raw := secrets.get("MCPG_NL2SQL_API_KEY")) is not None:
         stripped = raw.strip()
@@ -771,7 +783,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             raise ConfigError(
                 "MCPG_NL2SQL_API_KEY is set but MCPG_NL2SQL_PROVIDER is not — "
                 "MCPg can't tell which provider this key is for. Either set "
-                "MCPG_NL2SQL_PROVIDER (anthropic|openai|gemini) too, or drop "
+                "MCPG_NL2SQL_PROVIDER too, or drop "
                 "MCPG_NL2SQL_API_KEY and use the vendor-conventional env var "
                 "(ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY) so the "
                 "provider is implicit."
@@ -783,7 +795,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     # least one vendor key is present. Preference order is documented
     # in README + docs/user-guide.md.
     if nl2sql_provider is None and api_keys:
-        for candidate in ("anthropic", "openai", "gemini"):
+        for candidate in AUTO_PICK_ORDER:
             if candidate in api_keys:
                 nl2sql_provider = candidate
                 break

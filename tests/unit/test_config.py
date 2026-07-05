@@ -298,10 +298,44 @@ def test_nl2sql_provider_rejects_unknown_vendor() -> None:
         load_settings(
             {
                 "MCPG_DATABASE_URL": _DB_URL,
-                "MCPG_NL2SQL_PROVIDER": "perplexity",
+                "MCPG_NL2SQL_PROVIDER": "cohere",
                 "MCPG_NL2SQL_API_KEY": "k",
             }
         )
+
+
+def test_nl2sql_discovers_openai_compatible_vendor_keys() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "DEEPSEEK_API_KEY": "d",
+            "DASHSCOPE_API_KEY": "q",
+            "OPENROUTER_API_KEY": "o",
+            "PERPLEXITY_API_KEY": "p",
+        }
+    )
+    keys = dict(settings.nl2sql_api_keys)
+    assert keys == {"deepseek": "d", "qwen": "q", "openrouter": "o", "perplexity": "p"}
+    # No original-three key present -> auto-pick falls through to the
+    # OpenAI-compatible vendors in documented order.
+    assert settings.nl2sql_provider == "deepseek"
+
+
+def test_qwen_api_key_is_an_alias_for_dashscope() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "QWEN_API_KEY": "via-alias"})
+    assert dict(settings.nl2sql_api_keys) == {"qwen": "via-alias"}
+    assert settings.nl2sql_provider == "qwen"
+
+
+def test_original_vendors_keep_auto_pick_priority_over_new_ones() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "DEEPSEEK_API_KEY": "d",
+            "GEMINI_API_KEY": "g",
+        }
+    )
+    assert settings.nl2sql_provider == "gemini"
 
 
 def test_nl2sql_provider_requires_an_api_key_somewhere() -> None:
