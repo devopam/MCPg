@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet — merged changes accumulate here until the next release is
+cut. (Add an `### Added` / `### Changed` / `### Fixed` heading along
+with the first entry of that kind.)
+
+## [0.6.8] - 2026-07-05
+
 ### Added
 
 - **One-click installs for Cursor and VS Code + a client integration
@@ -14,9 +20,16 @@ adheres to [Semantic Versioning](https://semver.org/).
   strips custom URL schemes from READMEs, so the raw `cursor://` /
   `vscode:` forms would render dead). The VS Code install uses a
   masked `promptString` input for the connection URL, so it never
-  lands in plain-text settings. New `docs/integrations.md` covers
-  Cursor, VS Code, Claude Desktop/Code, Windsurf, JetBrains AI
-  Assistant, Cline/Roo, Zed, Continue, and generic HTTP clients.
+  lands in plain-text settings. New `docs/integrations.md` covers 14
+  clients: Cursor, VS Code (GitHub Copilot agent mode), Claude
+  Desktop/Code, Windsurf, JetBrains AI Assistant, Cline/Roo, Zed,
+  Google Antigravity (+ Gemini CLI), Qwen Code, Perplexity, ChatGPT
+  (remote connectors), Microsoft Copilot Studio, Continue, and
+  generic HTTP clients — plus an honest "not yet coverable" section
+  for Aider (no native MCP support upstream) and DeepSeek (a model
+  provider, not a client). Badge payloads are pinned by a unit test
+  that decodes them out of both README and docs and asserts
+  cross-file consistency.
 - **One-click Claude Desktop install (`.mcpb`)** — every release now
   attaches a `mcpg-<version>.mcpb` desktop-extension bundle. It uses
   the MCPB `uv` server type, so the bundle is ~2 kB and works on every
@@ -40,9 +53,15 @@ adheres to [Semantic Versioning](https://semver.org/).
   single documented external call (`translate_nl_to_sql` → your
   configured LLM provider), and credential-handling guarantees.
 
-### Changed
-
 ### Fixed
+
+- **GitHub Release bodies were always the fallback stub.** The
+  release-notes extraction in the publish workflow used an awk range
+  pattern whose start line also matched its end pattern (GNU awk
+  collapses that to a single line), so every release since the job was
+  added shipped "See CHANGELOG.md" instead of the changelog section.
+  Replaced with an explicit flag-variable scan; this release is the
+  first to exercise it.
 
 ## [0.6.7] - 2026-07-03
 
