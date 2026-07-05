@@ -551,6 +551,16 @@ Compact category list. For the full, current tool reference see
 - See [`docs/security-hardening.md`](https://github.com/devopam/MCPg/blob/main/docs/security-hardening.md) for
   the living roadmap of shipped (✅) and queued (⬜) hardening items.
 
+## Privacy Policy
+
+MCPg is self-hosted: your database contents never leave your
+infrastructure, and there is no telemetry or phone-home of any kind.
+The one documented exception is the opt-in `translate_nl_to_sql` tool,
+which sends your question plus schema context (names, not row data) to
+the LLM provider *you* configure. Full policy — data collection,
+usage, storage, third-party sharing, retention, and contact — is in
+[`PRIVACY.md`](https://github.com/devopam/MCPg/blob/main/PRIVACY.md).
+
 ---
 
 ## Release notes & changelog
