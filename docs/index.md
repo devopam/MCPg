@@ -14,7 +14,7 @@ them" — pick the section that matches what you're trying to do.
   Docker image, and what the environment variables mean.
 - [**Client integrations**](integrations.md) — one-click installs for
   Cursor / VS Code / Claude Desktop, plus setup for Windsurf,
-  JetBrains, Zed, Cline, Antigravity, Perplexity, ChatGPT, Copilot
+  JetBrains, Zed, Cline, Antigravity, Qwen Code, Perplexity, ChatGPT, Copilot
   Studio, Continue, and HTTP clients.
 - [**Demo dataset**](demo.md) — `mcpg --demo` seeds a curated
   playground schema; a captured walkthrough shows the pivotal tools

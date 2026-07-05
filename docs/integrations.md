@@ -185,6 +185,30 @@ mcpServers:
       MCPG_DATABASE_URL: postgresql://user:pass@localhost:5432/mydb
 ```
 
+## Qwen Code (CLI)
+
+`~/.qwen/settings.json` (global) or `.qwen/settings.json` in your
+project — the top-level `mcpServers` object:
+
+```json
+{
+  "mcpServers": {
+    "mcpg": {
+      "command": "uvx",
+      "args": ["mcpg"],
+      "env": {
+        "MCPG_DATABASE_URL": "postgresql://user:pass@localhost:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+`qwen mcp add` can write the entry for you, and the `/mcp` dialog
+inside an interactive session shows every configured server and its
+tools. Remote deployments can use `"httpUrl"` against MCPg's
+`streamable-http` transport instead of `command`.
+
 ## Perplexity (Mac app, paid plans)
 
 Perplexity's desktop app runs local MCP servers through a helper
