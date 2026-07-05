@@ -22,7 +22,7 @@ _VSCODE_RE = re.compile(r"(?<!insiders\.)vscode\.dev/redirect\?url=([^)\s]+)\)")
 def _payloads(pattern: re.Pattern[str]) -> dict[str, str]:
     found: dict[str, str] = {}
     for rel in ("README.md", "docs/integrations.md"):
-        match = pattern.search((_ROOT / rel).read_text())
+        match = pattern.search((_ROOT / rel).read_text(encoding="utf-8"))
         assert match, f"{rel}: no install link matching {pattern.pattern!r}"
         found[rel] = match.group(1)
     return found
