@@ -127,7 +127,7 @@ More detail in the [Installation Guide](https://github.com/devopam/MCPg/blob/mai
 [![Add to Cursor](https://img.shields.io/badge/Add_to-Cursor-000000?logo=cursor)](https://cursor.com/install-mcp?name=mcpg&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJtY3BnIl0sImVudiI6eyJNQ1BHX0RBVEFCQVNFX1VSTCI6InBvc3RncmVzcWw6Ly91c2VyOnBhc3NAbG9jYWxob3N0OjU0MzIvbXlkYiJ9fQ%3D%3D)
 [![Install in VS Code](https://img.shields.io/badge/Install_in-VS_Code-0098FF?logo=githubcopilot)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522mcpg%2522%252C%2522command%2522%253A%2522uvx%2522%252C%2522args%2522%253A%255B%2522mcpg%2522%255D%252C%2522env%2522%253A%257B%2522MCPG_DATABASE_URL%2522%253A%2522%2524%257Binput%253Adatabase_url%257D%2522%257D%252C%2522inputs%2522%253A%255B%257B%2522type%2522%253A%2522promptString%2522%252C%2522id%2522%253A%2522database_url%2522%252C%2522description%2522%253A%2522PostgreSQL%2520connection%2520URL%2520%2528postgresql%253A%252F%252Fuser%253Apass%2540host%253A5432%252Fdb%2529%2522%252C%2522password%2522%253Atrue%257D%255D%257D)
 [![Claude Desktop](https://img.shields.io/badge/Claude_Desktop-.mcpb-D97757?logo=claude)](https://github.com/devopam/MCPg/releases/latest)
-— setup for Windsurf, JetBrains, Zed, Cline, Continue, and HTTP
+— setup for Windsurf, JetBrains, Zed, Cline, Antigravity, Continue, and HTTP
 clients in the [integrations guide](docs/integrations.md).
 
 ### One-click install in Claude Desktop (.mcpb)

@@ -14,7 +14,7 @@ them" — pick the section that matches what you're trying to do.
   Docker image, and what the environment variables mean.
 - [**Client integrations**](integrations.md) — one-click installs for
   Cursor / VS Code / Claude Desktop, plus setup for Windsurf,
-  JetBrains, Zed, Cline, Continue, and HTTP clients.
+  JetBrains, Zed, Cline, Antigravity, Continue, and HTTP clients.
 - [**Demo dataset**](demo.md) — `mcpg --demo` seeds a curated
   playground schema; a captured walkthrough shows the pivotal tools
   finding its planted flaws.

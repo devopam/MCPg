@@ -146,6 +146,31 @@ MCP Servers panel → Configure MCP Servers, or edit
 }
 ```
 
+## Google Antigravity (and Gemini CLI)
+
+Antigravity's IDE and CLI share one MCP config —
+`~/.gemini/config/mcp_config.json` (also reachable in-app via
+*Manage MCP Servers → View raw config*; Antigravity reloads it
+automatically on save):
+
+```json
+{
+  "mcpServers": {
+    "mcpg": {
+      "command": "uvx",
+      "args": ["mcpg"],
+      "env": {
+        "MCPG_DATABASE_URL": "postgresql://user:pass@localhost:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+For a remote/shared deployment, use `"serverUrl": "https://your-host:8000"`
+with MCPg running the `streamable-http` transport (see the HTTP
+section below).
+
 ## Continue
 
 `~/.continue/config.yaml`:
