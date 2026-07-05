@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **One-click installs for Cursor and VS Code + a client integrations
+  guide** — README install badges using the official HTTPS deeplink
+  endpoints (`cursor.com/install-mcp`, `vscode.dev/redirect`; GitHub
+  strips custom URL schemes from READMEs, so the raw `cursor://` /
+  `vscode:` forms would render dead). The VS Code install uses a
+  masked `promptString` input for the connection URL, so it never
+  lands in plain-text settings. New `docs/integrations.md` covers
+  Cursor, VS Code, Claude Desktop/Code, Windsurf, JetBrains AI
+  Assistant, Cline/Roo, Zed, Continue, and generic HTTP clients.
 - **One-click Claude Desktop install (`.mcpb`)** — every release now
   attaches a `mcpg-<version>.mcpb` desktop-extension bundle. It uses
   the MCPB `uv` server type, so the bundle is ~2 kB and works on every
