@@ -63,6 +63,9 @@ def test_manifest_invariants() -> None:
     assert (_BUNDLE_DIR / manifest["icon"]).is_file()
     policies = manifest["privacy_policies"]
     assert policies and all(url.startswith("https://") for url in policies)
+    # Directory review favours a first-party page over a github.com
+    # repo-file link — the policy is published via GitHub Pages.
+    assert all("github.com" not in url for url in policies), policies
 
 
 def test_bundle_pyproject_pins_the_current_release() -> None:
