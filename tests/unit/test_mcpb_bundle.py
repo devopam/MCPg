@@ -57,6 +57,13 @@ def test_manifest_invariants() -> None:
     assert manifest["tools_generated"] is True
     assert manifest["prompts_generated"] is True
 
+    # Connector-directory requirements: a bundled icon and an HTTPS
+    # privacy_policies array ("missing or incomplete privacy policies
+    # result in immediate rejection", per the submission docs).
+    assert (_BUNDLE_DIR / manifest["icon"]).is_file()
+    policies = manifest["privacy_policies"]
+    assert policies and all(url.startswith("https://") for url in policies)
+
 
 def test_bundle_pyproject_pins_the_current_release() -> None:
     """The checked-in pin tracks mcpg's own version between releases.
