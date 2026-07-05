@@ -162,6 +162,38 @@ jobs:
         with:
           name: dist
           path: dist/
+      - name: Build the Claude Desktop extension (.mcpb)
+        # One-click-install bundle for Claude Desktop. server.type "uv"
+        # keeps it tiny (~2 kB): the host resolves the mcpg==VER pin
+        # from PyPI at install time, so one bundle covers every
+        # platform/arch. Versions are synced from the release tag the
+        # same way server.json is — the checked-in files carry the
+        # previous release's pin and are patched here, so the bundle
+        # can never ship stale.
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          python3 - "$VER" <<'EOF'
+          import json
+          import re
+          import sys
+
+          ver = sys.argv[1]
+          with open("packaging/mcpb/manifest.json") as f:
+              manifest = json.load(f)
+          manifest["version"] = ver
+          with open("packaging/mcpb/manifest.json", "w") as f:
+              json.dump(manifest, f, indent=2)
+              f.write("\n")
+          path = "packaging/mcpb/pyproject.toml"
+          with open(path) as f:
+              text = f.read()
+          text = re.sub(r'version = "[^"]+"', f'version = "{ver}"', text)
+          text = re.sub(r"mcpg==[0-9][^\"',\s]*", f"mcpg=={ver}", text)
+          with open(path, "w") as f:
+              f.write(text)
+          EOF
+          npx --yes @anthropic-ai/mcpb validate packaging/mcpb/manifest.json
+          npx --yes @anthropic-ai/mcpb pack packaging/mcpb "dist/mcpg-${VER}.mcpb"
       - name: Cut release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

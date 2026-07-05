@@ -1,0 +1,13 @@
+# The MCPB bundle's project file. ``server.type: "uv"`` bundles declare
+# dependencies here and the host (Claude Desktop) resolves them from
+# PyPI at install time with uv — no vendored wheels, so one small
+# bundle works on every platform/architecture. The mcpg pin is synced
+# to the release tag by the publish workflow, exactly like server.json.
+[project]
+name = "mcpg-desktop-extension"
+version = "0.6.7"
+description = "MCPB launcher shim for the MCPg PostgreSQL MCP server."
+requires-python = ">=3.12"
+dependencies = [
+    "mcpg==0.6.7",
+]

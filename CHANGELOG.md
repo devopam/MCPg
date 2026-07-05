@@ -8,6 +8,29 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **One-click Claude Desktop install (`.mcpb`)** — every release now
+  attaches a `mcpg-<version>.mcpb` desktop-extension bundle. It uses
+  the MCPB `uv` server type, so the bundle is ~2 kB and works on every
+  platform/architecture: Claude Desktop resolves the pinned `mcpg`
+  release from PyPI at install time. The connection URL is declared
+  `sensitive` (OS-keychain storage) and access mode defaults to
+  read-only. Bundle sources live in `packaging/mcpb/`; versions are
+  synced from the release tag by the publish workflow (same
+  never-goes-stale pattern as `server.json`).
+- **Human-readable titles on all 252 tools** — auto-derived from the
+  snake_case name with an acronym/product-name table (`run_ddl` →
+  "Run DDL", `recommend_ivfflat_probes` → "Recommend IVFFlat probes"),
+  filling the one remaining metadata gap for connector-directory
+  listings. Explicit per-registration titles still win.
+- **Explicit `destructiveHint` on every write-capable tool** — the 67
+  write tools are now classified by a curated destructive (18) /
+  non-destructive (49) partition instead of relying on the implicit
+  MCP default. A contract test requires the partition to cover the
+  write surface exactly, so a new write tool cannot ship unclassified.
+- **`PRIVACY.md`** — states the self-hosted/no-telemetry posture, the
+  single documented external call (`translate_nl_to_sql` → your
+  configured LLM provider), and credential-handling guarantees.
+
 ### Changed
 
 ### Fixed
