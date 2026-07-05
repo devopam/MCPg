@@ -8,7 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **One-click installs for Cursor and VS Code + a client integrations
+- **One-click installs for Cursor and VS Code + a client integration
   guide** — README install badges using the official HTTPS deeplink
   endpoints (`cursor.com/install-mcp`, `vscode.dev/redirect`; GitHub
   strips custom URL schemes from READMEs, so the raw `cursor://` /

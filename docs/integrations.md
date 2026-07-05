@@ -5,8 +5,10 @@ MCPg speaks all three MCP transports (`stdio`, `streamable-http`,
 fastest install path per client. Everything below assumes `uv` is
 installed (`pipx install uv` or see [astral.sh/uv](https://docs.astral.sh/uv/));
 `uvx mcpg` fetches and runs the latest release with no separate
-install step. Replace the connection URL with your own — remote hosts
-need `?sslmode=require`.
+install step. Every snippet below uses the same **local-only example
+DSN** (`postgresql://user:pass@localhost:5432/mydb`) — replace it with
+your own; remote hosts require `?sslmode=require` (or stronger), which
+MCPg enforces at startup.
 
 > **Safe by default everywhere**: whatever the client, MCPg starts in
 > read-only mode and every tool carries MCP `readOnlyHint` /
