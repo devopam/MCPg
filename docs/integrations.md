@@ -185,6 +185,43 @@ mcpServers:
       MCPG_DATABASE_URL: postgresql://user:pass@localhost:5432/mydb
 ```
 
+## Perplexity (Mac app, paid plans)
+
+Perplexity's desktop app runs local MCP servers through a helper
+process: Settings → **Connectors** → install the *PerplexityXPC*
+helper → **Add Connector**. Use the *Advanced* tab and paste the same
+`mcpServers` JSON shown for Windsurf above (the *Simple* tab's single
+command field can't carry the `MCPG_DATABASE_URL` environment
+variable). Once the connector shows *Running*, toggle it on under
+*Sources* on the home screen.
+
+## ChatGPT (remote connector — developer mode)
+
+ChatGPT connects to **remote** MCP servers only: HTTPS required, no
+localhost, OAuth or no-auth connectors. Run MCPg's `streamable-http`
+transport on a reachable host (see the HTTP section below), then in
+ChatGPT: Settings → Apps → Advanced settings → **Developer mode**
+(Pro/Plus/Business/Enterprise, web) → add a connector with your
+server URL.
+
+Auth caveat, stated plainly: ChatGPT's connector options don't include
+static bearer headers, so either front MCPg with an OAuth-terminating
+gateway or run a no-auth connector **only** on a private network
+against a **read-only, non-production** database — never expose an
+unauthenticated database tool surface to the public internet.
+
+## Microsoft Copilot
+
+- **GitHub Copilot (VS Code agent mode)** — that's the
+  [VS Code section above](#vs-code-copilot-agent-mode); the one-click
+  badge covers it.
+- **Microsoft 365 Copilot / Copilot Studio** — Copilot Studio agents
+  connect to remote MCP servers: deploy MCPg's `streamable-http`
+  transport on an HTTPS endpoint and register it as an MCP tool/custom
+  connector in Copilot Studio. Same read-only-by-default posture
+  applies; use `MCPG_AUTH_MODE=oidc` with your Entra ID issuer for
+  enterprise-grade auth.
+
 ## Anything that speaks HTTP (LangGraph, custom agents, web apps)
 
 Run MCPg as a server and point the client at it:
@@ -201,6 +238,20 @@ Then connect any MCP-over-HTTP client to `http://localhost:8000` with
 the bearer token. For OIDC/JWT auth, rate limiting, and TLS options,
 see the [installation guide](installation.md) and
 [cookbook](cookbook.md).
+
+---
+
+## Asked about, not (yet) coverable
+
+- **Aider** — no native MCP client support as of mid-2026 (tracked
+  upstream in [Aider-AI/aider#4506](https://github.com/aider-ai/aider/issues/4506));
+  community bridges like `mcpm-aider` exist but aren't stable enough
+  for us to document. This section will gain a real config the moment
+  native support lands.
+- **DeepSeek** — a model provider, not an MCP client. DeepSeek models
+  drive MCPg just fine *through* the clients above (e.g. Cline or
+  Cursor with `deepseek-v4-pro` selected — note the pure-reasoning R1
+  models can't call tools).
 
 ---
 
