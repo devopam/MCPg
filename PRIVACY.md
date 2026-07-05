@@ -19,8 +19,8 @@ you.
   context (table/column names, not row data) to the LLM provider whose
   API key *you* configured (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
   `GEMINI_API_KEY`). It is the only tool that contacts an external
-  service, it is flagged `openWorldHint: true` in its MCP annotations,
-  and it does nothing until you both set a key and call it.
+  service. It is flagged `openWorldHint: true` in its MCP annotations
+  and does nothing until you both set a key and call it.
 
 ## Credentials
 
