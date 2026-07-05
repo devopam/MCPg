@@ -24,9 +24,9 @@ def test_sync_version_patches_every_pin(tmp_path: Path) -> None:
 
     sync(scratch, "9.9.9")
 
-    manifest = json.loads((scratch / "manifest.json").read_text())
+    manifest = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["version"] == "9.9.9"
-    pyproject = (scratch / "pyproject.toml").read_text()
+    pyproject = (scratch / "pyproject.toml").read_text(encoding="utf-8")
     assert 'version = "9.9.9"' in pyproject
     assert '"mcpg==9.9.9"' in pyproject
     # No stale pin of any other version survives.
@@ -34,7 +34,7 @@ def test_sync_version_patches_every_pin(tmp_path: Path) -> None:
 
 
 def test_manifest_invariants() -> None:
-    manifest = json.loads((_BUNDLE_DIR / "manifest.json").read_text())
+    manifest = json.loads((_BUNDLE_DIR / "manifest.json").read_text(encoding="utf-8"))
 
     # uv server type is what keeps the bundle tiny and cross-platform.
     assert manifest["server"]["type"] == "uv"
@@ -77,7 +77,7 @@ def test_bundle_pyproject_pins_the_current_release() -> None:
     """
     from mcpg import __version__
 
-    pyproject = (_BUNDLE_DIR / "pyproject.toml").read_text()
+    pyproject = (_BUNDLE_DIR / "pyproject.toml").read_text(encoding="utf-8")
     assert f"mcpg=={__version__}" in pyproject
-    manifest = json.loads((_BUNDLE_DIR / "manifest.json").read_text())
+    manifest = json.loads((_BUNDLE_DIR / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["version"] == __version__

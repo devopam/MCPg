@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-_GUIDE = (_ROOT / "llms-install.md").read_text()
+_GUIDE = (_ROOT / "llms-install.md").read_text(encoding="utf-8")
 
 
 def test_the_config_block_is_valid_json_and_wires_the_real_command() -> None:
@@ -31,7 +31,7 @@ def test_guide_names_the_real_cli_and_demo_flags() -> None:
     # The demo commands it advertises must be the ones the CLI exposes.
     from mcpg import __main__
 
-    source = Path(__main__.__file__).read_text()
+    source = Path(__main__.__file__).read_text(encoding="utf-8")
     assert '"--demo"' in source and '"--demo-drop"' in source
     assert "mcpg --demo" in _GUIDE
     assert "mcpg --demo-drop" in _GUIDE
@@ -45,3 +45,10 @@ def test_guide_keeps_the_safe_default_posture() -> None:
     # gated behind an explicit user request, never the default recipe.
     if "unrestricted" in lowered:
         assert "explicitly" in lowered
+    # Two safety constraints the recipe must keep telling the agent, or
+    # an autonomous install silently loses them: never fabricate creds,
+    # and remote hosts need TLS. (Strip markdown emphasis so the phrase
+    # match doesn't hinge on **bold** markers.)
+    plain = lowered.replace("*", "")
+    assert "sslmode=require" in plain
+    assert "credential" in plain and ("do not invent" in plain or "hard-code" in plain)
