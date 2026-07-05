@@ -6,11 +6,9 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
-
-### Changed
-
-### Fixed
+Nothing yet — merged changes accumulate here until the next release is
+cut. (Add an `### Added` / `### Changed` / `### Fixed` heading along
+with the first entry of that kind.)
 
 ## [0.6.8] - 2026-07-05
 
