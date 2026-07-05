@@ -22,6 +22,16 @@ adheres to [Semantic Versioning](https://semver.org/).
   `MCPG_NL2SQL_BASE_URL` at them — now documented. Pairs with the
   client-integrations guide: Qwen Code / DeepSeek-driven-client users
   can now run NL→SQL on their own vendor's models.
+- **Pluggable NL→SQL providers (`MCPG_NL2SQL_CUSTOM_PROVIDERS`)** — any
+  OpenAI-compatible vendor or local model server can be added through
+  configuration alone, no code change: comma/newline-separated
+  `name=base_url|model` entries (optional `|KEY_ENV_VAR` third segment
+  for vendors whose key env var deviates from the `<NAME>_API_KEY`
+  convention, e.g. Hugging Face's `HF_TOKEN`). Keyless declarations are
+  allowed for loopback endpoints, making local Ollama/vLLM/LM Studio
+  first-class; remote endpoints require HTTPS (mirroring the database
+  TLS policy). Declared names are callable via `provider=`, listed by
+  `get_server_info`, and join auto-pick after the built-ins.
 
 ## [0.6.8] - 2026-07-05
 

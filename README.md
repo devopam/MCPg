@@ -351,9 +351,11 @@ falls back to the env var, so partial files work.
 
 MCPg auto-discovers every configured provider from the environment at
 startup. Set as many vendor keys as you have — each becomes callable.
-Seven providers are supported: **Anthropic, OpenAI, Gemini, DeepSeek,
+Seven providers ship built in — **Anthropic, OpenAI, Gemini, DeepSeek,
 Qwen, OpenRouter, and Perplexity** (the last four ride the
-OpenAI-compatible API with vendor-preset endpoints). When
+OpenAI-compatible API with vendor-preset endpoints) — and **any other
+OpenAI-compatible vendor or local model server is pluggable through
+configuration alone** via `MCPG_NL2SQL_CUSTOM_PROVIDERS`. When
 `MCPG_NL2SQL_PROVIDER` is unset, MCPg picks the default in preference
 order **anthropic → openai → gemini → deepseek → qwen → openrouter →
 perplexity**. The
@@ -374,6 +376,7 @@ reports which are available.
 | `MCPG_NL2SQL_API_KEY` | — | Explicit key for the configured `MCPG_NL2SQL_PROVIDER`. Overrides the vendor-conventional env var for that provider only. Requires `MCPG_NL2SQL_PROVIDER` to be set. |
 | `MCPG_NL2SQL_MODEL` | provider default | Override the default model (e.g. `claude-sonnet-4-6`, `gpt-4o-mini`, `gemini-2.5-flash`). Applies only to the default provider. |
 | `MCPG_NL2SQL_BASE_URL` | — | Endpoint override for the default provider (private gateways; or point `openai` at any self-hosted OpenAI-compatible stack — Ollama, vLLM, LM Studio). |
+| `MCPG_NL2SQL_CUSTOM_PROVIDERS` | — | **Bring your own provider — no code change.** Comma/newline-separated `name=base_url\|model` entries declaring extra OpenAI-compatible providers (Groq, Mistral, Together, xAI, local Ollama/vLLM, …). Key from `<NAME>_API_KEY` by convention, or append `\|KEY_ENV_VAR` for vendors that deviate (e.g. Hugging Face's `HF_TOKEN`); keyless allowed for loopback endpoints. Each name becomes callable via `provider=`. |
 | `MCPG_NL2SQL_MAX_TOKENS` | `2048` | Cap on generated tokens (hard limit: 16384). |
 
 ---

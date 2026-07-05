@@ -423,8 +423,10 @@ def resolve_provider_call_params(settings: Settings, requested_provider: str | N
             "that are already configured — it can't supply credentials "
             "on its own."
         )
-    if not is_valid_provider(chosen):
-        raise NL2SQLError(f"unknown NL→SQL provider {chosen!r}; supported: {', '.join(sorted(_SUPPORTED_PROVIDERS))}")
+    customs = {name: (base_url, model) for name, base_url, model in settings.nl2sql_custom_providers}
+    if not is_valid_provider(chosen) and chosen not in customs:
+        known = sorted(_SUPPORTED_PROVIDERS) + sorted(customs)
+        raise NL2SQLError(f"unknown NL→SQL provider {chosen!r}; supported: {', '.join(known)}")
     api_key = api_keys.get(chosen)
     if api_key is None:
         configured = sorted(api_keys) or ["(none)"]
@@ -445,8 +447,21 @@ def resolve_provider_call_params(settings: Settings, requested_provider: str | N
     # called this out as security-critical (the base_url path is
     # often a private proxy / regional gateway).
     is_default = chosen == default_norm
-    model = settings.nl2sql_model if (is_default and settings.nl2sql_model) else DEFAULT_MODELS[chosen]
-    base_url = settings.nl2sql_base_url if is_default else None
+    model_override = (settings.nl2sql_model or None) if is_default else None
+    model: str
+    base_url: str | None
+    if chosen in customs:
+        # Declared custom providers carry their own endpoint + model;
+        # the model is still overridable via MCPG_NL2SQL_MODEL when the
+        # custom is the configured default (same rule as built-ins),
+        # but the legacy single-slot MCPG_NL2SQL_BASE_URL never applies
+        # — the declaration's endpoint is authoritative.
+        declared_base_url, declared_model = customs[chosen]
+        model = model_override or declared_model
+        base_url = declared_base_url
+    else:
+        model = model_override or DEFAULT_MODELS[chosen]
+        base_url = settings.nl2sql_base_url if is_default else None
     return ProviderCallParams(
         provider_name=chosen,
         api_key=api_key,
@@ -477,6 +492,11 @@ def build_provider(
         # chat-completions dialect — same client, vendor-preset endpoint
         # (an explicit base_url override still wins).
         return OpenAIProvider(api_key=api_key, base_url=base_url or OPENAI_COMPATIBLE_BASE_URLS[name])
+    if base_url:
+        # Operator-declared custom provider (MCPG_NL2SQL_CUSTOM_PROVIDERS):
+        # by definition OpenAI-compatible, endpoint from its declaration.
+        # Only reachable for names resolve_provider_call_params accepted.
+        return OpenAIProvider(api_key=api_key, base_url=base_url)
     raise NL2SQLError(f"unknown NL→SQL provider {name!r}; supported: {sorted(_SUPPORTED_PROVIDERS)}")
 
 

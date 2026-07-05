@@ -338,6 +338,72 @@ def test_original_vendors_keep_auto_pick_priority_over_new_ones() -> None:
     assert settings.nl2sql_provider == "gemini"
 
 
+def test_custom_providers_parse_with_keys_keyless_and_key_env_override() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_CUSTOM_PROVIDERS": (
+                "groq=https://api.groq.com/openai/v1|llama-3.3-70b-versatile,\n"
+                "hf=https://router.huggingface.co/v1|meta-llama/Llama-3.3-70B-Instruct|HF_TOKEN,\n"
+                "ollama=http://localhost:11434/v1|llama3.1"
+            ),
+            "GROQ_API_KEY": "gsk-key",
+            "HF_TOKEN": "hf-key",
+        }
+    )
+    assert settings.nl2sql_custom_providers == (
+        ("groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
+        ("hf", "https://router.huggingface.co/v1", "meta-llama/Llama-3.3-70B-Instruct"),
+        ("ollama", "http://localhost:11434/v1", "llama3.1"),
+    )
+    keys = dict(settings.nl2sql_api_keys)
+    assert keys["groq"] == "gsk-key"  # <NAME>_API_KEY convention
+    assert keys["hf"] == "hf-key"  # explicit KEY_ENV_VAR segment (vendors that deviate)
+    assert keys["ollama"] == "unused"  # keyless local endpoint
+    # Built-ins absent -> auto-pick falls through to first declared custom.
+    assert settings.nl2sql_provider == "groq"
+
+
+def test_custom_provider_can_be_pinned_as_default() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_CUSTOM_PROVIDERS": "groq=https://api.groq.com/openai/v1|llama-3.3-70b-versatile",
+            "MCPG_NL2SQL_PROVIDER": "groq",
+            "ANTHROPIC_API_KEY": "would-otherwise-win",
+        }
+    )
+    assert settings.nl2sql_provider == "groq"
+
+
+def test_built_in_vendors_still_beat_customs_in_auto_pick() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_NL2SQL_CUSTOM_PROVIDERS": "groq=https://api.groq.com/openai/v1|m",
+            "PERPLEXITY_API_KEY": "p",
+        }
+    )
+    assert settings.nl2sql_provider == "perplexity"
+
+
+@pytest.mark.parametrize(
+    ("entry", "match"),
+    [
+        ("groq=https://a/v1|m, groq=https://b/v1|m", "duplicate"),
+        ("openai=https://a/v1|m", "clashes with a built-in"),
+        ("groq=http://api.groq.com/v1|m", "plain HTTP is only allowed for loopback"),
+        ("groq=https://api.groq.com/openai/v1", "no default model"),
+        ("groq=ftp://api.groq.com/v1|m", "must be http"),
+        ("Groq Name=https://a/v1|m", "must match"),
+        ("groq=https://a/v1|m|lower_case", "UPPER_SNAKE_CASE"),
+    ],
+)
+def test_custom_provider_declarations_fail_fast_on_malformed_entries(entry: str, match: str) -> None:
+    with pytest.raises(ConfigError, match=match):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_NL2SQL_CUSTOM_PROVIDERS": entry})
+
+
 def test_nl2sql_provider_requires_an_api_key_somewhere() -> None:
     with pytest.raises(ConfigError, match="no API key found"):
         load_settings(

@@ -129,6 +129,50 @@ def test_build_provider_rejects_unknown_name() -> None:
         build_provider("bogus", "key")
 
 
+def test_resolve_routes_declared_custom_providers() -> None:
+    """Custom providers resolve with their declared endpoint + model, and
+    MCPG_NL2SQL_MODEL still overrides the model when the custom is the
+    configured default (same rule as built-ins)."""
+    from mcpg.config import load_settings
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_NL2SQL_CUSTOM_PROVIDERS": (
+                "groq=https://api.groq.com/openai/v1|llama-3.3-70b-versatile,ollama=http://localhost:11434/v1|llama3.1"
+            ),
+            "GROQ_API_KEY": "gsk",
+            "MCPG_NL2SQL_MODEL": "llama-3.1-8b-instant",
+        }
+    )
+    default = resolve_provider_call_params(settings, None)
+    assert default.provider_name == "groq"
+    assert default.model == "llama-3.1-8b-instant"  # override applies to the default
+    assert default.base_url == "https://api.groq.com/openai/v1"
+
+    explicit = resolve_provider_call_params(settings, "ollama")
+    assert explicit.model == "llama3.1"  # non-default keeps its declared model
+    assert explicit.base_url == "http://localhost:11434/v1"
+    assert explicit.api_key == "unused"  # keyless local endpoint
+
+    provider = build_provider(explicit.provider_name, explicit.api_key, base_url=explicit.base_url)
+    assert isinstance(provider, OpenAIProvider)
+    assert provider._base_url == "http://localhost:11434/v1"
+
+
+def test_resolve_unknown_provider_error_lists_declared_customs() -> None:
+    from mcpg.config import load_settings
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_NL2SQL_CUSTOM_PROVIDERS": "groq=https://api.groq.com/openai/v1|m",
+        }
+    )
+    with pytest.raises(NL2SQLError, match="groq"):
+        resolve_provider_call_params(settings, "bogus")
+
+
 def test_default_models_table_covers_every_supported_provider() -> None:
     assert set(DEFAULT_MODELS) == {
         "anthropic",
