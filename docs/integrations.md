@@ -109,7 +109,10 @@ IDEA, PyCharm, DataGrip, and the rest of the family.
 
 ## Cline / Roo Code (VS Code extensions)
 
-MCP Servers panel → Configure MCP Servers, or edit
+Cline can install MCPg autonomously — ask it to "set up the MCP server
+at github.com/devopam/MCPg" and it follows
+[`llms-install.md`](../llms-install.md). Or configure it by hand: MCP
+Servers panel → Configure MCP Servers, or edit
 `cline_mcp_settings.json`:
 
 ```json
