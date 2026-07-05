@@ -61,3 +61,17 @@ def test_build_assembles_a_complete_bundle_dir(tmp_path: Path) -> None:
     assert (out / manifest["icon"]).is_file()
     assert (out / manifest["server"]["entry_point"]).is_file()
     assert (out / "pyproject.toml").is_file()
+
+
+def test_build_clears_stale_files_from_an_existing_target(tmp_path: Path) -> None:
+    # build() rebuilds from scratch, so a prior run's leftovers (e.g. a
+    # renamed icon) must not survive into the packed bundle.
+    target = tmp_path / "smithery"
+    target.mkdir()
+    stale = target / "leftover-from-a-previous-build.txt"
+    stale.write_text("stale", encoding="utf-8")
+
+    out = build(target)
+
+    assert not stale.exists()
+    assert (out / "manifest.json").is_file()

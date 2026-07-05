@@ -662,8 +662,8 @@ release that changes the tool surface or the `.mcpb` in a way worth
 re-listing:
 
 1. Grab the new `mcpg-<version>.mcpb` from the GitHub release.
-2. Re-submit via the desktop-extension form
-   (`https://clau.de/desktop-extention-submission`).
+2. Re-submit via the desktop-extension form linked from the
+   [connectors submission docs](https://claude.com/docs/connectors/building/submission).
 3. Track status in Claude's submissions dashboard; escalate to
    `mcp-review@anthropic.com` if stuck.
 
