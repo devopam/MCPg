@@ -785,8 +785,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
                 "MCPg can't tell which provider this key is for. Either set "
                 "MCPG_NL2SQL_PROVIDER too, or drop "
                 "MCPG_NL2SQL_API_KEY and use the vendor-conventional env var "
-                "(ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY) so the "
-                "provider is implicit."
+                f"({' / '.join(VENDOR_ENV_VAR_HINT[p] for p in AUTO_PICK_ORDER)}) "
+                "so the provider is implicit."
             )
         # Explicit key targets the configured default provider.
         api_keys[nl2sql_provider] = stripped

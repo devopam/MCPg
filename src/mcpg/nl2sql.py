@@ -415,15 +415,13 @@ def resolve_provider_call_params(settings: Settings, requested_provider: str | N
         # No provider arg AND no default configured AND no vendor keys
         # in the env — provider= alone can't fix this, the operator
         # needs to set at least one vendor API key.
+        hints = "; ".join(f"{VENDOR_ENV_VAR_HINT[p]} for {p}" for p in AUTO_PICK_ORDER)
         raise NL2SQLError(
             "translate_nl_to_sql has no provider configured. Set at "
-            "least one vendor API key in the server's environment — "
-            "ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY (or "
-            "GOOGLE_API_KEY) / DEEPSEEK_API_KEY / DASHSCOPE_API_KEY "
-            "(or QWEN_API_KEY) / OPENROUTER_API_KEY / "
-            "PERPLEXITY_API_KEY. The tool's provider= argument selects "
-            "between providers that are already configured — it can't "
-            "supply credentials on its own."
+            f"least one vendor API key in the server's environment — {hints}. "
+            "The tool's provider= argument selects between providers "
+            "that are already configured — it can't supply credentials "
+            "on its own."
         )
     if not is_valid_provider(chosen):
         raise NL2SQLError(f"unknown NL→SQL provider {chosen!r}; supported: {', '.join(sorted(_SUPPORTED_PROVIDERS))}")
