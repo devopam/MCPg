@@ -13,9 +13,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from os import environ
 from os.path import isabs
+from urllib.parse import urlparse
 
 from mcpg._vendor.sql import obfuscate_password
-from mcpg.nl2sql import VENDOR_ENV_VAR_HINT
+from mcpg.nl2sql import AUTO_PICK_ORDER, VENDOR_ENV_VAR_HINT
 from mcpg.secrets import SecretsError, build_secrets_provider
 
 # PG role names must be safe identifiers — we inline them into
@@ -165,6 +166,14 @@ class Settings:
     nl2sql_api_keys: tuple[tuple[str, str], ...] = ()
     nl2sql_model: str | None = None
     nl2sql_base_url: str | None = None
+    # Operator-declared OpenAI-compatible providers — the pluggable
+    # path: a brand-new vendor (or a local Ollama/vLLM/LM Studio) needs
+    # env configuration only, never a code change. Declared via
+    # ``MCPG_NL2SQL_CUSTOM_PROVIDERS`` as comma/newline-separated
+    # ``name=base_url|model`` entries; the API key is discovered from
+    # ``<NAME>_API_KEY`` (uppercased) and may be absent for keyless
+    # local endpoints. Stored as (name, base_url, model) triples.
+    nl2sql_custom_providers: tuple[tuple[str, str, str], ...] = ()
     nl2sql_max_tokens: int = 2048
     # NL→SQL audit persistence — when on, every translate_nl_to_sql
     # call records one row in ``mcpg_audit.nl2sql_events``. The table
@@ -304,6 +313,7 @@ class Settings:
             f"nl2sql_api_keys={sorted(p for p, _ in self.nl2sql_api_keys)!r}, "
             f"nl2sql_model={self.nl2sql_model!r}, "
             f"nl2sql_base_url={self.nl2sql_base_url!r}, "
+            f"nl2sql_custom_providers={tuple((n, u, m) for n, u, m in self.nl2sql_custom_providers)!r}, "
             f"nl2sql_max_tokens={self.nl2sql_max_tokens}, "
             f"nl2sql_audit_persist={self.nl2sql_audit_persist}, "
             f"nl2sql_audit_backend={self.nl2sql_audit_backend!r}, "
@@ -745,8 +755,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         candidate = raw.strip().lower()
         if not candidate:
             raise ConfigError("MCPG_NL2SQL_PROVIDER must not be blank when set")
-        if candidate not in {"anthropic", "openai", "gemini"}:
-            raise ConfigError(f"MCPG_NL2SQL_PROVIDER must be one of: anthropic, openai, gemini (got {raw!r})")
+        # Membership is validated after MCPG_NL2SQL_CUSTOM_PROVIDERS is
+        # parsed below — the pin may name a declared custom provider.
         nl2sql_provider = candidate
 
     # Discover every provider whose conventional vendor env var is set.
@@ -762,6 +772,80 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     gemini_key = (secrets.get("GEMINI_API_KEY") or "").strip() or (secrets.get("GOOGLE_API_KEY") or "").strip()
     if gemini_key:
         api_keys["gemini"] = gemini_key
+    # OpenAI-compatible vendors (DeepSeek / Qwen / OpenRouter /
+    # Perplexity) — discovered the same way, driven through the same
+    # chat-completions client with vendor-preset endpoints (nl2sql.py).
+    if deepseek_key := (secrets.get("DEEPSEEK_API_KEY") or "").strip():
+        api_keys["deepseek"] = deepseek_key
+    qwen_key = (secrets.get("DASHSCOPE_API_KEY") or "").strip() or (secrets.get("QWEN_API_KEY") or "").strip()
+    if qwen_key:
+        api_keys["qwen"] = qwen_key
+    if openrouter_key := (secrets.get("OPENROUTER_API_KEY") or "").strip():
+        api_keys["openrouter"] = openrouter_key
+    if perplexity_key := (secrets.get("PERPLEXITY_API_KEY") or "").strip():
+        api_keys["perplexity"] = perplexity_key
+
+    # Operator-declared OpenAI-compatible providers (the pluggable
+    # path). Same list convention as MCPG_SECONDARY_DATABASE_URLS;
+    # each entry is ``name=base_url|model``. Keys come from
+    # ``<NAME>_API_KEY``; a missing key is allowed (keyless local
+    # endpoints — Ollama, vLLM, LM Studio) and recorded as the
+    # placeholder ``unused`` so the provider still registers as
+    # configured/callable.
+    custom_providers: list[tuple[str, str, str]] = []
+    if (raw := env.get("MCPG_NL2SQL_CUSTOM_PROVIDERS")) is not None:
+        entries = [piece.strip() for piece in re.split(r"[,\n]", raw) if piece.strip()]
+        if not entries:
+            raise ConfigError("MCPG_NL2SQL_CUSTOM_PROVIDERS must not be blank when set")
+        seen_custom: set[str] = set()
+        for entry in entries:
+            name, sep, rest = entry.partition("=")
+            name = name.strip().lower()
+            if not sep or not name:
+                raise ConfigError(f"MCPG_NL2SQL_CUSTOM_PROVIDERS entry {entry!r} is not name=base_url|model")
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+                raise ConfigError(f"MCPG_NL2SQL_CUSTOM_PROVIDERS name {name!r} must match [a-z][a-z0-9_]*")
+            if name in AUTO_PICK_ORDER:
+                raise ConfigError(
+                    f"MCPG_NL2SQL_CUSTOM_PROVIDERS name {name!r} clashes with a built-in provider; "
+                    "use MCPG_NL2SQL_BASE_URL to re-point a built-in instead"
+                )
+            if name in seen_custom:
+                raise ConfigError(f"MCPG_NL2SQL_CUSTOM_PROVIDERS has a duplicate name {name!r}")
+            seen_custom.add(name)
+            base_url, pipe, tail = rest.partition("|")
+            base_url = base_url.strip()
+            model, _, key_env = tail.partition("|")
+            model = model.strip()
+            key_env = key_env.strip()
+            if not pipe or not base_url or not model:
+                raise ConfigError(
+                    f"MCPG_NL2SQL_CUSTOM_PROVIDERS entry for {name!r} must be "
+                    "name=base_url|model or name=base_url|model|KEY_ENV_VAR "
+                    "(custom endpoints have no default model)"
+                )
+            if key_env and not re.fullmatch(r"[A-Z][A-Z0-9_]*", key_env):
+                raise ConfigError(
+                    f"MCPG_NL2SQL_CUSTOM_PROVIDERS key env var {key_env!r} for {name!r} "
+                    "must be an UPPER_SNAKE_CASE environment variable name"
+                )
+            parsed = urlparse(base_url)
+            host = (parsed.hostname or "").lower()
+            if parsed.scheme == "http":
+                if host not in {"localhost", "127.0.0.1", "::1"}:
+                    raise ConfigError(
+                        f"MCPG_NL2SQL_CUSTOM_PROVIDERS base_url for {name!r} uses http:// against a "
+                        "remote host — plain HTTP is only allowed for loopback endpoints"
+                    )
+            elif parsed.scheme != "https":
+                raise ConfigError(f"MCPG_NL2SQL_CUSTOM_PROVIDERS base_url for {name!r} must be http(s)://")
+            custom_providers.append((name, base_url, model))
+            # Key discovery: `<NAME>_API_KEY` by convention (holds for
+            # Groq/Mistral/Together/xAI/...), with an explicit third
+            # segment for vendors that deviate (e.g. Hugging Face's
+            # HF_TOKEN). Keyless is allowed for local endpoints.
+            custom_key = (secrets.get(key_env or f"{name.upper()}_API_KEY") or "").strip()
+            api_keys[name] = custom_key or "unused"
 
     if (raw := secrets.get("MCPG_NL2SQL_API_KEY")) is not None:
         stripped = raw.strip()
@@ -771,10 +855,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             raise ConfigError(
                 "MCPG_NL2SQL_API_KEY is set but MCPG_NL2SQL_PROVIDER is not — "
                 "MCPg can't tell which provider this key is for. Either set "
-                "MCPG_NL2SQL_PROVIDER (anthropic|openai|gemini) too, or drop "
+                "MCPG_NL2SQL_PROVIDER too, or drop "
                 "MCPG_NL2SQL_API_KEY and use the vendor-conventional env var "
-                "(ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY) so the "
-                "provider is implicit."
+                f"({' / '.join(VENDOR_ENV_VAR_HINT[p] for p in AUTO_PICK_ORDER)}) "
+                "so the provider is implicit."
             )
         # Explicit key targets the configured default provider.
         api_keys[nl2sql_provider] = stripped
@@ -782,10 +866,22 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     # Auto-pick a default when MCPG_NL2SQL_PROVIDER is unset but at
     # least one vendor key is present. Preference order is documented
     # in README + docs/user-guide.md.
+    custom_names = {name for name, _, _ in custom_providers}
+    if nl2sql_provider is not None and nl2sql_provider not in AUTO_PICK_ORDER and nl2sql_provider not in custom_names:
+        raise ConfigError(
+            f"MCPG_NL2SQL_PROVIDER must be one of: {', '.join(AUTO_PICK_ORDER)} "
+            f"or a name declared in MCPG_NL2SQL_CUSTOM_PROVIDERS (got {nl2sql_provider!r})"
+        )
     if nl2sql_provider is None and api_keys:
-        for candidate in ("anthropic", "openai", "gemini"):
+        # Built-ins first (existing behaviour preserved), then declared
+        # customs in declaration order.
+        for candidate in AUTO_PICK_ORDER:
             if candidate in api_keys:
                 nl2sql_provider = candidate
+                break
+        else:
+            for name, _, _ in custom_providers:
+                nl2sql_provider = name
                 break
 
     if nl2sql_provider is not None and nl2sql_provider not in api_keys:
@@ -1141,6 +1237,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         nl2sql_api_keys=nl2sql_api_keys,
         nl2sql_model=nl2sql_model,
         nl2sql_base_url=nl2sql_base_url,
+        nl2sql_custom_providers=tuple(custom_providers),
         nl2sql_max_tokens=nl2sql_max_tokens,
         nl2sql_audit_persist=nl2sql_audit_persist,
         nl2sql_audit_backend=nl2sql_audit_backend,

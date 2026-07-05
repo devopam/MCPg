@@ -89,13 +89,39 @@ async def test_translate_nl_to_sql_errors_on_unknown_provider_name() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool(
             "translate_nl_to_sql",
-            {"question": "x", "schema": "public", "provider": "perplexity"},
+            {"question": "x", "schema": "public", "provider": "cohere"},
         )
 
     assert result.isError is True
     msg = "\n".join(block.text for block in result.content if hasattr(block, "text"))
     assert "unknown NL→SQL provider" in msg
     assert "anthropic" in msg
+
+
+@pytest.mark.parametrize(
+    ("provider", "env_var"),
+    [
+        ("deepseek", "DEEPSEEK_API_KEY"),
+        ("qwen", "DASHSCOPE_API_KEY"),
+        ("openrouter", "OPENROUTER_API_KEY"),
+        ("perplexity", "PERPLEXITY_API_KEY"),
+    ],
+)
+async def test_valid_but_unconfigured_new_vendor_names_its_env_var(provider: str, env_var: str) -> None:
+    """The new vendors are real providers now — picking one without a key
+    must say which env var enables it, not call it unknown."""
+    settings = _settings_with({"ANTHROPIC_API_KEY": "sk-ant"})
+    server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool(
+            "translate_nl_to_sql",
+            {"question": "x", "schema": "public", "provider": provider},
+        )
+
+    assert result.isError is True
+    msg = "\n".join(block.text for block in result.content if hasattr(block, "text"))
+    assert "not configured" in msg
+    assert env_var in msg
 
 
 async def test_get_server_info_surfaces_default_and_available_providers() -> None:

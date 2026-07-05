@@ -53,6 +53,25 @@ DEFAULT_MODELS: dict[str, str] = {
     "anthropic": "claude-sonnet-4-6",
     "openai": "gpt-4o-mini",
     "gemini": "gemini-2.0-flash",
+    "deepseek": "deepseek-chat",
+    "qwen": "qwen-plus",
+    "openrouter": "openai/gpt-4o-mini",
+    "perplexity": "sonar",
+}
+
+# Providers that speak the OpenAI-compatible chat-completions API —
+# they reuse :class:`OpenAIProvider` with a preset ``base_url``. This
+# is why supporting the wider model ecosystem costs one dict entry per
+# vendor instead of one HTTP client per vendor. An explicit
+# ``MCPG_NL2SQL_BASE_URL`` still overrides the preset (private
+# gateways, regional endpoints), and self-hosted OpenAI-compatible
+# stacks (Ollama, vLLM, LM Studio) are reachable by pointing the
+# ``openai`` provider's base_url at them.
+OPENAI_COMPATIBLE_BASE_URLS: dict[str, str] = {
+    "deepseek": "https://api.deepseek.com/v1",
+    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "perplexity": "https://api.perplexity.ai",
 }
 
 # Human-readable env-var hint per provider, used in error messages
@@ -64,7 +83,24 @@ VENDOR_ENV_VAR_HINT: dict[str, str] = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
     "gemini": "GEMINI_API_KEY (or GOOGLE_API_KEY)",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "qwen": "DASHSCOPE_API_KEY (or QWEN_API_KEY)",
+    "openrouter": "OPENROUTER_API_KEY",
+    "perplexity": "PERPLEXITY_API_KEY",
 }
+
+# When MCPG_NL2SQL_PROVIDER is unset, the default is auto-picked from
+# whichever vendor keys are present, in this order. The original three
+# stay first so existing deployments keep their current default.
+AUTO_PICK_ORDER: tuple[str, ...] = (
+    "anthropic",
+    "openai",
+    "gemini",
+    "deepseek",
+    "qwen",
+    "openrouter",
+    "perplexity",
+)
 
 # Conservative budget — NL→SQL responses are usually a few hundred
 # tokens of JSON. Override via ``MCPG_NL2SQL_MAX_TOKENS``.
@@ -78,7 +114,7 @@ HARD_MAX_TOKENS = 16_384
 # 30s; pad for slow networks / slower models.
 DEFAULT_TIMEOUT_SECONDS = 60.0
 
-_SUPPORTED_PROVIDERS = frozenset({"anthropic", "openai", "gemini"})
+_SUPPORTED_PROVIDERS = frozenset(DEFAULT_MODELS)
 
 # Schema-brief sizing — bounded so the prompt doesn't explode on large
 # schemas. The agent can always paginate by passing a specific
@@ -379,16 +415,18 @@ def resolve_provider_call_params(settings: Settings, requested_provider: str | N
         # No provider arg AND no default configured AND no vendor keys
         # in the env — provider= alone can't fix this, the operator
         # needs to set at least one vendor API key.
+        hints = "; ".join(f"{VENDOR_ENV_VAR_HINT[p]} for {p}" for p in AUTO_PICK_ORDER)
         raise NL2SQLError(
             "translate_nl_to_sql has no provider configured. Set at "
-            "least one of ANTHROPIC_API_KEY / OPENAI_API_KEY / "
-            "GEMINI_API_KEY (or GOOGLE_API_KEY) in the server's "
-            "environment. The tool's provider= argument selects "
-            "between providers that are already configured — it can't "
-            "supply credentials on its own."
+            f"least one vendor API key in the server's environment — {hints}. "
+            "The tool's provider= argument selects between providers "
+            "that are already configured — it can't supply credentials "
+            "on its own."
         )
-    if not is_valid_provider(chosen):
-        raise NL2SQLError(f"unknown NL→SQL provider {chosen!r}; supported: anthropic, openai, gemini")
+    customs = {name: (base_url, model) for name, base_url, model in settings.nl2sql_custom_providers}
+    if not is_valid_provider(chosen) and chosen not in customs:
+        known = sorted(_SUPPORTED_PROVIDERS) + sorted(customs)
+        raise NL2SQLError(f"unknown NL→SQL provider {chosen!r}; supported: {', '.join(known)}")
     api_key = api_keys.get(chosen)
     if api_key is None:
         configured = sorted(api_keys) or ["(none)"]
@@ -409,8 +447,21 @@ def resolve_provider_call_params(settings: Settings, requested_provider: str | N
     # called this out as security-critical (the base_url path is
     # often a private proxy / regional gateway).
     is_default = chosen == default_norm
-    model = settings.nl2sql_model if (is_default and settings.nl2sql_model) else DEFAULT_MODELS[chosen]
-    base_url = settings.nl2sql_base_url if is_default else None
+    model_override = (settings.nl2sql_model or None) if is_default else None
+    model: str
+    base_url: str | None
+    if chosen in customs:
+        # Declared custom providers carry their own endpoint + model;
+        # the model is still overridable via MCPG_NL2SQL_MODEL when the
+        # custom is the configured default (same rule as built-ins),
+        # but the legacy single-slot MCPG_NL2SQL_BASE_URL never applies
+        # — the declaration's endpoint is authoritative.
+        declared_base_url, declared_model = customs[chosen]
+        model = model_override or declared_model
+        base_url = declared_base_url
+    else:
+        model = model_override or DEFAULT_MODELS[chosen]
+        base_url = settings.nl2sql_base_url if is_default else None
     return ProviderCallParams(
         provider_name=chosen,
         api_key=api_key,
@@ -436,6 +487,16 @@ def build_provider(
         return OpenAIProvider(api_key=api_key, **({"base_url": base_url} if base_url else {}))
     if name == "gemini":
         return GeminiProvider(api_key=api_key, **({"base_url": base_url} if base_url else {}))
+    if name in OPENAI_COMPATIBLE_BASE_URLS:
+        # DeepSeek / Qwen / OpenRouter / Perplexity speak the OpenAI
+        # chat-completions dialect — same client, vendor-preset endpoint
+        # (an explicit base_url override still wins).
+        return OpenAIProvider(api_key=api_key, base_url=base_url or OPENAI_COMPATIBLE_BASE_URLS[name])
+    if base_url:
+        # Operator-declared custom provider (MCPG_NL2SQL_CUSTOM_PROVIDERS):
+        # by definition OpenAI-compatible, endpoint from its declaration.
+        # Only reachable for names resolve_provider_call_params accepted.
+        return OpenAIProvider(api_key=api_key, base_url=base_url)
     raise NL2SQLError(f"unknown NL→SQL provider {name!r}; supported: {sorted(_SUPPORTED_PROVIDERS)}")
 
 

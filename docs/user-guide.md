@@ -293,12 +293,53 @@ callable through the tool:
 | `anthropic` | `ANTHROPIC_API_KEY` | provider's recent Claude Sonnet |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
 | `gemini` | `GEMINI_API_KEY` (falls back to `GOOGLE_API_KEY`) | provider's recent Gemini Flash |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` |
+| `qwen` | `DASHSCOPE_API_KEY` (falls back to `QWEN_API_KEY`) | `qwen-plus` |
+| `openrouter` | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` (any OpenRouter model via `MCPG_NL2SQL_MODEL`) |
+| `perplexity` | `PERPLEXITY_API_KEY` | `sonar` |
+
+The last four are OpenAI-compatible vendors: MCPg drives them through
+the same chat-completions client with vendor-preset endpoints.
+
+### Bring your own provider (no code change)
+
+Any other OpenAI-compatible vendor — or a local model server — is
+declared through configuration alone:
+
+```bash
+export MCPG_NL2SQL_CUSTOM_PROVIDERS="
+  groq=https://api.groq.com/openai/v1|llama-3.3-70b-versatile,
+  hf=https://router.huggingface.co/v1|meta-llama/Llama-3.3-70B-Instruct|HF_TOKEN,
+  ollama=http://localhost:11434/v1|llama3.1
+"
+export GROQ_API_KEY=gsk_...   # <NAME>_API_KEY convention
+export HF_TOKEN=hf_...        # explicit third segment for vendors that deviate
+```
+
+Each entry is `name=base_url|model` with an optional `|KEY_ENV_VAR`
+third segment. Rules, stated plainly:
+
+- The API key is read from `<NAME>_API_KEY` (the convention Groq,
+  Mistral, Together, xAI, and most vendors follow); the third segment
+  names the env var explicitly when a vendor deviates (Hugging Face's
+  `HF_TOKEN`).
+- **Keyless is allowed** for loopback endpoints — local Ollama / vLLM
+  / LM Studio are first-class, no dummy key needed.
+- `http://` is accepted only for loopback hosts; anything remote must
+  be `https://` (mirroring MCPg's database TLS policy).
+- The model segment is required — custom endpoints have no sensible
+  default. `MCPG_NL2SQL_MODEL` still overrides it when the custom
+  provider is the configured default.
+- Every declared name becomes callable via the tool's `provider=`
+  argument and is listed by `get_server_info`; auto-pick prefers the
+  built-in vendors first, then declared customs in order.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...      # configures anthropic
 export OPENAI_API_KEY=sk-...             # configures openai too
 # Both available; MCPg auto-picks anthropic as the default
-# (preference order: anthropic → openai → gemini).
+# (preference order: anthropic → openai → gemini → deepseek
+# → qwen → openrouter → perplexity).
 ```
 
 To pin a specific default, set `MCPG_NL2SQL_PROVIDER` explicitly:

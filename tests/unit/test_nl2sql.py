@@ -9,11 +9,14 @@ from _fakes import FakeRoutingDriver
 
 from mcpg.config import load_settings
 from mcpg.nl2sql import (
+    AUTO_PICK_ORDER,
     DEFAULT_MAX_BRIEF_CHARS,
     DEFAULT_MODELS,
     DEFAULT_SCHEMA_DENYLIST,
     HARD_MAX_BRIEF_CHARS,
     HARD_MAX_TOKENS,
+    OPENAI_COMPATIBLE_BASE_URLS,
+    VENDOR_ENV_VAR_HINT,
     AnthropicProvider,
     GeminiProvider,
     LLMProvider,
@@ -94,11 +97,10 @@ def _routes_for_simple_schema() -> dict[str, list[dict[str, object]]]:
     }
 
 
-def test_is_valid_provider_recognises_the_three_built_ins() -> None:
-    assert is_valid_provider("anthropic")
-    assert is_valid_provider("openai")
-    assert is_valid_provider("gemini")
-    assert not is_valid_provider("perplexity")
+def test_is_valid_provider_recognises_every_supported_vendor() -> None:
+    for name in ("anthropic", "openai", "gemini", "deepseek", "qwen", "openrouter", "perplexity"):
+        assert is_valid_provider(name), name
+    assert not is_valid_provider("cohere")
 
 
 def test_build_provider_returns_the_right_concrete_class() -> None:
@@ -107,13 +109,85 @@ def test_build_provider_returns_the_right_concrete_class() -> None:
     assert isinstance(build_provider("gemini", "key"), GeminiProvider)
 
 
+def test_openai_compatible_vendors_reuse_the_openai_client_with_preset_endpoints() -> None:
+    """DeepSeek / Qwen / OpenRouter / Perplexity are OpenAIProvider presets.
+
+    The preset endpoint must be applied when no base_url override is
+    given, and an explicit override (private gateway) must still win.
+    """
+    for name, preset in OPENAI_COMPATIBLE_BASE_URLS.items():
+        provider = build_provider(name, "key")
+        assert isinstance(provider, OpenAIProvider), name
+        assert provider._base_url == preset, name
+        overridden = build_provider(name, "key", base_url="https://gw.internal/v1")
+        assert isinstance(overridden, OpenAIProvider), name
+        assert overridden._base_url == "https://gw.internal/v1", name
+
+
 def test_build_provider_rejects_unknown_name() -> None:
     with pytest.raises(NL2SQLError, match="unknown"):
         build_provider("bogus", "key")
 
 
+def test_resolve_routes_declared_custom_providers() -> None:
+    """Custom providers resolve with their declared endpoint + model, and
+    MCPG_NL2SQL_MODEL still overrides the model when the custom is the
+    configured default (same rule as built-ins)."""
+    from mcpg.config import load_settings
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_NL2SQL_CUSTOM_PROVIDERS": (
+                "groq=https://api.groq.com/openai/v1|llama-3.3-70b-versatile,ollama=http://localhost:11434/v1|llama3.1"
+            ),
+            "GROQ_API_KEY": "gsk",
+            "MCPG_NL2SQL_MODEL": "llama-3.1-8b-instant",
+        }
+    )
+    default = resolve_provider_call_params(settings, None)
+    assert default.provider_name == "groq"
+    assert default.model == "llama-3.1-8b-instant"  # override applies to the default
+    assert default.base_url == "https://api.groq.com/openai/v1"
+
+    explicit = resolve_provider_call_params(settings, "ollama")
+    assert explicit.model == "llama3.1"  # non-default keeps its declared model
+    assert explicit.base_url == "http://localhost:11434/v1"
+    assert explicit.api_key == "unused"  # keyless local endpoint
+
+    provider = build_provider(explicit.provider_name, explicit.api_key, base_url=explicit.base_url)
+    assert isinstance(provider, OpenAIProvider)
+    assert provider._base_url == "http://localhost:11434/v1"
+
+
+def test_resolve_unknown_provider_error_lists_declared_customs() -> None:
+    from mcpg.config import load_settings
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_NL2SQL_CUSTOM_PROVIDERS": "groq=https://api.groq.com/openai/v1|m",
+        }
+    )
+    with pytest.raises(NL2SQLError, match="groq"):
+        resolve_provider_call_params(settings, "bogus")
+
+
 def test_default_models_table_covers_every_supported_provider() -> None:
-    assert set(DEFAULT_MODELS) == {"anthropic", "openai", "gemini"}
+    assert set(DEFAULT_MODELS) == {
+        "anthropic",
+        "openai",
+        "gemini",
+        "deepseek",
+        "qwen",
+        "openrouter",
+        "perplexity",
+    }
+    # Every OpenAI-compatible preset must also have a default model and
+    # an env-var hint — the three tables move together.
+    assert set(OPENAI_COMPATIBLE_BASE_URLS) <= set(DEFAULT_MODELS)
+    assert set(VENDOR_ENV_VAR_HINT) == set(DEFAULT_MODELS)
+    assert set(AUTO_PICK_ORDER) == set(DEFAULT_MODELS)
 
 
 def test_parse_response_extracts_sql_and_explanation_from_clean_json() -> None:

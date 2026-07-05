@@ -6,9 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet — merged changes accumulate here until the next release is
-cut. (Add an `### Added` / `### Changed` / `### Fixed` heading along
-with the first entry of that kind.)
+### Added
+
+- **Four new NL→SQL providers: DeepSeek, Qwen, OpenRouter, and
+  Perplexity** — `translate_nl_to_sql` now supports seven providers.
+  The new four all speak the OpenAI-compatible chat API, so they reuse
+  the existing client with vendor-preset endpoints (one dict entry per
+  vendor, no new HTTP code). Enable with the conventional env vars —
+  `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY` (or `QWEN_API_KEY`),
+  `OPENROUTER_API_KEY`, `PERPLEXITY_API_KEY` — exactly like the
+  original three; auto-pick preference order keeps anthropic → openai
+  → gemini first so existing deployments keep their current default.
+  Self-hosted OpenAI-compatible stacks (Ollama, vLLM, LM Studio)
+  remain reachable by pointing the `openai` provider's
+  `MCPG_NL2SQL_BASE_URL` at them — now documented. Pairs with the
+  client-integrations guide: Qwen Code / DeepSeek-driven-client users
+  can now run NL→SQL on their own vendor's models.
+- **Pluggable NL→SQL providers (`MCPG_NL2SQL_CUSTOM_PROVIDERS`)** — any
+  OpenAI-compatible vendor or local model server can be added through
+  configuration alone, no code change: comma/newline-separated
+  `name=base_url|model` entries (optional `|KEY_ENV_VAR` third segment
+  for vendors whose key env var deviates from the `<NAME>_API_KEY`
+  convention, e.g. Hugging Face's `HF_TOKEN`). Keyless declarations are
+  allowed for loopback endpoints, making local Ollama/vLLM/LM Studio
+  first-class; remote endpoints require HTTPS (mirroring the database
+  TLS policy). Declared names are callable via `provider=`, listed by
+  `get_server_info`, and join auto-pick after the built-ins.
 
 ## [0.6.8] - 2026-07-05
 
