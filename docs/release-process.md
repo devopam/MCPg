@@ -256,8 +256,13 @@ Add `build>=1.2` and `twine>=5.1` to `[dependency-groups].dev` in
 
 ### 4.2 Bump the version
 
-Update `version = "X.Y.Z"` in `pyproject.toml`. Update
-`CHANGELOG.md`: rename the `[Unreleased]` heading to
+The version is **single-sourced** in `src/mcpg/__init__.py`
+(`__version__ = "X.Y.Z"`). `pyproject.toml` declares it `dynamic` and
+hatchling reads it from that file, so **bump `__init__.py` and nothing
+else** — the PyPI metadata, `mcpg --version`, and the MCP `serverInfo`
+handshake all derive from that one line and can't drift apart.
+
+Then update `CHANGELOG.md`: rename the `[Unreleased]` heading to
 `[X.Y.Z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]` above it.
 
 > **SemVer reminder.** Adding a new tool / env var that defaults to
@@ -367,7 +372,8 @@ when running locally.
 - [ ] `uv export --no-dev --no-emit-project --format requirements-txt
       > /tmp/r.txt && uv run pip-audit --strict --disable-pip -r
       /tmp/r.txt` reports no known CVEs.
-- [ ] `version` in `pyproject.toml` is bumped to the release.
+- [ ] `__version__` in `src/mcpg/__init__.py` is bumped to the release
+      (this is the single source; `pyproject.toml` derives it dynamically).
 - [ ] `CHANGELOG.md` rolls `[Unreleased]` into the new dated section,
       and a fresh `[Unreleased]` is added on top.
 - [ ] README hero + badges + screenshots — every relative URL has
@@ -622,6 +628,7 @@ every machine-updatable surface.
 | **PulseMCP** | Ingests the MCP Registry daily | Automatic (transitive) |
 | **mcp.so / mcpservers.org / Glama** | Scrape GitHub + the registry | Automatic (transitive) |
 | **Smithery** (`devopam/mcpg`) | `publish-smithery` job (opt-in) | Automatic *once enabled* — see below |
+| **Hosted demo** (HF Space `devopam/mcpg-demo`) | Runs `ghcr.io/devopam/mcpg:latest` | **Manual** rebuild — see below |
 | **Claude connectors directory** | Review portal, no API | **Manual** — see below |
 
 ### Copy that lives in `server.json` (drives the registry-fed listings)
@@ -654,7 +661,30 @@ the job just keeps the declared version and metadata current.
 > aren't set by bundle-publish — set those once in Smithery's web
 > server-card settings (they persist across re-publishes).
 
-### The one genuinely manual listing: Claude connectors directory
+### Refreshing the hosted demo (HF Space)
+
+The public read-only demo at `https://devopam-mcpg-demo.hf.space/mcp`
+runs the `ghcr.io/devopam/mcpg:latest` image. Two things mean it does
+**not** pick up a new release on its own:
+
+1. `:latest` is only rebuilt by the `publish-ghcr` job — i.e. on the
+   release tag — so between releases it stays on the last shipped image.
+2. Hugging Face Docker Spaces resolve `FROM …:latest` at **build** time
+   and cache the layer; a new GHCR push does not auto-repull.
+
+So after the release finishes (the `publish-ghcr` job is green), trigger
+a **Factory rebuild** of the Space so it pulls the new image — either in
+the Space's **Settings → Factory rebuild**, or via the HF API:
+
+```python
+from huggingface_hub import HfApi
+HfApi(token="hf_…").restart_space("devopam/mcpg-demo", factory_reboot=True)
+```
+
+Only then does the live demo (and its `serverInfo` version) match the
+release. Nothing else about the demo changes between releases.
+
+### The reviewed submission: Claude connectors directory
 
 The Claude directory is a **reviewed** submission portal with no
 publish API, so releases can't push to it automatically. After a

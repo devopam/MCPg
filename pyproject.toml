@@ -1,6 +1,10 @@
 [project]
 name = "mcpg"
-version = "0.6.8"
+# Version is single-sourced from src/mcpg/__init__.py (__version__) and read
+# here dynamically by hatchling — see [tool.hatch.version]. A release bumps
+# exactly one line, so pip, `mcpg --version`, and the MCP serverInfo
+# handshake can never disagree.
+dynamic = ["version"]
 description = "A production-grade PostgreSQL Model Context Protocol (MCP) server."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -98,6 +102,13 @@ mcpg = "mcpg.__main__:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# Single source of truth for the version: hatchling reads ``__version__``
+# from this file at build time (its built-in regex version source), so the
+# project version, ``mcpg --version``, and the MCP serverInfo handshake all
+# derive from one line. Bump src/mcpg/__init__.py and nothing else.
+[tool.hatch.version]
+path = "src/mcpg/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcpg"]
