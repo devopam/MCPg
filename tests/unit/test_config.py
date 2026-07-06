@@ -343,44 +343,44 @@ def test_custom_providers_parse_with_keys_keyless_and_key_env_override() -> None
         {
             "MCPG_DATABASE_URL": _DB_URL,
             "MCPG_NL2SQL_CUSTOM_PROVIDERS": (
-                "groq=https://api.groq.com/openai/v1|llama-3.3-70b-versatile,\n"
-                "hf=https://router.huggingface.co/v1|meta-llama/Llama-3.3-70B-Instruct|HF_TOKEN,\n"
+                "acme=https://api.acme.example/v1|acme-large,\n"
+                "myvendor=https://api.myvendor.example/v1|big-model|MYVENDOR_TOKEN,\n"
                 "ollama=http://localhost:11434/v1|llama3.1"
             ),
-            "GROQ_API_KEY": "gsk-key",
-            "HF_TOKEN": "hf-key",
+            "ACME_API_KEY": "gsk-key",
+            "MYVENDOR_TOKEN": "mv-key",
         }
     )
     assert settings.nl2sql_custom_providers == (
-        ("groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
-        ("hf", "https://router.huggingface.co/v1", "meta-llama/Llama-3.3-70B-Instruct"),
+        ("acme", "https://api.acme.example/v1", "acme-large"),
+        ("myvendor", "https://api.myvendor.example/v1", "big-model"),
         ("ollama", "http://localhost:11434/v1", "llama3.1"),
     )
     keys = dict(settings.nl2sql_api_keys)
-    assert keys["groq"] == "gsk-key"  # <NAME>_API_KEY convention
-    assert keys["hf"] == "hf-key"  # explicit KEY_ENV_VAR segment (vendors that deviate)
+    assert keys["acme"] == "gsk-key"  # <NAME>_API_KEY convention
+    assert keys["myvendor"] == "mv-key"  # explicit KEY_ENV_VAR segment (vendors that deviate)
     assert keys["ollama"] == "unused"  # keyless local endpoint
     # Built-ins absent -> auto-pick falls through to first declared custom.
-    assert settings.nl2sql_provider == "groq"
+    assert settings.nl2sql_provider == "acme"
 
 
 def test_custom_provider_can_be_pinned_as_default() -> None:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _DB_URL,
-            "MCPG_NL2SQL_CUSTOM_PROVIDERS": "groq=https://api.groq.com/openai/v1|llama-3.3-70b-versatile",
-            "MCPG_NL2SQL_PROVIDER": "groq",
+            "MCPG_NL2SQL_CUSTOM_PROVIDERS": "acme=https://api.acme.example/v1|acme-large",
+            "MCPG_NL2SQL_PROVIDER": "acme",
             "ANTHROPIC_API_KEY": "would-otherwise-win",
         }
     )
-    assert settings.nl2sql_provider == "groq"
+    assert settings.nl2sql_provider == "acme"
 
 
 def test_built_in_vendors_still_beat_customs_in_auto_pick() -> None:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _DB_URL,
-            "MCPG_NL2SQL_CUSTOM_PROVIDERS": "groq=https://api.groq.com/openai/v1|m",
+            "MCPG_NL2SQL_CUSTOM_PROVIDERS": "acme=https://api.acme.example/v1|m",
             "PERPLEXITY_API_KEY": "p",
         }
     )
@@ -390,18 +390,41 @@ def test_built_in_vendors_still_beat_customs_in_auto_pick() -> None:
 @pytest.mark.parametrize(
     ("entry", "match"),
     [
-        ("groq=https://a/v1|m, groq=https://b/v1|m", "duplicate"),
+        ("acme=https://a/v1|m, acme=https://b/v1|m", "duplicate"),
+        # A name that collides with any built-in is rejected — the original
+        # first-party trio and every provider in the expanded fleet.
         ("openai=https://a/v1|m", "clashes with a built-in"),
-        ("groq=http://api.groq.com/v1|m", "plain HTTP is only allowed for loopback"),
-        ("groq=https://api.groq.com/openai/v1", "no default model"),
-        ("groq=ftp://api.groq.com/v1|m", "must be http"),
-        ("Groq Name=https://a/v1|m", "must match"),
-        ("groq=https://a/v1|m|lower_case", "UPPER_SNAKE_CASE"),
+        ("groq=https://a/v1|m", "clashes with a built-in"),
+        ("huggingface=https://a/v1|m", "clashes with a built-in"),
+        ("acme=http://api.acme.example/v1|m", "plain HTTP is only allowed for loopback"),
+        ("acme=https://api.acme.example/v1", "no default model"),
+        ("acme=ftp://api.acme.example/v1|m", "must be http"),
+        ("Acme Name=https://a/v1|m", "must match"),
+        ("acme=https://a/v1|m|lower_case", "UPPER_SNAKE_CASE"),
     ],
 )
 def test_custom_provider_declarations_fail_fast_on_malformed_entries(entry: str, match: str) -> None:
     with pytest.raises(ConfigError, match=match):
         load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_NL2SQL_CUSTOM_PROVIDERS": entry})
+
+
+@pytest.mark.parametrize(
+    ("env_var", "provider"),
+    [
+        ("XAI_API_KEY", "xai"),
+        ("MISTRAL_API_KEY", "mistral"),
+        ("HF_TOKEN", "huggingface"),  # deviates from <VENDOR>_API_KEY
+        ("GITHUB_TOKEN", "github"),  # deviates
+        ("DEEPINFRA_TOKEN", "deepinfra"),  # deviates
+        ("SAMBANOVA_API_KEY", "sambanova"),
+    ],
+)
+def test_expanded_fleet_provider_discovered_from_its_vendor_env_var(env_var: str, provider: str) -> None:
+    # A built-in becomes configured (and, as the sole key, auto-picked) purely
+    # from its vendor env var — including the ones whose var isn't <NAME>_API_KEY.
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, env_var: "k"})
+    assert dict(settings.nl2sql_api_keys).get(provider) == "k"
+    assert settings.nl2sql_provider == provider
 
 
 def test_nl2sql_provider_requires_an_api_key_somewhere() -> None:

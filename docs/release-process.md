@@ -718,6 +718,14 @@ publishing surface healthy:
   — make sure the only owner is the maintainer's account.
 - **Re-run `pip-audit`** on the last shipped requirements set; if a
   CVE has landed since release, cut a patch.
+- **Sweep the NL→SQL provider default models (~quarterly).** Vendors
+  retire models on their own cadence (e.g. Cerebras dropped
+  `llama-3.1-8b`), which would leave a built-in provider pointing at a
+  dead default. Check each entry's `default_model` in
+  `src/mcpg/nl2sql.py`'s `_PROVIDERS` registry against the vendor's live
+  models page and bump any that changed. It's a pure data edit — one
+  string per affected provider, no code — then cut a build. Base URLs
+  and key env vars are stable and rarely need attention.
 - **Rotate the `SMITHERY_API_KEY`** secret if it's ever been exposed
   (e.g. pasted into a chat/issue); regenerate at smithery.ai and update
   the repo secret.

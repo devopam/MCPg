@@ -348,8 +348,9 @@ translate_nl_to_sql(question="how many orders were shipped last week?",
 # → { sql, explanation, executed, rows, columns, row_count }
 ```
 
-Requires `MCPG_NL2SQL_PROVIDER` + API key set at startup
-(anthropic / openai / gemini / deepseek / qwen / openrouter / perplexity). The tool sends a compact schema brief
+Requires `MCPG_NL2SQL_PROVIDER` + API key set at startup (any of the 19
+built-in providers — anthropic / openai / gemini / xai / groq / mistral /
+huggingface / … — or a custom one). The tool sends a compact schema brief
 (tables, columns, FKs) to the configured LLM, parses the JSON
 response, and — when `execute=true` — passes the generated SQL
 through `SafeSqlDriver`'s allowlist before running it. A model that
