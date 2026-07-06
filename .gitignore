@@ -19,3 +19,10 @@ htmlcov/
 coverage.xml
 .mypy_cache/
 .ruff_cache/
+
+# Local GitHub Pages / Jekyll build artifacts (the site builds on GitHub;
+# `_config.yml` is the only tracked Pages input).
+_site/
+.sass-cache/
+.jekyll-cache/
+.jekyll-metadata

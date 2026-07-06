@@ -497,7 +497,7 @@ jobs:
           path: dist/
       - name: Cut release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
         run: |
           VER="${GITHUB_REF_NAME#v}"
           # Pull the matching section out of CHANGELOG.md as the
