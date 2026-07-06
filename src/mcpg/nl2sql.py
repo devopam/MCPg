@@ -34,7 +34,7 @@ import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import httpx
 
@@ -86,7 +86,7 @@ class ProviderSpec:
     """
 
     key: str
-    api_style: str
+    api_style: Literal["anthropic", "gemini", "openai"]
     base_url: str | None
     default_model: str
     key_env_vars: tuple[str, ...]
@@ -167,6 +167,12 @@ _PROVIDERS: tuple[ProviderSpec, ...] = (
 )
 
 _PROVIDERS_BY_KEY: dict[str, ProviderSpec] = {p.key: p for p in _PROVIDERS}
+
+# Fail fast on a malformed registry rather than silently dropping a
+# duplicate key (the dict comprehension above would overwrite it) or
+# registering a provider with no way to supply its API key.
+assert len(_PROVIDERS_BY_KEY) == len(_PROVIDERS), "duplicate provider key in nl2sql._PROVIDERS"
+assert all(p.key_env_vars for p in _PROVIDERS), "every nl2sql provider needs at least one key env var"
 
 
 def _env_hint(env_vars: tuple[str, ...]) -> str:
@@ -590,10 +596,15 @@ def build_provider(
             return AnthropicProvider(api_key=api_key, **kwargs)
         if spec.api_style == "gemini":
             return GeminiProvider(api_key=api_key, **kwargs)
-        # "openai" — first-party OpenAI *and* every OpenAI-compatible vendor
-        # share one client; the preset (or override) base_url is the only
-        # thing that differs.
-        return OpenAIProvider(api_key=api_key, **kwargs)
+        if spec.api_style == "openai":
+            # First-party OpenAI *and* every OpenAI-compatible vendor share
+            # one client; the preset (or override) base_url is the only thing
+            # that differs.
+            return OpenAIProvider(api_key=api_key, **kwargs)
+        # Unrecognised api_style — the Literal type makes this unreachable for
+        # the checked-in registry, but fail loudly rather than silently route a
+        # future misconfigured entry through the OpenAI client.
+        raise NL2SQLError(f"provider {name!r} has an unknown api_style {spec.api_style!r}")
     if base_url:
         # Operator-declared custom provider (MCPG_NL2SQL_CUSTOM_PROVIDERS):
         # by definition OpenAI-compatible, endpoint from its declaration.

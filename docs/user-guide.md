@@ -316,8 +316,8 @@ client with vendor-preset endpoints. The whole list is a single
 declarative registry (`_PROVIDERS` in `nl2sql.py`), so adding a vendor or
 refreshing a default model as vendors retire them is a one-line data
 change. Base URLs and key env vars were verified against each vendor's
-docs; the `default_model` column is the volatile one — override it per
-call with `MCPG_NL2SQL_MODEL`.
+docs; the `default_model` column is the volatile one — override it in
+configuration with `MCPG_NL2SQL_MODEL` (applies to the default provider).
 
 ### Bring your own provider (no code change)
 

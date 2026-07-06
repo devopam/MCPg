@@ -202,6 +202,18 @@ def test_build_provider_honours_explicit_base_url_override_for_built_in() -> Non
     assert provider._base_url == "https://gw.internal/v1"
 
 
+def test_build_provider_fails_fast_on_unknown_api_style(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The Literal type makes this unreachable for the real registry, but a
+    # future entry with a bogus api_style must error, not silently route
+    # through the OpenAI client.
+    from mcpg import nl2sql
+
+    bogus = nl2sql.ProviderSpec("weird", "grpc", None, "m", ("WEIRD_API_KEY",))  # type: ignore[arg-type]
+    monkeypatch.setitem(nl2sql._PROVIDERS_BY_KEY, "weird", bogus)
+    with pytest.raises(NL2SQLError, match="unknown api_style"):
+        build_provider("weird", "key")
+
+
 def test_default_models_table_covers_every_supported_provider() -> None:
     # Every table is derived from the same provider registry, so they move
     # together by construction. Assert that invariant, plus a sample of the
