@@ -16,7 +16,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ContentBlock
 
-from mcpg import about, audit
+from mcpg import __version__, about, audit
 from mcpg.config import Settings, Transport
 from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
@@ -203,6 +203,11 @@ def create_server(
         host=settings.http_host,
         port=settings.http_port,
     )
+    # FastMCP doesn't forward a ``version`` to the low-level server, so the
+    # MCP ``initialize`` handshake reports ``serverInfo.version`` as the MCP
+    # SDK's own version (e.g. "1.28.1") rather than mcpg's. Pin it to mcpg's
+    # version so clients, inspectors, and registries see the right number.
+    server._mcp_server.version = __version__
     server.mcpg_settings = settings
     server.otel_tracer = setup_tracing(settings)
     # Instantiate and register the RateLimiter
