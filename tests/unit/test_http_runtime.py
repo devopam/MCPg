@@ -835,6 +835,80 @@ def test_run_http_builds_app_and_serves_via_uvicorn(monkeypatch: pytest.MonkeyPa
     assert captured["app"] is not None
 
 
+def test_run_http_pins_selector_loop_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    # async psycopg dies on the ProactorEventLoop; uvicorn reinstalls the
+    # proactor policy on Windows, so run_http must re-pin the selector
+    # policy and tell uvicorn to leave the loop alone (loop="none").
+    import asyncio
+
+    from mcpg import http_runtime
+
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+    captured_kwargs: dict[str, object] = {}
+
+    def _fake_run(app: object, *, host: str, port: int, **kwargs: object) -> None:
+        captured_kwargs.update(kwargs)
+
+    class _FakeSelectorPolicy:
+        pass
+
+    policy_calls: list[object] = []
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", _fake_run)
+    monkeypatch.setattr(http_runtime.sys, "platform", "win32")
+    # WindowsSelectorEventLoopPolicy doesn't exist off Windows. Inject it
+    # via __dict__ (dict subscript) rather than setattr — on Python 3.14
+    # even *reading* asyncio.WindowsSelectorEventLoopPolicy on Linux trips
+    # the module's __getattr__ with a NameError, which setattr's original-
+    # value save would hit. Direct __dict__ insertion avoids that path and
+    # is what attribute lookup resolves against anyway.
+    monkeypatch.setitem(asyncio.__dict__, "WindowsSelectorEventLoopPolicy", _FakeSelectorPolicy)
+    monkeypatch.setattr(asyncio, "set_event_loop_policy", lambda policy: policy_calls.append(policy))
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    http_runtime.run_http(_Stub(), settings, kind="streamable-http")
+
+    assert captured_kwargs.get("loop") == "none"
+    assert len(policy_calls) == 1
+    assert isinstance(policy_calls[0], _FakeSelectorPolicy)
+
+
+def test_run_http_leaves_the_event_loop_alone_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+
+    from mcpg import http_runtime
+
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+    captured_kwargs: dict[str, object] = {}
+
+    def _fake_run(app: object, *, host: str, port: int, **kwargs: object) -> None:
+        captured_kwargs.update(kwargs)
+
+    policy_calls: list[object] = []
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", _fake_run)
+    monkeypatch.setattr(http_runtime.sys, "platform", "linux")
+    monkeypatch.setattr(asyncio, "set_event_loop_policy", lambda policy: policy_calls.append(policy))
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    http_runtime.run_http(_Stub(), settings, kind="streamable-http")
+
+    assert "loop" not in captured_kwargs
+    assert policy_calls == []
+
+
 # --- request timeout middleware -------------------------------------------
 
 
