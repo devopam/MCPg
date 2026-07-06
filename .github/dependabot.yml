@@ -18,7 +18,12 @@
 #   - weekly schedule, Monday morning UTC (lines up with the start of
 #     the working week)
 #   - open-pull-requests-limit: 5 so a backlog can't flood
-#   - labels: "dependencies" + the ecosystem name for easy filtering
+#   - labels: "dependencies" (the only label auto-provisioned by
+#     GitHub). Per-ecosystem labels were dropped because Dependabot
+#     warns when a referenced label doesn't exist in the repo, and
+#     the commit-message prefix already tags the ecosystem
+#     (chore(deps) / ci(deps) / build(deps)). To re-add ecosystem
+#     labels, first create them under Issues -> Labels, then list them here.
 #   - commit-message prefix matches Conventional Commits so the
 #     changelog rollup picks them up cleanly
 #   - groups for related updates (e.g. all Python minor/patch into one PR,
@@ -43,7 +48,6 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
-      - "python"
     commit-message:
       # `chore(deps): bump …` matches Conventional Commits so the
       # release rollup script picks them up under the right section.
@@ -70,7 +74,6 @@ updates:
     open-pull-requests-limit: 3
     labels:
       - "dependencies"
-      - "github-actions"
     commit-message:
       prefix: "ci(deps)"
       include: "scope"
@@ -95,7 +98,6 @@ updates:
     open-pull-requests-limit: 3
     labels:
       - "dependencies"
-      - "docker"
     commit-message:
       prefix: "build(deps)"
       include: "scope"
@@ -110,8 +112,6 @@ updates:
     open-pull-requests-limit: 3
     labels:
       - "dependencies"
-      - "docker"
-      - "ci"
     commit-message:
       prefix: "ci(deps)"
       include: "scope"
