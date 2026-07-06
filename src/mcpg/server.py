@@ -16,7 +16,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ContentBlock
 
-from mcpg import about, audit
+from mcpg import __version__, about, audit
 from mcpg.config import Settings, Transport
 from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
@@ -45,6 +45,16 @@ class AuditedFastMCP(FastMCP[AppContext]):
     # the ``mcpg[otel]`` extra isn't installed — :func:`tool_span`
     # treats both cases as no-ops so ``call_tool`` doesn't branch.
     otel_tracer: TracerHandle | None = None
+
+    def __init__(self, *args: Any, version: str | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # FastMCP's constructor doesn't forward a version to the low-level
+        # MCP server, so the ``initialize`` handshake reports the MCP SDK's
+        # version in ``serverInfo`` rather than ours. This subclass exists
+        # to extend FastMCP, so it's the right place to hold that one bit of
+        # SDK-internal knowledge: pin the advertised version to mcpg's own.
+        if version is not None:
+            self._mcp_server.version = version
 
     def _log_if_slow(self, name: str, duration: float) -> None:
         if not hasattr(self, "mcpg_settings"):
@@ -199,6 +209,7 @@ def create_server(
     server: AuditedFastMCP = AuditedFastMCP(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
+        version=__version__,
         lifespan=make_lifespan(settings, db, lm, cm),
         host=settings.http_host,
         port=settings.http_port,

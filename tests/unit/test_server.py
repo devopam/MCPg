@@ -25,6 +25,17 @@ def test_create_server_returns_named_fastmcp() -> None:
     assert server.name == SERVER_NAME
 
 
+def test_create_server_reports_mcpg_version_in_serverinfo() -> None:
+    # FastMCP doesn't forward a version, so without the pin the initialize
+    # handshake would advertise the MCP SDK's version instead of mcpg's.
+    from mcpg import __version__
+
+    server = create_server(_SETTINGS)
+
+    init_options = server._mcp_server.create_initialization_options()
+    assert init_options.server_version == __version__
+
+
 async def test_lifespan_connects_database_and_yields_app_context() -> None:
     pool = FakePool()
     db = Database(_SETTINGS, pool=pool)  # type: ignore[arg-type]
