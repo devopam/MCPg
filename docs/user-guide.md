@@ -290,16 +290,34 @@ callable through the tool:
 
 | Provider | Set in env | Default model |
 |---|---|---|
-| `anthropic` | `ANTHROPIC_API_KEY` | provider's recent Claude Sonnet |
+| `anthropic` | `ANTHROPIC_API_KEY` | recent Claude Sonnet |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
-| `gemini` | `GEMINI_API_KEY` (falls back to `GOOGLE_API_KEY`) | provider's recent Gemini Flash |
+| `gemini` | `GEMINI_API_KEY` (falls back to `GOOGLE_API_KEY`) | recent Gemini Flash |
 | `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` |
 | `qwen` | `DASHSCOPE_API_KEY` (falls back to `QWEN_API_KEY`) | `qwen-plus` |
-| `openrouter` | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` (any OpenRouter model via `MCPG_NL2SQL_MODEL`) |
+| `openrouter` | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` |
 | `perplexity` | `PERPLEXITY_API_KEY` | `sonar` |
+| `xai` | `XAI_API_KEY` | `grok-3-mini` |
+| `groq` | `GROQ_API_KEY` | `llama-3.1-8b-instant` |
+| `mistral` | `MISTRAL_API_KEY` | `mistral-small-latest` |
+| `together` | `TOGETHER_API_KEY` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| `fireworks` | `FIREWORKS_API_KEY` | `accounts/fireworks/models/llama-v3p1-8b-instruct` |
+| `deepinfra` | `DEEPINFRA_TOKEN` | `meta-llama/Meta-Llama-3.1-8B-Instruct` |
+| `cerebras` | `CEREBRAS_API_KEY` | `qwen-3-32b` |
+| `nebius` | `NEBIUS_API_KEY` | `meta-llama/Meta-Llama-3.1-8B-Instruct` |
+| `huggingface` | `HF_TOKEN` | `openai/gpt-oss-20b` |
+| `github` | `GITHUB_TOKEN` (GitHub Models) | `openai/gpt-4o-mini` |
+| `sambanova` | `SAMBANOVA_API_KEY` | `Meta-Llama-3.1-8B-Instruct` |
+| `moonshot` | `MOONSHOT_API_KEY` (Kimi) | `kimi-k2.5` |
 
-The last four are OpenAI-compatible vendors: MCPg drives them through
-the same chat-completions client with vendor-preset endpoints.
+All but the first three (`anthropic` / `openai` / `gemini`) are
+OpenAI-compatible vendors: MCPg drives them through one chat-completions
+client with vendor-preset endpoints. The whole list is a single
+declarative registry (`_PROVIDERS` in `nl2sql.py`), so adding a vendor or
+refreshing a default model as vendors retire them is a one-line data
+change. Base URLs and key env vars were verified against each vendor's
+docs; the `default_model` column is the volatile one — override it per
+call with `MCPG_NL2SQL_MODEL`.
 
 ### Bring your own provider (no code change)
 
@@ -308,21 +326,25 @@ declared through configuration alone:
 
 ```bash
 export MCPG_NL2SQL_CUSTOM_PROVIDERS="
-  groq=https://api.groq.com/openai/v1|llama-3.3-70b-versatile,
-  hf=https://router.huggingface.co/v1|meta-llama/Llama-3.3-70B-Instruct|HF_TOKEN,
+  myvendor=https://api.myvendor.example/v1|big-model,
+  privategw=https://llm.internal/v1|my-model|PRIVATEGW_TOKEN,
   ollama=http://localhost:11434/v1|llama3.1
 "
-export GROQ_API_KEY=gsk_...   # <NAME>_API_KEY convention
-export HF_TOKEN=hf_...        # explicit third segment for vendors that deviate
+export MYVENDOR_API_KEY=...    # <NAME>_API_KEY convention
+export PRIVATEGW_TOKEN=...     # explicit third segment for a deviating key var
+# ollama needs no key — it's a loopback endpoint
 ```
+
+> The names above must **not** collide with a built-in provider (the 19
+> in the table); a clash is rejected at startup. Use custom entries for
+> vendors *not* already built in, or for a local model server.
 
 Each entry is `name=base_url|model` with an optional `|KEY_ENV_VAR`
 third segment. Rules, stated plainly:
 
-- The API key is read from `<NAME>_API_KEY` (the convention Groq,
-  Mistral, Together, xAI, and most vendors follow); the third segment
-  names the env var explicitly when a vendor deviates (Hugging Face's
-  `HF_TOKEN`).
+- The API key is read from `<NAME>_API_KEY` (the convention most vendors
+  follow); the third segment names the env var explicitly when a vendor
+  deviates from it.
 - **Keyless is allowed** for loopback endpoints — local Ollama / vLLM
   / LM Studio are first-class, no dummy key needed.
 - `http://` is accepted only for loopback hosts; anything remote must
@@ -337,9 +359,10 @@ third segment. Rules, stated plainly:
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...      # configures anthropic
 export OPENAI_API_KEY=sk-...             # configures openai too
-# Both available; MCPg auto-picks anthropic as the default
-# (preference order: anthropic → openai → gemini → deepseek
-# → qwen → openrouter → perplexity).
+# Both available; MCPg auto-picks anthropic as the default. Preference
+# is the registry order — anthropic → openai → gemini stay first, then
+# the OpenAI-compatible fleet (deepseek, qwen, …, xai, groq, …) — so
+# existing setups keep their current default.
 ```
 
 To pin a specific default, set `MCPG_NL2SQL_PROVIDER` explicitly:

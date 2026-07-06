@@ -17,6 +17,7 @@ from mcpg.nl2sql import (
     HARD_MAX_TOKENS,
     OPENAI_COMPATIBLE_BASE_URLS,
     VENDOR_ENV_VAR_HINT,
+    VENDOR_KEY_ENV_VARS,
     AnthropicProvider,
     GeminiProvider,
     LLMProvider,
@@ -139,16 +140,16 @@ def test_resolve_routes_declared_custom_providers() -> None:
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_NL2SQL_CUSTOM_PROVIDERS": (
-                "groq=https://api.groq.com/openai/v1|llama-3.3-70b-versatile,ollama=http://localhost:11434/v1|llama3.1"
+                "acme=https://api.acme.example/v1|acme-large,ollama=http://localhost:11434/v1|llama3.1"
             ),
-            "GROQ_API_KEY": "gsk",
-            "MCPG_NL2SQL_MODEL": "llama-3.1-8b-instant",
+            "ACME_API_KEY": "gsk",
+            "MCPG_NL2SQL_MODEL": "acme-small",
         }
     )
     default = resolve_provider_call_params(settings, None)
-    assert default.provider_name == "groq"
-    assert default.model == "llama-3.1-8b-instant"  # override applies to the default
-    assert default.base_url == "https://api.groq.com/openai/v1"
+    assert default.provider_name == "acme"
+    assert default.model == "acme-small"  # override applies to the default
+    assert default.base_url == "https://api.acme.example/v1"
 
     explicit = resolve_provider_call_params(settings, "ollama")
     assert explicit.model == "llama3.1"  # non-default keeps its declared model
@@ -166,28 +167,60 @@ def test_resolve_unknown_provider_error_lists_declared_customs() -> None:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
-            "MCPG_NL2SQL_CUSTOM_PROVIDERS": "groq=https://api.groq.com/openai/v1|m",
+            "MCPG_NL2SQL_CUSTOM_PROVIDERS": "acme=https://api.acme.example/v1|m",
         }
     )
-    with pytest.raises(NL2SQLError, match="groq"):
+    with pytest.raises(NL2SQLError, match="acme"):
         resolve_provider_call_params(settings, "bogus")
 
 
+@pytest.mark.parametrize(
+    ("name", "expected_base"),
+    [
+        ("xai", "https://api.x.ai/v1"),
+        ("groq", "https://api.groq.com/openai/v1"),
+        ("mistral", "https://api.mistral.ai/v1"),
+        ("huggingface", "https://router.huggingface.co/v1"),
+        ("github", "https://models.github.ai/inference"),
+        ("deepinfra", "https://api.deepinfra.com/v1/openai"),
+    ],
+)
+def test_build_provider_routes_new_built_ins_to_openai_client_with_preset_base_url(
+    name: str, expected_base: str
+) -> None:
+    # Every expanded-fleet vendor is OpenAI-compatible, so build_provider
+    # returns an OpenAIProvider pointed at the registry's preset base_url.
+    provider = build_provider(name, "key")
+    assert isinstance(provider, OpenAIProvider)
+    assert provider._base_url == expected_base
+
+
+def test_build_provider_honours_explicit_base_url_override_for_built_in() -> None:
+    # An explicit base_url (e.g. a private gateway) still wins over the preset.
+    provider = build_provider("groq", "key", base_url="https://gw.internal/v1")
+    assert isinstance(provider, OpenAIProvider)
+    assert provider._base_url == "https://gw.internal/v1"
+
+
 def test_default_models_table_covers_every_supported_provider() -> None:
-    assert set(DEFAULT_MODELS) == {
-        "anthropic",
-        "openai",
-        "gemini",
-        "deepseek",
-        "qwen",
-        "openrouter",
-        "perplexity",
-    }
-    # Every OpenAI-compatible preset must also have a default model and
-    # an env-var hint — the three tables move together.
-    assert set(OPENAI_COMPATIBLE_BASE_URLS) <= set(DEFAULT_MODELS)
+    # Every table is derived from the same provider registry, so they move
+    # together by construction. Assert that invariant, plus a sample of the
+    # expected members so a botched registry entry is still caught.
     assert set(VENDOR_ENV_VAR_HINT) == set(DEFAULT_MODELS)
     assert set(AUTO_PICK_ORDER) == set(DEFAULT_MODELS)
+    assert set(VENDOR_KEY_ENV_VARS) == set(DEFAULT_MODELS)
+    # OpenAI-compatible presets are a subset — the first-party clients
+    # (anthropic / openai / gemini) carry their own default host, no preset.
+    assert set(OPENAI_COMPATIBLE_BASE_URLS) <= set(DEFAULT_MODELS)
+    assert {"anthropic", "openai", "gemini"}.isdisjoint(OPENAI_COMPATIBLE_BASE_URLS)
+    # First-party trio kept first (auto-pick precedence) + a sample of the
+    # expanded fleet, including the ones whose key env var deviates.
+    assert AUTO_PICK_ORDER[:3] == ("anthropic", "openai", "gemini")
+    for provider in ("deepseek", "xai", "groq", "mistral", "huggingface", "github"):
+        assert provider in DEFAULT_MODELS
+    # Providers with non-standard key env vars are grounded correctly.
+    assert VENDOR_KEY_ENV_VARS["huggingface"][0] == "HF_TOKEN"
+    assert VENDOR_KEY_ENV_VARS["github"] == ("GITHUB_TOKEN",)
 
 
 def test_parse_response_extracts_sql_and_explanation_from_clean_json() -> None:

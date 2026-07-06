@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **12 more built-in NL→SQL providers + a metadata-driven provider
+  registry** — `translate_nl_to_sql` now ships **19** built-in providers.
+  The expanded fleet adds **xAI (Grok), GitHub Models, Hugging Face,
+  Groq, Mistral, Together, Fireworks, DeepInfra, Cerebras, Nebius,
+  SambaNova, and Moonshot (Kimi)** alongside the original seven. Each is
+  plug-and-play: set the vendor's conventional API-key env var and it's
+  auto-discovered — including the ones that deviate from the
+  `<VENDOR>_API_KEY` convention (Hugging Face's `HF_TOKEN`, GitHub's
+  `GITHUB_TOKEN`, DeepInfra's `DEEPINFRA_TOKEN`). Internally, all provider
+  metadata now lives in a single declarative registry
+  (`nl2sql.ProviderSpec` / `_PROVIDERS`) that every lookup table derives
+  from, so adding or refreshing a provider — e.g. bumping a default model
+  when a vendor retires one — is a one-line data edit, no code change.
+  Base URLs and key env vars were verified against each vendor's official
+  docs. Local stacks (Ollama, vLLM, LM Studio) stay on the keyless
+  `MCPG_NL2SQL_CUSTOM_PROVIDERS` path by design.
 - **Four new NL→SQL providers: DeepSeek, Qwen, OpenRouter, and
   Perplexity** — `translate_nl_to_sql` now supports seven providers.
   The new four all speak the OpenAI-compatible chat API, so they reuse

@@ -16,7 +16,7 @@ from os.path import isabs
 from urllib.parse import urlparse
 
 from mcpg._vendor.sql import obfuscate_password
-from mcpg.nl2sql import AUTO_PICK_ORDER, VENDOR_ENV_VAR_HINT
+from mcpg.nl2sql import AUTO_PICK_ORDER, VENDOR_ENV_VAR_HINT, VENDOR_KEY_ENV_VARS
 from mcpg.secrets import SecretsError, build_secrets_provider
 
 # PG role names must be safe identifiers — we inline them into
@@ -764,26 +764,19 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     # not just the configured default. Operator can also point one
     # provider at an explicit key via ``MCPG_NL2SQL_API_KEY`` —
     # which always wins over the vendor-conventional fallback.
+    # Discovery is driven entirely by nl2sql's provider registry
+    # (VENDOR_KEY_ENV_VARS): for each built-in provider, try its candidate
+    # env vars in order and take the first one set. Adding a provider to
+    # the registry makes it discoverable here with no change to this file.
+    # The candidate lists cover the vendors that deviate from the
+    # <VENDOR>_API_KEY convention — Gemini (GOOGLE_API_KEY), Qwen
+    # (QWEN_API_KEY), Hugging Face (HF_TOKEN), DeepInfra (DEEPINFRA_TOKEN).
     api_keys: dict[str, str] = {}
-    if anthropic_key := (secrets.get("ANTHROPIC_API_KEY") or "").strip():
-        api_keys["anthropic"] = anthropic_key
-    if openai_key := (secrets.get("OPENAI_API_KEY") or "").strip():
-        api_keys["openai"] = openai_key
-    gemini_key = (secrets.get("GEMINI_API_KEY") or "").strip() or (secrets.get("GOOGLE_API_KEY") or "").strip()
-    if gemini_key:
-        api_keys["gemini"] = gemini_key
-    # OpenAI-compatible vendors (DeepSeek / Qwen / OpenRouter /
-    # Perplexity) — discovered the same way, driven through the same
-    # chat-completions client with vendor-preset endpoints (nl2sql.py).
-    if deepseek_key := (secrets.get("DEEPSEEK_API_KEY") or "").strip():
-        api_keys["deepseek"] = deepseek_key
-    qwen_key = (secrets.get("DASHSCOPE_API_KEY") or "").strip() or (secrets.get("QWEN_API_KEY") or "").strip()
-    if qwen_key:
-        api_keys["qwen"] = qwen_key
-    if openrouter_key := (secrets.get("OPENROUTER_API_KEY") or "").strip():
-        api_keys["openrouter"] = openrouter_key
-    if perplexity_key := (secrets.get("PERPLEXITY_API_KEY") or "").strip():
-        api_keys["perplexity"] = perplexity_key
+    for provider, env_vars in VENDOR_KEY_ENV_VARS.items():
+        for var in env_vars:
+            if key := (secrets.get(var) or "").strip():
+                api_keys[provider] = key
+                break
 
     # Operator-declared OpenAI-compatible providers (the pluggable
     # path). Same list convention as MCPG_SECONDARY_DATABASE_URLS;

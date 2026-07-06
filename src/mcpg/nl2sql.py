@@ -47,60 +47,158 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Default models per provider — chosen for low cost / high availability
-# at writing time. Override via ``MCPG_NL2SQL_MODEL``.
-DEFAULT_MODELS: dict[str, str] = {
-    "anthropic": "claude-sonnet-4-6",
-    "openai": "gpt-4o-mini",
-    "gemini": "gemini-2.0-flash",
-    "deepseek": "deepseek-chat",
-    "qwen": "qwen-plus",
-    "openrouter": "openai/gpt-4o-mini",
-    "perplexity": "sonar",
-}
 
-# Providers that speak the OpenAI-compatible chat-completions API —
-# they reuse :class:`OpenAIProvider` with a preset ``base_url``. This
-# is why supporting the wider model ecosystem costs one dict entry per
-# vendor instead of one HTTP client per vendor. An explicit
-# ``MCPG_NL2SQL_BASE_URL`` still overrides the preset (private
-# gateways, regional endpoints), and self-hosted OpenAI-compatible
-# stacks (Ollama, vLLM, LM Studio) are reachable by pointing the
-# ``openai`` provider's base_url at them.
-OPENAI_COMPATIBLE_BASE_URLS: dict[str, str] = {
-    "deepseek": "https://api.deepseek.com/v1",
-    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "openrouter": "https://openrouter.ai/api/v1",
-    "perplexity": "https://api.perplexity.ai",
-}
+@dataclass(frozen=True)
+class ProviderSpec:
+    """Declarative metadata for one built-in NL→SQL provider.
 
-# Human-readable env-var hint per provider, used in error messages
-# when MCPg needs to tell the operator which env var to set to
-# enable a given provider. Single source of truth so the wording
-# stays consistent between startup validation (config.py) and
-# runtime tool errors (tools.py).
-VENDOR_ENV_VAR_HINT: dict[str, str] = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "gemini": "GEMINI_API_KEY (or GOOGLE_API_KEY)",
-    "deepseek": "DEEPSEEK_API_KEY",
-    "qwen": "DASHSCOPE_API_KEY (or QWEN_API_KEY)",
-    "openrouter": "OPENROUTER_API_KEY",
-    "perplexity": "PERPLEXITY_API_KEY",
-}
+    ``_PROVIDERS`` (below) is the **single source of truth** for the
+    built-in provider list. Every lookup table in this module — default
+    models, OpenAI-compatible base URLs, key env vars, the hint strings,
+    the auto-pick order — is *derived* from it, and ``config.py``'s key
+    discovery iterates it directly. Consequences:
 
-# When MCPG_NL2SQL_PROVIDER is unset, the default is auto-picked from
-# whichever vendor keys are present, in this order. The original three
-# stay first so existing deployments keep their current default.
-AUTO_PICK_ORDER: tuple[str, ...] = (
-    "anthropic",
-    "openai",
-    "gemini",
-    "deepseek",
-    "qwen",
-    "openrouter",
-    "perplexity",
+    * **Adding a provider** = one ``ProviderSpec`` entry here. No other
+      code artifact changes.
+    * **The recurring maintenance** — vendors retire models every few
+      months (e.g. Cerebras dropped ``llama-3.1-8b``) — is editing the
+      ``default_model`` string on the affected entries and cutting a new
+      build. Purely data; nothing else moves.
+
+    Fields:
+        key:           lowercase slug used as the provider name.
+        api_style:     which wire client handles it — ``"anthropic"``,
+                       ``"gemini"``, or ``"openai"`` (the OpenAI
+                       chat-completions dialect, which most vendors
+                       implement, reusing one HTTP client).
+        base_url:      OpenAI-compatible endpoint preset. ``None`` means
+                       "use the client class's own default host" — only
+                       the three first-party providers leave it ``None``.
+        default_model: cheap / widely-available default, overridable per
+                       call via ``MCPG_NL2SQL_MODEL``. The volatile field
+                       the quarterly sweep refreshes.
+        key_env_vars:  ordered candidate env vars holding the API key;
+                       the first one set wins. Most vendors follow
+                       ``<VENDOR>_API_KEY``; the deviations (Gemini,
+                       Qwen, Hugging Face's ``HF_TOKEN``, GitHub's
+                       ``GITHUB_TOKEN``, DeepInfra's ``DEEPINFRA_TOKEN``)
+                       are grounded in each vendor's own docs.
+    """
+
+    key: str
+    api_style: str
+    base_url: str | None
+    default_model: str
+    key_env_vars: tuple[str, ...]
+
+
+# ── Built-in provider registry: the ONE place to add or refresh a provider ──
+# Order defines the auto-pick precedence when several vendor keys are present
+# and MCPG_NL2SQL_PROVIDER is unset. The three first-party providers stay
+# first so existing deployments keep their current default; the
+# OpenAI-compatible fleet follows. Base URLs + key env vars for the expanded
+# fleet were verified against each vendor's official docs; ``default_model``
+# is the field expected to age (see ProviderSpec).
+#
+# Not built-in on purpose: local stacks (Ollama, vLLM, LM Studio) are keyless
+# and the served model varies, so they use the keyless
+# MCPG_NL2SQL_CUSTOM_PROVIDERS path instead (documented in the user guide).
+_PROVIDERS: tuple[ProviderSpec, ...] = (
+    # First-party providers — bespoke wire clients, own default host.
+    ProviderSpec("anthropic", "anthropic", None, "claude-sonnet-4-6", ("ANTHROPIC_API_KEY",)),
+    ProviderSpec("openai", "openai", None, "gpt-4o-mini", ("OPENAI_API_KEY",)),
+    ProviderSpec("gemini", "gemini", None, "gemini-2.0-flash", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
+    # OpenAI-compatible vendors — same client, vendor-preset endpoint.
+    ProviderSpec("deepseek", "openai", "https://api.deepseek.com/v1", "deepseek-chat", ("DEEPSEEK_API_KEY",)),
+    ProviderSpec(
+        "qwen",
+        "openai",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "qwen-plus",
+        ("DASHSCOPE_API_KEY", "QWEN_API_KEY"),
+    ),
+    ProviderSpec("openrouter", "openai", "https://openrouter.ai/api/v1", "openai/gpt-4o-mini", ("OPENROUTER_API_KEY",)),
+    ProviderSpec("perplexity", "openai", "https://api.perplexity.ai", "sonar", ("PERPLEXITY_API_KEY",)),
+    # Expanded fleet — doc-verified base URLs + key env vars.
+    ProviderSpec("xai", "openai", "https://api.x.ai/v1", "grok-3-mini", ("XAI_API_KEY",)),
+    ProviderSpec("groq", "openai", "https://api.groq.com/openai/v1", "llama-3.1-8b-instant", ("GROQ_API_KEY",)),
+    ProviderSpec("mistral", "openai", "https://api.mistral.ai/v1", "mistral-small-latest", ("MISTRAL_API_KEY",)),
+    ProviderSpec(
+        "together",
+        "openai",
+        "https://api.together.ai/v1",
+        "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        ("TOGETHER_API_KEY",),
+    ),
+    ProviderSpec(
+        "fireworks",
+        "openai",
+        "https://api.fireworks.ai/inference/v1",
+        "accounts/fireworks/models/llama-v3p1-8b-instruct",
+        ("FIREWORKS_API_KEY",),
+    ),
+    ProviderSpec(
+        "deepinfra",
+        "openai",
+        "https://api.deepinfra.com/v1/openai",
+        "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        ("DEEPINFRA_TOKEN", "DEEPINFRA_API_KEY"),
+    ),
+    ProviderSpec("cerebras", "openai", "https://api.cerebras.ai/v1", "qwen-3-32b", ("CEREBRAS_API_KEY",)),
+    ProviderSpec(
+        "nebius",
+        "openai",
+        "https://api.studio.nebius.ai/v1",
+        "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        ("NEBIUS_API_KEY",),
+    ),
+    ProviderSpec(
+        "huggingface",
+        "openai",
+        "https://router.huggingface.co/v1",
+        "openai/gpt-oss-20b",
+        ("HF_TOKEN", "HUGGINGFACE_API_KEY"),
+    ),
+    ProviderSpec("github", "openai", "https://models.github.ai/inference", "openai/gpt-4o-mini", ("GITHUB_TOKEN",)),
+    ProviderSpec(
+        "sambanova", "openai", "https://api.sambanova.ai/v1", "Meta-Llama-3.1-8B-Instruct", ("SAMBANOVA_API_KEY",)
+    ),
+    ProviderSpec("moonshot", "openai", "https://api.moonshot.ai/v1", "kimi-k2.5", ("MOONSHOT_API_KEY",)),
 )
+
+_PROVIDERS_BY_KEY: dict[str, ProviderSpec] = {p.key: p for p in _PROVIDERS}
+
+
+def _env_hint(env_vars: tuple[str, ...]) -> str:
+    """Render a human-readable ``VAR (or ALT …)`` hint from candidate vars."""
+    if len(env_vars) == 1:
+        return env_vars[0]
+    return f"{env_vars[0]} (or {' or '.join(env_vars[1:])})"
+
+
+# ── Derived lookups — regenerated from _PROVIDERS; do not hand-edit ──
+# Default model per provider; override per call via MCPG_NL2SQL_MODEL.
+DEFAULT_MODELS: dict[str, str] = {p.key: p.default_model for p in _PROVIDERS}
+
+# OpenAI-compatible vendors → preset base_url. The bespoke first-party
+# clients are excluded (they carry their own default host). An explicit
+# MCPG_NL2SQL_BASE_URL still overrides the preset (private gateways,
+# regional endpoints).
+OPENAI_COMPATIBLE_BASE_URLS: dict[str, str] = {
+    p.key: p.base_url for p in _PROVIDERS if p.api_style == "openai" and p.base_url is not None
+}
+
+# Ordered candidate env vars per provider (first set wins). Single source
+# for key discovery (config.py) and the hint strings below.
+VENDOR_KEY_ENV_VARS: dict[str, tuple[str, ...]] = {p.key: p.key_env_vars for p in _PROVIDERS}
+
+# Human-readable env-var hint per provider, used in error messages so the
+# wording stays consistent between startup validation (config.py) and
+# runtime tool errors (tools.py).
+VENDOR_ENV_VAR_HINT: dict[str, str] = {p.key: _env_hint(p.key_env_vars) for p in _PROVIDERS}
+
+# Auto-pick order when MCPG_NL2SQL_PROVIDER is unset — the registry order.
+AUTO_PICK_ORDER: tuple[str, ...] = tuple(p.key for p in _PROVIDERS)
 
 # Conservative budget — NL→SQL responses are usually a few hundred
 # tokens of JSON. Override via ``MCPG_NL2SQL_MAX_TOKENS``.
@@ -481,17 +579,21 @@ def build_provider(
     Raises:
         NL2SQLError: When ``name`` is not in :data:`_SUPPORTED_PROVIDERS`.
     """
-    if name == "anthropic":
-        return AnthropicProvider(api_key=api_key, **({"base_url": base_url} if base_url else {}))
-    if name == "openai":
-        return OpenAIProvider(api_key=api_key, **({"base_url": base_url} if base_url else {}))
-    if name == "gemini":
-        return GeminiProvider(api_key=api_key, **({"base_url": base_url} if base_url else {}))
-    if name in OPENAI_COMPATIBLE_BASE_URLS:
-        # DeepSeek / Qwen / OpenRouter / Perplexity speak the OpenAI
-        # chat-completions dialect — same client, vendor-preset endpoint
-        # (an explicit base_url override still wins).
-        return OpenAIProvider(api_key=api_key, base_url=base_url or OPENAI_COMPATIBLE_BASE_URLS[name])
+    spec = _PROVIDERS_BY_KEY.get(name)
+    if spec is not None:
+        # A registered built-in. For OpenAI-compatible vendors, an explicit
+        # base_url override wins over the vendor preset; the first-party
+        # clients (base_url None) fall back to their own default host.
+        effective = base_url or spec.base_url
+        kwargs = {"base_url": effective} if effective else {}
+        if spec.api_style == "anthropic":
+            return AnthropicProvider(api_key=api_key, **kwargs)
+        if spec.api_style == "gemini":
+            return GeminiProvider(api_key=api_key, **kwargs)
+        # "openai" — first-party OpenAI *and* every OpenAI-compatible vendor
+        # share one client; the preset (or override) base_url is the only
+        # thing that differs.
+        return OpenAIProvider(api_key=api_key, **kwargs)
     if base_url:
         # Operator-declared custom provider (MCPG_NL2SQL_CUSTOM_PROVIDERS):
         # by definition OpenAI-compatible, endpoint from its declaration.
