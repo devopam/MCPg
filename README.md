@@ -14,13 +14,18 @@ graph queries, data movement, live ops, and more.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/devopam/MCPg/blob/main/LICENSE)
 [![CI](https://github.com/devopam/MCPg/actions/workflows/ci.yml/badge.svg)](https://github.com/devopam/MCPg/actions/workflows/ci.yml)
 [![Stars](https://img.shields.io/github/stars/devopam/MCPg)](https://github.com/devopam/MCPg)
+[![smithery badge](https://smithery.ai/badge/devopam/mcpg)](https://smithery.ai/servers/devopam/mcpg)
+[![MCPg MCP server](https://glama.ai/mcp/servers/devopam/MCPg/badges/score.svg)](https://glama.ai/mcp/servers/devopam/MCPg)
+
+> **Try it live:** point an MCP client — or the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) — at the hosted, read-only demo endpoint `https://devopam-mcpg-demo.hf.space/mcp`. It serves read tools against throwaway demo data; for real use, run MCPg next to your own database (see [Quick start](#quick-start)).
 
 ### 📍 Listed On
 
 - **[Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.devopam%2Fmcpg/versions/0.6.5)**  
 - **[mcp.so](https://mcp.so/server/mcpg---production-grade-postgresql-mcp-server/Devopam%20Mittra)**  
 - **[mcpservers.org](https://mcpservers.org/servers/devopam/mcpg)**
-- **[![Glama](https://glama.ai/mcp/servers/devopam/MCPg/badges/score.svg)](https://glama.ai/mcp/servers/devopam/MCPg)**
+- **[Smithery](https://smithery.ai/servers/devopam/mcpg)**
+- **[Glama](https://glama.ai/mcp/servers/devopam/MCPg)**
 ---
 
 | Aspect              | MCPg                              |
