@@ -285,3 +285,39 @@ jobs:
           # Skip the buildkit provenance attestation so the package page
           # shows a single clean manifest rather than an unknown/unknown pair.
           provenance: false
+
+  publish-smithery:
+    name: Publish → Smithery
+    # Opt-in: inert until the maintainer adds a SMITHERY_API_KEY repo
+    # secret. Smithery lists MCPg as a local stdio server that launches
+    # via `uvx mcpg`, so the listing already tracks the latest PyPI
+    # release regardless — re-publishing here keeps the listing's
+    # declared version/metadata current with each release. Non-gating.
+    needs: publish-pypi
+    if: ${{ vars.PUBLISH_SMITHERY == 'true' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Build the Smithery bundle
+        # Smithery's bundle parser doesn't understand the canonical
+        # bundle's `uv` server type, so we derive a python/uvx variant
+        # from the same source of truth (packaging/mcpb) — see
+        # packaging/smithery/build.py. Sync the version first, exactly
+        # like the .mcpb and server.json steps.
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          python packaging/mcpb/sync_version.py "$VER"
+          python packaging/smithery/build.py smithery-bundle
+          npx --yes @anthropic-ai/mcpb validate smithery-bundle/manifest.json
+          npx --yes @anthropic-ai/mcpb pack smithery-bundle "mcpg-${VER}-smithery.mcpb"
+      - name: Publish to Smithery
+        env:
+          SMITHERY_API_KEY: ${{ secrets.SMITHERY_API_KEY }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          npx --yes @smithery/cli@latest namespace use devopam
+          npx --yes @smithery/cli@latest mcp publish "mcpg-${VER}-smithery.mcpb" -n devopam/mcpg

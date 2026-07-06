@@ -606,6 +606,73 @@ If the workflow already started, cancel it from **Actions → publish.yml
 
 ---
 
+## 8b. Registry & directory listings
+
+Where MCPg is listed, and what a release does to each — so nothing is
+silently stale and the few manual steps aren't forgotten. **Most of
+this is automatic**; the publish workflow fans a tagged release out to
+every machine-updatable surface.
+
+| Listing | Update mechanism | Per-release action |
+|---|---|---|
+| **PyPI** | `publish-pypi` job (OIDC, maintainer-gated) | Automatic |
+| **GHCR** (`ghcr.io/devopam/mcpg`) | `publish-ghcr` job | Automatic |
+| **GitHub Releases** (+ `.mcpb` asset) | `github-release` job | Automatic |
+| **Official MCP Registry** | `publish-mcp-registry` job (`server.json`, version-synced) | Automatic |
+| **PulseMCP** | Ingests the MCP Registry daily | Automatic (transitive) |
+| **mcp.so / mcpservers.org / Glama** | Scrape GitHub + the registry | Automatic (transitive) |
+| **Smithery** (`devopam/mcpg`) | `publish-smithery` job (opt-in) | Automatic *once enabled* — see below |
+| **Claude connectors directory** | Review portal, no API | **Manual** — see below |
+
+### Copy that lives in `server.json` (drives the registry-fed listings)
+
+The MCP Registry — and everything that ingests it (PulseMCP, aggregators)
+— sources its blurb from `server.json`'s `description` (≤100 chars,
+enforced by the registry schema). It is **not** auto-generated, so when
+the tool count or positioning changes, edit `server.json` and it
+propagates on the next release.
+
+### Enabling the Smithery auto-publish
+
+The `publish-smithery` job is inert until you switch it on:
+
+1. Create a Smithery API key at **smithery.ai** → account → API Keys.
+2. Add it as a repo **secret** named `SMITHERY_API_KEY`
+   (`Settings → Secrets and variables → Actions → Secrets`).
+3. Add a repo **variable** `PUBLISH_SMITHERY` = `true`
+   (same page → Variables).
+
+The job derives a Smithery-compatible bundle from `packaging/mcpb` via
+`packaging/smithery/build.py` (Smithery doesn't understand the canonical
+bundle's `uv` server type, so the variant uses `python` + a direct
+`uvx mcpg` launch) and publishes it. Because the listing launches
+`uvx mcpg` (always latest), it already tracks PyPI between releases —
+the job just keeps the declared version and metadata current.
+
+> **First-time Smithery listing** is done by hand (`smithery mcp publish`);
+> the job maintains it thereafter. The listing's **description and icon**
+> aren't set by bundle-publish — set those once in Smithery's web
+> server-card settings (they persist across re-publishes).
+
+### The one genuinely manual listing: Claude connectors directory
+
+The Claude directory is a **reviewed** submission portal with no
+publish API, so releases can't push to it automatically. After a
+release that changes the tool surface or the `.mcpb` in a way worth
+re-listing:
+
+1. Grab the new `mcpg-<version>.mcpb` from the GitHub release.
+2. Re-submit via the desktop-extension form linked from the
+   [connectors submission docs](https://claude.com/docs/connectors/building/submission).
+3. Track status in Claude's submissions dashboard; escalate to
+   `mcp-review@anthropic.com` if stuck.
+
+Because the bundle installs `mcpg` from PyPI (always the pinned release
+at install time), a listed extension keeps working across patch
+releases without re-submission — re-submit only for material changes.
+
+---
+
 ## 9. Recurring chores
 
 Quarterly housekeeping items that don't block a release but keep the
@@ -621,6 +688,9 @@ publishing surface healthy:
   — make sure the only owner is the maintainer's account.
 - **Re-run `pip-audit`** on the last shipped requirements set; if a
   CVE has landed since release, cut a patch.
+- **Rotate the `SMITHERY_API_KEY`** secret if it's ever been exposed
+  (e.g. pasted into a chat/issue); regenerate at smithery.ai and update
+  the repo secret.
 
 ---
 
