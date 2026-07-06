@@ -269,7 +269,7 @@ jobs:
           IMAGE="ghcr.io/devopam/mcpg"
           echo "tags=${IMAGE}:${VER},${IMAGE}:latest" >> "$GITHUB_OUTPUT"
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
