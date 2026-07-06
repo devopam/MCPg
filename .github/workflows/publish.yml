@@ -22,21 +22,21 @@ jobs:
           python-version: "3.14"
           enable-cache: true
       - run: uv sync --frozen
-      - name: Sanity check — tag matches pyproject version
-        # Tag is the source of truth for the release; pyproject must
-        # already be bumped to match. Refusing here prevents the very
-        # common "tagged v0.5.1 but forgot to bump" footgun. Read the
-        # field through ``tomllib`` so a stray ``version =`` line in
-        # another table (or quote/spacing reshuffles) can't fool us.
+      - name: Sanity check — tag matches package version
+        # Tag is the source of truth for the release; the version is
+        # single-sourced in src/mcpg/__init__.py (__version__) and read
+        # dynamically by hatchling. Validate the tag against that one
+        # source (the freshly-synced package) to catch the very common
+        # "tagged v0.5.1 but forgot to bump" footgun.
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PYPROJECT_VERSION="$(python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
-          if [ -z "$PYPROJECT_VERSION" ]; then
-            echo "::error::Could not read project.version from pyproject.toml"
+          PKG_VERSION="$(uv run python -c 'import mcpg; print(mcpg.__version__)')"
+          if [ -z "$PKG_VERSION" ]; then
+            echo "::error::Could not read mcpg.__version__"
             exit 1
           fi
-          if [ "$TAG_VERSION" != "$PYPROJECT_VERSION" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME (=$TAG_VERSION) does not match pyproject.toml version $PYPROJECT_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME (=$TAG_VERSION) does not match mcpg.__version__ $PKG_VERSION"
             exit 1
           fi
       - name: Build
