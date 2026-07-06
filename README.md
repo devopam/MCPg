@@ -21,8 +21,8 @@ graph queries, data movement, live ops, and more.
 
 ### 📍 Listed On
 
-- **[Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.devopam%2Fmcpg/versions/0.6.5)**  
-- **[mcp.so](https://mcp.so/server/mcpg---production-grade-postgresql-mcp-server/Devopam%20Mittra)**  
+- **[Official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.devopam%2Fmcpg)**
+- **[mcp.so](https://mcp.so/server/mcpg---production-grade-postgresql-mcp-server/Devopam%20Mittra)**
 - **[mcpservers.org](https://mcpservers.org/servers/devopam/mcpg)**
 - **[Smithery](https://smithery.ai/servers/devopam/mcpg)**
 - **[Glama](https://glama.ai/mcp/servers/devopam/MCPg)**
