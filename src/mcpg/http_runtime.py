@@ -25,6 +25,7 @@ import asyncio
 import hmac
 import json
 import logging
+import sys
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
 
@@ -631,6 +632,17 @@ def run_http(server: object, settings: Settings, *, kind: str) -> None:
 
     app = build_http_app(server, settings, kind=kind)
     tls_kwargs = _uvicorn_tls_kwargs(settings, ssl_module=ssl)
+    # Windows: async psycopg refuses to run on the ProactorEventLoop and
+    # needs a SelectorEventLoop. ``__main__`` sets the selector policy at
+    # startup, but uvicorn's own loop setup reinstalls the *proactor*
+    # policy on Windows before serving — which would silently break every
+    # database connection under the HTTP transport (stdio is unaffected,
+    # nothing overrides the policy there). Re-pin the selector policy here
+    # and tell uvicorn to leave the loop alone (``loop="none"``) so it
+    # runs on the loop our policy creates. No-op off Windows.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        tls_kwargs["loop"] = "none"
     # mypy can't reason about ``**dict[str, object]`` against the
     # large, overloaded ``uvicorn.run`` signature; the dict's contents
     # are already constrained by ``_uvicorn_tls_kwargs``.
