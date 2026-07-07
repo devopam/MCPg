@@ -1,10 +1,10 @@
 {
   "manifest_version": "0.4",
   "name": "mcpg",
-  "display_name": "MCPg — PostgreSQL",
-  "version": "0.6.8",
-  "description": "Production-grade PostgreSQL MCP server: 252 tools for querying, tuning, and operating Postgres — read-only by default.",
-  "long_description": "MCPg lets AI agents safely inspect, query, operate, and tune a PostgreSQL database. 252 tools spanning catalog introspection, query intelligence, natural-language SQL, structural diffs, hybrid search, graph queries, live ops, and more.\n\n**Safe by default**: read-only access mode, AST-validated SQL, and every tool publishes MCP annotations (`readOnlyHint`/`destructiveHint`) so the client knows exactly which calls are safe. Write, DDL, shell, and LISTEN capabilities stay off until explicitly enabled via environment variables.\n\nNo data yet? Run `mcpg --demo` against a scratch database to seed a curated demo dataset and take the tools for a spin — see the guided tour at https://github.com/devopam/MCPg/blob/main/docs/demo.md.",
+  "display_name": "MCPg \u2014 PostgreSQL",
+  "version": "0.6.9",
+  "description": "Production-grade PostgreSQL MCP server: 252 tools for querying, tuning, and operating Postgres \u2014 read-only by default.",
+  "long_description": "MCPg lets AI agents safely inspect, query, operate, and tune a PostgreSQL database. 252 tools spanning catalog introspection, query intelligence, natural-language SQL, structural diffs, hybrid search, graph queries, live ops, and more.\n\n**Safe by default**: read-only access mode, AST-validated SQL, and every tool publishes MCP annotations (`readOnlyHint`/`destructiveHint`) so the client knows exactly which calls are safe. Write, DDL, shell, and LISTEN capabilities stay off until explicitly enabled via environment variables.\n\nNo data yet? Run `mcpg --demo` against a scratch database to seed a curated demo dataset and take the tools for a spin \u2014 see the guided tour at https://github.com/devopam/MCPg/blob/main/docs/demo.md.",
   "author": {
     "name": "Devopam Mittra",
     "email": "devopam@gmail.com",
@@ -44,7 +44,7 @@
     "database_url": {
       "type": "string",
       "title": "PostgreSQL connection URL",
-      "description": "e.g. postgresql://user:password@localhost:5432/mydb — remote hosts need ?sslmode=require. Stored securely by the OS keychain.",
+      "description": "e.g. postgresql://user:password@localhost:5432/mydb \u2014 remote hosts need ?sslmode=require. Stored securely by the OS keychain.",
       "sensitive": true,
       "required": true
     },

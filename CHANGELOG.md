@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.9] - 2026-07-07
+
 ### Added
 
 - **12 more built-in NL→SQL providers + a metadata-driven provider
