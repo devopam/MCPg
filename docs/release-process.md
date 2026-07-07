@@ -130,6 +130,12 @@ missing from the marketing surface — and from the
 
 ### 3.1 Currently in `pyproject.toml`
 
+> **Historical (pre-first-release audit).** Today `pyproject.toml` no
+> longer carries a static `version`; it declares `dynamic = ["version"]`
+> with `[tool.hatch.version] path = "src/mcpg/__init__.py"`, so the
+> version is single-sourced from `__init__.py` (see §4.2). Don't
+> reintroduce a static `version` field from the snippet below.
+
 ```toml
 [project]
 name = "mcpg"
@@ -376,6 +382,9 @@ when running locally.
       (this is the single source; `pyproject.toml` derives it dynamically).
 - [ ] `CHANGELOG.md` rolls `[Unreleased]` into the new dated section,
       and a fresh `[Unreleased]` is added on top.
+- [ ] `docs/release-notes-X.Y.Z.md` written (mirror the previous
+      version's file for structure/tone) **and** linked at the top of
+      the "Release notes" list in `docs/index.md`.
 - [ ] README hero + badges + screenshots — every relative URL has
       been swapped for an absolute one (`https://...`).
 - [ ] `uv run python -m build && uv run twine check dist/*` clean.
@@ -392,6 +401,14 @@ This is the recurring path after the one-time setup.
 
 Land this once at `.github/workflows/publish.yml`. After it's on
 `main`, every `vX.Y.Z` tag triggers the pipeline.
+
+> ⚠️ **The YAML below is the original illustrative sketch and has since
+> drifted — do NOT copy it verbatim.** The live workflow
+> [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) is
+> authoritative: it adds a tag↔`mcpg.__version__` sanity-check step, the
+> `.mcpb` build, and the `publish-mcp-registry` / `publish-ghcr` /
+> `publish-smithery` jobs (8 jobs total, not 5), and uses current action
+> pins (checkout@v7, setup-uv@v7, Python 3.14). Read the real file.
 
 ```yaml
 name: Publish
@@ -567,8 +584,12 @@ If it succeeds, post the new-release announcement to:
 
 - The repo's GitHub Release page (the workflow already created it).
 - The README's "What's new" line / hero badge.
-- The MCP server registry (file a PR against
-  `modelcontextprotocol/servers` listing MCPg under "PostgreSQL").
+
+> The official MCP registry, PyPI, GHCR, and Smithery are published
+> **automatically** by the tagged release (see §8b) — no manual PR or
+> upload. The old "file a PR against `modelcontextprotocol/servers`"
+> step is obsolete; MCPg publishes its own `server.json` via the
+> `publish-mcp-registry` job.
 
 ---
 
