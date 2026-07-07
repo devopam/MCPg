@@ -6,8 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Doc-table drift guard.** `tools/generate_doc_tables.py` regenerates
+  the `docs/tools.md` tool index and the `docs/architecture.md` module
+  map from the single sources of truth (the registered tool surface and
+  the package layout), and `tests/contract/test_doc_tables.py` fails CI
+  if either doc drifts — so a new tool or module can't ship undocumented.
+- **Architecture diagram.** `docs/architecture.md` gains a Mermaid
+  layered-request-path diagram (with a prose fallback for the docs site).
+
 ### Changed
 
+- **Documentation refresh across the board.** Regenerated the tool index
+  (was ~90 tools stale, listed 3 phantom tools) and the module map (was
+  ~35 modules short, several mis-named); corrected the NL→SQL provider
+  understatement (3 → 19 built-in), stale tool counts (→ 252), Windows
+  file path, PG/Python version claims, wrong-on-use recipe params,
+  AWS/GCP secrets env vars, and access-mode terminology throughout;
+  archived three fully-shipped plans and de-staled the PG 19 status
+  table. Added a per-release documentation-validation checklist and an
+  actionable quarterly NL→SQL default-model sweep to the release process.
 - **`restricted` access mode now permits data writes.** Previously
   `restricted` was functionally identical to `read-only` (reads only —
   the "additional execution constraints" it implied were never
