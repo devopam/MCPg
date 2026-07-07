@@ -8325,6 +8325,11 @@
             "title": "Execute",
             "type": "boolean"
           },
+          "explain_preflight": {
+            "default": true,
+            "title": "Explain Preflight",
+            "type": "boolean"
+          },
           "max_rows": {
             "default": 1000,
             "title": "Max Rows",

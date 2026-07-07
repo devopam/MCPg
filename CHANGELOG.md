@@ -15,6 +15,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   console), and **Sakana Fugu** (`SAKANA_API_KEY`, default `fugu`). Each is
   a one-line entry in the `nl2sql._PROVIDERS` registry; base URLs and key
   env vars were verified against each vendor's own docs.
+- **NL→SQL EXPLAIN dry-run pre-flight.** `translate_nl_to_sql` runs a
+  non-executing `EXPLAIN` on the generated SQL before returning/executing,
+  catching queries that pass the structural allowlist but reference a
+  non-existent column/table. A planner rejection surfaces as
+  `error="query invalid: …"` (SQL returned, nothing executed); a pre-flight
+  timeout degrades to "proceed". Toggle via the `explain_preflight` arg
+  (default on).
 - **NL→SQL prompt-injection hardening (boundary defence).**
   `translate_nl_to_sql` now fences the user question in
   `<user_request>` … `</user_request>` delimiters and instructs the model

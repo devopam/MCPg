@@ -278,7 +278,15 @@ default).
 **Effort:** small (system-prompt edit + refusal-path handling + 3-5
 tests). Surfaced 2026-06-30 from a security-feature review.
 
-### ⬜ NL→SQL EXPLAIN dry-run pre-flight
+### ✅ NL→SQL EXPLAIN dry-run pre-flight
+**Shipped.** `translate_nl_to_sql` now runs a non-executing
+`EXPLAIN (FORMAT JSON)` (reusing `mcpg.query.explain_query`, so the SQL is
+`SafeSqlDriver`-validated first) before returning or executing. A planner
+rejection surfaces as a structured `error="query invalid: <message>"` with
+the SQL returned for inspection and nothing executed; a pre-flight
+`statement_timeout` degrades to "skip, proceed" rather than blocking a valid
+translation. Controlled by the `explain_preflight` tool arg (default on).
+
 **Problem.** Generated SQL is validated structurally (AST allowlist +
 single-statement assertion) but not **semantically** — a query that
 references a non-existent column/table or has a type mismatch is
