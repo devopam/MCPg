@@ -1,5 +1,15 @@
 # pg_turboquant integration — phased plan
 
+> **Status: ✅ Shipped — archived planning doc.** All phases (TQ-1…TQ-5)
+> have landed: `list_turboquant_indexes`, the metadata/heap/scan-stats
+> readers, `recommend_turboquant_maintenance`, the query tools
+> (`turboquant_approx_candidates`, `turboquant_rerank_candidates`,
+> `recommend_turboquant_query_knobs`), `maintain_turboquant_index`
+> (write), and `create_turboquant_index` / `reindex_turboquant_index`
+> (DDL) — see the [tool index](../tools.md#tool-index-252-tools). Kept
+> for design rationale; no longer a live roadmap. Current gaps live in
+> [feature-shortlist.md](../feature-shortlist.md).
+
 **Extension:** [mayflower/pg_turboquant](https://github.com/mayflower/pg_turboquant/)
 (MIT, PG 16–17, depends on `pgvector` 0.8.1)
 

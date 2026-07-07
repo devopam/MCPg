@@ -1,5 +1,16 @@
 # BM25 sparse-search integration — planning doc
 
+> **Status: ✅ Shipped — archived planning doc.** The `pg_search`
+> (ParadeDB BM25) integration this document planned has landed in full
+> (BM-1…BM-5): `pg_search_run`, `pg_search_more_like_this`,
+> `pg_search_parse_query`, `hybrid_bm25_vector_search`,
+> `create_pg_search_index`, `reindex_pg_search_index`, plus the
+> observability/advisor tools — see the
+> [tool index](../tools.md#tool-index-252-tools). This doc is kept for
+> its design rationale and the deferred-alternatives (`pg_textsearch`,
+> `vchord_bm25`) return conditions; it is no longer a live roadmap.
+> Current gaps live in [feature-shortlist.md](../feature-shortlist.md).
+
 **Target:** `pg_search` (ParadeDB, Tantivy-based) — selected after a
 three-way comparison. The other two candidates (`pg_textsearch` from
 Tiger Data, `vchord_bm25` from VectorChord) are deferred with

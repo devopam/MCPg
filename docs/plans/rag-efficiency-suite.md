@@ -1,5 +1,15 @@
 # RAG efficiency suite — design plan
 
+> **Status: ✅ Shipped — archived planning doc.** Both designs landed:
+> `analyze_vector_search_efficiency` (cross-backend retrieval-quality
+> report) and the reranker analytics suite (`analyze_reranker_lift`,
+> `analyze_topk_stability`, `analyze_rerank_score_distribution`,
+> `analyze_rerank_ndcg`, `recommend_rerank_strategy`) plus the telemetry
+> capture/threshold tools — see the
+> [tool index](../tools.md#tool-index-252-tools). Kept for design
+> rationale; no longer a live roadmap. Current gaps live in
+> [feature-shortlist.md](../feature-shortlist.md).
+
 Two cohesive, MCPg-native features that together produce an
 end-to-end view of RAG quality:
 
