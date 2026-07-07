@@ -34,7 +34,7 @@ plumbing:
 | `MCPG_SECRETS_BACKEND` | `env` (default), `vault`, `aws`, or `gcp`. Resolves credential settings through HashiCorp Vault, AWS Secrets Manager, or GCP Secret Manager instead of plain env vars. Per-provider config: `MCPG_VAULT_*`, `MCPG_AWS_*`, `MCPG_GCP_*`. |
 | `MCPG_OTEL_ENABLED` / `MCPG_OTEL_SERVICE_NAME` | Emit one OpenTelemetry span per `call_tool` (tool name, argument count, status — never argument values). Requires the `mcpg[otel]` extra. |
 | `MCPG_SLOW_CALL_THRESHOLD_MS` / `MCPG_LOG_FORMAT` | Log a structured "slow call" record when a tool exceeds the threshold; switch the logger between `text` and `json` formats. |
-| `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config — 19 built-in providers + custom (`MCPG_NL2SQL_CUSTOM_PROVIDERS`). |
+| `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config — 22 built-in providers + custom (`MCPG_NL2SQL_CUSTOM_PROVIDERS`). |
 
 <!-- BEGIN generated: tool-index (python tools/generate_doc_tables.py --tools) -->
 ## Tool index (252 tools)

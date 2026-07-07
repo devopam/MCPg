@@ -221,7 +221,7 @@ are one-shot commands, not configuration). The only required one is
 | HTTP transport with bearer auth | `MCPG_TRANSPORT=streamable-http` + `MCPG_HTTP_AUTH_TOKEN=…` |
 | Multi-tenant SaaS | `MCPG_DEFAULT_ROLE=tenant_a` + `MCPG_ALLOWED_ROLES=tenant_a,tenant_b,…` |
 | Read-replica fan-out | `MCPG_REPLICA_URLS=postgresql://…?sslmode=require,postgresql://…?sslmode=require` |
-| NL→SQL — single provider | Set any one vendor key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `HF_TOKEN`, … — 19 built-in providers). MCPg auto-picks the default. |
+| NL→SQL — single provider | Set any one vendor key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `HF_TOKEN`, … — 22 built-in providers). MCPg auto-picks the default. |
 | NL→SQL — multiple providers, caller picks | Set all vendor keys you want active. Each call to `translate_nl_to_sql` can pass `provider="…"` (any configured built-in or custom). |
 
 ### Full reference
@@ -492,7 +492,7 @@ Compact category list. For the full, current tool reference see
 - **Search** — `fuzzy_search` (trigram), `full_text_search`,
   `vector_search`, `hybrid_search` (pgvector + FTS via RRF),
   `geo_search` (PostGIS k-NN).
-- **Natural language → SQL** — `translate_nl_to_sql` (19 built-in
+- **Natural language → SQL** — `translate_nl_to_sql` (22 built-in
   providers — Anthropic, OpenAI, Gemini, xAI, Groq, Mistral, Hugging
   Face, … — plus any custom OpenAI-compatible endpoint; output passes
   through the same safe-SQL kernel as hand-written queries).

@@ -417,6 +417,9 @@ def test_custom_provider_declarations_fail_fast_on_malformed_entries(entry: str,
         ("GITHUB_TOKEN", "github"),  # deviates
         ("DEEPINFRA_TOKEN", "deepinfra"),  # deviates
         ("SAMBANOVA_API_KEY", "sambanova"),
+        ("ZAI_API_KEY", "glm"),  # deviates
+        ("ARK_API_KEY", "doubao"),  # deviates
+        ("SAKANA_API_KEY", "sakana"),
     ],
 )
 def test_expanded_fleet_provider_discovered_from_its_vendor_env_var(env_var: str, provider: str) -> None:

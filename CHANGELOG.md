@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Three more built-in NL→SQL providers (19 → 22).** `translate_nl_to_sql`
+  now ships **GLM** (Zhipu AI / Z.ai — `ZAI_API_KEY`, default
+  `glm-4.5-flash`), **Doubao** (ByteDance / Volcengine Ark — `ARK_API_KEY`,
+  default `doubao-seed-1-6-251015`; the model must be activated in the Ark
+  console), and **Sakana Fugu** (`SAKANA_API_KEY`, default `fugu`). Each is
+  a one-line entry in the `nl2sql._PROVIDERS` registry; base URLs and key
+  env vars were verified against each vendor's own docs.
 - **Doc-table drift guard.** `tools/generate_doc_tables.py` regenerates
   the `docs/tools.md` tool index and the `docs/architecture.md` module
   map from the single sources of truth (the registered tool surface and
