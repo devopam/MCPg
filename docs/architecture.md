@@ -104,7 +104,7 @@ read-only / picks a pool / sets the tenant role.
 | `mcpg.migration_history` / `mcpg.migration_ingestion` | Read-only inspection of framework history tables (Alembic / Flyway / Diesel / Django / Prisma / Goose / Sequelize) and the filesystem-vs-history delta surfaced by `list_unapplied_migration_scripts`. |
 | `mcpg.schema_docs` | `generate_schema_docs` — comprehensive Markdown catalog reference for tables / views / enums / constraints / indexes, with optional sample values. |
 | `mcpg.liveops` | Live-ops surface: `list_active_queries`, `monitor_index_build`, `list_replicas`, `verify_connection_encryption`. |
-| `mcpg.nl2sql` | Natural-language → SQL via pluggable providers (Anthropic / OpenAI / Gemini). |
+| `mcpg.nl2sql` | Natural-language → SQL. 19 built-in providers (Anthropic, OpenAI, Gemini + 16 OpenAI-compatible vendors via a declarative registry) plus custom endpoints through `MCPG_NL2SQL_CUSTOM_PROVIDERS`. |
 | `mcpg.data_movement` | Export (`export_query` / `export_table`) and bulk-load (`import_csv` / `import_json` via COPY FROM STDIN). |
 | `mcpg.shell` | Subprocess wrappers (`dump_database` / `restore_database` / `copy_table_between_databases` / `run_pg_binary`). |
 | `mcpg.listen` | LISTEN/NOTIFY bridge (dedicated connection per subscription; bounded queue). |

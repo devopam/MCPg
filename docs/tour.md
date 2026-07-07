@@ -78,7 +78,7 @@ run_select_parallel(statements, parallel_limit=8)    # concurrent fan-out; one b
 explain_query(sql, format="json")
 analyze_query_plan(sql)                              # walks the EXPLAIN tree
 translate_nl_to_sql(question, schema, provider=null, execute=false)
-                                                     # NL → SQL; provider routes per call across configured Anthropic / OpenAI / Gemini
+                                                     # NL → SQL; routes per call across 19 built-in providers (+ custom)
 ```
 
 ## "Stream a huge result set" (server-side cursors)
