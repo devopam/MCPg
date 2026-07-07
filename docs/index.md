@@ -55,6 +55,7 @@ them" — pick the section that matches what you're trying to do.
   retrospectives.
 - [**Progress log**](PROGRESS.md) — chronological build log.
 - Release notes:
+  [v0.6.9](release-notes-0.6.9.md) ·
   [v0.6.8](release-notes-0.6.8.md) ·
   [v0.6.7](release-notes-0.6.7.md) ·
   [v0.6.6](release-notes-0.6.6.md) ·

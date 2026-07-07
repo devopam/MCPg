@@ -64,6 +64,26 @@ adheres to [Semantic Versioning](https://semver.org/).
   TLS policy). Declared names are callable via `provider=`, listed by
   `get_server_info`, and join auto-pick after the built-ins.
 
+### Changed
+
+- **Version single-sourced** from `src/mcpg/__init__.py` — `pyproject.toml`
+  now declares `dynamic = ["version"]` and reads `__version__` via
+  hatchling, so a release bumps exactly one line and pip, `mcpg --version`,
+  and the MCP `serverInfo` handshake can never disagree.
+
+### Fixed
+
+- **Windows: HTTP transport now connects to Postgres.** Under
+  `streamable-http` / `sse` on Windows, uvicorn reinstalled the
+  `ProactorEventLoop`, which async psycopg rejects — every database
+  connection failed with a 30 s pool timeout. `run_http` now pins the
+  `WindowsSelectorEventLoopPolicy` and runs uvicorn on it. stdio was
+  unaffected.
+- **`serverInfo` reports MCPg's own version.** The MCP `initialize`
+  handshake advertised the MCP SDK's version instead of mcpg's; the
+  low-level server's version is now pinned to `mcpg.__version__` via the
+  `AuditedFastMCP` wrapper.
+
 ## [0.6.8] - 2026-07-05
 
 ### Added
