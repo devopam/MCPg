@@ -73,7 +73,7 @@ Capacity guidance:
   becomes the bottleneck on write throughput or replication
   bandwidth.
 - Routing decisions land in Prometheus
-  (`mcpg_tool_calls_total{tool="__replica_route",status="…"}`)
+  (`mcpg_tool_calls_total{tool="__replica_route",bucket="unknown",status="…"}`)
   with statuses `primary` / `primary_no_healthy` / `fallback` /
   `replica_<n>`.
 
@@ -123,9 +123,9 @@ limiter:
   `MCPG_RATE_LIMIT_WINDOW_SECONDS` across all tools (defaults
   60 / 60 s).
 - **Heavy quota.** `MCPG_RATE_LIMIT_HEAVY_MAX` per
-  `MCPG_RATE_LIMIT_HEAVY_WINDOW` for `run_write`, `run_ddl`,
-  `dump_database`, `restore_database`, and similar (defaults
-  5 / 60 s).
+  `MCPG_RATE_LIMIT_HEAVY_WINDOW` for the computationally heavy tools
+  (`analyze_workload`, `audit_database`, `generate_test_data`,
+  `export_table`, `export_query`) (defaults 5 / 60 s).
 
 Rate-limited calls return an error immediately rather than
 queueing.
@@ -159,13 +159,14 @@ uv run python benchmarks/bench.py --requests 2000 --concurrency 16 \
 
 The HTTP transport exposes Prometheus metrics at `GET /metrics`:
 
-- `mcpg_tool_calls_total{tool,status}` — counter; one of the
+- `mcpg_tool_calls_total{tool,bucket,status}` — counter; one of the
   best signals for "is X being called too often / failing too
   often". `status` ∈ `ok` / `error` plus the replica-routing
-  statuses noted above.
+  statuses noted above; `bucket` is the capability bucket the tool
+  routes into (aggregate with `sum by (bucket) (…)`).
 - `mcpg_tool_duration_seconds_*` — histogram per tool; bucket
   defaults are SDK-shaped (0.005, 0.01, 0.025, 0.05, 0.1, 0.25,
-  0.5, 1, 2.5, 5, 10 s).
+  0.5, 1, 2.5, 5, 10, 30, 60 s).
 
 For stdio deployments, `get_metrics_exposition()` returns the same
 Prometheus payload as a string the agent can hand to a scrape
@@ -200,9 +201,9 @@ cover the three axes you need:
   bumping `max_rows`. They give the agent backpressure and don't
   buffer the whole result in MCPg memory.
 - **Heavy DBA tools** (`audit_database`, `analyze_workload`,
-  `dump_database`) are I/O-heavy on the database. Rate-limit them
-  via `MCPG_RATE_LIMIT_HEAVY_*` if an agent calls them on a tight
-  loop.
+  `generate_test_data`, `export_table`, `export_query`) are
+  I/O-heavy on the database. Rate-limit them via
+  `MCPG_RATE_LIMIT_HEAVY_*` if an agent calls them on a tight loop.
 
 ---
 

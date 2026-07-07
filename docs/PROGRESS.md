@@ -6,33 +6,36 @@
 
 ## Current state
 
-- **Phase:** post-v0.5.0 — every Batch (A–G) from the original
-  shortlist closed, plus the following post-release waves:
-  - **Security (C1–C3):** IP allowlist, TLS / mTLS for the HTTP
-    transport, cloud secrets backends (Vault / AWS / GCP).
-  - **Observability (B2–B3):** slow-call logging + OpenTelemetry
-    tracing (one span per `call_tool`, argument-values omitted).
-  - **Migrations (E1–E4):** migration-history table integration,
-    pre-deployment validation, `list_unapplied_migration_scripts`.
-  - **pgvector analytics (A3–A8):** `cross_table_similarity`,
-    `cluster_vectors`, `detect_vector_outliers`,
-    `monitor_embedding_drift`, `migrate_vector_to_halfvec`,
-    `analyze_distance_metric`, `import_vectors`.
-  - **Advisors (6.1):** `recommend_index_drops`.
-  - **UX (F2 first wave):** inline usage examples in tool
-    descriptions.
-- **Last updated:** 2026-06-05
+- **Phase:** post-v0.6.9. Every Batch (A–G) from the original
+  shortlist plus the 0.6.x waves have shipped — security (IP
+  allowlist, TLS/mTLS, cloud secrets backends), observability
+  (slow-call logging + OpenTelemetry), staged migrations + history,
+  pgvector analytics, BM25/`pg_search`, `pg_turboquant`, the RAG
+  efficiency suite, PG 19 readiness (SQL/PGQ, `REPACK`, skip-scan,
+  `WAIT FOR LSN`, data-checksum/logical-rep toggles, partition
+  merge/split), WarehousePG (MPP) coverage, Redis FDW, `pg_prewarm`,
+  the 19-provider NL→SQL fleet, and the generated-doc-table drift
+  guard.
+- **Last updated:** 2026-07-07
 - **Branch:** `main`
-- **Tool count:** 141
-- **Released:** v0.5.0 (2026-05-27)
+- **Tool count:** 252 (source of truth:
+  `tests/contract/tool_surface.snapshot.json`)
+- **Released:** v0.6.9 (2026-07-07)
+
+> **Note on this log.** The dated session log below is a historical
+> record that trails off at **2026-05-26** (~90 tools). The nine
+> 0.6.x releases and ~160 tools shipped since are *not* re-logged
+> here — `CHANGELOG.md` and the `docs/release-notes-0.6.*.md` files
+> are the authoritative history for that period, and
+> `docs/feature-shortlist.md` is the live roadmap.
 
 ## Next action
 
-> All Tier-A/B/C shortlist + the post-v0.5.0 waves above are
-> shipped on trunk. Next direction is open — un-ticked rows in
-> `docs/feature-shortlist.md` are the queue, or a v0.6.0 cut
-> bundling the security / observability / analytics work since
-> v0.5.0.
+> Trunk is at 0.6.9. The live queue is the un-ticked rows in
+> `docs/feature-shortlist.md` — currently the two NL→SQL
+> security-hardening items (§ "Queued" in
+> `docs/security-hardening.md`) and roadmap 18.1 (de-vendor the
+> SQL-safety kernel).
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
@@ -202,9 +205,16 @@
 
 ## Open questions
 
-- Remote HTTP transport auth model (Phase 1/3).
-- Whether tuning tools need opt-in beyond `unrestricted` (Phase 5).
-- Observability scope (Phase 6).
+_All resolved as of 0.6.9:_
+
+- ~~Remote HTTP transport auth model (Phase 1/3).~~ Shipped: static
+  bearer token + OIDC/JWT validation (`mcpg.http_runtime`,
+  `mcpg.oidc`).
+- ~~Whether tuning tools need opt-in beyond `unrestricted` (Phase 5).~~
+  Resolved: reads need no opt-in; only DDL/shell/listen/migrate carry
+  the per-feature `MCPG_ALLOW_*` gates (see `policy.py`).
+- ~~Observability scope (Phase 6).~~ Shipped: Prometheus metrics +
+  OpenTelemetry tracing (`mcpg.observability`, `mcpg.otel_tracing`).
 
 ## Session log
 
