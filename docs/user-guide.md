@@ -313,6 +313,9 @@ callable through the tool:
 | `github` | `GITHUB_TOKEN` (GitHub Models) | `openai/gpt-4o-mini` |
 | `sambanova` | `SAMBANOVA_API_KEY` | `Meta-Llama-3.1-8B-Instruct` |
 | `moonshot` | `MOONSHOT_API_KEY` (Kimi) | `kimi-k2.5` |
+| `glm` | `ZAI_API_KEY` (falls back to `ZHIPUAI_API_KEY`) | `glm-4.5-flash` |
+| `doubao` | `ARK_API_KEY` (Volcengine Ark; model must be activated in the console) | `doubao-seed-1-6-251015` |
+| `sakana` | `SAKANA_API_KEY` (Fugu) | `fugu` |
 
 All but the first three (`anthropic` / `openai` / `gemini`) are
 OpenAI-compatible vendors: MCPg drives them through one chat-completions

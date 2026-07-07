@@ -164,6 +164,20 @@ _PROVIDERS: tuple[ProviderSpec, ...] = (
         "sambanova", "openai", "https://api.sambanova.ai/v1", "Meta-Llama-3.1-8B-Instruct", ("SAMBANOVA_API_KEY",)
     ),
     ProviderSpec("moonshot", "openai", "https://api.moonshot.ai/v1", "kimi-k2.5", ("MOONSHOT_API_KEY",)),
+    # GLM (Zhipu AI / Z.ai). International Z.ai endpoint + the modern
+    # /paas/v4 OpenAI-compatible path (raw key as Bearer, no JWT). The
+    # newer international SDK reads ZAI_API_KEY; the legacy MetaGLM SDK
+    # used ZHIPUAI_API_KEY, kept as a fallback.
+    ProviderSpec("glm", "openai", "https://api.z.ai/api/paas/v4", "glm-4.5-flash", ("ZAI_API_KEY", "ZHIPUAI_API_KEY")),
+    # Doubao (ByteDance / Volcengine Ark). Plain model id works in the
+    # `model` field (endpoint ids are only for custom deployments); the
+    # model must be activated in the Ark console first.
+    ProviderSpec(
+        "doubao", "openai", "https://ark.cn-beijing.volces.com/api/v3", "doubao-seed-1-6-251015", ("ARK_API_KEY",)
+    ),
+    # Sakana Fugu — Sakana AI's multi-agent system, exposed as a single
+    # OpenAI-compatible chat model.
+    ProviderSpec("sakana", "openai", "https://api.sakana.ai/v1", "fugu", ("SAKANA_API_KEY",)),
 )
 
 _PROVIDERS_BY_KEY: dict[str, ProviderSpec] = {p.key: p for p in _PROVIDERS}

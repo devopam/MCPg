@@ -83,7 +83,7 @@ run_select_parallel(statements, parallel_limit=8)    # concurrent fan-out; one b
 explain_query(sql, format="json")
 analyze_query_plan(sql)                              # walks the EXPLAIN tree
 translate_nl_to_sql(question, schema, provider=null, execute=false)
-                                                     # NL → SQL; routes per call across 19 built-in providers (+ custom)
+                                                     # NL → SQL; routes per call across 22 built-in providers (+ custom)
 ```
 
 ## "Stream a huge result set" (server-side cursors)
