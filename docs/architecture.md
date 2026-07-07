@@ -10,27 +10,26 @@ and the [`adr/`](adr/) directory.
 
 MCPg is a single-process, async ([`asyncio`](https://docs.python.org/3/library/asyncio.html))
 MCP server. An MCP client connects via stdio or HTTP, calls tools,
-and gets typed results. Every call passes through three layers:
+and gets typed results. Every call passes through the same layers:
 
-```
-   MCP client ──stdio / streamable-HTTP / SSE──▶ AuditedFastMCP
-                                                       │  (rate limit + audit + metrics)
-                                                       ▼
-                                             tool wrapper (mcpg.tools)
-                                                       │  (capability gate via mcpg.policy)
-                                                       ▼
-                                    logic module (query / health / search / …)
-                                                       │
-                                            SqlDriver / SafeSqlDriver / TenantSqlDriver / RoutedSqlDriver
-                                                       │  psycopg3 pool + (optional) replica pools
-                                                       ▼
-                                                 PostgreSQL
+```mermaid
+flowchart TD
+    client["MCP client<br/>(Claude Desktop · Cursor · …)"]
+    client -->|"stdio · streamable-HTTP · SSE"| fastmcp["AuditedFastMCP<br/>rate-limit · audit · metrics"]
+    fastmcp -->|"capability gate<br/>(mcpg.policy)"| wrapper["Tool wrapper<br/>(mcpg.tools)"]
+    wrapper --> logic["Logic module<br/>query · health · search · migrations · …"]
+    logic --> drivers["Driver stack (composable)<br/>SafeSqlDriver → parse + allowlist<br/>RoutedSqlDriver → replica fan-out<br/>TenantSqlDriver → SET LOCAL ROLE"]
+    drivers --> pool["psycopg3 pool<br/>+ optional replica pools"]
+    pool --> primary[("PostgreSQL<br/>primary")]
+    pool -.->|"force_readonly"| replicas[("read replicas")]
 ```
 
-Each layer has a focused responsibility — the tool wrapper
-translates the MCP call into a typed Python call, the logic module
-builds and runs the SQL, the driver stack validates / forces
-read-only / picks a pool / sets the tenant role.
+> The Mermaid diagram renders on GitHub; on the docs site it shows as
+> source. In words: the tool wrapper translates the MCP call into a
+> typed Python call and enforces the capability gate, the logic module
+> builds and runs the SQL, and the composable driver stack validates /
+> forces read-only / picks a pool / sets the tenant role before the
+> psycopg3 pool reaches PostgreSQL.
 
 ---
 
@@ -64,57 +63,118 @@ read-only / picks a pool / sets the tenant role.
 
 ---
 
-## Module map
+<!-- BEGIN generated: module-map (python tools/generate_doc_tables.py --modules) -->
+## Module map (101 modules)
+
+Every `mcpg.*` module and what it owns, alphabetical. The layered
+request path through these lives in the [Overview](#overview) diagram;
+this table is the exhaustive index. Regenerate with
+`python tools/generate_doc_tables.py --modules`.
 
 | Module | Responsibility |
 |---|---|
-| `mcpg.config` | Env-driven, validated `Settings` (frozen dataclass). Validates TLS-required, role identifiers, OIDC settings; redacts secrets in `__repr__`. |
-| `mcpg.database` | Primary-connection-pool lifecycle (`Database`) and per-connection `statement_timeout` / `lock_timeout` setup. |
-| `mcpg.replicas` | Read-replica pool registry; degraded-replica tracking; routing logic. |
-| `mcpg.context` | `AppContext` — the per-server state shared with every tool wrapper. |
-| `mcpg.server` | `FastMCP` bootstrap, `AuditedFastMCP` subclass, transport selection, `run` entry point. |
-| `mcpg.http_runtime` | Streamable-HTTP / SSE transport bring-up: bearer auth, OIDC validation, IP allowlist (matched against the immediate peer; `X-Forwarded-For` is deliberately not honoured — proxy deployments must enforce the allowlist at the proxy layer), in-process TLS / mTLS termination, security middleware, `/metrics` / `/healthz` / `/readyz` endpoints. |
-| `mcpg.secrets` | Pluggable credentials resolver — env (default), HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager. Each provider raises typed auth errors (`Forbidden` / `Unauthorized`, `AccessDenied` / `InvalidSignature` / `ExpiredToken`, `PermissionDenied`) so operators can tell missing-grant from missing-secret. |
-| `mcpg.otel_tracing` | OpenTelemetry integration — one span per `call_tool` carrying `mcp.tool.name`, `mcp.tool.argument_count`, and outcome status. Argument values are deliberately omitted so span exporters don't become side channels. |
-| `mcpg.oidc` | OIDC discovery + JWKS-backed JWT verification (asymmetric algorithms only). |
-| `mcpg.tenancy` | The `current_role` ContextVar that powers per-request `SET LOCAL ROLE`. |
-| `mcpg.middleware.rate_limit` | Token-bucket per-tool rate limiter. |
-| `mcpg.policy` | Access-mode → capability permission table. |
-| `mcpg.audit` | Tool-call audit logger + configurable secret-name regex redactor + the comprehensive `audit_database` DBA report. |
-| `mcpg.audit_trail` | Optional `mcpg_audit.events` table persistence for `run_write` / `run_ddl` records. |
-| `mcpg.audit_integrity` | HMAC integrity chain over `mcpg_audit.events` (`MCPG_AUDIT_INTEGRITY` + `MCPG_AUDIT_HMAC_KEY`); powers `verify_audit_chain`. |
-| `mcpg.tools` | Thin MCP tool wrappers + `register_tools` (consults `mcpg.policy` for capability gating). |
-| `mcpg.introspection` | Schema / catalog inspection queries (parameterised). |
-| `mcpg.query` | Safe read-only query execution + plan analysis. |
-| `mcpg.write` | Single-statement DML / DDL execution + optional schema-diff capture. |
+| `mcpg._vendor` | Vendored MIT-licensed `SafeSqlDriver` + connection-pool kernel (SQL parse / allowlist / bind). |
+| `mcpg.about` | MCPg self-description. |
+| `mcpg.advisors` | Schema advisors — codified lint rules over the PG catalog. |
+| `mcpg.aio` | `AIO` — PG 19 asynchronous-I/O subsystem coverage. |
+| `mcpg.audit` | Audit logging of tool invocations and DBA database performance checks. |
+| `mcpg.audit_integrity` | Audit trail verification utility. |
+| `mcpg.audit_nl2sql` | NL→SQL audit table — partitioned, compressed, RLS-gated. |
+| `mcpg.audit_trail` | SQL audit trail with optional persistence to `mcpg_audit.events`. |
+| `mcpg.autovacuum` | Autovacuum priority advisor — `read_autovacuum_priority`. |
+| `mcpg.cache` | Thread-safe, async-safe caching manager for PostgreSQL introspections and summaries. |
+| `mcpg.composite` | Composite tools — agent UX wins built on top of existing primitives. |
+| `mcpg.config` | Env-driven, validated `Settings` (frozen dataclass); redacts secrets in `__repr__`. |
+| `mcpg.config_advisor` | Configuration & sizing advisors — pghero / pgtune coverage. |
+| `mcpg.context` | `AppContext` — per-server state (settings, database, listen/cursor managers) shared with every tool wrapper. |
+| `mcpg.cron` | pg_cron job-scheduling wrappers. |
+| `mcpg.cursors` | Server-side cursor manager — pageable reads of large result sets. |
+| `mcpg.cypher` | Apache AGE Cypher Query Execution. |
+| `mcpg.data_movement` | Data-movement tools — exports, dumps, restores, and bulk imports. |
+| `mcpg.database` | Database connection lifecycle for the MCPg server. |
+| `mcpg.ddl_dryrun` | Transactional DDL dry-run — roadmap 2.8. |
+| `mcpg.demo` | The `mcpg --demo` dataset — a curated playground schema. |
+| `mcpg.diagrams` | Schema-visualisation helpers. |
+| `mcpg.diesel` | Schema → Diesel ORM (Rust) exporter. |
+| `mcpg.drizzle` | Schema → Drizzle ORM (TypeScript) exporter. |
+| `mcpg.ecto` | Schema → Ecto (Elixir) schema exporter. |
+| `mcpg.ent` | Schema → Ent (Go) schema exporter. |
+| `mcpg.extensions` | PostgreSQL extension management. |
+| `mcpg.graph` | Apache AGE Graph Introspection and Parsing. |
+| `mcpg.graph_diagram` | Apache AGE Graph Schema Visualisation. |
+| `mcpg.graph_mgmt` | Apache AGE Graph Management. |
+| `mcpg.graph_projection` | Relational → Apache AGE graph projection generator (emit-don't-execute). |
+| `mcpg.headline_curator` | Dynamic `headline_tools` recommender — empirical curation from the audit log. |
 | `mcpg.health` | Database health checks. |
-| `mcpg.workload` | Slow-query analysis (`pg_stat_statements`). |
-| `mcpg.indexing` | Index recommendations. |
-| `mcpg.textsearch` | Search: trigram fuzzy, full-text, pgvector, PostGIS k-NN, hybrid (vector + FTS via RRF). |
-| `mcpg.vector_tuning` | pgvector advisors (HNSW vs IVFFlat, quantization, recall/speed). |
-| `mcpg.vector_ops` | pgvector analytics (added v0.6.0): `cluster_vectors`, `detect_vector_outliers`, `monitor_embedding_drift`, `cross_table_similarity`, `analyze_distance_metric`, `import_vectors`, `mmr_search`, `migrate_vector_to_halfvec`. Separate namespace from search (`mcpg.textsearch`) and storage tuning (`mcpg.vector_tuning`). |
-| `mcpg.pg_search` | ParadeDB `pg_search` BM25 integration (BM-1..BM-5): observability (`list_pg_search_indexes`, `get_pg_search_index_metadata`), advisor (`recommend_pg_search_maintenance`, `audit_pg_search_indexes`), search (`pg_search_run`, `pg_search_more_like_this`, `pg_search_parse_query`, `hybrid_bm25_vector_search`), and DDL (`create_pg_search_index`, `reindex_pg_search_index`). Multi-column OR-of-predicates and the full `pdb.more_like_this` tuning surface landed as follow-ups. |
-| `mcpg.turboquant` | `pg_turboquant` ANN index integration (TQ-1..TQ-5): observability, advisor + scorecard adapter, write (`maintain_turboquant_index`), DDL (`create_turboquant_index`, `reindex_turboquant_index`), and query execution (`turboquant_approx_candidates`, `turboquant_rerank_candidates`, `recommend_turboquant_query_knobs`). DDL paths wrap `run_unmanaged` failures into `TurboQuantError`. |
-| `mcpg.rag_telemetry` / `mcpg.rag_efficiency` | RAG observability suite — reranker analytics, embedding-pipeline telemetry, adaptive efficiency thresholds. |
-| `mcpg.composite` | One-call aggregates: `summarize_table`, `why_is_this_slow`, `audit_database`. |
-| `mcpg.advisors` | Schema-quality advisors (PK, FK index, dup index, RLS, graph index, …). |
-| `mcpg.cursors` | Server-side cursor manager (one dedicated connection per cursor; 5-minute idle TTL). |
-| `mcpg.cypher` / `mcpg.graph` / `mcpg.graph_diagram` / `mcpg.graph_mgmt` | Apache AGE property graph + Cypher integration. |
-| `mcpg.migrations` | Staged migration workflow — shadow schema, structural diff, transient validation. |
-| `mcpg.migration_history` / `mcpg.migration_ingestion` | Read-only inspection of framework history tables (Alembic / Flyway / Diesel / Django / Prisma / Goose / Sequelize) and the filesystem-vs-history delta surfaced by `list_unapplied_migration_scripts`. |
-| `mcpg.schema_docs` | `generate_schema_docs` — comprehensive Markdown catalog reference for tables / views / enums / constraints / indexes, with optional sample values. |
-| `mcpg.liveops` | Live-ops surface: `list_active_queries`, `monitor_index_build`, `list_replicas`, `verify_connection_encryption`. |
-| `mcpg.nl2sql` | Natural-language → SQL. 19 built-in providers (Anthropic, OpenAI, Gemini + 16 OpenAI-compatible vendors via a declarative registry) plus custom endpoints through `MCPG_NL2SQL_CUSTOM_PROVIDERS`. |
-| `mcpg.data_movement` | Export (`export_query` / `export_table`) and bulk-load (`import_csv` / `import_json` via COPY FROM STDIN). |
-| `mcpg.shell` | Subprocess wrappers (`dump_database` / `restore_database` / `copy_table_between_databases` / `run_pg_binary`). |
-| `mcpg.listen` | LISTEN/NOTIFY bridge (dedicated connection per subscription; bounded queue). |
-| `mcpg.cron` | `pg_cron` schedule / unschedule / update wrappers. |
-| `mcpg.partman` | `pg_partman` partition-management wrappers. |
-| `mcpg.timescale` | TimescaleDB hypertable / compression / retention wrappers. |
-| `mcpg.extensions` | Allowlisted `enable_extension`. |
-| `mcpg.diesel` / `mcpg.drizzle` / `mcpg.ecto` / `mcpg.ent` / `mcpg.prisma_export` / `mcpg.sqlalchemy_export` / `mcpg.sqlc_export` / `mcpg.jooq_export` | ORM schema exporters. |
-| `mcpg.observability` | Prometheus counters + histograms and `get_metrics_exposition`. |
-| `mcpg._vendor` | Vendored MIT-licensed `SafeSqlDriver` and connection-pool kernel (see below). |
+| `mcpg.http_runtime` | HTTP-transport extensions: bearer-token auth + Prometheus /metrics. |
+| `mcpg.indexing` | Index recommendations from table scan statistics and column types. |
+| `mcpg.introspection` | Schema-introspection queries against the PostgreSQL catalog. |
+| `mcpg.io_stats` | I/O stats reader — wraps `pg_stat_io` (PostgreSQL 16+). |
+| `mcpg.jooq` | Schema → jOOQ (Java) configuration exporter. |
+| `mcpg.listen` | LISTEN/NOTIFY bridge — tool-poll model per ADR-0005. |
+| `mcpg.liveops` | Live-operations introspection: in-flight queries, waits, and blocking. |
+| `mcpg.locks` | Lock-inspection helpers — `list_locks` and `find_blocking_chains`. |
+| `mcpg.logical_replication` | Logical replication management writes. |
+| `mcpg.maintenance` | Maintenance operations: gated VACUUM and ANALYZE. |
+| `mcpg.middleware.rate_limit` | Async-safe Token Bucket Rate Limiter for MCPg tool execution. |
+| `mcpg.migration_history` | PostgreSQL migration history table reader. |
+| `mcpg.migration_ingestion` | Migration-script ingestion — list pending Alembic / Flyway / Liquibase migrations. |
+| `mcpg.migrations` | Staged-migration workflow — Batch F / Phase 27 per ADR-0006. |
+| `mcpg.multidb` | Multi-database selector — named, read-only secondary databases (roadmap 13.1). |
+| `mcpg.naming` | Naming-convention linter — catch inconsistencies in table / column / index names. |
+| `mcpg.nl2sql` | Natural-language → SQL helper. |
+| `mcpg.obs_logging` | Observability Logging — Structured JSON logging and setup for MCPg loggers. |
+| `mcpg.observability` | Observability — Prometheus-format metrics for tool calls. |
+| `mcpg.oidc` | OIDC / JWT bearer-token validation for the HTTP transport. |
+| `mcpg.otel_tracing` | OpenTelemetry tracing — one span per MCP tool call. |
+| `mcpg.partman` | pg_partman partition-management wrappers. |
+| `mcpg.pg19_ddl` | PG 19 DDL helpers — `validate_check_constraint` + `pg_get_*def()` family. |
+| `mcpg.pg19_partitions` | PG 19 partition reorganisation — `MERGE PARTITIONS` + `SPLIT PARTITION`. |
+| `mcpg.pg19_runtime` | PG 19 runtime toggles — online data checksums + on-demand logical replication. |
+| `mcpg.pg19_skip_scan` | PG 19 skip-scan-aware index advisor — `recommend_skip_scan_indexes`. |
+| `mcpg.pg19_stats` | PG 19 lock + recovery analytics — `pg_stat_lock` and `pg_stat_recovery`. |
+| `mcpg.pg_prewarm` | `pg_prewarm` coverage — extension status, buffer-cache reads, advisor, autowarm. |
+| `mcpg.pg_search` | pg_search integration: full BM25 surface (phases BM-1 through BM-5). |
+| `mcpg.pgq` | SQL/PGQ — property graph queries (PG 19 standard) coverage. |
+| `mcpg.pitr` | Point-in-time-recovery readiness advisor. |
+| `mcpg.policy` | Access-mode policy: which tool capabilities each access mode permits. |
+| `mcpg.prisma` | PostgreSQL → Prisma schema exporter. |
+| `mcpg.prompts` | MCP prompts — pre-built interrogation playbooks for common DBA tasks. |
+| `mcpg.query` | Safe read-only query execution. |
+| `mcpg.rag_efficiency` | RAG efficiency suite — Phase A. |
+| `mcpg.rag_telemetry` | RAG telemetry — Phase C of the RAG efficiency suite. |
+| `mcpg.redis_fdw` | `redis_fdw` coverage — catalog filters, DDL helpers, cache stats, advisor. |
+| `mcpg.repack` | `REPACK` — PG 19 in-server online table rebuild. |
+| `mcpg.replicas` | Read-replica routing — distribute read-only queries across replicas. |
+| `mcpg.resources` | MCP resources — preload-on-connect surface (`mcpg://…`). |
+| `mcpg.rls` | Row-Level Security tester — see what an RLS-bound role would read. |
+| `mcpg.schema_diff` | Structural schema diff powering `compare_schemas`. |
+| `mcpg.schema_docs` | Schema documentation generator. |
+| `mcpg.secrets` | Pluggable secrets backend. |
+| `mcpg.server` | MCP server bootstrap for MCPg. |
+| `mcpg.session_advisor` | Session-scope cost advisor — reads `mcpg_audit.events` and surfaces hot-path inefficiencies before they cost real tokens. |
+| `mcpg.session_intent` | Session-intent handshake — narrow the tool surface to a stated goal. |
+| `mcpg.shell` | Subprocess execution policy for shell-gated tools (ADR-0004). |
+| `mcpg.sqlalchemy_export` | Schema → SQLAlchemy 2.0 declarative models exporter. |
+| `mcpg.sqlc` | Schema → sqlc-friendly SQL DDL exporter. |
+| `mcpg.tenancy` | Per-request PostgreSQL role multi-tenancy. |
+| `mcpg.test_data` | Synthetic test-data factory. |
+| `mcpg.test_row_factory` | Realistic single-row factory — one row per call, catalogue-aware. |
+| `mcpg.textsearch` | Search tools: trigram fuzzy, full-text, pgvector k-NN, and PostGIS geo. |
+| `mcpg.timescaledb` | TimescaleDB hypertable + compression + retention helpers. |
+| `mcpg.tool_introspection` | Per-tool introspection — payload for the `describe_tool` MCP tool. |
+| `mcpg.tools` | MCP tool definitions for MCPg. |
+| `mcpg.turboquant` | pg_turboquant integration: observability + advisor + write + DDL + query. |
+| `mcpg.vector_ops` | pgvector analytics — heuristics on top of stored embeddings. |
+| `mcpg.vector_tuner_advanced` | Advanced pgvector tuning diagnostics. |
+| `mcpg.vector_tuning` | pgvector index-tuning advisors. |
+| `mcpg.wait_for_lsn` | PG 19 `WAIT FOR LSN` — read-your-writes (RYW) consistency on hot standbys. |
+| `mcpg.wal_archive` | WAL archive inspection — `pg_stat_archiver` + archive configuration. |
+| `mcpg.walinspect` | PostgreSQL pg_walinspect extension reader. |
+| `mcpg.warehousepg` | WarehousePG (Greenplum-derived MPP) integration. |
+| `mcpg.workload` | Workload analysis via the `pg_stat_statements` extension. |
+| `mcpg.write` | Write execution: gated DML (and, in `write_ddl`, DDL). |
+<!-- END generated: module-map -->
 
 `mcpg.__main__` is the `mcpg` console entry point; handles the
 `--version` flag and falls through to `run(load_settings())`.
@@ -231,12 +291,13 @@ otherwise.
 
 ## Testing approach
 
-MCPg is test-driven across three suites:
+MCPg is test-driven across four suites:
 
 | Suite | Scope |
 |---|---|
 | `tests/unit/` | Fake-driver tests with a 90% coverage gate. Authored code only — the vendored kernel keeps its own tests. |
-| `tests/integration/` | Real PostgreSQL — requires `MCPG_TEST_DATABASE_URL`. CI matrix runs against PostgreSQL 14, 15, 16, 17, 18 on a pgvector + PostGIS + AGE-enabled image. |
+| `tests/integration/` | Real PostgreSQL — requires `MCPG_TEST_DATABASE_URL`. CI runs the matrix against PostgreSQL 14, 15, 16, 17, 18 on every push (pgvector + PostGIS + AGE image), plus an **experimental PG 19** lane (pgvector built from source against `postgres:19beta1`) and a **WarehousePG** (Greenplum-derived MPP) characterisation lane. |
+| `tests/contract/` | Tool-surface snapshot (`tool_surface.snapshot.json`) + the doc-table drift-guard (`test_doc_tables.py`), so a new tool or module can't ship undocumented. |
 | `tests/vendor/` | The vendored kernel's own upstream tests, kept for adversarial SQL-injection coverage. |
 
 The integration container is built from

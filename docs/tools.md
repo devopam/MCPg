@@ -36,6 +36,7 @@ plumbing:
 | `MCPG_SLOW_CALL_THRESHOLD_MS` / `MCPG_LOG_FORMAT` | Log a structured "slow call" record when a tool exceeds the threshold; switch the logger between `text` and `json` formats. |
 | `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config — 19 built-in providers + custom (`MCPG_NL2SQL_CUSTOM_PROVIDERS`). |
 
+<!-- BEGIN generated: tool-index (python tools/generate_doc_tables.py --tools) -->
 ## Tool index (252 tools)
 
 Grouped by feature area. The **Gate** column shows the capability
@@ -85,6 +86,7 @@ need `unrestricted` **plus** the matching `MCPG_ALLOW_*` opt-in (see
 | **WarehousePG (MPP)** | read | `get_warehousepg_status`, `list_distribution_policies`, `check_segment_health`, `describe_ao_table`, `list_resource_groups`, `analyze_mpp_query_plan`, `recommend_redistribute` |
 | **Logical replication pub/sub** | **DDL** | `create_publication`, `drop_publication`, `create_subscription`, `drop_subscription` |
 | **Write & DDL core** | **WRITE** / **DDL** | `run_write`, `run_maintenance`, `cancel_query`, `terminate_backend`, `run_ddl`, `enable_extension`, `dry_run_ddl` |
+<!-- END generated: tool-index -->
 
 > The reference sections below describe the v0.4.0-era tools in
 > depth. For everything added since, see
