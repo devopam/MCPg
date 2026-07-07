@@ -186,7 +186,7 @@ _ADVISORS_SPECIAL = ["generate_graph_projection", "generate_test_data", "generat
 
 
 def _register_groups() -> dict[str, list[str]]:
-    src = TOOLS_PY.read_text()
+    src = TOOLS_PY.read_text(encoding="utf-8")
     valid = _snapshot_names()
     funcs = [(m.group(1), m.start()) for m in re.finditer(r"^def (_register_\w+)\(", src, re.M)]
     funcs.append(("__END__", len(src)))
@@ -199,7 +199,7 @@ def _register_groups() -> dict[str, list[str]]:
 
 
 def _snapshot_names() -> set[str]:
-    data = json.loads(SNAPSHOT.read_text())
+    data = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     return {t["name"] for t in data["tools"]}
 
 
@@ -291,7 +291,7 @@ def module_descriptions() -> dict[str, str]:
             continue
         name = "mcpg." + ".".join(parts)
         try:
-            doc = ast.get_docstring(ast.parse(path.read_text())) or ""
+            doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8"))) or ""
         except SyntaxError:
             doc = ""
         desc = _first_sentence(doc) or _MODULE_FALLBACK.get(name, "")

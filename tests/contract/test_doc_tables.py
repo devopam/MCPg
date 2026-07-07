@@ -58,7 +58,7 @@ def _marked_region(text: str, kind: str) -> str:
 
 def _tool_names_in_index() -> set[str]:
     """Tool names from the last (``Tools``) column of the index table."""
-    region = _marked_region(_TOOLS_MD.read_text(), "tool-index")
+    region = _marked_region(_TOOLS_MD.read_text(encoding="utf-8"), "tool-index")
     names: set[str] = set()
     for line in region.splitlines():
         if not line.startswith("| **"):
@@ -71,7 +71,7 @@ def _tool_names_in_index() -> set[str]:
 
 def _module_names_in_map() -> set[str]:
     """Module names from the first column of the module-map table."""
-    region = _marked_region(_ARCH_MD.read_text(), "module-map")
+    region = _marked_region(_ARCH_MD.read_text(encoding="utf-8"), "module-map")
     return set(re.findall(r"^\| `(mcpg\.[a-z0-9_.]+)` \|", region, re.M))
 
 
