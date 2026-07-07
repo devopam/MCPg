@@ -229,7 +229,17 @@ audit trail, then exits. Configurable max-drain window
 
 **Effort:** small (~40 LOC + 3-4 tests).
 
-### ⬜ NL→SQL prompt-injection hardening (boundary defense)
+### ✅ NL→SQL prompt-injection hardening (boundary defense)
+**Shipped.** The user question is now wrapped in `<user_request>` …
+`</user_request>` delimiters and the system prompt instructs the model to
+treat that text as data, never instructions, and to **refuse** any request
+beyond a read-only SELECT by emitting the sentinel `-- MCPG_REFUSED: <reason>`.
+`translate_nl_to_sql` detects the sentinel (in the JSON `sql` field or a bare
+reply), returns a structured `TranslationResult(refused=True, refusal_reason=…)`
+with empty `sql`, and never forwards it to `SafeSqlDriver` / execution. The AST
+allowlist remains the enforcement backstop; this is defence-in-depth at the
+prompt layer.
+
 **Problem.** `translate_nl_to_sql` already separates the schema (system
 role) from the user's question (user role) and isolates the question via
 `.replace()` rather than format-string interpolation, and the generated
@@ -268,7 +278,15 @@ default).
 **Effort:** small (system-prompt edit + refusal-path handling + 3-5
 tests). Surfaced 2026-06-30 from a security-feature review.
 
-### ⬜ NL→SQL EXPLAIN dry-run pre-flight
+### ✅ NL→SQL EXPLAIN dry-run pre-flight
+**Shipped.** `translate_nl_to_sql` now runs a non-executing
+`EXPLAIN (FORMAT JSON)` (reusing `mcpg.query.explain_query`, so the SQL is
+`SafeSqlDriver`-validated first) before returning or executing. A planner
+rejection surfaces as a structured `error="query invalid: <message>"` with
+the SQL returned for inspection and nothing executed; a pre-flight
+`statement_timeout` degrades to "skip, proceed" rather than blocking a valid
+translation. Controlled by the `explain_preflight` tool arg (default on).
+
 **Problem.** Generated SQL is validated structurally (AST allowlist +
 single-statement assertion) but not **semantically** — a query that
 references a non-existent column/table or has a type mismatch is
