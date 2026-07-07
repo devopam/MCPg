@@ -27,6 +27,7 @@ from __future__ import annotations
 import importlib.util
 import re
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -35,7 +36,7 @@ _TOOLS_MD = _REPO / "docs" / "tools.md"
 _ARCH_MD = _REPO / "docs" / "architecture.md"
 
 
-def _load_generator():
+def _load_generator() -> ModuleType:
     path = _REPO / "tools" / "generate_doc_tables.py"
     spec = importlib.util.spec_from_file_location("generate_doc_tables", path)
     assert spec and spec.loader

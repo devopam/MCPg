@@ -28,6 +28,7 @@ import argparse
 import ast
 import json
 import re
+from itertools import pairwise
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -68,8 +69,13 @@ _TOOL_ROWS: list[tuple[str, list[str], str]] = [
     (
         "I/O, buffercache & WAL",
         [
-            "read_pg_stat_io", "read_pg_buffercache_summary", "read_pg_buffercache_relations",
-            "read_pg_wal_records", "read_pg_wal_stats", "get_wal_archive_status", "_register_aio_reads",
+            "read_pg_stat_io",
+            "read_pg_buffercache_summary",
+            "read_pg_buffercache_relations",
+            "read_pg_wal_records",
+            "read_pg_wal_stats",
+            "get_wal_archive_status",
+            "_register_aio_reads",
         ],
         "read",
     ),
@@ -154,14 +160,27 @@ _TOOL_ROWS: list[tuple[str, list[str], str]] = [
 
 # Names carved out of a shared register-group into their own row above.
 _SEARCH = [
-    "fuzzy_search", "full_text_search", "vector_search", "vector_range_search",
-    "mmr_search", "hybrid_search", "geo_search",
+    "fuzzy_search",
+    "full_text_search",
+    "vector_search",
+    "vector_range_search",
+    "mmr_search",
+    "hybrid_search",
+    "geo_search",
 ]
 _INTRO_SPECIAL = {
-    "list_locks", "find_blocking_chains", "walk_blocking_chains",
-    "read_pg_stat_io", "read_pg_buffercache_summary", "read_pg_buffercache_relations",
-    "read_pg_wal_records", "read_pg_wal_stats", "get_wal_archive_status",
-    "check_pitr_readiness", "read_migration_history", "get_compact_schema",
+    "list_locks",
+    "find_blocking_chains",
+    "walk_blocking_chains",
+    "read_pg_stat_io",
+    "read_pg_buffercache_summary",
+    "read_pg_buffercache_relations",
+    "read_pg_wal_records",
+    "read_pg_wal_stats",
+    "get_wal_archive_status",
+    "check_pitr_readiness",
+    "read_migration_history",
+    "get_compact_schema",
 }
 _ADVISORS_SPECIAL = ["generate_graph_projection", "generate_test_data", "generate_test_row_for"]
 
@@ -172,7 +191,7 @@ def _register_groups() -> dict[str, list[str]]:
     funcs = [(m.group(1), m.start()) for m in re.finditer(r"^def (_register_\w+)\(", src, re.M)]
     funcs.append(("__END__", len(src)))
     groups: dict[str, list[str]] = {}
-    for (fname, start), (_, end) in zip(funcs, funcs[1:]):
+    for (fname, start), (_, end) in pairwise(funcs):
         names = [n for n in re.findall(r'name="([a-z_][a-z0-9_]+)"', src[start:end]) if n in valid]
         if names:
             groups[fname] = names
@@ -242,7 +261,7 @@ def render_tool_index() -> str:
 # Modules whose docstring is empty or unhelpful get a curated one-liner here.
 _MODULE_FALLBACK = {
     "mcpg.config": "Env-driven, validated `Settings` (frozen dataclass); redacts secrets in `__repr__`.",
-    "mcpg.context": "`AppContext` — per-server state (settings, database, listen/cursor managers) shared with every tool wrapper.",
+    "mcpg.context": "`AppContext` — per-server state (settings, DB, cursor/listen managers) shared with tool wrappers.",
     "mcpg.schema_diff": "Structural schema diff powering `compare_schemas`.",
     "mcpg._vendor": "Vendored MIT-licensed `SafeSqlDriver` + connection-pool kernel (SQL parse / allowlist / bind).",
 }

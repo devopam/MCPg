@@ -86,7 +86,7 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.composite` | Composite tools — agent UX wins built on top of existing primitives. |
 | `mcpg.config` | Env-driven, validated `Settings` (frozen dataclass); redacts secrets in `__repr__`. |
 | `mcpg.config_advisor` | Configuration & sizing advisors — pghero / pgtune coverage. |
-| `mcpg.context` | `AppContext` — per-server state (settings, database, listen/cursor managers) shared with every tool wrapper. |
+| `mcpg.context` | `AppContext` — per-server state (settings, DB, cursor/listen managers) shared with tool wrappers. |
 | `mcpg.cron` | pg_cron job-scheduling wrappers. |
 | `mcpg.cursors` | Server-side cursor manager — pageable reads of large result sets. |
 | `mcpg.cypher` | Apache AGE Cypher Query Execution. |
