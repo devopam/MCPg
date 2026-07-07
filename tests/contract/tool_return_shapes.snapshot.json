@@ -2218,6 +2218,8 @@
         "explanation",
         "model",
         "provider",
+        "refusal_reason",
+        "refused",
         "row_count",
         "rows",
         "sql"

@@ -229,7 +229,17 @@ audit trail, then exits. Configurable max-drain window
 
 **Effort:** small (~40 LOC + 3-4 tests).
 
-### ⬜ NL→SQL prompt-injection hardening (boundary defense)
+### ✅ NL→SQL prompt-injection hardening (boundary defense)
+**Shipped.** The user question is now wrapped in `<user_request>` …
+`</user_request>` delimiters and the system prompt instructs the model to
+treat that text as data, never instructions, and to **refuse** any request
+beyond a read-only SELECT by emitting the sentinel `-- MCPG_REFUSED: <reason>`.
+`translate_nl_to_sql` detects the sentinel (in the JSON `sql` field or a bare
+reply), returns a structured `TranslationResult(refused=True, refusal_reason=…)`
+with empty `sql`, and never forwards it to `SafeSqlDriver` / execution. The AST
+allowlist remains the enforcement backstop; this is defence-in-depth at the
+prompt layer.
+
 **Problem.** `translate_nl_to_sql` already separates the schema (system
 role) from the user's question (user role) and isolates the question via
 `.replace()` rather than format-string interpolation, and the generated

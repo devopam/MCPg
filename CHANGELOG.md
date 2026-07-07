@@ -15,6 +15,14 @@ adheres to [Semantic Versioning](https://semver.org/).
   console), and **Sakana Fugu** (`SAKANA_API_KEY`, default `fugu`). Each is
   a one-line entry in the `nl2sql._PROVIDERS` registry; base URLs and key
   env vars were verified against each vendor's own docs.
+- **NL→SQL prompt-injection hardening (boundary defence).**
+  `translate_nl_to_sql` now fences the user question in
+  `<user_request>` … `</user_request>` delimiters and instructs the model
+  to treat it as data, refusing any out-of-scope request via a
+  `-- MCPG_REFUSED: <reason>` sentinel. The sentinel is detected and
+  surfaced as `TranslationResult(refused=True, refusal_reason=…)` with
+  empty `sql` — never forwarded to execution. The AST allowlist remains
+  the enforcement backstop.
 - **Doc-table drift guard.** `tools/generate_doc_tables.py` regenerates
   the `docs/tools.md` tool index and the `docs/architecture.md` module
   map from the single sources of truth (the registered tool surface and
