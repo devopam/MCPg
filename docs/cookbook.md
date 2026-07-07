@@ -383,8 +383,8 @@ export_table(schema="app", table="orders", format="json")
 **Import CSV** (unrestricted mode):
 
 ```text
-import_csv(schema="app", table="staging_events", payload_base64="...")
-# → { rows_inserted, ... }
+import_csv(schema="app", table="staging_events", content="id,event\n1,click\n2,view")
+# → { rows_inserted, ... }   # optional: header=True, delimiter=",", columns=[...]
 ```
 
 **Cross-database copy** — pipeline between two libpq URIs:
@@ -429,10 +429,10 @@ Postgres `LISTEN`/`NOTIFY` adapted to the MCP poll model. Requires
 `MCPG_ALLOW_LISTEN=true`.
 
 ```text
-subscribe_channel(channel="orders_placed")
-poll_notifications(channel="orders_placed")          # pulls queued messages
-poll_notifications(channel="orders_placed", timeout_sec=5)   # blocks up to 5s
-unsubscribe_channel(channel="orders_placed")
+subscribe_channel(channel="orders_placed")            # → { subscription_id: "sub-1", channel }
+poll_notifications(subscription_id="sub-1")           # pulls queued messages
+poll_notifications(subscription_id="sub-1", timeout_ms=5000)  # blocks up to 5s
+unsubscribe_channel(subscription_id="sub-1")
 list_notification_subscriptions()                     # current state
 ```
 

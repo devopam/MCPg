@@ -290,7 +290,7 @@ documented gaps.
 
 ```
 run_write(sql)                                       # one INSERT/UPDATE/DELETE; add RETURNING
-run_maintenance(operation, schema, table)            # VACUUM / ANALYZE / REINDEX
+run_maintenance(operation, schema, table)            # VACUUM / ANALYZE / VACUUM (ANALYZE)
 prune_audit_events(older_than_days)                  # retention: delete old mcpg_audit.events rows (refused if integrity on)
 cancel_query(pid)
 terminate_backend(pid)
