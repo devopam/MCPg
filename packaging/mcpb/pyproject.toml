@@ -5,9 +5,9 @@
 # to the release tag by the publish workflow, exactly like server.json.
 [project]
 name = "mcpg-desktop-extension"
-version = "0.6.8"
+version = "0.6.9"
 description = "MCPB launcher shim for the MCPg PostgreSQL MCP server."
 requires-python = ">=3.12"
 dependencies = [
-    "mcpg==0.6.8",
+    "mcpg==0.6.9",
 ]
