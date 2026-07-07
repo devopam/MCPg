@@ -59,7 +59,7 @@ each `call_tool` invocation. Token-bucket implementation in
 
 ### ✅ Audit trail
 `mcpg.audit` records each tool call with status + arguments. Optional
-persistence via `MCPG_AUDIT_PERSIST` to a `mcpg.audit_events` table.
+persistence via `MCPG_AUDIT_PERSIST` to the `mcpg_audit.events` table.
 
 ---
 
@@ -156,7 +156,7 @@ unconditionally (operators can disable per header via env). New
 **Shipped** in the security-diagnostics PR (columns + tool + a
 process-wide write lock so the chain stays linear under concurrency).
 
-**Problem.** An attacker with write access to `mcpg.audit_events`
+**Problem.** An attacker with write access to `mcpg_audit.events`
 can truncate, alter, or insert events undetected.
 
 **Solution.** Each event carries an HMAC over `(prev_hmac ||
@@ -171,7 +171,7 @@ break. Persistence schema gains `prev_hmac` + `event_hmac` columns.
 **Effort:** medium (schema migration + HMAC computation +
 verifier tool + 5-7 tests).
 
-### 🟡 Pluggable secrets backend
+### ✅ Pluggable secrets backend
 **Problem.** API keys for the NL→SQL providers, OIDC client
 secrets (future), and the static bearer token all live in env vars.
 Deployments that use HashiCorp Vault / AWS Secrets Manager / GCP
@@ -189,11 +189,10 @@ JSON / YAML `name → value` map via `MCPG_SECRETS_FILE_PATH`, env
 fallback for unlisted names). Zero new required dependencies — YAML
 is read only when PyYAML happens to be importable.
 
-**⬜ Remaining:** the cloud backends — `vault` (HashiCorp), `aws`
+**✅ Also shipped:** the cloud backends — `vault` (HashiCorp), `aws`
 (Secrets Manager), `gcp` (Secret Manager) — each behind an optional
-extra (`mcpg[vault]`, `mcpg[aws-secrets]`, `mcpg[gcp-secrets]`),
-selected by the same `MCPG_SECRETS_BACKEND` switch. The DSN itself
-is not yet routed through the provider.
+extra (`mcpg[vault]`, `mcpg[aws]`, `mcpg[gcp]`), selected by the same
+`MCPG_SECRETS_BACKEND` switch (`env` | `file` | `vault` | `aws` | `gcp`).
 
 ### ✅ Subprocess hardening
 **Shipped** in the security-hardening-queue PR. On top of the
@@ -348,4 +347,4 @@ tests asserting the calls are never marked `force_readonly`.
 | Supply chain | CI bandit + pip-audit | Same |
 | Lifecycle | Graceful shutdown draining | Same |
 | Subprocess | Minimal env + bin allowlist + rlimits + temp cwd | Same |
-| Secrets | Env vars + file overlay (`MCPG_SECRETS_BACKEND`) | + cloud backends (Vault / AWS / GCP) |
+| Secrets | Env + file + cloud backends (Vault / AWS / GCP) via `MCPG_SECRETS_BACKEND` | Same |
