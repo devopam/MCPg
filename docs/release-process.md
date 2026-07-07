@@ -649,7 +649,7 @@ every machine-updatable surface.
 | **PulseMCP** | Ingests the MCP Registry daily | Automatic (transitive) |
 | **mcp.so / mcpservers.org / Glama** | Scrape GitHub + the registry | Automatic (transitive) |
 | **Smithery** (`devopam/mcpg`) | `publish-smithery` job (opt-in) | Automatic *once enabled* — see below |
-| **Hosted demo** (HF Space `devopam/mcpg-demo`) | Runs `ghcr.io/devopam/mcpg:latest` | **Manual** rebuild — see below |
+| **Hosted demo** (HF Space `devopam/mcpg-demo`) | `publish-hf-space` job (opt-in) | Automatic *once enabled* — see below |
 | **Claude connectors directory** | Review portal, no API | **Manual** — see below |
 
 ### Copy that lives in `server.json` (drives the registry-fed listings)
@@ -693,9 +693,15 @@ runs the `ghcr.io/devopam/mcpg:latest` image. Two things mean it does
 2. Hugging Face Docker Spaces resolve `FROM …:latest` at **build** time
    and cache the layer; a new GHCR push does not auto-repull.
 
-So after the release finishes (the `publish-ghcr` job is green), trigger
-a **Factory rebuild** of the Space so it pulls the new image — either in
-the Space's **Settings → Factory rebuild**, or via the HF API:
+The **`publish-hf-space` job** handles this automatically after
+`publish-ghcr`, once enabled. To enable it: add an **`HF_TOKEN`** repo
+secret (a write token scoped to the `devopam/mcpg-demo` Space) and set
+the **`REFRESH_HF_SPACE`** repo variable to `true`. The job is
+`continue-on-error`, so a demo hiccup never fails a release.
+
+If it's not enabled (or you need an ad-hoc rebuild), trigger a **Factory
+rebuild** manually — the Space's **Settings → Factory rebuild**, or via
+the HF API:
 
 ```python
 from huggingface_hub import HfApi

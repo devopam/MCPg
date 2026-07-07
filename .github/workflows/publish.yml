@@ -321,3 +321,33 @@ jobs:
           VER="${GITHUB_REF_NAME#v}"
           npx --yes @smithery/cli@latest namespace use devopam
           npx --yes @smithery/cli@latest mcp publish "mcpg-${VER}-smithery.mcpb" -n devopam/mcpg
+
+  publish-hf-space:
+    name: Refresh HF demo Space
+    # Opt-in: inert until the maintainer adds an HF_TOKEN repo secret
+    # (a write token for the devopam/mcpg-demo Space) and sets the
+    # REFRESH_HF_SPACE variable. Runs after the GHCR image is pushed so
+    # the Space's factory rebuild pulls the new :latest. HF Docker Spaces
+    # resolve `FROM …:latest` at build time and cache it, so a new GHCR
+    # push does not auto-repull — this triggers the rebuild. Non-gating.
+    needs: publish-ghcr
+    if: ${{ vars.REFRESH_HF_SPACE == 'true' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - run: pip install huggingface_hub
+      - name: Factory-rebuild the Space (pull new :latest)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          HfApi(token=os.environ["HF_TOKEN"]).restart_space(
+              "devopam/mcpg-demo", factory_reboot=True
+          )
+          print("HF demo Space factory reboot triggered")
+          PY
