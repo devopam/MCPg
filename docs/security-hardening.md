@@ -122,9 +122,12 @@ left in place.
 
 ## Queued (next focused PRs)
 
-> Most of this section has now shipped. Only **Pluggable secrets
-> backend** remains queued; the rest are marked ✅ with the landing
-> note inline.
+> Most of this section has now shipped (each marked ✅ with the
+> landing note inline). Two items remain, both small and both scoped
+> to `translate_nl_to_sql` / `mcpg.nl2sql`: **NL→SQL prompt-injection
+> hardening** and **NL→SQL EXPLAIN dry-run pre-flight** (the two ⬜
+> entries below). They're the current top security priority and a
+> natural single focused PR.
 
 ### ✅ HTTP hardening (request limits + security headers + CORS + timeout)
 **Shipped.** Security headers + request-size limit + CORS allowlist
