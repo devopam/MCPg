@@ -142,15 +142,20 @@ and `mypy`, and re-synced via the procedure in
 | Access mode | Capabilities granted |
 |---|---|
 | `read-only` | `READ` |
-| `restricted` | `READ` |
-| `unrestricted` | `READ`, `WRITE` |
+| `restricted` | `READ`, `WRITE` |
+| `unrestricted` | `READ`, `WRITE`, `DDL`, `SHELL`, `LISTEN`, `MIGRATE` |
 
-Additional gates within `unrestricted` add fine-grained
-capabilities:
+`restricted` is the "safe read-write" tier — data writes (DML) but no
+schema changes, subprocess, LISTEN/NOTIFY, or migrations.
+
+The higher-blast-radius capabilities that `unrestricted` grants
+(`DDL`, `SHELL`, `LISTEN`, `MIGRATE`) **additionally** require their
+per-feature opt-in gate — enforced where tools register, not in the
+policy table:
 
 | Env var | Capability |
 |---|---|
-| `MCPG_ALLOW_DDL=true` | `DDL` |
+| `MCPG_ALLOW_DDL=true` | `DDL` (and `MIGRATE`, which piggybacks on it) |
 | `MCPG_ALLOW_SHELL=true` | `SHELL` |
 | `MCPG_ALLOW_LISTEN=true` | `LISTEN` |
 
