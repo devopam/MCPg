@@ -208,7 +208,7 @@ When sweeping a legacy tool onto the typed-return shape:
 3. Replace `return asdict(result)` with `return result`.
 4. Add the tool's name + expected field set to the manifest in `tests/contract/test_tool_output_schemas.py`.
 5. Regenerate the surface + return-shape snapshots (`MCPG_REGENERATE_TOOL_SNAPSHOT=1` / `MCPG_REGENERATE_TOOL_RETURN_SHAPES=1`).
-6. Bump the `_FLOOR` constant in `test_tool_output_schemas.py::test_converted_tool_count_grows_monotonically`.
+6. Bump the `floor` literal in `test_tool_output_schemas.py::test_converted_tool_count_grows_monotonically`.
 
 Write/DDL tools clear the cache after running:
 

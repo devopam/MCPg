@@ -1,6 +1,16 @@
 # MCPg parallel-work roadmap
 
-A planning view of the **remaining** feature work, organised so several
+> ⚠️ **Largely historical (as of 0.6.9).** Most workstreams below have
+> since shipped — the A-series vector analytics, D-series logical
+> replication + blocking-chain tools, F-series test-data/schema-doc
+> generators, G-series WAL/PITR helpers, and multi-database support are
+> all live. Treat the tables below as a **method illustration** (how to
+> slice parallel PRs with the conflict map in §2), not a live to-do
+> list. For current open items use
+> [`feature-shortlist.md`](feature-shortlist.md) and
+> [`security-hardening.md`](security-hardening.md).
+
+A planning view of parallelisable feature work, organised so several
 contributors can pick items up **simultaneously in separate PRs** with
 minimal merge friction.
 
@@ -140,9 +150,10 @@ All four are independent.
 
 ### Deferred
 
-- Multi-database support (10.1, **L**) — one server, many DSNs. Big
-  architectural change (pool-per-DB, per-tool selector, gate rework).
-  No concrete demand; leave parked.
+- ~~Multi-database support (10.1, **L**)~~ — **shipped** (roadmap
+  13.1): `MCPG_SECONDARY_DATABASE_URLS` adds named read-only
+  secondaries with a per-tool `database` selector and `list_databases`.
+  Writable secondaries remain deferred.
 
 ---
 

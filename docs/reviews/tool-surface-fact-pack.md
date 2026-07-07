@@ -262,7 +262,7 @@ Interpretations the raw stats above point at — not verdicts, just leads worth 
 
 Phase A surfaces leads; Phase B (LLM behaviour observation) confirms or refutes them. The Phase-B prompt corpus should include at least:
 
-1. **Picker-confusion probes** for the top-scoring overlap pairs from `tool-overlap-report.md` (Phase A.0). Ask the LLM to disambiguate them; if it can't, the static flag is real.
+1. **Picker-confusion probes** for the top-scoring overlap pairs from `tool-overlap-report.md` (Phase A.0 — a working artifact no longer committed; regenerate with `python tools/analyse_tool_overlap.py`). Ask the LLM to disambiguate them; if it can't, the static flag is real.
 2. **Permission-denial probes** for the `missing security caveat` list. Simulate a denial; see whether the LLM can suggest the right `MCPG_*` flag.
 3. **Return-shape probes** for the `no return hint` list. Ask the LLM what it expects the tool to return; compare to reality.
 4. **Self-introspection probes** — 'What can this MCP server do?' / 'List mcpg's capabilities' / 'Can mcpg do X?' Measure whether the response is accurate, complete, and useful.
