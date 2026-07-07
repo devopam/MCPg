@@ -418,6 +418,7 @@ def test_custom_provider_declarations_fail_fast_on_malformed_entries(entry: str,
         ("DEEPINFRA_TOKEN", "deepinfra"),  # deviates
         ("SAMBANOVA_API_KEY", "sambanova"),
         ("ZAI_API_KEY", "glm"),  # deviates
+        ("ZHIPUAI_API_KEY", "glm"),  # GLM legacy fallback env var
         ("ARK_API_KEY", "doubao"),  # deviates
         ("SAKANA_API_KEY", "sakana"),
     ],
