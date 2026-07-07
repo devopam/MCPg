@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`restricted` access mode now permits data writes.** Previously
+  `restricted` was functionally identical to `read-only` (reads only —
+  the "additional execution constraints" it implied were never
+  implemented). It now grants the `WRITE` capability, exposing DML write
+  tools (`run_write`, maintenance, query management, etc.) while still
+  withholding schema changes (DDL), subprocess/shell, `LISTEN/NOTIFY`,
+  and migrations. This makes it the intended **"safe read-write" tier**
+  between `read-only` and `unrestricted`. `read-only` (the default) and
+  `unrestricted` are unchanged. Operators who set `MCPG_ACCESS_MODE=restricted`
+  expecting read-only behaviour should switch to `read-only`.
+
 ## [0.6.9] - 2026-07-07
 
 ### Added

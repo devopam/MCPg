@@ -78,11 +78,17 @@ and every call is validated and audited.
 **Mitigation.**
 
 - The access mode defaults to **read-only**. The `mcpg.policy`
-  engine gates which tools are registered: write tools are exposed
-  only in `unrestricted` mode.
-- DDL needs a second explicit opt-in (`MCPG_ALLOW_DDL`). Subprocess
-  tools need `MCPG_ALLOW_SHELL`; `LISTEN/NOTIFY` tools need
-  `MCPG_ALLOW_LISTEN`.
+  engine gates which tools are registered, by capability:
+  - `read-only` — read tools only (the safe default).
+  - `restricted` — read **plus data-write (DML) tools**; **no** schema
+    changes, subprocess, `LISTEN/NOTIFY`, or migrations. The
+    "safe read-write" tier.
+  - `unrestricted` — all tools, including DDL / shell / listen /
+    migrate.
+- On top of `unrestricted`, DDL and migrations still need
+  `MCPG_ALLOW_DDL`, subprocess tools need `MCPG_ALLOW_SHELL`, and
+  `LISTEN/NOTIFY` tools need `MCPG_ALLOW_LISTEN` — each an explicit
+  second opt-in.
 - `run_select` and `explain_query` force read-only transactions
   regardless of mode.
 - Generated SQL from `translate_nl_to_sql` is passed through the

@@ -344,15 +344,18 @@ async def test_read_tools_are_exposed_in_every_access_mode(access_mode: AccessMo
 
 
 @pytest.mark.parametrize("access_mode", list(AccessMode))
-async def test_write_tools_are_exposed_only_in_unrestricted_mode(access_mode: AccessMode) -> None:
+async def test_write_tools_are_exposed_in_restricted_and_unrestricted_modes(access_mode: AccessMode) -> None:
+    # WRITE-capability tools appear in the read-write tiers (restricted +
+    # unrestricted) and are hidden only in read-only.
     async with create_connected_server_and_client_session(_server_for(access_mode)) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
 
-    assert ("run_write" in names) is (access_mode is AccessMode.UNRESTRICTED)
-    assert ("run_maintenance" in names) is (access_mode is AccessMode.UNRESTRICTED)
-    assert ("cancel_query" in names) is (access_mode is AccessMode.UNRESTRICTED)
-    assert ("terminate_backend" in names) is (access_mode is AccessMode.UNRESTRICTED)
-    assert ("seed_table_with_sample_data" in names) is (access_mode is AccessMode.UNRESTRICTED)
+    has_write = access_mode is not AccessMode.READ_ONLY
+    assert ("run_write" in names) is has_write
+    assert ("run_maintenance" in names) is has_write
+    assert ("cancel_query" in names) is has_write
+    assert ("terminate_backend" in names) is has_write
+    assert ("seed_table_with_sample_data" in names) is has_write
 
 
 @pytest.mark.parametrize(
