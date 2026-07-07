@@ -36,7 +36,7 @@ plumbing:
 | `MCPG_SLOW_CALL_THRESHOLD_MS` / `MCPG_LOG_FORMAT` | Log a structured "slow call" record when a tool exceeds the threshold; switch the logger between `text` and `json` formats. |
 | `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config (Anthropic / OpenAI / Gemini). |
 
-## Tool index (154 tools)
+## Tool index (252 tools)
 
 | Category | Tools |
 |---|---|

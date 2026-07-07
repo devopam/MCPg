@@ -45,7 +45,7 @@ Verify the install:
 
 ```bash
 mcpg --version
-# → mcpg 0.6.2
+# → mcpg 0.6.9
 ```
 
 ### Option 2 — Docker

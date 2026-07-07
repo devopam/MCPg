@@ -5,7 +5,7 @@ A compact one-page tour of every tool MCPg exposes, organised by
 surface; the full reference is in [`tools.md`](tools.md), and
 task-oriented recipes live in [`cookbook.md`](cookbook.md).
 
-**154 tools** as of trunk. Each line shows the tool name + how its
+**252 tools** as of trunk. Each line shows the tool name + how its
 parameters land (required first, common defaults after). Capability
 gates are noted in section titles where they apply.
 
