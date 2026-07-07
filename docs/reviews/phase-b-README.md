@@ -7,6 +7,13 @@ findings in `tool-surface-fact-pack.md` (Phase A) and
 the static signals with measured behaviour before we touch any
 source code.
 
+> **Note on `tool-overlap-report.md`.** The Phase A.0 overlap report
+> was a working artifact generated during this review and is not
+> committed to the repo. The `phase_a_reference` tags below (e.g.
+> `tool-overlap-report.md #1 (score 4.99)`) are preserved as
+> provenance for the point-in-time (v0.6.2) analysis that produced
+> this corpus — they are historical labels, not live links.
+
 ## Files
 
 | File | Role |

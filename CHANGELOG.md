@@ -6,6 +6,38 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Doc-table drift guard.** `tools/generate_doc_tables.py` regenerates
+  the `docs/tools.md` tool index and the `docs/architecture.md` module
+  map from the single sources of truth (the registered tool surface and
+  the package layout), and `tests/contract/test_doc_tables.py` fails CI
+  if either doc drifts — so a new tool or module can't ship undocumented.
+- **Architecture diagram.** `docs/architecture.md` gains a Mermaid
+  layered-request-path diagram (with a prose fallback for the docs site).
+
+### Changed
+
+- **Documentation refresh across the board.** Regenerated the tool index
+  (was ~90 tools stale, listed 3 phantom tools) and the module map (was
+  ~35 modules short, several mis-named); corrected the NL→SQL provider
+  understatement (3 → 19 built-in), stale tool counts (→ 252), Windows
+  file path, PG/Python version claims, wrong-on-use recipe params,
+  AWS/GCP secrets env vars, and access-mode terminology throughout;
+  archived three fully-shipped plans and de-staled the PG 19 status
+  table. Added a per-release documentation-validation checklist and an
+  actionable quarterly NL→SQL default-model sweep to the release process.
+- **`restricted` access mode now permits data writes.** Previously
+  `restricted` was functionally identical to `read-only` (reads only —
+  the "additional execution constraints" it implied were never
+  implemented). It now grants the `WRITE` capability, exposing DML write
+  tools (`run_write`, maintenance, query management, etc.) while still
+  withholding schema changes (DDL), subprocess/shell, `LISTEN/NOTIFY`,
+  and migrations. This makes it the intended **"safe read-write" tier**
+  between `read-only` and `unrestricted`. `read-only` (the default) and
+  `unrestricted` are unchanged. Operators who set `MCPG_ACCESS_MODE=restricted`
+  expecting read-only behaviour should switch to `read-only`.
+
 ## [0.6.9] - 2026-07-07
 
 ### Added
@@ -50,6 +82,26 @@ adheres to [Semantic Versioning](https://semver.org/).
   first-class; remote endpoints require HTTPS (mirroring the database
   TLS policy). Declared names are callable via `provider=`, listed by
   `get_server_info`, and join auto-pick after the built-ins.
+
+### Changed
+
+- **Version single-sourced** from `src/mcpg/__init__.py` — `pyproject.toml`
+  now declares `dynamic = ["version"]` and reads `__version__` via
+  hatchling, so a release bumps exactly one line and pip, `mcpg --version`,
+  and the MCP `serverInfo` handshake can never disagree.
+
+### Fixed
+
+- **Windows: HTTP transport now connects to Postgres.** Under
+  `streamable-http` / `sse` on Windows, uvicorn reinstalled the
+  `ProactorEventLoop`, which async psycopg rejects — every database
+  connection failed with a 30 s pool timeout. `run_http` now pins the
+  `WindowsSelectorEventLoopPolicy` and runs uvicorn on it. stdio was
+  unaffected.
+- **`serverInfo` reports MCPg's own version.** The MCP `initialize`
+  handshake advertised the MCP SDK's version instead of mcpg's; the
+  low-level server's version is now pinned to `mcpg.__version__` via the
+  `AuditedFastMCP` wrapper.
 
 ## [0.6.8] - 2026-07-05
 

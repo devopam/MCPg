@@ -42,9 +42,9 @@ that accidentally deletes a tool fails CI.
 
 | Phase | Status | Notes |
 |---|---|---|
-| 1. CI matrix + compatibility surface | **in progress** | PG 19 beta added as experimental matrix entry. pgvector built from source (custom Dockerfile). PostGIS deferred until apt package available. Phase-1 PR: this doc + CI changes. |
-| 2. Feature audit | not started | Decision matrix below to be filled in as PG 19 progresses through Beta → RC → GA. |
-| 3. Incremental landing | not started | Each row marked "expose via new tool" / "extend existing tool" below becomes a separate small PR. |
+| 1. CI matrix + compatibility surface | ✅ **Shipped** | PG 19 beta runs as an experimental (`continue-on-error`) matrix entry; pgvector built from source via `.github/ci-postgres-pg19.Dockerfile`. A WarehousePG (MPP) characterisation lane landed alongside. PostGIS still deferred until an apt package is published. |
+| 2. Feature audit | ✅ **Done** | The Beta 1 sweep below is complete — every domain triaged through the product-owner lens. |
+| 3. Incremental landing | ⏳ **Largely shipped** | Many tool families have landed: SQL/PGQ property graphs (`run_pgq`, `create_property_graph`, …), in-server `REPACK` (`repack_table`), skip-scan advisor (`recommend_skip_scan_indexes`), `WAIT FOR LSN` read-your-writes (`wait_for_lsn`), online data-checksum + on-demand logical-replication toggles, DDL introspection (`get_role_ddl` / `get_database_ddl` / `get_tablespace_ddl` / `validate_check_constraint`), partition `MERGE` / `SPLIT`, lock + recovery stats, and async-I/O coverage. See the [tool index](../tools.md#tool-index-252-tools) for the shipped surface and [feature-shortlist.md](../feature-shortlist.md) for the remaining items (tracked to GA). |
 
 ## Phase 1 — what landed
 
@@ -309,7 +309,7 @@ MCPG_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mcpg_test \
   uv run pytest -q --cov
 ```
 
-Expected behaviour: PostGIS-dependent tests skip / fail (see `tests/integration/test_geo.py`); everything else should pass. Failures outside that category are the Phase 2 triage queue.
+Expected behaviour: PostGIS-dependent tests skip / fail (PostGIS isn't built into the PG 19 beta image); everything else should pass. Failures outside that category are the Phase 2 triage queue.
 
 ## Cross-references
 

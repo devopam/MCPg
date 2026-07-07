@@ -19,8 +19,8 @@ them" — pick the section that matches what you're trying to do.
 - [**Demo dataset**](demo.md) — `mcpg --demo` seeds a curated
   playground schema; a captured walkthrough shows the pivotal tools
   finding its planted flaws.
-- [**Tour**](tour.md) — a guided walkthrough of every MCP tool MCPg
-  ships, grouped by capability area.
+- [**Tour**](tour.md) — a guided walkthrough of the tools you'll
+  reach for most, grouped by what you're trying to do.
 - [**Cookbook**](cookbook.md) — short, copy-pasteable recipes for
   the common workflows (read-replica routing, NL→SQL,
   OIDC bearer auth, RLS, hybrid search, …).
@@ -55,6 +55,7 @@ them" — pick the section that matches what you're trying to do.
   retrospectives.
 - [**Progress log**](PROGRESS.md) — chronological build log.
 - Release notes:
+  [v0.6.9](release-notes-0.6.9.md) ·
   [v0.6.8](release-notes-0.6.8.md) ·
   [v0.6.7](release-notes-0.6.7.md) ·
   [v0.6.6](release-notes-0.6.6.md) ·

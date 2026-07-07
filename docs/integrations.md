@@ -277,7 +277,7 @@ see the [installation guide](installation.md) and
   native support lands.
 - **DeepSeek** — a model provider, not an MCP client. DeepSeek models
   drive MCPg just fine *through* the clients above (e.g. Cline or
-  Cursor with `deepseek-v4-pro` selected — note the pure-reasoning R1
+  Cursor with `deepseek-chat` selected — note the pure-reasoning R1
   models can't call tools). Separately, a `DEEPSEEK_API_KEY` on the
   MCPg server enables DeepSeek as the `translate_nl_to_sql` provider —
   as do Qwen (`DASHSCOPE_API_KEY`), OpenRouter, and Perplexity keys.

@@ -31,7 +31,7 @@ The dataset SQL files (such as `demo_data/pagila-insert-data.sql`) are tracked v
 ---
 
 ## 3. Build the Custom Database Image
-The custom Dockerfile [local-postgres.Dockerfile](file:///c:/Users/devop/OneDrive/Documents/GitHub/MCPg/local-postgres.Dockerfile) compiles `pg_turboquant` (including our type resolution path bypass patch) directly into the image.
+The custom Dockerfile [local-postgres.Dockerfile](../local-postgres.Dockerfile) compiles `pg_turboquant` (including our type resolution path bypass patch) directly into the image.
 
 Run the build command from the root of the repository:
 ```bash

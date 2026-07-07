@@ -1,13 +1,18 @@
 # MCPg tool tour
 
-A compact one-page tour of every tool MCPg exposes, organised by
-**what an agent typically wants to do**. Use this as a discovery
-surface; the full reference is in [`tools.md`](tools.md), and
-task-oriented recipes live in [`cookbook.md`](cookbook.md).
+A compact one-page tour of the tools you'll reach for most, organised
+by **what an agent typically wants to do**. This is a discovery
+surface, not the full catalogue — the exhaustive per-tool reference is
+in [`tools.md`](tools.md), and task-oriented recipes live in
+[`cookbook.md`](cookbook.md).
 
-**154 tools** as of trunk. Each line shows the tool name + how its
-parameters land (required first, common defaults after). Capability
-gates are noted in section titles where they apply.
+**252 tools** across 19 capability areas as of trunk. Each line shows
+the tool name + how its parameters land (required first, common
+defaults after). Capability gates are noted in section titles where
+they apply. A few specialist areas (PITR, WarehousePG MPP, Redis FDW,
+SQL/PGQ property graphs, `pg_prewarm`, `pg_repack`, PG 19 runtime
+toggles) aren't walked below — see the [tool index](tools.md#tool-index-252-tools)
+for those.
 
 ---
 
@@ -78,7 +83,7 @@ run_select_parallel(statements, parallel_limit=8)    # concurrent fan-out; one b
 explain_query(sql, format="json")
 analyze_query_plan(sql)                              # walks the EXPLAIN tree
 translate_nl_to_sql(question, schema, provider=null, execute=false)
-                                                     # NL → SQL; provider routes per call across configured Anthropic / OpenAI / Gemini
+                                                     # NL → SQL; routes per call across 19 built-in providers (+ custom)
 ```
 
 ## "Stream a huge result set" (server-side cursors)
@@ -290,7 +295,7 @@ documented gaps.
 
 ```
 run_write(sql)                                       # one INSERT/UPDATE/DELETE; add RETURNING
-run_maintenance(operation, schema, table)            # VACUUM / ANALYZE / REINDEX
+run_maintenance(operation, schema, table)            # VACUUM / ANALYZE / VACUUM (ANALYZE)
 prune_audit_events(older_than_days)                  # retention: delete old mcpg_audit.events rows (refused if integrity on)
 cancel_query(pid)
 terminate_backend(pid)

@@ -23,19 +23,22 @@ first time, skim it as a reference after.
 9. [Data movement](#data-movement)
 10. [Reactive workflows: LISTEN / NOTIFY](#reactive-workflows-listen--notify)
 11. [Staged migrations](#staged-migrations)
-12. [ORM bridges](#orm-bridges)
-13. [Audit trail](#audit-trail)
-14. [Observability](#observability)
-15. [Rate limiting](#rate-limiting)
-16. [Security defaults](#security-defaults)
-17. [Troubleshooting](#troubleshooting)
+12. [Migration history](#migration-history)
+13. [ORM bridges](#orm-bridges)
+14. [Audit trail](#audit-trail)
+15. [Observability](#observability)
+16. [Rate limiting](#rate-limiting)
+17. [Caching](#caching)
+18. [Feature Flags](#feature-flags)
+19. [Security defaults](#security-defaults)
+20. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## What MCPg is
 
 MCPg is an MCP server that exposes a PostgreSQL database to an AI
-agent through a fixed, audited set of **154 tools**. The agent never
+agent through a fixed, audited set of **252 tools** (read-only mode exposes ~185). The agent never
 gets a raw database connection — it can only call the tools MCPg
 registers, every call is validated, and every call is logged. MCPg
 runs as a single async process and ships as both a PyPI package
@@ -52,8 +55,8 @@ within `unrestricted` mode.
 | Mode | What's exposed |
 |---|---|
 | `read-only` (default) | Catalog introspection, querying, search, health, EXPLAIN — all read-only. |
-| `restricted` | Same as `read-only`. Reserved for future tighter execution limits. |
-| `unrestricted` | The above **plus** writes: `run_write`, `run_maintenance`, `cancel_query`, `terminate_backend`. |
+| `restricted` | The above **plus data writes** (DML): `run_write`, `run_maintenance`, `cancel_query`, `terminate_backend`. **No** schema changes (DDL), subprocess/shell, LISTEN/NOTIFY, or migrations — the "safe read-write" tier. |
+| `unrestricted` | Everything: the write tools above **plus** the gated DDL / shell / listen / migrate families below. |
 
 Within `unrestricted`, the gate vars decide which additional
 families come along:
@@ -202,11 +205,12 @@ storage advisor).
 - `detect_n_plus_one(min_calls=100)` — walks
   `pg_stat_statements` looking for ORM lazy-load loops.
 
-### Change data (`unrestricted` mode)
+### Change data (`restricted` or `unrestricted` mode)
 
 - `run_write(sql)` — one `INSERT` / `UPDATE` / `DELETE`. Add a
-  `RETURNING` clause to get affected rows back.
-- `run_ddl(sql)` (`MCPG_ALLOW_DDL=true`) — one DDL statement; can
+  `RETURNING` clause to get affected rows back. Available in
+  `restricted` mode and up.
+- `run_ddl(sql)` (`unrestricted` + `MCPG_ALLOW_DDL=true`) — one DDL statement; can
   optionally snapshot the structural diff for an `audit_database`
   follow-up.
 - `enable_extension(name)` — allowlisted extensions only.

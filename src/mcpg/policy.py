@@ -23,17 +23,21 @@ class Capability(StrEnum):
     MIGRATE = "migrate"
 
 
-# Capabilities permitted in each access mode. read-only and restricted both
-# allow reads only; restricted additionally constrains execution (timeouts,
-# row caps) at the tool level. Unrestricted adds writes, DDL, shell, listen,
-# and migrate. DDL/shell/listen/migrate additionally require their per-feature
-# opt-in (MCPG_ALLOW_DDL / _SHELL / _LISTEN; migrate piggybacks on
-# MCPG_ALLOW_DDL since the underlying ops are DDL). Those gates are enforced
-# where tools register, not here, so the policy table stays the single source
-# of truth.
+# Capabilities permitted in each access mode:
+#   read-only    — reads only (the safe default).
+#   restricted   — reads + data writes (DML/WRITE), but NOT schema changes
+#                  (DDL), subprocess/shell, LISTEN/NOTIFY, or migrations.
+#                  The "safe read-write" tier: an agent can INSERT/UPDATE/
+#                  DELETE and run maintenance, but cannot alter structure or
+#                  reach outside the database.
+#   unrestricted — everything: writes, DDL, shell, listen, migrate.
+# DDL/shell/listen/migrate additionally require their per-feature opt-in
+# (MCPG_ALLOW_DDL / _SHELL / _LISTEN; migrate piggybacks on MCPG_ALLOW_DDL
+# since the underlying ops are DDL). Those gates are enforced where tools
+# register, not here, so this policy table stays the single source of truth.
 _PERMITTED: dict[AccessMode, frozenset[Capability]] = {
     AccessMode.READ_ONLY: frozenset({Capability.READ}),
-    AccessMode.RESTRICTED: frozenset({Capability.READ}),
+    AccessMode.RESTRICTED: frozenset({Capability.READ, Capability.WRITE}),
     AccessMode.UNRESTRICTED: frozenset(
         {
             Capability.READ,

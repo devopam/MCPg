@@ -130,6 +130,12 @@ missing from the marketing surface — and from the
 
 ### 3.1 Currently in `pyproject.toml`
 
+> **Historical (pre-first-release audit).** Today `pyproject.toml` no
+> longer carries a static `version`; it declares `dynamic = ["version"]`
+> with `[tool.hatch.version] path = "src/mcpg/__init__.py"`, so the
+> version is single-sourced from `__init__.py` (see §4.2). Don't
+> reintroduce a static `version` field from the snippet below.
+
 ```toml
 [project]
 name = "mcpg"
@@ -376,11 +382,71 @@ when running locally.
       (this is the single source; `pyproject.toml` derives it dynamically).
 - [ ] `CHANGELOG.md` rolls `[Unreleased]` into the new dated section,
       and a fresh `[Unreleased]` is added on top.
+- [ ] `docs/release-notes-X.Y.Z.md` written (mirror the previous
+      version's file for structure/tone) **and** linked at the top of
+      the "Release notes" list in `docs/index.md`.
 - [ ] README hero + badges + screenshots — every relative URL has
       been swapped for an absolute one (`https://...`).
+- [ ] **Documentation validated** — work through [§5.1](#51-documentation-validation-every-release).
 - [ ] `uv run python -m build && uv run twine check dist/*` clean.
 - [ ] `git tag vX.Y.Z` — annotated, signed, message is the release
       headline.
+
+---
+
+## 5.1 Documentation validation (every release)
+
+Docs drift silently — a shipped feature that never made it into the
+reference reads, to a user, as a feature that doesn't exist. Worse, a
+*wrong* doc claim erodes trust faster than a missing one. So every
+release re-validates the doc set, not just the release notes. Two rules
+underpin this whole section:
+
+1. **Verify before you write.** Any claim you change must be checked
+   against the code, the CLI, or a live endpoint — never from memory.
+   (This is why the tool index and module map are now *generated*, not
+   hand-maintained.)
+2. **Generated beats hand-maintained.** If a catalogue can drift, guard
+   it with a test. The two that already can't:
+
+```bash
+# Tool index (docs/tools.md) + module map (docs/architecture.md) must
+# match the registered surface / package layout. Fails CI on drift.
+uv run pytest tests/contract/test_doc_tables.py -q
+
+# If it fails, regenerate and paste between the <!-- BEGIN/END generated -->
+# markers in each doc:
+python tools/generate_doc_tables.py --tools     # → docs/tools.md
+python tools/generate_doc_tables.py --modules   # → docs/architecture.md
+```
+
+Then walk this table. For each doc, confirm the "Validate" column
+against the actual code / CLI before shipping:
+
+| Document | Validate |
+|---|---|
+| `README.md` | Feature bullets, env-var table, access-mode table, tool count, "Listed On" links all resolve; badges use absolute URLs. |
+| `docs/index.md` | New release-notes link added at the top of the list; section links resolve. |
+| `docs/installation.md` | Python / PostgreSQL version ranges match `pyproject.toml` + `ci.yml`; env-var scenarios current; secrets-backend vars correct. |
+| `docs/integrations.md` | One-click install links work; provider/model examples name real models; NL→SQL key env vars match `nl2sql.py`. |
+| `docs/tools.md` | **Guarded** by `test_doc_tables.py` (index). Prose sections: capability gates + "requires X mode" match `policy.py`. |
+| `docs/tour.md` | Hard-coded tool count (`252`) matches the snapshot; specialist-area caveat still accurate; sample params match tool signatures. |
+| `docs/cookbook.md` | Every recipe's tool call — names, params, return keys — matches `tools.py` (copy-paste must actually run). |
+| `docs/architecture.md` | **Guarded** by `test_doc_tables.py` (module map). Prose: access-mode table matches `policy.py`; CI-matrix + test-suite facts match `ci.yml`; the Mermaid diagram still reflects the request path. |
+| `docs/user-guide.md` | Access-mode + capability-gate tables match `policy.py`; **the NL→SQL provider table (names / env vars / default models) matches `nl2sql.py`'s `_PROVIDERS`** (see the quarterly model sweep in [§9](#9-recurring-chores)); TOC covers every `##` heading. |
+| `docs/security.md` / `docs/security-hardening.md` | Access-mode tiers, audit table name (`mcpg_audit.events`), secrets-backend vars, and shipped-vs-queued status all current. |
+| `docs/comparison-matrix.md` | Version claims (PG 14+) and feature claims still true; competitor rows not stale. |
+| `docs/release-process.md` | This file — any changed job / registry / gate reflected in §6 + §8b. |
+| `docs/plans/*` | Any plan whose feature shipped this release gets a "✅ Shipped — archived" banner; live tracking docs (e.g. `pg19-readiness.md`) have their status tables refreshed. |
+| `docs/feature-shortlist.md` / `docs/PROGRESS.md` | Shipped rows marked ✅; the log reflects what actually landed. |
+| `CHANGELOG.md` | `[Unreleased]` rolled into the dated section; entries match the diff. |
+
+Grep for the counts that are still hand-written (the generated tables
+are already guarded), so a tool-count bump can't be missed:
+
+```bash
+rg -n '2[0-9][0-9] tools|tool surface' docs/ README.md
+```
 
 ---
 
@@ -392,6 +458,14 @@ This is the recurring path after the one-time setup.
 
 Land this once at `.github/workflows/publish.yml`. After it's on
 `main`, every `vX.Y.Z` tag triggers the pipeline.
+
+> ⚠️ **The YAML below is the original illustrative sketch and has since
+> drifted — do NOT copy it verbatim.** The live workflow
+> [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) is
+> authoritative: it adds a tag↔`mcpg.__version__` sanity-check step, the
+> `.mcpb` build, and the `publish-mcp-registry` / `publish-ghcr` /
+> `publish-smithery` jobs (8 jobs total, not 5), and uses current action
+> pins (checkout@v7, setup-uv@v7, Python 3.14). Read the real file.
 
 ```yaml
 name: Publish
@@ -567,8 +641,12 @@ If it succeeds, post the new-release announcement to:
 
 - The repo's GitHub Release page (the workflow already created it).
 - The README's "What's new" line / hero badge.
-- The MCP server registry (file a PR against
-  `modelcontextprotocol/servers` listing MCPg under "PostgreSQL").
+
+> The official MCP registry, PyPI, GHCR, and Smithery are published
+> **automatically** by the tagged release (see §8b) — no manual PR or
+> upload. The old "file a PR against `modelcontextprotocol/servers`"
+> step is obsolete; MCPg publishes its own `server.json` via the
+> `publish-mcp-registry` job.
 
 ---
 
@@ -628,7 +706,7 @@ every machine-updatable surface.
 | **PulseMCP** | Ingests the MCP Registry daily | Automatic (transitive) |
 | **mcp.so / mcpservers.org / Glama** | Scrape GitHub + the registry | Automatic (transitive) |
 | **Smithery** (`devopam/mcpg`) | `publish-smithery` job (opt-in) | Automatic *once enabled* — see below |
-| **Hosted demo** (HF Space `devopam/mcpg-demo`) | Runs `ghcr.io/devopam/mcpg:latest` | **Manual** rebuild — see below |
+| **Hosted demo** (HF Space `devopam/mcpg-demo`) | `publish-hf-space` job (opt-in) | Automatic *once enabled* — see below |
 | **Claude connectors directory** | Review portal, no API | **Manual** — see below |
 
 ### Copy that lives in `server.json` (drives the registry-fed listings)
@@ -672,9 +750,15 @@ runs the `ghcr.io/devopam/mcpg:latest` image. Two things mean it does
 2. Hugging Face Docker Spaces resolve `FROM …:latest` at **build** time
    and cache the layer; a new GHCR push does not auto-repull.
 
-So after the release finishes (the `publish-ghcr` job is green), trigger
-a **Factory rebuild** of the Space so it pulls the new image — either in
-the Space's **Settings → Factory rebuild**, or via the HF API:
+The **`publish-hf-space` job** handles this automatically after
+`publish-ghcr`, once enabled. To enable it: add an **`HF_TOKEN`** repo
+secret (a write token scoped to the `devopam/mcpg-demo` Space) and set
+the **`REFRESH_HF_SPACE`** repo variable to `true`. The job is
+`continue-on-error`, so a demo hiccup never fails a release.
+
+If it's not enabled (or you need an ad-hoc rebuild), trigger a **Factory
+rebuild** manually — the Space's **Settings → Factory rebuild**, or via
+the HF API:
 
 ```python
 from huggingface_hub import HfApi
@@ -718,14 +802,28 @@ publishing surface healthy:
   — make sure the only owner is the maintainer's account.
 - **Re-run `pip-audit`** on the last shipped requirements set; if a
   CVE has landed since release, cut a patch.
-- **Sweep the NL→SQL provider default models (~quarterly).** Vendors
-  retire models on their own cadence (e.g. Cerebras dropped
-  `llama-3.1-8b`), which would leave a built-in provider pointing at a
-  dead default. Check each entry's `default_model` in
-  `src/mcpg/nl2sql.py`'s `_PROVIDERS` registry against the vendor's live
-  models page and bump any that changed. It's a pure data edit — one
-  string per affected provider, no code — then cut a build. Base URLs
-  and key env vars are stable and rarely need attention.
+- **Sweep the NL→SQL provider default models (~quarterly).** This is a
+  standalone activity, deliberately *decoupled* from the per-release doc
+  check: model defaults go stale on the **vendors'** cadence, not
+  MCPg's. Vendors retire models on their own schedule (e.g. Cerebras
+  dropped `llama-3.1-8b`), which would leave a built-in provider
+  pointing at a dead default and every NL→SQL call to it failing.
+
+  The single source of truth is the `_PROVIDERS` registry in
+  `src/mcpg/nl2sql.py`. List the current defaults with:
+
+  ```bash
+  uv run python -c "from mcpg.nl2sql import _PROVIDERS; [print(f'{p.key:12} {p.default_model:55} {p.base_url or \"\"}') for p in _PROVIDERS]"
+  ```
+
+  For each provider, open the vendor's live models page and confirm the
+  `default_model` still exists and is still a sensible small/cheap
+  tool-capable default. Bump any that changed — it's a **pure data
+  edit** (one string per affected provider, no code) — then cut a build.
+  Base URLs and key env vars are stable and rarely need attention.
+  When you do change a default, mirror it in the provider table in
+  `docs/user-guide.md` (or leave the vague "recent … " wording for the
+  frontier models, which is intentionally staleness-proof).
 - **Rotate the `SMITHERY_API_KEY`** secret if it's ever been exposed
   (e.g. pasted into a chat/issue); regenerate at smithery.ai and update
   the repo secret.

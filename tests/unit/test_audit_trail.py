@@ -602,16 +602,20 @@ async def test_prune_audit_events_tool_is_registered_in_unrestricted_mode() -> N
     assert result.structuredContent["deleted"] == 0
 
 
-@pytest.mark.parametrize("mode", ["read-only", "restricted"])
-async def test_prune_audit_events_tool_is_absent_without_write_capability(mode: str) -> None:
-    # prune deletes rows -> it must only appear in unrestricted mode.
+@pytest.mark.parametrize(
+    ("mode", "present"),
+    [("read-only", False), ("restricted", True), ("unrestricted", True)],
+)
+async def test_prune_audit_events_tool_needs_write_capability(mode: str, present: bool) -> None:
+    # prune deletes rows -> WRITE capability -> present in the read-write tiers
+    # (restricted + unrestricted), absent in read-only.
     settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": mode})
     server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
 
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
 
-    assert "prune_audit_events" not in listed
+    assert ("prune_audit_events" in listed) is present
 
 
 # --- capture_columns ------------------------------------------------------

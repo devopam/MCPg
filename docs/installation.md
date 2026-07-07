@@ -10,10 +10,12 @@ paths.
 
 ## Prerequisites
 
-- **Python 3.12 or newer** (3.12 + 3.13 are tested in CI).
-- **PostgreSQL 14–18** reachable from where MCPg runs. CI matrix
-  covers all five versions on every push. Older versions may work
-  but aren't tested.
+- **Python 3.12 or newer** (3.12–3.14 supported; CI runs the
+  suite on 3.14).
+- **PostgreSQL 14–18** reachable from where MCPg runs. CI runs the
+  full suite against 14–18 on every push, plus an experimental
+  PG 19 lane and a WarehousePG characterisation lane. Older
+  versions may work but aren't tested.
 - A **least-privilege database role** for MCPg to connect with —
   see [Database privileges](#database-privileges) below.
 - Optional, depending on path:
@@ -45,7 +47,7 @@ Verify the install:
 
 ```bash
 mcpg --version
-# → mcpg 0.6.2
+# → mcpg 0.6.9
 ```
 
 ### Option 2 — Docker

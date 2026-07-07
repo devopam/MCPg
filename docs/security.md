@@ -78,11 +78,17 @@ and every call is validated and audited.
 **Mitigation.**
 
 - The access mode defaults to **read-only**. The `mcpg.policy`
-  engine gates which tools are registered: write tools are exposed
-  only in `unrestricted` mode.
-- DDL needs a second explicit opt-in (`MCPG_ALLOW_DDL`). Subprocess
-  tools need `MCPG_ALLOW_SHELL`; `LISTEN/NOTIFY` tools need
-  `MCPG_ALLOW_LISTEN`.
+  engine gates which tools are registered, by capability:
+  - `read-only` — read tools only (the safe default).
+  - `restricted` — read **plus data-write (DML) tools**; **no** schema
+    changes, subprocess, `LISTEN/NOTIFY`, or migrations. The
+    "safe read-write" tier.
+  - `unrestricted` — all tools, including DDL / shell / listen /
+    migrate.
+- On top of `unrestricted`, DDL and migrations still need
+  `MCPG_ALLOW_DDL`, subprocess tools need `MCPG_ALLOW_SHELL`, and
+  `LISTEN/NOTIFY` tools need `MCPG_ALLOW_LISTEN` — each an explicit
+  second opt-in.
 - `run_select` and `explain_query` force read-only transactions
   regardless of mode.
 - Generated SQL from `translate_nl_to_sql` is passed through the
@@ -221,15 +227,16 @@ and every call is validated and audited.
 
 **Mitigation.**
 
-- **Cloud secrets backends.** `MCPG_SECRETS_BACKEND` swaps the
-  default env-var lookup for a remote secrets provider:
+- **Secrets backends.** `MCPG_SECRETS_BACKEND` swaps the default
+  env-var lookup (`env`) for one of `file`, `vault`, `aws`, or `gcp`:
+  - `file` — JSON/YAML overlay from `MCPG_SECRETS_FILE_PATH`.
   - `vault` — HashiCorp Vault KV v2 (`MCPG_VAULT_ADDR`,
     `MCPG_VAULT_TOKEN`, optional `MCPG_VAULT_NAMESPACE` /
     `MCPG_VAULT_PATH_PREFIX` — default `secret/mcpg`).
-  - `aws` — AWS Secrets Manager (`MCPG_AWS_SECRET_ID`, region picked
-    up from the standard AWS SDK chain).
-  - `gcp` — GCP Secret Manager
-    (`MCPG_GCP_SECRET_NAME=projects/<id>/secrets/<name>/versions/latest`).
+  - `aws` — AWS Secrets Manager (optional `MCPG_AWS_SECRETS_PREFIX`;
+    region + credentials from the standard AWS SDK chain).
+  - `gcp` — GCP Secret Manager (`MCPG_GCP_PROJECT_ID` required;
+    optional `MCPG_GCP_SECRETS_PREFIX`).
 - Credentials are fetched lazily and live only in process memory —
   never written back to disk or environment.
 - Auth-error surfaces are specific (`Forbidden` / `Unauthorized` for
