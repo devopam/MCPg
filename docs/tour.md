@@ -1,13 +1,18 @@
 # MCPg tool tour
 
-A compact one-page tour of every tool MCPg exposes, organised by
-**what an agent typically wants to do**. Use this as a discovery
-surface; the full reference is in [`tools.md`](tools.md), and
-task-oriented recipes live in [`cookbook.md`](cookbook.md).
+A compact one-page tour of the tools you'll reach for most, organised
+by **what an agent typically wants to do**. This is a discovery
+surface, not the full catalogue — the exhaustive per-tool reference is
+in [`tools.md`](tools.md), and task-oriented recipes live in
+[`cookbook.md`](cookbook.md).
 
-**252 tools** as of trunk. Each line shows the tool name + how its
-parameters land (required first, common defaults after). Capability
-gates are noted in section titles where they apply.
+**252 tools** across 19 capability areas as of trunk. Each line shows
+the tool name + how its parameters land (required first, common
+defaults after). Capability gates are noted in section titles where
+they apply. A few specialist areas (PITR, WarehousePG MPP, Redis FDW,
+SQL/PGQ property graphs, `pg_prewarm`, `pg_repack`, PG 19 runtime
+toggles) aren't walked below — see the [tool index](tools.md#tool-index-252-tools)
+for those.
 
 ---
 
