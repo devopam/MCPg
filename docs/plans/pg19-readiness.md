@@ -309,7 +309,7 @@ MCPG_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mcpg_test \
   uv run pytest -q --cov
 ```
 
-Expected behaviour: PostGIS-dependent tests skip / fail (see `tests/integration/test_geo.py`); everything else should pass. Failures outside that category are the Phase 2 triage queue.
+Expected behaviour: PostGIS-dependent tests skip / fail (PostGIS isn't built into the PG 19 beta image); everything else should pass. Failures outside that category are the Phase 2 triage queue.
 
 ## Cross-references
 

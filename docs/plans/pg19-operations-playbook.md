@@ -138,8 +138,8 @@ carried forward through pg_dump may still be MD5.
   while connected to a server where `password_encryption =
   scram-sha-256` (the default since PG 14). The new password lands
   as SCRAM.
-- The MCPg `audit_database` tool surface will be extended in a
-  future PR to flag these automatically.
+- The MCPg `audit_database` tool flags these automatically — its
+  auth-hygiene check surfaces roles still using MD5 password hashes.
 
 ## Logging changes
 
