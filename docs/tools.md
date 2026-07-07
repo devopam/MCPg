@@ -8,7 +8,7 @@ the configured access mode (see the [User Guide](user-guide.md)).
 | Capability | Default access mode | Extra opt-in | What it unlocks |
 |---|---|---|---|
 | READ | every mode | — | catalog introspection, query, search, health, advisors, ORM exporters, NL→SQL (generate only), cursors, AGE reads |
-| WRITE | unrestricted | — | `run_write`, `run_maintenance`, `cancel_query`, `terminate_backend`, `import_csv`, `import_json`, `pg_cron` writes |
+| WRITE | `restricted` / `unrestricted` | — | `run_write`, `run_maintenance`, `cancel_query`, `terminate_backend`, `import_csv`, `import_json`, `pg_cron` writes |
 | DDL | unrestricted | `MCPG_ALLOW_DDL=true` | `run_ddl`, `enable_extension`, `pg_partman` writes, TimescaleDB writes (`create_hypertable`, compression/retention policies), AGE writes (`create_graph`, `drop_graph`), **migration tools** (`MIGRATE` capability piggybacks on this gate) |
 | SHELL | unrestricted | `MCPG_ALLOW_SHELL=true` | `dump_database`, `restore_database`, `copy_table_between_databases` |
 | LISTEN | unrestricted | `MCPG_ALLOW_LISTEN=true` | `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions` |
@@ -38,40 +38,53 @@ plumbing:
 
 ## Tool index (252 tools)
 
-| Category | Tools |
-|---|---|
-| **Server** | `get_server_info`, `get_metrics_exposition` |
-| **Catalog — schemas / tables / columns** | `list_schemas`, `list_tables`, `describe_table`, `list_indexes`, `list_constraints`, `list_views`, `list_functions`, `list_triggers`, `list_partitions`, `list_roles`, `list_grants`, `list_policies`, `list_sequences`, `list_enums`, `list_domains`, `list_composite_types`, `list_foreign_keys`, `list_foreign_data_wrappers`, `list_foreign_servers`, `list_foreign_tables`, `list_user_mappings`, `list_publications`, `list_subscriptions`, `list_extensions`, `list_available_extensions`, `list_generated_columns` |
-| **Visualisation & structural diff** | `generate_schema_diagram`, `generate_schema_docs`, `generate_fk_cascade_graph`, `generate_graph_diagram`, `compare_schemas` |
-| **Query intelligence** | `run_select`, `run_select_parallel`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql` |
-| **Server-side cursors** | `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors` |
-| **Composite + diagnostic** | `summarize_table`, `why_is_this_slow`, `find_unused_objects`, `find_sensitive_columns`, `detect_n_plus_one`, `lint_naming_conventions`, `test_rls_for_role`, `list_locks`, `find_blocking_chains`, `walk_blocking_chains`, `read_pg_stat_io`, `read_pg_buffercache_summary`, `read_pg_buffercache_relations`, `read_pg_wal_records`, `read_pg_wal_stats` |
-| **Health & tuning** | `check_database_health`, `audit_database`, `analyze_workload`, `recommend_indexes`, `recommend_index_drops`, `run_advisors`, `optimize_query` |
-| **Search** | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `hybrid_search`, `geo_search`, `mmr_search` |
-| **Vector tuning advisors** | `recommend_vector_index`, `analyze_vector_search`, `analyze_vector_table`, `recommend_vector_quantization`, `tune_vector_index`, `vector_recall_at_k`, `analyze_hnsw_recall`, `analyze_vector_search_efficiency` |
-| **Vector analytics (pgvector)** | `cross_table_similarity`, `cluster_vectors`, `detect_vector_outliers`, `monitor_embedding_drift`, `migrate_vector_to_halfvec`, `analyze_distance_metric`, `import_vectors` |
-| **pg_turboquant — observability + query** | `list_turboquant_indexes`, `get_turboquant_index_metadata`, `get_turboquant_heap_stats`, `get_turboquant_last_scan_stats`, `recommend_turboquant_maintenance`, `turboquant_approx_candidates`, `turboquant_rerank_candidates`, `recommend_turboquant_query_knobs` |
-| **pg_turboquant — write (gated)** | `maintain_turboquant_index` |
-| **pg_turboquant — DDL (gated)** | `create_turboquant_index`, `reindex_turboquant_index` |
-| **pg_search (ParadeDB BM25) — observability** | `list_pg_search_indexes`, `get_pg_search_index_metadata`, `recommend_pg_search_maintenance` |
-| **pg_search — search** | `pg_search_run`, `pg_search_more_like_this`, `pg_search_parse_query`, `hybrid_bm25_vector_search` |
-| **pg_search — DDL (gated)** | `create_pg_search_index`, `reindex_pg_search_index` |
-| **Apache AGE graph + Cypher** | `list_graphs`, `describe_graph`, `run_cypher`, `create_graph` (gated), `drop_graph` (gated) |
-| **Live ops** | `list_active_queries`, `list_replicas`, `monitor_index_build`, `verify_connection_encryption` |
-| **Audit trail** | `list_audit_events`, `verify_audit_chain`, `prune_audit_events` |
-| **Catalog — compact** | `get_compact_schema` |
-| **pg_cron scheduling (gated)** | `list_cron_jobs`, `schedule_cron_job`, `unschedule_cron_job`, `schedule_logical_backup` |
-| **Data movement — read** | `export_query`, `export_table` |
-| **Data movement — write (gated)** | `import_csv`, `import_json` |
-| **Data movement — subprocess (gated)** | `dump_database`, `restore_database`, `copy_table_between_databases` |
-| **LISTEN/NOTIFY bridge (gated)** | `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions` |
-| **Staged migrations (gated)** | `prepare_migration`, `validate_migration`, `validate_migration_schema`, `complete_migration`, `cancel_migration`, `list_pending_migrations` |
-| **Migration history** | `read_migration_history`, `list_unapplied_migration_scripts` |
-| **Test-data factory** | `generate_test_data` (generates SQL — does not execute), `seed_table_with_sample_data` (generates and executes; WRITE-gated) |
-| **TimescaleDB hypertables (gated for writes)** | `list_hypertables`, `list_chunks`, `create_hypertable`, `add_compression_policy`, `add_retention_policy` |
-| **ORM-DSL exporters** | `generate_prisma_schema`, `generate_drizzle_schema`, `generate_sqlalchemy_models`, `generate_sqlc_schema`, `generate_diesel_schema`, `generate_jooq_config`, `generate_ent_schemas`, `generate_ecto_schemas` |
-| **pg_partman write (gated)** | `partman_create_parent`, `partman_run_maintenance`, `partman_drop_partition` |
-| **Write & DDL (gated)** | `run_write`, `run_ddl`, `run_maintenance`, `cancel_query`, `terminate_backend`, `enable_extension` |
+Grouped by feature area. The **Gate** column shows the capability
+each tool needs — plain `read` tools are available in every access
+mode; **WRITE** needs `restricted`+; **DDL** / **SHELL** / **LISTEN**
+need `unrestricted` **plus** the matching `MCPG_ALLOW_*` opt-in (see
+[capability gates](#capability-gates-at-a-glance) above).
+
+| Category | Gate | Tools |
+|---|---|---|
+| **Server & self-description** | read | `get_server_info`, `describe_self`, `describe_tool`, `get_metrics_exposition` |
+| **Catalog — schemas / tables / columns** | read | `list_schemas`, `list_tables`, `describe_table`, `list_indexes`, `list_constraints`, `list_foreign_keys`, `list_views`, `list_functions`, `list_triggers`, `list_partitions`, `list_roles`, `list_grants`, `list_policies`, `list_sequences`, `list_enums`, `list_domains`, `list_composite_types`, `list_foreign_data_wrappers`, `list_foreign_servers`, `list_foreign_tables`, `list_user_mappings`, `list_publications`, `list_subscriptions`, `list_extensions`, `list_available_extensions`, `list_generated_columns` |
+| **Catalog — compact** | read | `get_compact_schema` |
+| **Visualisation & structural diff** | read | `generate_schema_diagram`, `generate_fk_cascade_graph`, `generate_schema_docs`, `compare_schemas` |
+| **Query & cursors** | read | `run_select`, `run_select_tuned`, `run_select_parallel`, `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql` |
+| **Health, tuning & advisors** | read | `check_database_health`, `analyze_table_bloat`, `list_databases`, `audit_database`, `analyze_workload`, `detect_n_plus_one`, `read_autovacuum_priority`, `recommend_indexes`, `recommend_index_drops`, `run_advisors`, `find_unused_objects`, `find_sensitive_columns`, `lint_naming_conventions`, `test_rls_for_role`, `analyze_session_cost`, `recommend_headline_tools`, `audit_sequences`, `audit_settings`, `recommend_postgres_conf`, `optimize_query`, `summarize_table`, `why_is_this_slow` |
+| **Search** | read | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `mmr_search`, `hybrid_search`, `geo_search` |
+| **Test-data factory** | read / **WRITE** (`seed_table_with_sample_data`) | `generate_test_data`, `generate_test_row_for`, `seed_table_with_sample_data` |
+| **Locks & blocking chains** | read | `list_locks`, `find_blocking_chains`, `walk_blocking_chains`, `read_pg_stat_lock`, `analyze_lock_hotspots` |
+| **I/O, buffercache & WAL** | read | `read_pg_stat_io`, `read_pg_buffercache_summary`, `read_pg_buffercache_relations`, `read_pg_wal_records`, `read_pg_wal_stats`, `get_wal_archive_status`, `get_aio_status`, `recommend_io_method` |
+| **PITR & read-your-writes** | read / **WRITE** (`wait_for_lsn`) | `check_pitr_readiness`, `read_pg_stat_recovery`, `get_wait_for_lsn_status`, `get_current_wal_lsn`, `recommend_read_your_writes`, `wait_for_lsn` |
+| **Vector tuning & analytics (pgvector)** | read / **WRITE** (`import_vectors`) | `tune_vector_index`, `vector_recall_at_k`, `migrate_vector_to_halfvec`, `analyze_hnsw_recall`, `recommend_hnsw_ef_search`, `recommend_ivfflat_probes`, `analyze_distance_metric`, `cross_table_similarity`, `retrieve_with_context`, `cluster_vectors`, `detect_vector_outliers`, `monitor_embedding_drift`, `recommend_vector_quantization`, `analyze_vector_search_efficiency`, `import_vectors` |
+| **RAG rerank analytics** | read | `analyze_reranker_lift`, `analyze_topk_stability`, `analyze_rerank_score_distribution`, `analyze_rerank_ndcg`, `recommend_rerank_strategy` |
+| **RAG telemetry** | read / **WRITE** / **DDL** | `recommend_efficiency_thresholds`, `log_rerank_event`, `record_efficiency_observation`, `setup_rag_telemetry`, `setup_efficiency_observations` |
+| **pg_turboquant** | read / **WRITE** / **DDL** | `list_turboquant_indexes`, `get_turboquant_index_metadata`, `get_turboquant_heap_stats`, `get_turboquant_last_scan_stats`, `recommend_turboquant_maintenance`, `turboquant_approx_candidates`, `turboquant_rerank_candidates`, `recommend_turboquant_query_knobs`, `maintain_turboquant_index`, `create_turboquant_index`, `reindex_turboquant_index` |
+| **pg_search (ParadeDB BM25)** | read / **DDL** | `list_pg_search_indexes`, `get_pg_search_index_metadata`, `recommend_pg_search_maintenance`, `pg_search_run`, `pg_search_more_like_this`, `pg_search_parse_query`, `hybrid_bm25_vector_search`, `create_pg_search_index`, `reindex_pg_search_index` |
+| **Apache AGE graph + Cypher** | read / **DDL** (`create_graph`, `drop_graph`) | `list_graphs`, `describe_graph`, `run_cypher`, `generate_graph_diagram`, `create_graph`, `drop_graph`, `generate_graph_projection` |
+| **SQL/PGQ property graphs** | read / **DDL** | `get_pgq_status`, `list_property_graphs`, `describe_property_graph`, `run_pgq`, `create_property_graph`, `drop_property_graph` |
+| **Redis FDW cache** | read / **DDL** | `list_redis_foreign_servers`, `describe_redis_cache_table`, `get_redis_cache_stats`, `recommend_redis_cache_targets`, `enable_redis_fdw`, `create_redis_cache_server`, `create_redis_user_mapping`, `create_redis_cache_table` |
+| **Live ops** | read | `list_active_queries`, `verify_connection_encryption`, `monitor_index_build`, `list_replicas`, `list_cron_jobs` |
+| **Audit trail** | read / **WRITE** (`prune_audit_events`) | `list_audit_events`, `verify_audit_chain`, `prune_audit_events` |
+| **Data movement** | read / **WRITE** / **SHELL** | `export_query`, `export_table`, `import_csv`, `import_json`, `dump_database`, `restore_database`, `copy_table_between_databases` |
+| **LISTEN/NOTIFY bridge** | **LISTEN** | `subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions` |
+| **Staged migrations** | **DDL** (`list_pending_migrations` is read) | `prepare_migration`, `validate_migration`, `validate_migration_schema`, `complete_migration`, `cancel_migration`, `list_unapplied_migration_scripts`, `list_pending_migrations` |
+| **Migration history** | read | `read_migration_history` |
+| **ORM-DSL exporters** | read | `generate_prisma_schema`, `generate_drizzle_schema`, `generate_diesel_schema`, `generate_jooq_config`, `generate_ent_schemas`, `generate_ecto_schemas`, `generate_sqlalchemy_models`, `generate_sqlc_schema` |
+| **TimescaleDB hypertables** | read / **DDL** writes | `list_hypertables`, `list_chunks`, `create_hypertable`, `add_compression_policy`, `add_retention_policy` |
+| **pg_partman** | **DDL** | `partman_create_parent`, `partman_run_maintenance`, `partman_drop_partition` |
+| **pg_prewarm** | read / **WRITE** | `get_prewarm_extension_status`, `list_prewarmed_relations`, `recommend_prewarm_targets`, `list_autowarm_jobs`, `prewarm_relation`, `prewarm_recommended`, `schedule_autowarm`, `unschedule_autowarm` |
+| **pg_repack** | read / **WRITE** (`repack_table`) | `get_repack_status`, `repack_table` |
+| **pg_cron scheduling** | **WRITE** | `schedule_cron_job`, `unschedule_cron_job`, `schedule_logical_backup` |
+| **PG 19 — data checksums & logical replication toggles** | read / **WRITE** | `get_data_checksums_status`, `get_logical_replication_status`, `enable_data_checksums`, `disable_data_checksums`, `enable_logical_replication_on_demand` |
+| **PG 19 — DDL introspection & constraints** | read / **WRITE** (`validate_check_constraint`) | `get_pg19_ddl_status`, `get_role_ddl`, `get_database_ddl`, `get_tablespace_ddl`, `validate_check_constraint` |
+| **PG 19 — skip scan** | read | `get_skip_scan_status`, `recommend_skip_scan_indexes` |
+| **PG 19 — partition merge / split** | read / **DDL** writes | `get_pg19_partitions_status`, `merge_partitions`, `split_partition` |
+| **PG 19 — stats status** | read | `get_pg19_stats_status` |
+| **WarehousePG (MPP)** | read | `get_warehousepg_status`, `list_distribution_policies`, `check_segment_health`, `describe_ao_table`, `list_resource_groups`, `analyze_mpp_query_plan`, `recommend_redistribute` |
+| **Logical replication pub/sub** | **DDL** | `create_publication`, `drop_publication`, `create_subscription`, `drop_subscription` |
+| **Write & DDL core** | **WRITE** / **DDL** | `run_write`, `run_maintenance`, `cancel_query`, `terminate_backend`, `run_ddl`, `enable_extension`, `dry_run_ddl` |
 
 > The reference sections below describe the v0.4.0-era tools in
 > depth. For everything added since, see
@@ -327,7 +340,10 @@ Each entry carries the backend `pid`, `username`, `application`, `state`,
 `blocked_by` — the PIDs holding locks it waits on. Idle connections,
 PostgreSQL's background processes, and MCPg's own backend are excluded.
 
-## Write (unrestricted mode only)
+## Write (`restricted` or `unrestricted` mode)
+
+These data-write (DML) tools need the `WRITE` capability — available in
+`restricted` mode and up.
 
 ### `run_write`
 Executes a single `INSERT`, `UPDATE`, or `DELETE` in a read-write transaction
@@ -337,18 +353,18 @@ committed on success. Multiple statements and non-DML are rejected. Add a
 ### `run_maintenance`
 Runs `VACUUM` or `ANALYZE` against one table. Parameters: `operation`
 (`vacuum`, `analyze`, or `vacuum_analyze`), `schema`, `table` (strings).
-Requires `unrestricted` mode. The schema and table are quoted identifiers,
-not parameters; both are escaped before reaching SQL.
+Requires `restricted` mode or higher. The schema and table are quoted
+identifiers, not parameters; both are escaped before reaching SQL.
 
 ### `cancel_query`
 Cancels the query running on a backend PID (`pg_cancel_backend`); the
 connection stays open. Parameter: `pid` (int). Returns `succeeded` —
-`false` if no such backend exists. Requires `unrestricted` mode.
+`false` if no such backend exists. Requires `restricted` mode or higher.
 
 ### `terminate_backend`
 Terminates a backend PID (`pg_terminate_backend`), closing its connection.
 Parameter: `pid` (int). Returns `succeeded` — `false` if no such backend
-exists. Requires `unrestricted` mode.
+exists. Requires `restricted` mode or higher.
 
 ### `run_ddl`
 Executes a single DDL statement (`CREATE`/`ALTER`/`DROP` and related).
@@ -374,7 +390,7 @@ Like `export_query` but takes `schema` + `table` directly. Names are
 validated against the plain-identifier allowlist; anything that would
 need delimited-identifier quoting is rejected.
 
-## Data movement — write (`unrestricted` only)
+## Data movement — write (`restricted` or `unrestricted`)
 
 ### `import_csv`
 Bulk-loads CSV `content` into `schema.table` via `COPY ... FROM STDIN`.
