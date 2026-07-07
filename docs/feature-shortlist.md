@@ -268,6 +268,22 @@ empty scratch database), which shows off none of the tool surface.
 |---|---|---|---|---|
 | 17.1 | ✅ **Shipped.** **`mcpg --demo` / `mcpg --demo-drop`** — seeds a small, deterministic, *curated* e-commerce dataset (400 customers / 120 products / 3,000 orders / 900 reviews) into an `mcpg_demo` schema in the configured database, with planted teaching moments: an un-indexed FK (`orders.customer_id`) for `analyze_query_plan` / `recommend_indexes`, PII-shaped columns for `find_sensitive_columns`, a camelCase column for the naming linter, FTS-worthy review prose, and an optional pgvector `embedding` column (added only when the extension is already installed). Ownership marker (schema comment) makes `--demo-drop` refuse to touch schemas MCPg didn't create; re-seed refuses rather than clobbers; whole seed is one transaction. Companion walkthrough `docs/demo.md` is *captured from real tool runs* (regenerate via `tools/generate_demo_walkthrough.py`) and its planted findings are pinned by `tests/integration/test_demo_integration.py`, so the doc can't silently rot. CLI-only surface — no new MCP tools, tool snapshot unchanged. | M | High | Skipped on the WarehousePG lane (targets stock PostgreSQL). |
 
+## 18. De-vendor the SQL-safety kernel — build our own
+
+MCPg's SQL-safety core is currently **vendored** from a third party
+(see [ADR-0001](adr/) and [`src/mcpg/_vendor/README.md`](../src/mcpg/_vendor/README.md)):
+the `pglast`-based allowlist validator, async connection pool / driver,
+and parameter binding all live under `src/mcpg/_vendor/sql/`, copied
+near-verbatim from
+[`crystaldba/postgres-mcp`](https://github.com/crystaldba/postgres-mcp)
+(MIT, pinned commit `07eb329`, Copyright © 2025 Crystal Corp). The goal
+is to **own this layer outright** — remove the upstream dependency and
+replace it with a first-party implementation MCPg fully controls.
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 18.1 | ⬜ **Planned (agenda, no commitment yet).** **Replace the vendored `crystaldba/postgres-mcp` SQL-safety kernel with a first-party implementation.** In scope: `safe_sql.py` (the `pglast` parse + statement/keyword allowlist that every agent-supplied query passes through), `sql_driver.py` (the async psycopg pool + `DbConnPool`, incl. MCPg's ADR-0003 pool-sizing local mod), `bind_params.py`, `extension_utils.py`, `index.py`. Constraints: (a) **no safety regression** — the adversarial SQL-injection suite in `tests/vendor/sql/test_safe_sql.py` must be preserved (or re-implemented) and kept green, and the tool-surface contract test must not change; (b) preserve the `SafeSqlDriver` / pool public API the rest of `mcpg.*` depends on, or migrate call sites in the same effort; (c) fold the code into the coverage gate + `mypy --strict` once it's ours (the `_vendor/` carve-outs go away); (d) drop the vendored dir, its `README.md`/`LICENSE`, and the ADR-0001 rationale, and record the change in a new ADR. Likely a multi-PR effort: first re-home + test-parity, then simplify/own. | L | Medium | Removes the last third-party runtime core; full control over the safety semantics. Revisit ADR-0001's "why vendor" reasoning when we start. |
+
 ---
 
 ## Currently deferred (no commitments)
