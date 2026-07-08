@@ -51,7 +51,7 @@ flowchart TD
    runs the SQL and maps rows to typed dataclasses.
 4. The driver stack decides exactly which pool the SQL hits:
    - **SafeSqlDriver** — agent-supplied SQL is parsed and
-     allowlisted via the vendored kernel before execution.
+     allowlisted via `mcpg.sql` (the first-party kernel) before execution.
    - **RoutedSqlDriver** — when `MCPG_REPLICA_URLS` is set,
      `force_readonly=True` queries round-robin across healthy
      replicas; writes always go to the primary.
@@ -64,7 +64,7 @@ flowchart TD
 ---
 
 <!-- BEGIN generated: module-map (python tools/generate_doc_tables.py --modules) -->
-## Module map (104 modules)
+## Module map (103 modules)
 
 Every `mcpg.*` module and what it owns, alphabetical. The layered
 request path through these lives in the [Overview](#overview) diagram;
@@ -73,7 +73,6 @@ this table is the exhaustive index. Regenerate with
 
 | Module | Responsibility |
 |---|---|
-| `mcpg._vendor` | Vendored MIT-licensed `SafeSqlDriver` + connection-pool kernel (SQL parse / allowlist / bind). |
 | `mcpg.about` | MCPg self-description. |
 | `mcpg.advisors` | Schema advisors — codified lint rules over the PG catalog. |
 | `mcpg.aio` | `AIO` — PG 19 asynchronous-I/O subsystem coverage. |
@@ -184,17 +183,28 @@ this table is the exhaustive index. Regenerate with
 
 ---
 
-## The vendored SQL-safety kernel
+## The SQL-safety kernel (first-party)
 
-`src/mcpg/_vendor/sql/` is a pinned copy of the SQL-safety
-subpackage from
-[`crystaldba/postgres-mcp`](https://github.com/crystaldba/postgres-mcp)
-(MIT). It provides `SafeSqlDriver` — a `pglast`-AST allowlist
-validator — and the base connection pool / driver.
+`src/mcpg/sql/` is MCPg's own SQL-safety kernel, split into policy
+and mechanism:
 
-The kernel is kept near-verbatim, excluded from the coverage gate
-and `mypy`, and re-synced via the procedure in
-`src/mcpg/_vendor/README.md`. See [ADR-0001](adr/0001-build-approach.md).
+- `sql/allowlist.py` — the permitted statement / `pglast` AST node /
+  function / extension sets, **as data** (the single auditable policy
+  surface).
+- `sql/safety.py` — `SafeSqlDriver`: the `pglast` parse + AST-walker
+  + read-only execute path. Reads policy from `allowlist.py`; the
+  walker can't widen it.
+- `sql/driver.py` — `SqlDriver` / `DbConnPool` / `obfuscate_password`
+  (pool + execution + credential redaction; no policy).
+
+It's fully inside the coverage gate + `mypy --strict` + `ruff` +
+`bandit`. Adversarial + fuzz tests live in
+`tests/unit/test_sql_kernel_*.py`; the threat model and security
+sign-off are in
+[`reviews/devendor-sql-kernel-security-review.md`](reviews/devendor-sql-kernel-security-review.md).
+It was de-vendored from `crystaldba/postgres-mcp` (MIT) — see
+[ADR-0007](adr/0007-first-party-sql-kernel.md), which supersedes
+[ADR-0001](adr/0001-build-approach.md).
 
 ---
 
@@ -294,14 +304,13 @@ otherwise.
 
 ## Testing approach
 
-MCPg is test-driven across four suites:
+MCPg is test-driven across three suites:
 
 | Suite | Scope |
 |---|---|
-| `tests/unit/` | Fake-driver tests with a 90% coverage gate. Authored code only — the vendored kernel keeps its own tests. |
+| `tests/unit/` | Fake-driver tests with a 90% coverage gate — all first-party code, including the SQL-safety kernel (`test_sql_kernel_*.py`: the adversarial allowlist suite + a fuzz/robustness pass). |
 | `tests/integration/` | Real PostgreSQL — requires `MCPG_TEST_DATABASE_URL`. CI runs the matrix against PostgreSQL 14, 15, 16, 17, 18 on every push (pgvector + PostGIS + AGE image), plus an **experimental PG 19** lane (pgvector built from source against `postgres:19beta1`) and a **WarehousePG** (Greenplum-derived MPP) characterisation lane. |
 | `tests/contract/` | Tool-surface snapshot (`tool_surface.snapshot.json`) + the doc-table drift-guard (`test_doc_tables.py`), so a new tool or module can't ship undocumented. |
-| `tests/vendor/` | The vendored kernel's own upstream tests, kept for adversarial SQL-injection coverage. |
 
 The integration container is built from
 `.github/ci-postgres.Dockerfile` and includes `pgvector`,

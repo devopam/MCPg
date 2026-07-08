@@ -50,7 +50,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # PG 19 ships WAIT FOR LSN. The version-num boundary.
 _MIN_PG19_WAIT_VERSION = 190000

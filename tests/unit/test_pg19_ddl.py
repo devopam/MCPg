@@ -81,7 +81,7 @@ class _ValidateDriver:
         self.calls: list[tuple[str, object, bool]] = []
 
     async def execute_query(self, query, params=None, force_readonly=False):  # type: ignore[no-untyped-def]
-        from mcpg._vendor.sql import SqlDriver
+        from mcpg.sql import SqlDriver
 
         self.calls.append((query, params, force_readonly))
         if "pg_constraint" in query:

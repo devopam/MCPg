@@ -151,7 +151,7 @@ async def test_catalog_probe_failure_surfaces_as_available_false() -> None:
             self.call_index += 1
             if self.call_index == 1:
                 # Version probe — succeed with a WarehousePG banner.
-                from mcpg._vendor.sql import SqlDriver
+                from mcpg.sql import SqlDriver
 
                 return [SqlDriver.RowResult(cells={"version": _WAREHOUSEPG_VERSION})]
             raise RuntimeError("permission denied for view gp_segment_configuration")
@@ -179,7 +179,7 @@ async def test_segment_metadata_failure_keeps_available_true_with_diagnostic() -
         ) -> list[Any]:
             del params, force_readonly
             self.call_index += 1
-            from mcpg._vendor.sql import SqlDriver
+            from mcpg.sql import SqlDriver
 
             if self.call_index == 1:
                 return [SqlDriver.RowResult(cells={"version": _WAREHOUSEPG_VERSION})]

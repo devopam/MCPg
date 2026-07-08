@@ -24,8 +24,8 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from mcpg import introspection
-from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
+from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 

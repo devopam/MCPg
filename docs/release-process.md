@@ -144,7 +144,7 @@ description = "A production-grade PostgreSQL Model Context Protocol (MCP) server
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
-license-files = ["LICENSE", "src/mcpg/_vendor/LICENSE"]
+license-files = ["LICENSE"]
 ```
 
 ### 3.2 What to add before the first release
@@ -160,7 +160,7 @@ description = "A production-grade PostgreSQL Model Context Protocol (MCP) server
 readme = "README.md"                              # → "Project description" tab
 requires-python = ">=3.12"
 license = "MIT"
-license-files = ["LICENSE", "src/mcpg/_vendor/LICENSE"]
+license-files = ["LICENSE"]
 
 # Surfaces under "Author" on the project page + in `pip show`.
 authors = [

@@ -52,7 +52,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # SQL/PGQ landed in the PG 19 series. We use the version-num probe rather
 # than an extension allowlist because SQL/PGQ is built into the server,

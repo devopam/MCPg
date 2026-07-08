@@ -32,13 +32,13 @@ from datetime import UTC, datetime, timedelta
 from os import environ
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.audit_nl2sql import Backend
 from mcpg.audit_nl2sql import NL2SQLAuditError as _SharedAuditError
 from mcpg.audit_nl2sql import _check_identifier as _shared_check_identifier
 from mcpg.audit_nl2sql import _check_interval as _shared_check_interval
 from mcpg.audit_nl2sql import detect_backend as _detect_backend
 from mcpg.database import Database
+from mcpg.sql import SqlDriver
 
 _SCHEMA_NAME = "mcpg_rag"
 _TABLE_NAME = "rerank_events"

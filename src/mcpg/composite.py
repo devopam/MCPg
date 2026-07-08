@@ -24,7 +24,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.introspection import (
     ColumnInfo,
     ConstraintInfo,
@@ -37,6 +36,7 @@ from mcpg.introspection import (
 )
 from mcpg.liveops import list_active_queries
 from mcpg.query import analyze_query_plan, explain_query
+from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 

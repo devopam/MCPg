@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 

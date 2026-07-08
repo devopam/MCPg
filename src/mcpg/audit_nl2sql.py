@@ -47,8 +47,8 @@ from datetime import UTC, datetime, timedelta
 from os import environ
 from typing import Any, Literal
 
-from mcpg._vendor.sql import SqlDriver, obfuscate_password
 from mcpg.extensions import extension_installed
+from mcpg.sql import SqlDriver, obfuscate_password
 
 logger = logging.getLogger(__name__)
 

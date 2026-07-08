@@ -6,19 +6,20 @@ the repository root for the full text. (Relicensed from AGPL-3.0-or-later
 in v0.5.x.)
 
 ------------------------------------------------------------------------
-Third-party vendored code
+Attribution — SQL-safety kernel lineage
 ------------------------------------------------------------------------
 
-This product includes software developed by Crystal Corp.
+MCPg's SQL-safety kernel (`src/mcpg/sql/`) is first-party code, but it was
+re-authored from — and its allowlist policy derives from — the MIT-licensed
+`sql/` subpackage of:
 
-  Component : PostgreSQL SQL-safety kernel (the `sql/` subpackage)
-  Location  : src/mcpg/_vendor/sql/
-  Source    : https://github.com/crystaldba/postgres-mcp
-  Commit    : 07eb329c8c48e49640e0d1b5b35465d4d024c3ee
-  License   : MIT License, Copyright (c) 2025, Crystal Corp.
-              See src/mcpg/_vendor/LICENSE for the full license text.
+  Project : crystaldba/postgres-mcp ("Postgres MCP Pro")
+  Source  : https://github.com/crystaldba/postgres-mcp
+  Origin  : commit 07eb329c8c48e49640e0d1b5b35465d4d024c3ee (Jan 2026)
+  License : MIT License, Copyright (c) 2025, Crystal Corp.
 
-The MIT-licensed code above is incorporated under the terms of the MIT
-License; both this project and the vendored kernel are now MIT-licensed.
-See src/mcpg/_vendor/README.md for provenance details and the re-sync
-procedure.
+The original kernel was vendored under src/mcpg/_vendor/sql/ from v0.x
+until roadmap 18.1 replaced it with the first-party implementation (see
+docs/adr/0007-first-party-sql-kernel.md, which supersedes ADR-0001). This
+attribution acknowledges that MIT-licensed lineage; MCPg itself remains
+MIT-licensed.

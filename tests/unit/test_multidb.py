@@ -17,7 +17,6 @@ from dataclasses import FrozenInstanceError
 import pytest
 from _fakes import FakePool
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.config import load_settings
 from mcpg.database import Database, DatabaseError
 from mcpg.multidb import (
@@ -27,6 +26,7 @@ from mcpg.multidb import (
     make_read_only_driver,
 )
 from mcpg.replicas import TimeoutSqlDriver
+from mcpg.sql import SqlDriver
 
 _PRIMARY = "postgresql://u:p@localhost/db"
 

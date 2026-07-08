@@ -37,7 +37,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from mcpg._vendor.sql import DbConnPool, SqlDriver, obfuscate_password
+from mcpg.sql import DbConnPool, SqlDriver, obfuscate_password
 from mcpg.tenancy import TenantSqlDriver
 
 logger = logging.getLogger(__name__)

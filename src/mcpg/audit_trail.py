@@ -26,7 +26,6 @@ from datetime import UTC, datetime, timedelta
 from os import environ
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver, obfuscate_password
 from mcpg.audit import is_secret_key
 from mcpg.audit_nl2sql import Backend
 from mcpg.audit_nl2sql import NL2SQLAuditError as _SharedAuditError
@@ -35,6 +34,7 @@ from mcpg.audit_nl2sql import _check_interval as _shared_check_interval
 from mcpg.audit_nl2sql import detect_backend as _detect_backend
 from mcpg.config import _parse_bool
 from mcpg.extensions import extension_installed
+from mcpg.sql import SqlDriver, obfuscate_password
 
 _AUDIT_LOCK: asyncio.Lock | None = None
 

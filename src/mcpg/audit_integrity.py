@@ -13,7 +13,7 @@ from datetime import UTC
 from os import environ
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 AUDIT_SCHEMA = "mcpg_audit"
 AUDIT_TABLE = "events"

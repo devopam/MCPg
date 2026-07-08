@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
+from mcpg.sql import SqlDriver
 
 # pg_partman accepts these partition-type strings since version 5.x —
 # 'range' and 'list' for declarative partitioning, 'native' as a legacy

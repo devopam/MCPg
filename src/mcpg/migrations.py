@@ -25,9 +25,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.introspection import describe_table, list_constraints, list_indexes, list_tables
 from mcpg.schema_diff import SchemaDiff, compare_schemas
+from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _SHADOW_PREFIX = "mcpg_shadow_"

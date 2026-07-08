@@ -41,8 +41,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.database import Database
+from mcpg.sql import SqlDriver
 
 # PG 19 ships both toggles. The version-num probe is the boundary —
 # no extension to install.

@@ -263,7 +263,6 @@ _MODULE_FALLBACK = {
     "mcpg.config": "Env-driven, validated `Settings` (frozen dataclass); redacts secrets in `__repr__`.",
     "mcpg.context": "`AppContext` — per-server state (settings, DB, cursor/listen managers) shared with tool wrappers.",
     "mcpg.schema_diff": "Structural schema diff powering `compare_schemas`.",
-    "mcpg._vendor": "Vendored MIT-licensed `SafeSqlDriver` + connection-pool kernel (SQL parse / allowlist / bind).",
 }
 
 
@@ -285,10 +284,6 @@ def module_descriptions() -> dict[str, str]:
         parts = rel.parts
         if parts[-1] in ("__init__", "__main__"):
             continue
-        # Collapse the vendored SQL kernel into one aggregate row.
-        if parts[0] == "_vendor":
-            out.setdefault("mcpg._vendor", _MODULE_FALLBACK["mcpg._vendor"])
-            continue
         name = "mcpg." + ".".join(parts)
         try:
             doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8"))) or ""
@@ -296,8 +291,6 @@ def module_descriptions() -> dict[str, str]:
             doc = ""
         desc = _first_sentence(doc) or _MODULE_FALLBACK.get(name, "")
         out[name] = _MODULE_FALLBACK.get(name, desc) if not desc else desc
-    # Ensure the aggregate vendor row exists even if walk order missed it.
-    out.setdefault("mcpg._vendor", _MODULE_FALLBACK["mcpg._vendor"])
     return out
 
 

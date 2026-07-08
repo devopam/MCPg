@@ -8,7 +8,6 @@ from typing import Any
 from _fakes import FakeDatabase, FakeRoutingDriver
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.config import load_settings
 from mcpg.migration_history import (
     AlembicMigration,
@@ -23,6 +22,7 @@ from mcpg.migration_history import (
     read_migration_history,
 )
 from mcpg.server import create_server
+from mcpg.sql import SqlDriver
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 

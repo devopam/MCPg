@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 from _fakes import FakeRoutingDriver
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.graph_projection import (
     HARD_ROW_CAP,
     EdgeType,
@@ -15,6 +14,7 @@ from mcpg.graph_projection import (
     NodeLabel,
     generate_graph_projection,
 )
+from mcpg.sql import SqlDriver
 
 
 class _AgeAwareDriver(FakeRoutingDriver):

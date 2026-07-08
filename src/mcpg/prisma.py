@@ -29,7 +29,6 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.introspection import (
     ColumnInfo,
     EnumInfo,
@@ -42,6 +41,7 @@ from mcpg.introspection import (
     list_indexes,
     list_tables,
 )
+from mcpg.sql import SqlDriver
 
 # Generic PG types → Prisma scalar types. Types with parameters (e.g.
 # ``character varying(255)``, ``numeric(10,2)``, ``vector(384)``) are

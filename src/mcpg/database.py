@@ -12,10 +12,10 @@ from collections.abc import Sequence
 from types import TracebackType
 from typing import Any
 
-from mcpg._vendor.sql import DbConnPool, SqlDriver, obfuscate_password
 from mcpg.config import Settings
 from mcpg.multidb import PRIMARY_DATABASE_ID, make_read_only_driver
 from mcpg.replicas import ReplicaPool, RoutedSqlDriver, _make_driver_for_pool
+from mcpg.sql import DbConnPool, SqlDriver, obfuscate_password
 
 logger = logging.getLogger(__name__)
 

@@ -21,8 +21,8 @@ from typing import Any
 
 import pglast
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.audit_trail import SchemaDiffSnapshot, capture_columns, record_audit
+from mcpg.sql import SqlDriver
 
 # pglast statement node names accepted by run_write.
 _DML_STATEMENTS = frozenset({"InsertStmt", "UpdateStmt", "DeleteStmt"})

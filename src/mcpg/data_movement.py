@@ -28,10 +28,10 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.database import Database
 from mcpg.query import QueryError, run_select
 from mcpg.shell import ShellError, SubprocessLimits, run_pg_binary
+from mcpg.sql import SqlDriver
 
 # Same identifier allowlist as mcpg.textsearch / mcpg.prisma / mcpg.vector_tuning —
 # refuse names that need delimited-identifier quoting, accept plain ones.

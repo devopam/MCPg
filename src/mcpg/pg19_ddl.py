@@ -38,8 +38,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.database import Database
+from mcpg.sql import SqlDriver
 
 # PG 19 ships the new pg_get_*def() functions. The version-num boundary.
 _MIN_PG19_DDL_VERSION = 190000

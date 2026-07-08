@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # Extensions MCPg will enable on request: well-known, widely-used extensions.
 # CREATE EXTENSION takes an identifier, so this allowlist guards against

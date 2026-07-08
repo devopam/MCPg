@@ -42,7 +42,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # Status codes shared across the audit tools — same vocabulary as
 # mcpg.audit's MetricResult.status so an operator sees consistent

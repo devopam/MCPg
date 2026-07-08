@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
-from mcpg._vendor.sql import SafeSqlDriver, SqlDriver
+from mcpg.sql import SafeSqlDriver, SqlDriver
 
 # Default per-query execution timeout, in seconds.
 DEFAULT_TIMEOUT_SECONDS = 30.0

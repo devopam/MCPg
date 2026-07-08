@@ -12,7 +12,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, fields
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.introspection import (
     ColumnInfo,
     ConstraintInfo,
@@ -25,6 +24,7 @@ from mcpg.introspection import (
     list_indexes,
     list_tables,
 )
+from mcpg.sql import SqlDriver
 
 
 @dataclass(frozen=True)

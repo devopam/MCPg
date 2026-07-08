@@ -23,8 +23,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
+from mcpg.sql import SqlDriver
 from mcpg.vector_tuning import VectorTuningError, _indexes_on_column, _quoted
 
 _DISTANCE_OPERATORS = {"l2": "<->", "cosine": "<=>", "inner_product": "<#>"}

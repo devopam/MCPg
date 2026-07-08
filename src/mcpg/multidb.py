@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from mcpg._vendor.sql import DbConnPool, SqlDriver
+from mcpg.sql import DbConnPool, SqlDriver
 
 # The implicit id of ``MCPG_DATABASE_URL``. Reserved (see config.py) so a
 # secondary can never shadow it.

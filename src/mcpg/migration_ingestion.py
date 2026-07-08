@@ -42,7 +42,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 _FRAMEWORKS = frozenset({"alembic", "flyway", "liquibase"})
 

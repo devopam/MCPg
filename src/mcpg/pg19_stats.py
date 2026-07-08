@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # Both views landed in PG 19. The version-num probe is the boundary —
 # no extension to install.

@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 from mcpg.extensions import extension_installed
 
 # Module-level constants (mode allowlists, defaults). Inline so the

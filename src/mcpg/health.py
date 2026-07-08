@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
+from mcpg.sql import SqlDriver
 
 # Classification thresholds.
 _CONNECTION_WARN_RATIO = 0.8  # warn above 80% of max_connections

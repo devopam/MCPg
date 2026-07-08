@@ -46,7 +46,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # Cluster defaults that drive the per-table threshold formula. We don't
 # hardcode them — the query reads them from `current_setting` so a

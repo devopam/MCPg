@@ -46,7 +46,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # PG 19 ships skip-scan as the planner default. The version-num boundary.
 _MIN_PG19_SKIP_SCAN_VERSION = 190000

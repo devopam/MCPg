@@ -34,7 +34,8 @@ release notes unless they prefer otherwise.
 
 **In scope:**
 
-- The MCPg server code under `src/mcpg/` (excluding `src/mcpg/_vendor/`)
+- The MCPg server code under `src/mcpg/` — including the first-party
+  SQL-safety kernel `src/mcpg/sql/` (the `pglast` allowlist validator)
 - Authentication & authorisation paths (bearer-token, OIDC,
   multi-tenancy `SET LOCAL ROLE`)
 - The capability gates that restrict tool surfaces by access mode
@@ -45,9 +46,6 @@ release notes unless they prefer otherwise.
 **Out of scope:**
 
 - Vulnerabilities in PostgreSQL itself
-- Vulnerabilities in the vendored SQL-safety kernel at
-  `src/mcpg/_vendor/sql/` — those go upstream to
-  `crystaldba/postgres-mcp`
 - Issues that require an attacker to already have `unrestricted`
   access mode AND `MCPG_ALLOW_DDL=true` (that combination is
   by-design root access)
