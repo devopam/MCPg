@@ -101,7 +101,7 @@ class DbConnPool:
         # Close any existing pool before creating a new one.
         await self.close()
 
-        try:
+        try:  # pragma: no cover - real psycopg pool open; integration-tested
             self.pool = AsyncConnectionPool(
                 conninfo=url,
                 min_size=self.min_size,
@@ -202,11 +202,13 @@ class SqlDriver:
                 if self.conn is None:
                     raise ValueError("Connection not established")
 
-            if self.is_pool:
+            if self.is_pool:  # pragma: no cover - real pool checkout; integration-tested
                 pool = await self.conn.pool_connect()
                 async with pool.connection() as connection:
                     return await self._execute_with_connection(connection, query, params, force_readonly=force_readonly)
-            return await self._execute_with_connection(self.conn, query, params, force_readonly=force_readonly)
+            return await self._execute_with_connection(  # pragma: no cover - real connection; integration-tested
+                self.conn, query, params, force_readonly=force_readonly
+            )
         except Exception as e:
             # A connection-level failure invalidates the pool / drops the conn.
             if self.conn and self.is_pool:
@@ -216,7 +218,7 @@ class SqlDriver:
                 self.conn = None
             raise
 
-    async def _execute_with_connection(
+    async def _execute_with_connection(  # pragma: no cover - real psycopg execution; integration-tested
         self, connection: Any, query: Any, params: Any, force_readonly: bool
     ) -> list[RowResult] | None:
         """Execute on a specific connection with read-only + txn handling."""
