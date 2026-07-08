@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **De-vendored the SQL-safety kernel (roadmap 18.1).** The formerly-vendored
+  `crystaldba/postgres-mcp` `sql/` subpackage (`src/mcpg/_vendor/`) is
+  replaced by a first-party `src/mcpg/sql/` package — `allowlist.py` (the
+  permitted statement/node/function/extension policy, as data), `safety.py`
+  (`SafeSqlDriver`, the `pglast` allowlist validator), and `driver.py`
+  (`SqlDriver` / `DbConnPool` / `obfuscate_password`). Behaviour is
+  **identical** (proven by a differential parity harness — 0 divergence —
+  plus the ported 760-LOC adversarial suite, a fuzz pass, and a
+  `/security-review` with no findings); the public seam is unchanged, so no
+  tool signatures moved. The kernel is now inside the coverage gate,
+  `mypy --strict`, `ruff`, and `bandit` (the vendored code was excluded from
+  all four). MCPg now ships no vendored runtime code. Supersedes ADR-0001
+  with ADR-0007.
+
 ### Added
 
 - **Three more built-in NL→SQL providers (19 → 22).** `translate_nl_to_sql`

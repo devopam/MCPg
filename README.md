@@ -590,9 +590,9 @@ checklist.
 
 ## License
 
-MIT — see [`LICENSE`](https://github.com/devopam/MCPg/blob/main/LICENSE). The vendored SQL-safety kernel at
-`src/mcpg/_vendor/sql/` is also MIT-licensed; see [`NOTICE`](https://github.com/devopam/MCPg/blob/main/NOTICE)
-for provenance.
+MIT — see [`LICENSE`](https://github.com/devopam/MCPg/blob/main/LICENSE). The SQL-safety kernel
+(`src/mcpg/sql/`) is first-party, re-authored from the MIT-licensed
+`crystaldba/postgres-mcp`; see [`NOTICE`](https://github.com/devopam/MCPg/blob/main/NOTICE) for the lineage.
 
 ### Wrapped extensions — licenses you should know about
 

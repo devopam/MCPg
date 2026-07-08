@@ -1,7 +1,12 @@
 # ADR-0001: Build approach — adopt `crystaldba/postgres-mcp` as a hard-forked base
 
-- **Status:** accepted
+- **Status:** superseded by [ADR-0007](0007-first-party-sql-kernel.md) (2026-07-08)
 - **Date:** 2026-05-20
+
+> **Superseded.** The vendored SQL-safety kernel this ADR introduced was
+> replaced by a first-party implementation in roadmap 18.1 — see
+> [ADR-0007](0007-first-party-sql-kernel.md). The historical rationale
+> below is retained as the record of the original decision.
 
 ## Context
 

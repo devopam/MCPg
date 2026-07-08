@@ -270,19 +270,15 @@ empty scratch database), which shows off none of the tool surface.
 
 ## 18. De-vendor the SQL-safety kernel — build our own
 
-MCPg's SQL-safety core is currently **vendored** from a third party
-(see [ADR-0001](adr/) and [`src/mcpg/_vendor/README.md`](../src/mcpg/_vendor/README.md)):
-the `pglast`-based allowlist validator, async connection pool / driver,
-and parameter binding all live under `src/mcpg/_vendor/sql/`, copied
-near-verbatim from
-[`crystaldba/postgres-mcp`](https://github.com/crystaldba/postgres-mcp)
-(MIT, pinned commit `07eb329`, Copyright © 2025 Crystal Corp). The goal
-is to **own this layer outright** — remove the upstream dependency and
-replace it with a first-party implementation MCPg fully controls.
+MCPg's SQL-safety core was **vendored** from `crystaldba/postgres-mcp`
+(MIT) under `src/mcpg/_vendor/sql/`. Roadmap 18.1 replaced it with a
+first-party implementation MCPg fully controls — removing the last
+vendored runtime code and folding the SQL allowlist into every quality
+gate.
 
 | # | Item | Effort | Value | Notes |
 |---|---|---|---|---|
-| 18.1 | ⬜ **Planned (agenda, no commitment yet).** **Replace the vendored `crystaldba/postgres-mcp` SQL-safety kernel with a first-party implementation.** In scope: `safe_sql.py` (the `pglast` parse + statement/keyword allowlist that every agent-supplied query passes through), `sql_driver.py` (the async psycopg pool + `DbConnPool`, incl. MCPg's ADR-0003 pool-sizing local mod), `bind_params.py`, `extension_utils.py`, `index.py`. Constraints: (a) **no safety regression** — the adversarial SQL-injection suite in `tests/vendor/sql/test_safe_sql.py` must be preserved (or re-implemented) and kept green, and the tool-surface contract test must not change; (b) preserve the `SafeSqlDriver` / pool public API the rest of `mcpg.*` depends on, or migrate call sites in the same effort; (c) fold the code into the coverage gate + `mypy --strict` once it's ours (the `_vendor/` carve-outs go away); (d) drop the vendored dir, its `README.md`/`LICENSE`, and the ADR-0001 rationale, and record the change in a new ADR. Likely a multi-PR effort: first re-home + test-parity, then simplify/own. **Phased plan: [`plans/devendor-sql-kernel.md`](plans/devendor-sql-kernel.md)** — recon found `bind_params.py` / `extension_utils.py` / `index.py` are **dead** (no consumer outside `_vendor/`), so they're deleted not rebuilt; the real rebuild is just `safe_sql.py` + `sql_driver.py`, and the consumer seam is 4 names (`SqlDriver` / `SafeSqlDriver` / `DbConnPool` / `obfuscate_password`). | L | Medium | Removes the last third-party runtime core; full control over the safety semantics. Revisit ADR-0001's "why vendor" reasoning when we start. |
+| 18.1 | ✅ **Shipped.** Replaced the vendored `crystaldba/postgres-mcp` kernel with a first-party `src/mcpg/sql/` package — `allowlist.py` (policy as data), `safety.py` (`SafeSqlDriver` walker), `driver.py` (`SqlDriver`/`DbConnPool`/`obfuscate_password`). The dead `bind_params.py` / `extension_utils.py` / `index.py` were deleted, not rebuilt. All ~74 consumers swung to `mcpg.sql`; `_vendor/` + `tests/vendor/` deleted; the 5 quality-gate carve-outs removed (the kernel is now inside coverage + `mypy --strict` + `ruff` + `bandit`). Faithful re-author, proven identical by a differential parity harness (0 divergence) + the ported 760-LOC adversarial suite + a fuzz pass + `/security-review` (no findings). Supersedes ADR-0001 with [ADR-0007](adr/0007-first-party-sql-kernel.md); plan in [`plans/devendor-sql-kernel.md`](plans/devendor-sql-kernel.md), sign-off in [`reviews/devendor-sql-kernel-security-review.md`](reviews/devendor-sql-kernel-security-review.md). | L | Medium | Removes the last third-party runtime core; full control over the safety semantics. |
 
 ---
 
