@@ -64,7 +64,7 @@ flowchart TD
 ---
 
 <!-- BEGIN generated: module-map (python tools/generate_doc_tables.py --modules) -->
-## Module map (101 modules)
+## Module map (104 modules)
 
 Every `mcpg.*` module and what it owns, alphabetical. The layered
 request path through these lives in the [Overview](#overview) diagram;
@@ -155,6 +155,9 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.session_advisor` | Session-scope cost advisor — reads `mcpg_audit.events` and surfaces hot-path inefficiencies before they cost real tokens. |
 | `mcpg.session_intent` | Session-intent handshake — narrow the tool surface to a stated goal. |
 | `mcpg.shell` | Subprocess execution policy for shell-gated tools (ADR-0004). |
+| `mcpg.sql.allowlist` | SQL-safety **policy** for the first-party kernel — the allowlist, as data. |
+| `mcpg.sql.driver` | PostgreSQL connection pool + query driver — first-party SQL kernel. |
+| `mcpg.sql.safety` | SQL-safety **mechanism** — parse a query and walk it against the allowlist. |
 | `mcpg.sqlalchemy_export` | Schema → SQLAlchemy 2.0 declarative models exporter. |
 | `mcpg.sqlc` | Schema → sqlc-friendly SQL DDL exporter. |
 | `mcpg.tenancy` | Per-request PostgreSQL role multi-tenancy. |
