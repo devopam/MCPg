@@ -15,9 +15,11 @@ separate from I/O (:mod:`mcpg.sql.driver`).
 from __future__ import annotations
 
 from mcpg.sql.driver import DbConnPool, SqlDriver, obfuscate_password
+from mcpg.sql.safety import SafeSqlDriver
 
 __all__ = [
     "DbConnPool",
+    "SafeSqlDriver",
     "SqlDriver",
     "obfuscate_password",
 ]
