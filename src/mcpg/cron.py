@@ -12,8 +12,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
+from mcpg.sql import SqlDriver
 
 
 class CronError(Exception):

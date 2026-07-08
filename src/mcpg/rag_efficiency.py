@@ -49,8 +49,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
+from mcpg.sql import SqlDriver
 
 # Reused from vector_tuning's identifier convention — refuse anything
 # that would require delimited quoting.

@@ -37,10 +37,10 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
 from mcpg.introspection import _parse_options
 from mcpg.secrets import SecretsProvider
+from mcpg.sql import SqlDriver
 
 # redis_fdw identifies itself in pg_foreign_data_wrapper as "redis_fdw" —
 # we use that as the discriminator on every catalog filter below.

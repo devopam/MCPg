@@ -195,7 +195,7 @@ async def test_get_server_info_is_callable_from_an_mcp_client() -> None:
 
 async def test_list_databases_primary_only(monkeypatch: pytest.MonkeyPatch) -> None:
     """With no secondaries, list_databases reports just the primary."""
-    from mcpg._vendor.sql import SqlDriver
+    from mcpg.sql import SqlDriver
 
     db = Database(_SETTINGS, pool=FakePool())  # type: ignore[arg-type]
 
@@ -220,7 +220,7 @@ async def test_list_databases_primary_only(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 async def test_list_databases_lists_secondaries(monkeypatch: pytest.MonkeyPatch) -> None:
-    from mcpg._vendor.sql import SqlDriver
+    from mcpg.sql import SqlDriver
 
     settings = load_settings(
         {
@@ -253,7 +253,7 @@ async def test_list_databases_lists_secondaries(monkeypatch: pytest.MonkeyPatch)
 
 
 async def test_list_databases_surfaces_unreachable_secondary(monkeypatch: pytest.MonkeyPatch) -> None:
-    from mcpg._vendor.sql import SqlDriver
+    from mcpg.sql import SqlDriver
 
     settings = load_settings(
         {
@@ -293,7 +293,7 @@ async def test_list_databases_surfaces_unreachable_secondary(monkeypatch: pytest
 
 async def test_read_tool_threads_database_param_to_driver(monkeypatch: pytest.MonkeyPatch) -> None:
     """A read tool's ``database`` arg must select the secondary's driver."""
-    from mcpg._vendor.sql import SqlDriver
+    from mcpg.sql import SqlDriver
 
     settings = load_settings(
         {

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 
 class FakePool:

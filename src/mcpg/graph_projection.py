@@ -39,8 +39,8 @@ import numbers
 import re
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.introspection import ColumnInfo, describe_table, list_foreign_keys
+from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 

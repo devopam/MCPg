@@ -471,7 +471,7 @@ async def test_list_grants_acl_is_none_when_pg_get_acl_does_not_exist() -> None:
             self.calls.append((query, params))
             if "pg_get_acl" in query:
                 raise RuntimeError("function pg_get_acl(regclass, oid, integer) does not exist")
-            from mcpg._vendor.sql import SqlDriver
+            from mcpg.sql import SqlDriver
 
             return [
                 SqlDriver.RowResult(

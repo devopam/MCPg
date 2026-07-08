@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # Tools that return small, well-defined slices of the catalogue — calling
 # them many times in a session is the canonical "would have been one

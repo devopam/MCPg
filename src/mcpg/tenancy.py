@@ -32,7 +32,7 @@ from typing import Any
 
 from psycopg.rows import dict_row
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 logger = logging.getLogger(__name__)
 

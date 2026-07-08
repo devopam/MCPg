@@ -48,16 +48,27 @@ a read-only HF Spaces demo.
   `GITHUB_TOKEN`, `DEEPINFRA_TOKEN`). The provider table in
   `docs/user-guide.md` mirrors it.
 
-## The vendored SQL-safety kernel
+## The SQL-safety kernel (first-party)
 
-`src/mcpg/_vendor/sql/` is copied near-verbatim from
-[`crystaldba/postgres-mcp`](https://github.com/crystaldba/postgres-mcp)
-(MIT, pinned commit `07eb329`; see ADR-0001 and
-`src/mcpg/_vendor/README.md`): the `pglast` allowlist validator
-(`safe_sql.py`), async pool/driver (`sql_driver.py`), param binding.
-It's excluded from the coverage gate and `mypy --strict`; its own
-adversarial tests live in `tests/vendor/sql/`. **Never hand-edit** —
-local mods are tracked in the vendor README and re-applied on re-sync.
+`src/mcpg/sql/` is MCPg's own SQL-safety kernel (roadmap 18.1 de-vendored
+the former `crystaldba/postgres-mcp` copy; see ADR-0007, which supersedes
+ADR-0001). Three modules, policy separated from mechanism:
+
+- `sql/allowlist.py` — the SQL-safety **policy as data**: permitted
+  statement / `pglast` AST node / function / extension sets. The single
+  auditable decision surface.
+- `sql/safety.py` — `SafeSqlDriver`: the `pglast` parse + AST-walker +
+  read-only execute path. Reads policy from `allowlist.py`; can't widen it.
+- `sql/driver.py` — `SqlDriver` / `DbConnPool` / `obfuscate_password`
+  (pool + execution + credential redaction; no policy).
+
+Exports `SqlDriver`, `SafeSqlDriver`, `DbConnPool`, `obfuscate_password`
+(the seam ~74 `mcpg.*` modules depend on). Fully inside the coverage gate
++ `mypy --strict` + `ruff` + `bandit` like the rest of `mcpg`. Adversarial
++ fuzz tests: `tests/unit/test_sql_kernel_*.py`. Changing the allowlist is
+a **security-sensitive** edit — run the adversarial suite and treat the
+`docs/reviews/devendor-sql-kernel-security-review.md` threat model as the
+bar.
 
 ## Workflow conventions
 

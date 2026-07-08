@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # Schemas that belong to PostgreSQL itself rather than the user.
 _SYSTEM_SCHEMAS = frozenset({"pg_catalog", "information_schema", "pg_toast"})

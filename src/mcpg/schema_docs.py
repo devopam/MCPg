@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.introspection import (
     describe_table,
     list_constraints,
@@ -22,6 +21,7 @@ from mcpg.introspection import (
     list_tables,
     list_views,
 )
+from mcpg.sql import SqlDriver
 
 _PRIMARY_KEY_COLUMNS = re.compile(r"PRIMARY KEY \(([^)]+)\)", re.IGNORECASE)
 

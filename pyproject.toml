@@ -170,18 +170,16 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["src/mcpg"]
-omit = ["src/mcpg/_vendor/*"]
 
 [tool.coverage.report]
-# Coverage gate applies to authored code only; vendored code is excluded above.
+# Coverage gate applies to all authored code — the SQL kernel is first-party.
 fail_under = 90
 show_missing = true
 
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-# Vendored code is kept verbatim and is not linted/formatted to our standard.
-extend-exclude = ["src/mcpg/_vendor", "tests/vendor", "scratch", "demo.py"]
+extend-exclude = ["scratch", "demo.py"]
 # Honour the exclusions even when files are passed explicitly (e.g. pre-commit).
 force-exclude = true
 
@@ -194,12 +192,7 @@ known-first-party = ["mcpg"]
 [tool.mypy]
 python_version = "3.14"
 strict = true
-# Vendored code keeps its own (looser) typing; do not gate on it.
-exclude = ["src/mcpg/_vendor/", "tests/vendor/", "scratch/"]
-
-[[tool.mypy.overrides]]
-module = ["mcpg._vendor.*"]
-ignore_errors = true
+exclude = ["scratch/"]
 
 [[tool.mypy.overrides]]
 # pglast ships no type stubs.
@@ -225,6 +218,6 @@ module = [
 ignore_missing_imports = true
 
 [tool.bandit]
-exclude_dirs = ["tests", "src/mcpg/_vendor"]
+exclude_dirs = ["tests"]
 skips = ["B101", "B608", "B110"]
 

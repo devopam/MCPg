@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver, obfuscate_password
+from mcpg.sql import SqlDriver, obfuscate_password
 
 # --- Tool invocation logger (Original Audit Logic) ------------------------
 

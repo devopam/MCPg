@@ -28,7 +28,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 DEFAULT_INDEX_PREFIXES: tuple[str, ...] = ("idx_", "ix_", "pk_", "uq_", "fk_", "gin_", "gist_", "brin_", "hnsw_")
 

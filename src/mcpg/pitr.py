@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 from mcpg.wal_archive import get_wal_archive_status
 
 # wal_level ordering for the ">= replica" gate.

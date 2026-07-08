@@ -17,7 +17,6 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.introspection import (
     ColumnInfo,
     ForeignKeyInfo,
@@ -29,6 +28,7 @@ from mcpg.introspection import (
     list_indexes,
     list_tables,
 )
+from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 

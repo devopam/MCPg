@@ -34,12 +34,12 @@ from __future__ import annotations
 import re
 from xml.sax.saxutils import escape
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.introspection import (
     ColumnInfo,
     describe_table,
     list_tables,
 )
+from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 

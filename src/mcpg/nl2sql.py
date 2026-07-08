@@ -38,9 +38,9 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import httpx
 
-from mcpg._vendor.sql import SqlDriver, obfuscate_password
 from mcpg.introspection import describe_table, list_foreign_keys, list_tables
 from mcpg.query import DEFAULT_MAX_ROWS, QueryError, explain_query, run_select
+from mcpg.sql import SqlDriver, obfuscate_password
 
 if TYPE_CHECKING:
     from mcpg.config import Settings

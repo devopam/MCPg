@@ -27,8 +27,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.query import QueryError, analyze_query_plan
+from mcpg.sql import SqlDriver
 
 # Stable rule identifiers — agents may filter by these.
 RULE_MISSING_PRIMARY_KEY = "missing_primary_key"

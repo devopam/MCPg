@@ -32,8 +32,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
+from mcpg.sql import SqlDriver
 
 # pg_prewarm modes (matches the upstream signature: pg_prewarm(regclass,
 # mode text, fork text, first_block, last_block)). We don't expose ``fork``

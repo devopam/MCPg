@@ -43,7 +43,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # PG 19 ships the AIO subsystem. The version-num probe is the boundary
 # guard — no extension to install.

@@ -30,8 +30,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.about import CAPABILITIES, classify_tool
+from mcpg.sql import SqlDriver
 
 
 class HeadlineCuratorError(Exception):

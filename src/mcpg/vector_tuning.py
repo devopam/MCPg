@@ -19,9 +19,9 @@ import math
 import re
 from dataclasses import dataclass
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.extensions import extension_installed
 from mcpg.introspection import describe_table
+from mcpg.sql import SqlDriver
 
 # pgvector supports these index access methods today; the allowlist
 # guards against arbitrary identifier injection in CREATE INDEX text.

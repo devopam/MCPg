@@ -58,9 +58,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.database import Database
 from mcpg.extensions import extension_installed
+from mcpg.sql import SqlDriver
 
 # Plain unquoted PostgreSQL identifier — matches the rule used by
 # vector_tuning. Anything that would require delimited quoting at the

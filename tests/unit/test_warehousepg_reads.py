@@ -361,7 +361,7 @@ async def test_all_reads_handle_driver_failure_on_data_query_gracefully(func_cal
         ) -> list[Any]:
             del force_readonly
             self.call_index += 1
-            from mcpg._vendor.sql import SqlDriver
+            from mcpg.sql import SqlDriver
 
             # Status probe — 3 calls (version + to_regclass + segments).
             if self.call_index == 1:

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import re
 
-from mcpg._vendor.sql import SqlDriver
 from mcpg.introspection import (
     ColumnInfo,
     ForeignKeyInfo,
@@ -26,6 +25,7 @@ from mcpg.introspection import (
     list_foreign_keys,
     list_tables,
 )
+from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _SERIAL_DEFAULT_RE = re.compile(r"nextval\(['\"]([^'\"]+)['\"]")

@@ -1638,7 +1638,7 @@ async def test_monitor_embedding_drift_small_window_skips_random_filter() -> Non
             params: list[object] | None = None,
             force_readonly: bool = False,
         ) -> list[object]:
-            from mcpg._vendor.sql import SqlDriver
+            from mcpg.sql import SqlDriver
 
             self.calls.append((sql, list(params or [])))
             if "pg_extension" in sql:
@@ -1692,7 +1692,7 @@ async def test_monitor_embedding_drift_large_window_applies_probability_filter()
             params: list[object] | None = None,
             force_readonly: bool = False,
         ) -> list[object]:
-            from mcpg._vendor.sql import SqlDriver
+            from mcpg.sql import SqlDriver
 
             self.calls.append((sql, list(params or [])))
             if "pg_extension" in sql:
@@ -1755,7 +1755,7 @@ async def test_monitor_embedding_drift_caps_probability_at_one() -> None:
             params: list[object] | None = None,
             force_readonly: bool = False,
         ) -> list[object]:
-            from mcpg._vendor.sql import SqlDriver
+            from mcpg.sql import SqlDriver
 
             self.calls.append((sql, list(params or [])))
             if "pg_extension" in sql:

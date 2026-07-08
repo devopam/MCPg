@@ -28,7 +28,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-from mcpg._vendor.sql import SafeSqlDriver, SqlDriver
+from mcpg.sql import SafeSqlDriver, SqlDriver
 
 logger = logging.getLogger(__name__)
 

@@ -66,7 +66,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 
 @dataclass(frozen=True)

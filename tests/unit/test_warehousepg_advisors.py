@@ -155,7 +155,7 @@ async def test_analyze_mpp_query_plan_explain_failure_surfaces_as_available_fals
             self, query: str, params: list[Any] | None = None, force_readonly: bool = False
         ) -> list[Any]:
             del params, force_readonly
-            from mcpg._vendor.sql import SqlDriver
+            from mcpg.sql import SqlDriver
 
             self.call_index += 1
             if self.call_index == 1:

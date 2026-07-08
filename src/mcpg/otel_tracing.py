@@ -36,7 +36,7 @@ import os
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
-from mcpg._vendor.sql import obfuscate_password
+from mcpg.sql import obfuscate_password
 
 if TYPE_CHECKING:
     from mcpg.config import Settings

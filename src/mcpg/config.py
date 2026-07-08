@@ -15,9 +15,9 @@ from os import environ
 from os.path import isabs
 from urllib.parse import urlparse
 
-from mcpg._vendor.sql import obfuscate_password
 from mcpg.nl2sql import AUTO_PICK_ORDER, VENDOR_ENV_VAR_HINT, VENDOR_KEY_ENV_VARS
 from mcpg.secrets import SecretsError, build_secrets_provider
+from mcpg.sql import obfuscate_password
 
 # PG role names must be safe identifiers — we inline them into
 # ``SET ROLE "<name>"`` so anything outside ``[A-Za-z_][A-Za-z0-9_]*``

@@ -3,9 +3,9 @@
 import pytest
 from _fakes import FakePool
 
-from mcpg._vendor.sql import DbConnPool, SqlDriver
 from mcpg.config import load_settings
 from mcpg.database import Database, DatabaseError
+from mcpg.sql import DbConnPool, SqlDriver
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 

@@ -93,10 +93,10 @@ from mcpg import (
     workload,
     write,
 )
-from mcpg._vendor.sql import SqlDriver
 from mcpg.config import Settings
 from mcpg.context import AppContext
 from mcpg.policy import Capability, is_permitted
+from mcpg.sql import SqlDriver
 
 # The MCP request context FastMCP injects into every tool.
 _Ctx = Context[ServerSession, AppContext, Any]

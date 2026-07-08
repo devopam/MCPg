@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from mcpg._vendor.sql import SqlDriver
+from mcpg.sql import SqlDriver
 
 # Tables smaller than this are ignored — sequential scans of them are cheap.
 DEFAULT_MIN_LIVE_TUPLES = 10_000
