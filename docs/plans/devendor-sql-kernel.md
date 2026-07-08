@@ -89,6 +89,26 @@ mcpg/sql/safety.py        # SafeSqlDriver: pglast parse + default-deny node allo
 - Once first-party, it enters the **coverage gate + `mypy --strict` +
   `ruff` + `bandit`** like the rest of `mcpg`.
 
+## Re-architecture (own it, restructure it)
+
+"Faithful re-author" pins the *security behaviour* identical — it does
+**not** mean a line-for-line copy. Owning the code is the moment to fix
+its architecture, because the current `safe_sql.py` is a 1,036-LOC
+monolith that interleaves three concerns: parsing, the allowlist policy,
+and execution. First-party, we split them so the security surface is
+auditable and testable in isolation:
+
+| Module | Concern | Why separate |
+|---|---|---|
+| `mcpg/sql/driver.py` | Connection / pool / execution (`SqlDriver`, `DbConnPool`, `RowResult`, `obfuscate_password`). | Pure I/O; carries **no** policy. |
+| `mcpg/sql/allowlist.py` | The permitted-node **policy as data** — an explicit table of allowed `pglast` node types + per-node rules, plus the statement-type gate. | The entire security decision surface lives in **one auditable place** (feeds the security review below), instead of being scattered through walker branches. |
+| `mcpg/sql/safety.py` | `SafeSqlDriver` — orchestrates parse → walk-against-allowlist → execute. The walker is generic; it reads the policy from `allowlist.py`. | Mechanism separated from policy: the walker can't silently widen what's allowed. |
+
+Guardrail: **the accept/reject verdict for every case in the adversarial
+suite is byte-identical to the vendored implementation** (proven by the
+differential harness in the security-review gate). The restructure is
+internal; behaviour does not move.
+
 ## Non-negotiable constraints
 
 1. **No safety regression.** The ported `test_safe_sql.py` (every
@@ -118,6 +138,34 @@ and require them green — this *proves* behavioural parity before any
 consumer moves. New code is written to pass `mypy --strict` + coverage
 from day one. **Reviewable payload: the new kernel + its adversarial
 suite, in isolation.** No snapshot changes.
+
+### Security-review gate (between PR 1 and PR 2 — mandatory)
+The kernel is the SQL allowlist that stands between an agent and the
+database, so it does **not** swing live on a green test suite alone. A
+dedicated security review runs on the PR 1 diff and must pass before PR 2:
+
+1. **Differential verdict test.** A temporary parametrised harness feeds
+   the *entire* adversarial corpus (plus a fuzz set) through **both** the
+   vendored `SafeSqlDriver` and the first-party one, and asserts an
+   **identical accept/reject verdict on every input**. Zero divergence is
+   the bar. (The harness is deleted in PR 2 with `_vendor`.)
+2. **Allowlist audit.** Line-by-line review of the permitted-node table in
+   `allowlist.py` against the threat model: confirm **default-deny**, that
+   no unintended node type is admitted, and that statement stacking, DDL /
+   DCL, writes, `COPY … PROGRAM`, and set-returning-function escapes are
+   rejected. Having the policy as one data table (the re-architecture
+   above) is what makes this audit tractable.
+3. **Fuzz / adversarial pass.** Malformed SQL, comment-smuggling,
+   deeply-nested CTEs / sublinks, unicode-homoglyph identifiers, oversized
+   inputs → must reject safely with no crash / no unbounded work.
+4. **`/security-review`.** Run the repo's security-review skill over the
+   PR 1 diff; triage every finding.
+5. **Threat-model note** captured in the new ADR: what the validator
+   defends against, and its explicit **non-goals** (it is defence-in-depth
+   in front of, not a substitute for, DB-side least-privilege).
+
+Output: a short security-review sign-off appended to the PR 1 thread (or a
+`docs/reviews/` note) linked from the new ADR. Only then does PR 2 proceed.
 
 ### PR 2 — Swing consumers, delete the vendor, close the gates
 Mechanical: rewrite the 74 `mcpg._vendor.sql` imports → `mcpg.sql`
@@ -177,7 +225,12 @@ Post-PR-2, a revert restores `_vendor/` wholesale from git history.
   `src/` + `pyproject.toml` returns nothing.
 - The SQL-safety kernel is inside the coverage / `mypy --strict` / `ruff`
   / `bandit` gates like all other `mcpg` code.
-- Adversarial SQL-safety suite green against first-party `mcpg.sql`.
+- Kernel re-architected into `driver` / `allowlist` (policy-as-data) /
+  `safety` modules — policy separated from mechanism.
+- Adversarial SQL-safety suite green against first-party `mcpg.sql`, **and**
+  the security-review gate passed: differential verdict test (0 divergence
+  vs the vendored validator), allowlist audit, fuzz pass, `/security-review`,
+  and a threat-model note in the new ADR.
 - Tool-surface + return-shape snapshots unchanged.
 - ADR-0001 marked superseded; new ADR added; `CLAUDE.md` +
   `architecture.md` "vendored kernel" sections rewritten; `NOTICE` /
