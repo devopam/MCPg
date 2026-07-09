@@ -21,6 +21,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Install docs: per-OS commands + `docker run --name mcpg`.** The
+  installation guide's quick-start and Docker sections now carry ready-to-copy
+  **Linux/macOS, Windows PowerShell, and Windows Command Prompt** blocks (the
+  only per-OS difference is how environment variables are set and the shell's
+  line-continuation character), fronted by a one-time translation table. The
+  `docker run` examples gain `--name mcpg` so the container is addressable by
+  name.
+
 - **De-vendored the SQL-safety kernel (roadmap 18.1).** The formerly-vendored
   `crystaldba/postgres-mcp` `sql/` subpackage (`src/mcpg/_vendor/`) is
   replaced by a first-party `src/mcpg/sql/` package — `allowlist.py` (the

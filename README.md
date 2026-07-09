@@ -102,6 +102,11 @@ docker run --rm --name mcpg -p 8000:8000 \
     ghcr.io/devopam/mcpg:latest
 ```
 
+On **Windows PowerShell** replace the trailing `\` with a backtick `` ` ``
+(or put the command on one line); the [installation
+guide](docs/installation.md#option-2--docker) has ready-to-copy
+Linux/macOS, PowerShell, and Command Prompt blocks.
+
 Or build it yourself from source:
 
 ```bash
