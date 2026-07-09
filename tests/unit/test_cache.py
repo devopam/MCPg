@@ -3,7 +3,23 @@ from unittest.mock import patch
 
 import pytest
 
-from mcpg.cache import CacheManager, InMemoryCache
+from mcpg.cache import CacheManager, InMemoryCache, RedisCache, cache_namespace
+
+
+def test_cache_namespace_differs_by_physical_database() -> None:
+    # Same logical selector ("primary"), different physical DBs → different ns.
+    ns_x = cache_namespace("postgresql://u:p@hostx:5432/dbx")
+    ns_y = cache_namespace("postgresql://u:p@hosty:5432/dby")
+    assert ns_x and ns_y and ns_x != ns_y
+    # Password does not affect the namespace (credential-free identity).
+    assert cache_namespace("postgresql://u:secret1@h:5432/db") == cache_namespace("postgresql://u:secret2@h:5432/db")
+    # Undeterminable identity → empty (unchanged flat key space).
+    assert cache_namespace(None) == ""
+
+
+def test_redis_cache_prefix_is_namespaced() -> None:
+    assert RedisCache("redis://x", namespace="abc123")._prefix == "mcpg:cache:abc123:"
+    assert RedisCache("redis://x")._prefix == "mcpg:cache:"
 
 
 @pytest.mark.asyncio

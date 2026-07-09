@@ -13,6 +13,34 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+def cache_namespace(database_url: str | None) -> str:
+    """A short, stable, credential-free id for the primary database.
+
+    A single Redis instance can be shared by several MCPg processes (a fleet).
+    When those processes serve *different* physical databases, an un-namespaced
+    key collides — the logical selector is ``"primary"`` for all of them — and
+    one database's cached result is served for another. Namespacing the cache by
+    a hash of the primary's ``host:port/dbname`` (never the password) keeps a
+    same-database fleet sharing correctly while different-database instances stay
+    isolated. Returns ``""`` when the identity can't be derived (keeps the flat
+    key space, unchanged behaviour).
+    """
+    if not database_url:
+        return ""
+    try:
+        import hashlib
+
+        from psycopg.conninfo import conninfo_to_dict
+
+        info = conninfo_to_dict(database_url)
+        ident = f"{info.get('host', '')}:{info.get('port', '')}/{info.get('dbname', '')}"
+        if ident == ":/":
+            return ""
+        return hashlib.sha256(ident.encode("utf-8")).hexdigest()[:16]
+    except Exception:
+        return ""
+
+
 class BaseCache(Protocol):
     """Protocol for cache implementations."""
 
@@ -75,8 +103,11 @@ class InMemoryCache:
 class RedisCache:
     """Soft-dependency Redis cache wrapper using JSON serialization."""
 
-    def __init__(self, redis_url: str) -> None:
+    def __init__(self, redis_url: str, namespace: str = "") -> None:
         self._redis_url = redis_url
+        # Per-database key prefix so a shared Redis serving multiple physical
+        # databases (a fleet) never bleeds one database's cache into another.
+        self._prefix = f"mcpg:cache:{namespace}:" if namespace else "mcpg:cache:"
         self._client: Any = None
         self._initialized = False
 
@@ -100,7 +131,7 @@ class RedisCache:
         if not self._client:
             return None
         try:
-            raw = await self._client.get(f"mcpg:cache:{key}")
+            raw = await self._client.get(f"{self._prefix}{key}")
             if raw is None:
                 return None
             return json.loads(raw)
@@ -114,7 +145,7 @@ class RedisCache:
             return
         try:
             raw = json.dumps(value)
-            await self._client.set(f"mcpg:cache:{key}", raw, ex=ttl)
+            await self._client.set(f"{self._prefix}{key}", raw, ex=ttl)
         except Exception as e:
             logger.warning(f"Error setting Redis cache for key {key!r}: {e}")
 
@@ -123,8 +154,10 @@ class RedisCache:
         if not self._client:
             return
         try:
-            # Safely delete only keys belonging to this application's cache namespace
-            async for key in self._client.scan_iter("mcpg:cache:*"):
+            # Delete only keys belonging to THIS database's cache namespace, so
+            # one instance's clear doesn't wipe another database's cache on a
+            # shared Redis.
+            async for key in self._client.scan_iter(f"{self._prefix}*"):
                 await self._client.delete(key)
         except Exception as e:
             logger.warning(f"Error clearing Redis cache: {e}")
@@ -149,11 +182,13 @@ class CacheManager:
         ttl_seconds: int = 300,
         maxsize: int = 1024,
         redis_url: str | None = None,
+        namespace: str = "",
     ) -> None:
         self._enabled = enabled
         self._ttl_seconds = ttl_seconds
         self._maxsize = maxsize
         self._redis_url = redis_url
+        self._namespace = namespace
         self._driver: BaseCache | None = None
 
     async def start(self) -> None:
@@ -162,7 +197,7 @@ class CacheManager:
             return
         if self._redis_url:
             try:
-                redis_driver = RedisCache(self._redis_url)
+                redis_driver = RedisCache(self._redis_url, namespace=self._namespace)
                 await redis_driver._init_client()
                 self._driver = redis_driver
                 logger.info("Redis cache backend initialized successfully.")
