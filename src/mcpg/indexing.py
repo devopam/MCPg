@@ -267,6 +267,7 @@ async def recommend_index_drops(
         "    si.indexrelid, "
         "    si.relid, "
         "    COALESCE(si.idx_scan, 0) AS idx_scan, "
+        "    COALESCE(si.idx_tup_read, 0) AS idx_tup_read, "
         "    COALESCE(si.idx_tup_fetch, 0) AS idx_tup_fetch, "
         "    COALESCE(pg_relation_size(si.indexrelid), 0) AS size_bytes "
         "  FROM pg_stat_user_indexes si "
@@ -276,6 +277,7 @@ async def recommend_index_drops(
         "  si.table_name, "
         "  si.index_name, "
         "  si.idx_scan, "
+        "  si.idx_tup_read, "
         "  si.idx_tup_fetch, "
         "  si.size_bytes, "
         "  pg_get_indexdef(si.indexrelid) AS definition, "
@@ -302,6 +304,7 @@ async def recommend_index_drops(
     candidates: list[IndexDropCandidate] = []
     for row in rows or []:
         idx_scan = int(row.cells["idx_scan"])
+        idx_tup_read = int(row.cells["idx_tup_read"])
         idx_tup_fetch = int(row.cells["idx_tup_fetch"])
         size_bytes = int(row.cells["size_bytes"])
         table_seq_scan = int(row.cells["table_seq_scan"])
@@ -313,6 +316,7 @@ async def recommend_index_drops(
 
         reason_code, rationale = _classify_drop_candidate(
             idx_scan=idx_scan,
+            idx_tup_read=idx_tup_read,
             idx_tup_fetch=idx_tup_fetch,
             size_bytes=size_bytes,
             table_total_scans=table_seq_scan + table_idx_scan,
@@ -363,6 +367,7 @@ async def recommend_index_drops(
 def _classify_drop_candidate(
     *,
     idx_scan: int,
+    idx_tup_read: int,
     idx_tup_fetch: int,
     size_bytes: int,
     table_total_scans: int,
@@ -376,12 +381,17 @@ def _classify_drop_candidate(
             f"reclaim {size_bytes / 1024 / 1024:.1f} MiB and the write-amplification "
             "tax with no read-side cost.",
         )
-    if idx_tup_fetch == 0:
+    # ``idx_tup_fetch == 0`` alone is NOT enough to call an index droppable:
+    # index-only scans (a covering index doing exactly its job) never increment
+    # ``idx_tup_fetch`` — they bump ``idx_tup_read`` and read straight from the
+    # index. Only flag scan_no_fetch when the index also reads no tuples, which
+    # rules out index-only scans and leaves the genuine existence-check pattern.
+    if idx_tup_fetch == 0 and idx_tup_read == 0:
         return (
             DROP_REASON_SCAN_NO_FETCH,
-            f"index has been scanned {idx_scan:,} times but returned zero rows — "
-            "likely an existence-check pattern. A partial index or removing the "
-            "index entirely is usually cheaper.",
+            f"index has been scanned {idx_scan:,} times but read and fetched zero "
+            "rows — likely an existence-check pattern. A partial index or removing "
+            "the index entirely is usually cheaper.",
         )
     if table_total_scans > 0 and idx_scan < low_scan_ratio * table_total_scans:
         return (
