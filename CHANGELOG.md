@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cross-database read-cache bleed with `MCPG_SECONDARY_DATABASE_URLS`
+  (roadmap 13.1).** The process-wide read cache keyed entries by tool +
+  arguments + tenant role but **not** by the target `database` selector, so a
+  cached read against the primary was served for a secondary with matching
+  arguments (and vice-versa) — most visibly, `audit_database(database=…)`
+  against a secondary returned the primary's report. The `database` selector is
+  now folded into the cache key inside `_cached_call` (normalising `None` /
+  `"primary"` to one entry) and threaded from every one of the 70 read tools
+  that accept a `database` argument. Added `tests/unit/test_multidb_cache.py`
+  as a regression guard.
+
 ### Changed
 
 - **De-vendored the SQL-safety kernel (roadmap 18.1).** The formerly-vendored
