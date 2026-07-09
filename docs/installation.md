@@ -47,17 +47,42 @@ Verify the install:
 
 ```bash
 mcpg --version
-# → mcpg 0.6.9
+# → mcpg 0.6.10
 ```
 
 ### Option 2 — Docker
 
+Build the image (identical on every OS):
+
 ```bash
 docker build -t mcpg https://github.com/devopam/MCPg.git
-docker run --rm -p 8000:8000 \
+```
+
+Then run it. The only per-OS difference is the line-continuation
+character — pick the block for your shell:
+
+**Linux / macOS (bash/zsh)**
+
+```bash
+docker run --rm --name mcpg -p 8000:8000 \
     -e MCPG_DATABASE_URL=postgresql://user:pass@host:5432/db \
     -e MCPG_ACCESS_MODE=read-only \
     mcpg
+```
+
+**Windows (PowerShell)**
+
+```powershell
+docker run --rm --name mcpg -p 8000:8000 `
+    -e MCPG_DATABASE_URL=postgresql://user:pass@host:5432/db `
+    -e MCPG_ACCESS_MODE=read-only `
+    mcpg
+```
+
+**Windows (Command Prompt)**
+
+```bat
+docker run --rm --name mcpg -p 8000:8000 -e MCPG_DATABASE_URL=postgresql://user:pass@host:5432/db -e MCPG_ACCESS_MODE=read-only mcpg
 ```
 
 The image is a hardened multi-stage build: the runtime stage drops
@@ -81,10 +106,40 @@ or contribute.
 
 ## Quick start
 
-The minimum to get running locally:
+MCPg is configured entirely through environment variables, and the
+**only per-OS difference in this whole guide is how you set them**. The
+`mcpg` command itself, `pip`, `uv`, and `docker` are identical on every
+platform. Set variables like this:
+
+| Shell | Set a variable |
+|---|---|
+| **Linux / macOS** (bash/zsh) | `export MCPG_DATABASE_URL=postgresql://…` |
+| **Windows — PowerShell** | `$env:MCPG_DATABASE_URL = "postgresql://…"` |
+| **Windows — Command Prompt** | `set MCPG_DATABASE_URL=postgresql://…` |
+
+Every `export …` example below uses the Linux/macOS form; translate it
+to your shell with the table above.
+
+The minimum to get running locally (stdio transport, read-only mode):
+
+**Linux / macOS (bash/zsh)**
 
 ```bash
 export MCPG_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mydb
+mcpg
+```
+
+**Windows (PowerShell)**
+
+```powershell
+$env:MCPG_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/mydb"
+mcpg
+```
+
+**Windows (Command Prompt)**
+
+```bat
+set MCPG_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mydb
 mcpg
 ```
 
@@ -95,11 +150,33 @@ specific client.
 
 For HTTP-based clients:
 
+**Linux / macOS (bash/zsh)**
+
 ```bash
 export MCPG_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mydb
 export MCPG_TRANSPORT=streamable-http
 export MCPG_HTTP_PORT=8000
 export MCPG_HTTP_AUTH_TOKEN=...    # optional but strongly recommended
+mcpg
+```
+
+**Windows (PowerShell)**
+
+```powershell
+$env:MCPG_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/mydb"
+$env:MCPG_TRANSPORT = "streamable-http"
+$env:MCPG_HTTP_PORT = "8000"
+$env:MCPG_HTTP_AUTH_TOKEN = "..."    # optional but strongly recommended
+mcpg
+```
+
+**Windows (Command Prompt)**
+
+```bat
+set MCPG_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mydb
+set MCPG_TRANSPORT=streamable-http
+set MCPG_HTTP_PORT=8000
+set MCPG_HTTP_AUTH_TOKEN=...
 mcpg
 ```
 

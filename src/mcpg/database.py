@@ -13,7 +13,7 @@ from types import TracebackType
 from typing import Any
 
 from mcpg.config import Settings
-from mcpg.multidb import PRIMARY_DATABASE_ID, make_read_only_driver
+from mcpg.multidb import PRIMARY_DATABASE_ID, make_read_only_driver, resolve_primary_id
 from mcpg.replicas import ReplicaPool, RoutedSqlDriver, _make_driver_for_pool
 from mcpg.sql import DbConnPool, SqlDriver, obfuscate_password
 
@@ -76,6 +76,11 @@ class Database:
                 for name, dsn in settings.secondary_database_urls
             }
         self._secondary_available: dict[str, bool] = dict.fromkeys(self._secondary_pools, False)
+        # The id the primary is advertised + addressable under: its real
+        # database name when derivable (so ``database="lookup"`` just works),
+        # else the generic ``"primary"``. ``"primary"`` / ``None`` stay valid
+        # aliases either way (roadmap 13.1 papercut).
+        self._primary_id = resolve_primary_id(settings.database_url, self._secondary_pools)
         self._connected = False
 
     @property
@@ -169,8 +174,10 @@ class Database:
             raise DatabaseError("database is not connected; call connect() first")
         # Secondary-database selector (roadmap 13.1). Any explicit, non-primary
         # id routes to a read-only secondary driver; an unknown id is a hard
-        # error listing the valid ids so the agent can self-correct.
-        if database_id is not None and database_id != PRIMARY_DATABASE_ID:
+        # error listing the valid ids so the agent can self-correct. The
+        # primary answers to ``None``, the literal ``"primary"`` alias, and its
+        # real database name (``self._primary_id``).
+        if database_id is not None and database_id not in (PRIMARY_DATABASE_ID, self._primary_id):
             pool = self._secondary_pools.get(database_id)
             if pool is None:
                 raise DatabaseError(f"unknown database id {database_id!r}; valid ids: {', '.join(self.database_ids())}")
@@ -208,13 +215,20 @@ class Database:
         driver.settings = self._settings  # type: ignore[attr-defined]
         return driver
 
+    @property
+    def primary_id(self) -> str:
+        """The id the primary is advertised under (its real DB name, or ``"primary"``)."""
+        return self._primary_id
+
     def database_ids(self) -> list[str]:
         """Return every configured database id, primary first.
 
-        The primary's id is always :data:`mcpg.multidb.PRIMARY_DATABASE_ID`;
-        secondaries follow in ``MCPG_SECONDARY_DATABASE_URLS`` order.
+        The primary's id is its real database name when derivable from
+        ``MCPG_DATABASE_URL`` (else the generic ``"primary"``); secondaries
+        follow in ``MCPG_SECONDARY_DATABASE_URLS`` order. The literal
+        ``"primary"`` remains an accepted alias regardless.
         """
-        return [PRIMARY_DATABASE_ID, *self._secondary_pools.keys()]
+        return [self._primary_id, *self._secondary_pools.keys()]
 
     async def probe(self, database_id: str | None = None) -> tuple[bool, str | None]:
         """Probe one database with ``SELECT 1``.
@@ -241,7 +255,7 @@ class Database:
         """
         out: list[tuple[str, bool, bool, bool, str | None]] = []
         for db_id in self.database_ids():
-            is_primary = db_id == PRIMARY_DATABASE_ID
+            is_primary = db_id == self._primary_id
             reachable, detail = await self.probe(db_id)
             out.append((db_id, is_primary, not is_primary, reachable, detail))
         return out

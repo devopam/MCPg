@@ -25,7 +25,7 @@ from typing import Any
 
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
-from mcpg.vector_tuning import VectorTuningError, _indexes_on_column, _quoted
+from mcpg.vector_tuning import _TRUTH_ORDER, VectorTuningError, _indexes_on_column, _quoted
 
 _DISTANCE_OPERATORS = {"l2": "<->", "cosine": "<=>", "inner_product": "<#>"}
 _DISTANCE_FUNCTIONS = {"l2": "l2_distance", "cosine": "cosine_distance", "inner_product": "inner_product"}
@@ -255,6 +255,7 @@ async def recommend_hnsw_ef_search(
 
     operator = _DISTANCE_OPERATORS[metric]
     function = _DISTANCE_FUNCTIONS[metric]
+    truth_order = _TRUTH_ORDER[metric]
     relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
     col = _quoted(column, "column")
     id_column = await _detect_primary_key(driver, schema, table)
@@ -315,7 +316,7 @@ async def recommend_hnsw_ef_search(
         qvec = sample.cells["vec"]
         truth_rows = await driver.execute_query(
             f"SELECT {id_col} AS id FROM {relation} WHERE {id_col} <> %s "
-            f"ORDER BY {function}({col}, %s::vector) LIMIT %s",
+            f"ORDER BY {function}({col}, %s::vector) {truth_order} LIMIT %s",
             params=[qid, qvec, k],
             force_readonly=True,
         )
@@ -516,6 +517,7 @@ async def recommend_ivfflat_probes(
 
     operator = _DISTANCE_OPERATORS[metric]
     function = _DISTANCE_FUNCTIONS[metric]
+    truth_order = _TRUTH_ORDER[metric]
     relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
     col = _quoted(column, "column")
     id_column = await _detect_primary_key(driver, schema, table)
@@ -576,7 +578,7 @@ async def recommend_ivfflat_probes(
         qvec = sample.cells["vec"]
         truth_rows = await driver.execute_query(
             f"SELECT {id_col} AS id FROM {relation} WHERE {id_col} <> %s "
-            f"ORDER BY {function}({col}, %s::vector) LIMIT %s",
+            f"ORDER BY {function}({col}, %s::vector) {truth_order} LIMIT %s",
             params=[qid, qvec, k],
             force_readonly=True,
         )

@@ -32,6 +32,13 @@ _INDEX_TYPES = frozenset({"ivfflat", "hnsw"})
 _DISTANCE_FUNCTIONS = {"l2": "l2_distance", "cosine": "cosine_distance", "inner_product": "inner_product"}
 # Their operator counterparts trigger the ANN index when one exists.
 _DISTANCE_OPERATORS = {"l2": "<->", "cosine": "<=>", "inner_product": "<#>"}
+# ORDER BY direction for the brute-force *ground-truth* query (which uses the
+# FUNCTION form). For l2/cosine the function is a distance → ASC = nearest. For
+# inner_product the function returns the RAW dot product (larger = nearer) so it
+# must be DESC — the ANN side uses `<#>`, pgvector's *negated* inner product,
+# which is nearest-first under ASC. Mixing the two directions under one ASC made
+# the ground-truth the k FARTHEST rows, collapsing inner_product recall to ~0.
+_TRUTH_ORDER = {"l2": "ASC", "cosine": "ASC", "inner_product": "DESC"}
 
 # Recall sampling triggers 2N+1 queries per call; cap N to prevent
 # accidental DoS via a runaway sample_size argument.
@@ -228,6 +235,7 @@ async def vector_recall_at_k(
 
     operator = _DISTANCE_OPERATORS[metric]
     function = _DISTANCE_FUNCTIONS[metric]
+    truth_order = _TRUTH_ORDER[metric]
     relation = f"{_quoted(schema, 'schema')}.{_quoted(table, 'table')}"
     col = _quoted(column, "column")
     id_col = _quoted(id_column, "id_column")
@@ -250,7 +258,7 @@ async def vector_recall_at_k(
             force_readonly=True,
         )
         truth_rows = await driver.execute_query(
-            f"SELECT {id_col} AS id FROM {relation} ORDER BY {function}({col}, %s::vector) LIMIT %s",
+            f"SELECT {id_col} AS id FROM {relation} ORDER BY {function}({col}, %s::vector) {truth_order} LIMIT %s",
             params=[query_vec, k],
             force_readonly=True,
         )

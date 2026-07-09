@@ -212,8 +212,9 @@ async def test_list_databases_primary_only(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.isError is False
     content = result.structuredContent
     assert content is not None
-    assert content["primary_id"] == "primary"
-    assert content["database_ids"] == ["primary"]
+    # The primary is advertised under its real DB name ("db"), not "primary".
+    assert content["primary_id"] == "db"
+    assert content["database_ids"] == ["db"]
     assert len(content["databases"]) == 1
     assert content["databases"][0]["is_primary"] is True
     assert content["databases"][0]["read_only"] is False
@@ -246,7 +247,7 @@ async def test_list_databases_lists_secondaries(monkeypatch: pytest.MonkeyPatch)
 
     content = result.structuredContent
     assert content is not None
-    assert content["database_ids"] == ["primary", "analytics"]
+    assert content["database_ids"] == ["db", "analytics"]
     secondary = next(d for d in content["databases"] if d["id"] == "analytics")
     assert secondary["read_only"] is True
     assert secondary["is_primary"] is False

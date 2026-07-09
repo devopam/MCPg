@@ -443,6 +443,12 @@ async def check_segment_health(driver: SqlDriver) -> SegmentHealthReport:
             detail=f"Segment health probe failed: {exc}",
         )
 
+    # Whether the cluster is mirrored at all. A mirrorless cluster (the common
+    # dev/test shape this module targets) reports mode='n' for every healthy
+    # primary because there is no mirror to sync with — so "not in sync" is only
+    # a fault signal when mirrors actually exist.
+    has_mirrors = any(str(r.cells.get("role") or "") == "m" for r in rows or [])
+
     segments: list[SegmentHealth] = []
     healthy = 0
     unhealthy = 0
@@ -455,7 +461,9 @@ async def check_segment_health(driver: SqlDriver) -> SegmentHealthReport:
         mode = str(cells.get("mode") or "")
         is_up = status_code == "u"
         is_failover = bool(role and preferred and role != preferred)
-        is_sync = mode != "n"  # 'n' = not-in-sync; 's' = sync; 'c' = changetracking
+        # 'n' = not-in-sync; 's' = sync; 'c' = changetracking. Only meaningful
+        # when the cluster has mirrors; without them every segment reads 'n'.
+        is_sync = True if not has_mirrors else (mode != "n")
         if is_up and not is_failover:
             healthy += 1
         else:

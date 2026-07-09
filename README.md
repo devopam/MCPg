@@ -96,11 +96,16 @@ like `:0.6.5`):
 
 ```bash
 docker pull ghcr.io/devopam/mcpg:latest
-docker run --rm -p 8000:8000 \
+docker run --rm --name mcpg -p 8000:8000 \
     -e MCPG_DATABASE_URL=postgresql://user:pass@host:5432/db \
     -e MCPG_ACCESS_MODE=read-only \
     ghcr.io/devopam/mcpg:latest
 ```
+
+On **Windows PowerShell** replace the trailing `\` with a backtick `` ` ``
+(or put the command on one line); the [installation
+guide](docs/installation.md#option-2--docker) has ready-to-copy
+Linux/macOS, PowerShell, and Command Prompt blocks.
 
 Or build it yourself from source:
 

@@ -198,6 +198,23 @@ async def test_check_segment_health_rolls_up_healthy_unhealthy_and_oos_counts() 
     assert result.out_of_sync_count == 1
 
 
+async def test_check_segment_health_mirrorless_cluster_is_not_out_of_sync() -> None:
+    """A mirrorless cluster reports mode='n' for healthy primaries (nothing to
+    sync with) — that must NOT be counted as out-of-sync."""
+    routes = _mpp_status_routes()
+    routes["ORDER BY content, role"] = [
+        _seg(dbid=1, content=-1, role="c", preferred_role="c", mode="n"),  # coordinator
+        _seg(dbid=2, content=0, role="p", preferred_role="p", mode="n"),  # primary, no mirror
+        _seg(dbid=3, content=1, role="p", preferred_role="p", mode="n"),  # primary, no mirror
+    ]
+    driver = FakeRoutingDriver(routes)
+    result = await check_segment_health(driver)
+    assert result.available is True
+    assert result.total_segments == 3
+    assert result.healthy_count == 3
+    assert result.out_of_sync_count == 0  # no mirrors → "not in sync" is not a fault
+
+
 async def test_check_segment_health_clean_cluster_detail_is_positive() -> None:
     routes = _mpp_status_routes()
     routes["ORDER BY content, role"] = [

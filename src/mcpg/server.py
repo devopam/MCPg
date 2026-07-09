@@ -126,13 +126,14 @@ def make_lifespan(
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP[AppContext]) -> AsyncIterator[AppContext]:
-        from mcpg.cache import CacheManager
+        from mcpg.cache import CacheManager, cache_namespace
 
         cache_manager = CacheManager(
             enabled=settings.cache_enabled,
             ttl_seconds=settings.cache_ttl_seconds,
             maxsize=settings.cache_maxsize,
             redis_url=settings.redis_url,
+            namespace=cache_namespace(settings.database_url),
         )
         await cache_manager.start()
         try:

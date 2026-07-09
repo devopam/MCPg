@@ -6,7 +6,73 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.10] - 2026-07-09
+
+### Fixed
+
+- **Cross-database read-cache bleed with `MCPG_SECONDARY_DATABASE_URLS`
+  (roadmap 13.1).** The process-wide read cache keyed entries by tool +
+  arguments + tenant role but **not** by the target `database` selector, so a
+  cached read against the primary was served for a secondary with matching
+  arguments (and vice-versa) — most visibly, `audit_database(database=…)`
+  against a secondary returned the primary's report. The `database` selector is
+  now folded into the cache key inside `_cached_call` (normalising `None` /
+  `"primary"` to one entry) and threaded from every one of the 70 read tools
+  that accept a `database` argument. Added `tests/unit/test_multidb_cache.py`
+  as a regression guard.
+
+- **`inner_product` recall advisors reported ~0 recall (pgvector).**
+  `vector_recall_at_k`, `recommend_hnsw_ef_search`, and
+  `recommend_ivfflat_probes` ranked the ANN side with pgvector's `<#>` operator
+  (the *negated* inner product — nearest-first under `ASC`) but the brute-force
+  ground-truth side with the `inner_product()` function (*raw* dot product —
+  nearest-first under `DESC`). Under one `ASC` ordering the ground truth became
+  the k *farthest* rows, collapsing `metric="inner_product"` recall to ~0 and
+  wrongly advising an index rebuild. The ground-truth `ORDER BY` direction is
+  now metric-correct (`DESC` for `inner_product`); `l2`/`cosine` were always
+  right.
+
+- **Redis cache could bleed across a multi-database fleet.** The Redis backend
+  keyed entries without any physical-database identity, so a Redis instance
+  shared by processes serving *different* databases (all under the `"primary"`
+  label) served one database's cached result for another. Keys are now
+  namespaced by a credential-free hash of the primary's `host:port/dbname`; a
+  same-database fleet still shares correctly.
+
+- **`recommend_index_drops` could recommend dropping a covering index.**
+  `idx_tup_fetch == 0` was treated as "returned zero rows, drop it", but
+  index-only scans never increment `idx_tup_fetch` — so a heavily-used covering
+  index got a `DROP INDEX`. `scan_no_fetch` now also requires `idx_tup_read == 0`
+  (the genuine existence-check pattern), leaving covering indexes alone.
+
+- **`open_cursor` could exceed `MCPG_MAX_OPEN_CURSORS` under concurrency.** The
+  cap check and the cursor insert happened under two separate lock acquisitions
+  with the connection open in between, so concurrent opens all passed the check
+  and overshot the cap. Opens are now reserved against the cap under the lock.
+
+- **WarehousePG `check_segment_health` false-alarmed on mirrorless clusters.**
+  `mode='n'` (normal for a healthy primary with no mirror) was counted as
+  "out of sync". Sync is now only evaluated when the cluster actually has
+  mirrors (`role='m'`).
+
 ### Changed
+
+- **The primary database is now addressable by its real name (roadmap 13.1).**
+  It was registered only under the generic literal id `"primary"` while
+  secondaries use their real names, so `database="lookup"` errored even though
+  `lookup` *is* the primary. The primary's advertised id is now its real
+  database name (derived from the `MCPG_DATABASE_URL` dbname); `list_databases`
+  and error messages show it, and `database=<real name>` works. `"primary"` and
+  omitting the argument remain accepted aliases.
+
+
+- **Install docs: per-OS commands + `docker run --name mcpg`.** The
+  installation guide's quick-start and Docker sections now carry ready-to-copy
+  **Linux/macOS, Windows PowerShell, and Windows Command Prompt** blocks (the
+  only per-OS difference is how environment variables are set and the shell's
+  line-continuation character), fronted by a one-time translation table. The
+  `docker run` examples gain `--name mcpg` so the container is addressable by
+  name.
 
 - **De-vendored the SQL-safety kernel (roadmap 18.1).** The formerly-vendored
   `crystaldba/postgres-mcp` `sql/` subpackage (`src/mcpg/_vendor/`) is

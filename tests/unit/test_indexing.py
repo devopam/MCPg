@@ -162,6 +162,7 @@ def _drop_row(
     table: str = "orders",
     index: str = "idx_orders_customer",
     idx_scan: int = 0,
+    idx_tup_read: int = 0,
     idx_tup_fetch: int = 0,
     size_bytes: int = 5_000_000,
     table_seq_scan: int = 0,
@@ -173,6 +174,7 @@ def _drop_row(
         "table_name": table,
         "index_name": index,
         "idx_scan": idx_scan,
+        "idx_tup_read": idx_tup_read,
         "idx_tup_fetch": idx_tup_fetch,
         "size_bytes": size_bytes,
         "definition": definition,
@@ -197,15 +199,28 @@ async def test_recommend_index_drops_flags_never_used_indexes() -> None:
 
 
 async def test_recommend_index_drops_flags_scan_no_fetch_indexes() -> None:
-    # Index is hit by the planner but never returns rows — existence-
+    # Index is hit by the planner but reads and returns no rows — existence-
     # check pattern. The reason code escalates the operator's review.
-    driver = FakeDriver([_drop_row(idx_scan=500, idx_tup_fetch=0, size_bytes=4_000_000)])
+    driver = FakeDriver([_drop_row(idx_scan=500, idx_tup_read=0, idx_tup_fetch=0, size_bytes=4_000_000)])
 
     candidates = await recommend_index_drops(driver)
 
     assert len(candidates) == 1
     assert candidates[0].reason_code == DROP_REASON_SCAN_NO_FETCH
-    assert "returned zero rows" in candidates[0].rationale
+    assert "zero" in candidates[0].rationale
+
+
+async def test_recommend_index_drops_does_not_flag_covering_index_only_scans() -> None:
+    # A covering index served entirely by INDEX-ONLY scans has idx_tup_fetch==0
+    # (the heap is never touched) but idx_tup_read>0. It must NOT be flagged as
+    # scan_no_fetch — dropping it would kill a working covering index. With no
+    # rarely-used signal (it's the table's only scan activity) it drops out
+    # entirely rather than getting a DROP recommendation.
+    driver = FakeDriver([_drop_row(idx_scan=5_000, idx_tup_read=250_000, idx_tup_fetch=0, table_idx_scan=5_000)])
+
+    candidates = await recommend_index_drops(driver)
+
+    assert candidates == []
 
 
 async def test_recommend_index_drops_flags_rarely_used_indexes() -> None:

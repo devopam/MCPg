@@ -24,11 +24,37 @@ from mcpg.multidb import (
     DatabaseList,
     ReadOnlySqlDriver,
     make_read_only_driver,
+    resolve_primary_id,
 )
 from mcpg.replicas import TimeoutSqlDriver
 from mcpg.sql import SqlDriver
 
 _PRIMARY = "postgresql://u:p@localhost/db"
+
+
+# ---------------------------------------------------------------------------
+# resolve_primary_id — the primary's advertised id (roadmap 13.1 papercut)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_primary_id_uses_real_dbname() -> None:
+    assert resolve_primary_id("postgresql://u:p@h:5432/lookup?sslmode=require", []) == "lookup"
+    assert resolve_primary_id("host=h dbname=authz user=u", []) == "authz"
+
+
+def test_resolve_primary_id_falls_back_when_undeterminable() -> None:
+    # No dbname in the URL → libpq would default to the user; we can't know it,
+    # so keep the generic id.
+    assert resolve_primary_id("postgresql://u@h/", []) == PRIMARY_DATABASE_ID
+    assert resolve_primary_id(None, []) == PRIMARY_DATABASE_ID
+    assert resolve_primary_id("!!! not a dsn !!!", []) == PRIMARY_DATABASE_ID
+
+
+def test_resolve_primary_id_declines_on_collision_or_literal() -> None:
+    # A DB literally named "primary" stays "primary" (no change).
+    assert resolve_primary_id("postgresql://u:p@h/primary", []) == PRIMARY_DATABASE_ID
+    # Real name colliding with a configured secondary id is ambiguous → keep "primary".
+    assert resolve_primary_id("postgresql://u:p@h/analytics", ["analytics"]) == PRIMARY_DATABASE_ID
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +219,9 @@ async def test_database_ids_lists_primary_first() -> None:
         pool=FakePool(),  # type: ignore[arg-type]
         secondary_pools={"analytics": FakePool(), "reporting": FakePool()},  # type: ignore[arg-type]
     )
-    assert db.database_ids() == [PRIMARY_DATABASE_ID, "analytics", "reporting"]
+    # The primary is advertised under its real DB name ("db", the dsn dbname),
+    # not the generic literal "primary" (roadmap 13.1 papercut).
+    assert db.database_ids() == ["db", "analytics", "reporting"]
 
 
 async def test_driver_for_secondary_is_read_only() -> None:
@@ -216,11 +244,27 @@ async def test_driver_for_primary_is_unchanged_path() -> None:
         secondary_pools={"analytics": FakePool()},  # type: ignore[arg-type]
     )
     await db.connect()
-    # None and "primary" both resolve to the primary driver — NOT read-only.
-    for db_id in (None, "primary"):
+    # None, the "primary" alias, AND the real DB name ("db") all resolve to the
+    # primary driver — NOT read-only.
+    for db_id in (None, "primary", "db"):
         driver = db.driver(db_id)
         assert isinstance(driver, TimeoutSqlDriver)
         assert not isinstance(driver, ReadOnlySqlDriver)
+
+
+async def test_primary_real_name_and_alias_are_equivalent() -> None:
+    """database="db" (real name) hits the primary, same as "primary"/None."""
+    settings = _settings_with_secondaries()
+    db = Database(
+        settings,  # type: ignore[arg-type]
+        pool=FakePool(),  # type: ignore[arg-type]
+        secondary_pools={"analytics": FakePool()},  # type: ignore[arg-type]
+    )
+    await db.connect()
+    assert db.primary_id == "db"
+    # The real name is NOT treated as an unknown secondary id.
+    driver = db.driver("db")
+    assert not isinstance(driver, ReadOnlySqlDriver)
 
 
 async def test_driver_unknown_id_raises_listing_valid_ids() -> None:
@@ -240,8 +284,9 @@ async def test_primary_only_has_no_secondaries() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": _PRIMARY})
     db = Database(settings, pool=FakePool())  # type: ignore[arg-type]
     await db.connect()
-    assert db.database_ids() == [PRIMARY_DATABASE_ID]
+    assert db.database_ids() == ["db"]  # real primary name, "primary" still an alias
     assert not isinstance(db.driver(), ReadOnlySqlDriver)
+    assert not isinstance(db.driver("primary"), ReadOnlySqlDriver)
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +312,7 @@ async def test_describe_databases_probes_each_db() -> None:
 
     rows = await db.describe_databases()
     ids = [r[0] for r in rows]
-    assert ids == [PRIMARY_DATABASE_ID, "analytics"]
+    assert ids == ["db", "analytics"]
     primary_row = rows[0]
     assert primary_row[1] is True  # is_primary
     assert primary_row[2] is False  # read_only
