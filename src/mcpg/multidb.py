@@ -24,14 +24,54 @@ primary, and secondaries simply can't be written to.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
 from mcpg.sql import DbConnPool, SqlDriver
 
-# The implicit id of ``MCPG_DATABASE_URL``. Reserved (see config.py) so a
-# secondary can never shadow it.
+logger = logging.getLogger(__name__)
+
+# The canonical alias of ``MCPG_DATABASE_URL``. Always accepted (and reserved
+# in config.py so a secondary can never shadow it), but the *displayed* primary
+# id is its real PostgreSQL database name when that can be determined — see
+# :func:`resolve_primary_id`.
 PRIMARY_DATABASE_ID = "primary"
+
+
+def resolve_primary_id(database_url: str | None, secondary_ids: Iterable[str]) -> str:
+    """Pick the id the primary database is advertised and addressable under.
+
+    Agents (and humans) reason about databases by the name the server reports
+    for them — ``current_database()`` — so the primary should answer to its
+    real name (e.g. ``lookup``), not just the generic literal ``"primary"``.
+    We derive that name from the ``dbname`` of ``MCPG_DATABASE_URL`` (which
+    equals ``current_database()`` in every normal deployment).
+
+    ``"primary"`` and ``None`` remain accepted aliases regardless (backward
+    compatibility). Falls back to :data:`PRIMARY_DATABASE_ID` when the name
+    can't be determined, is itself ``"primary"``, or would collide with a
+    configured secondary id (an ambiguous config we don't try to resolve).
+    """
+    if not database_url:
+        return PRIMARY_DATABASE_ID
+    try:
+        from psycopg.conninfo import conninfo_to_dict
+
+        name = conninfo_to_dict(database_url).get("dbname")
+    except Exception:  # malformed DSN — keep the generic id rather than raise
+        return PRIMARY_DATABASE_ID
+    if not name or name == PRIMARY_DATABASE_ID:
+        return PRIMARY_DATABASE_ID
+    if name in set(secondary_ids):
+        logger.warning(
+            "primary database name %r collides with a configured secondary id; "
+            "the primary stays addressable as 'primary'",
+            name,
+        )
+        return PRIMARY_DATABASE_ID
+    return str(name)
 
 
 class ReadOnlySqlDriver(SqlDriver):
@@ -136,4 +176,5 @@ __all__ = [
     "DatabaseList",
     "ReadOnlySqlDriver",
     "make_read_only_driver",
+    "resolve_primary_id",
 ]

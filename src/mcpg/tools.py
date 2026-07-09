@@ -3272,7 +3272,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             for db_id, is_primary, read_only, reachable, detail in rows
         ]
         return multidb.DatabaseList(
-            primary_id=multidb.PRIMARY_DATABASE_ID,
+            primary_id=database.primary_id,
             database_ids=database.database_ids(),
             databases=descriptors,
         )
