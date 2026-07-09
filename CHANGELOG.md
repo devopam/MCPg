@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.10] - 2026-07-09
+
 ### Fixed
 
 - **Cross-database read-cache bleed with `MCPG_SECONDARY_DATABASE_URLS`
