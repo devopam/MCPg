@@ -6,7 +6,7 @@
 
 ## Current state
 
-- **Phase:** post-v0.6.9. Every Batch (A–G) from the original
+- **Phase:** post-v0.6.10. Every Batch (A–G) from the original
   shortlist plus the 0.6.x waves have shipped — security (IP
   allowlist, TLS/mTLS, cloud secrets backends), observability
   (slow-call logging + OpenTelemetry), staged migrations + history,
@@ -14,13 +14,14 @@
   efficiency suite, PG 19 readiness (SQL/PGQ, `REPACK`, skip-scan,
   `WAIT FOR LSN`, data-checksum/logical-rep toggles, partition
   merge/split), WarehousePG (MPP) coverage, Redis FDW, `pg_prewarm`,
-  the 19-provider NL→SQL fleet, and the generated-doc-table drift
-  guard.
-- **Last updated:** 2026-07-07
+  the 22-provider NL→SQL fleet, the generated-doc-table drift guard,
+  and the **first-party SQL-safety kernel** (18.1 de-vendor complete —
+  no vendored runtime code remains).
+- **Last updated:** 2026-07-09
 - **Branch:** `main`
 - **Tool count:** 252 (source of truth:
   `tests/contract/tool_surface.snapshot.json`)
-- **Released:** v0.6.9 (2026-07-07)
+- **Released:** v0.6.10 (2026-07-09)
 
 > **Note on this log.** The dated session log below is a historical
 > record that trails off at **2026-05-26** (~90 tools). The nine
@@ -31,11 +32,12 @@
 
 ## Next action
 
-> Trunk is at 0.6.9. The live queue is the un-ticked rows in
-> `docs/feature-shortlist.md` — currently the two NL→SQL
-> security-hardening items (§ "Queued" in
-> `docs/security-hardening.md`) and roadmap 18.1 (de-vendor the
-> SQL-safety kernel).
+> Trunk is at 0.6.10. The feature roadmap (`docs/feature-shortlist.md`
+> §1–18) is fully shipped. The next concrete item is the **0.6.11
+> per-request-tenancy fix** for the HTTP/SSE transports (the
+> `X-MCPG-Role` / OIDC override is pinned to a session's first request;
+> see the known-limitation note in `docs/security-hardening.md`). Beyond
+> that, pick from any newly-surfaced rows in `docs/feature-shortlist.md`.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 

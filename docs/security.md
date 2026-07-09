@@ -203,6 +203,13 @@ and every call is validated and audited.
   `BEGIN ... SET LOCAL ROLE "<role>" ... <stmt> ... COMMIT` so
   RLS policies keyed on `current_user` isolate tenants correctly
   from a single pooled connection.
+  > **Known limitation on `streamable-http` / `sse` (fix in 0.6.11).**
+  > The per-request *override* is pinned to the first request of a
+  > session on these transports (the role is set in the request task but
+  > the tool runs in the session's long-lived dispatch task). Static
+  > `MCPG_DEFAULT_ROLE` and stdio are unaffected. Until 0.6.11, don't
+  > rely on per-request `X-MCPG-Role` for isolation over a shared HTTP
+  > session — use a separate connection/role per tenant.
 - `MCPG_ALLOWED_ROLES` provides an allowlist — header / claim
   values not in the list are rejected with 403.
 - Role names are identifier-validated before being inlined into
