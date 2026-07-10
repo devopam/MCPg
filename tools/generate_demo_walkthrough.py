@@ -158,6 +158,12 @@ async def _build_sections() -> list[str]:
                 "Recommend indexes for this database and explain the reasoning.",
                 "recommend_indexes(min_live_tuples=1000)",
                 _render(demo_recs or recommendations),
+                postscript=(
+                    "The advisor leads with a **btree on `orders.customer_id`** — the planted "
+                    "flaw and the exact fix for the slow query above (PostgreSQL doesn't index "
+                    "foreign keys automatically, so it took a seq scan). It also spots the "
+                    "free-text `status` column as a trigram-GIN candidate for `LIKE`/`ILIKE` search."
+                ),
             )
         )
 

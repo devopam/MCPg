@@ -11,7 +11,7 @@ from mcpg.server import create_server
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
 
-def _row(column: str, data_type: str) -> dict[str, object]:
+def _row(column: str, data_type: str, *, is_unindexed_fk: bool = False) -> dict[str, object]:
     """One (candidate table x column) row for the orders table."""
     return {
         "schemaname": "app",
@@ -22,6 +22,7 @@ def _row(column: str, data_type: str) -> dict[str, object]:
         "data_type": data_type,
         "parent_schema": None,
         "parent_table": None,
+        "is_unindexed_fk": is_unindexed_fk,
     }
 
 
@@ -38,6 +39,7 @@ def _partition_row(
         "data_type": data_type,
         "parent_schema": "app",
         "parent_table": parent,
+        "is_unindexed_fk": False,
     }
 
 
@@ -120,6 +122,32 @@ async def test_recommend_indexes_makes_no_suggestions_for_plain_scalar_columns()
     result = await recommend_indexes(FakeDriver([_row("id", "integer")]))
 
     assert result[0].suggestions == []
+
+
+async def test_recommend_indexes_flags_unindexed_foreign_key_with_btree() -> None:
+    # A plain integer column gets no suggestion on its own; the same column as
+    # an UNINDEXED foreign key must get a btree — the demo's planted flaw.
+    result = await recommend_indexes(FakeDriver([_row("customer_id", "integer", is_unindexed_fk=True)]))
+
+    assert len(result[0].suggestions) == 1
+    fk = result[0].suggestions[0]
+    assert fk.column == "customer_id"
+    assert fk.index_type == "btree"
+    assert "foreign-key" in fk.rationale
+
+
+async def test_recommend_indexes_fk_btree_leads_type_based_suggestions() -> None:
+    # The demo's orders table: an unindexed FK (customer_id) plus a text
+    # column (status). Both are suggested; the FK btree — the actual cause of
+    # the slow query — comes first (by ordinal position).
+    driver = FakeDriver([_row("customer_id", "integer", is_unindexed_fk=True), _row("status", "text")])
+
+    result = await recommend_indexes(driver, min_live_tuples=1000)
+
+    assert [(s.column, s.index_type) for s in result[0].suggestions] == [
+        ("customer_id", "btree"),
+        ("status", "gin_trgm"),
+    ]
 
 
 async def test_recommend_indexes_returns_empty_when_nothing_qualifies() -> None:

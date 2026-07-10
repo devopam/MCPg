@@ -82,14 +82,24 @@ async def test_demo_lifecycle_and_planted_findings(database_url: str, is_warehou
                 await driver.execute_query(f"ANALYZE {DEMO_SCHEMA}.{table}")  # type: ignore[arg-type]
             for _ in range(8):
                 await driver.execute_query(_SLOW_QUERY)  # type: ignore[arg-type]
-            flagged = False
+            orders_rec = None
             for _ in range(30):
                 recommendations = await recommend_indexes(driver, min_live_tuples=1000)
-                flagged = any(r.schema == DEMO_SCHEMA and r.table == "orders" for r in recommendations)
-                if flagged:
+                orders_rec = next(
+                    (r for r in recommendations if r.schema == DEMO_SCHEMA and r.table == "orders"), None
+                )
+                if orders_rec is not None:
                     break
                 await asyncio.sleep(0.5)
-            assert flagged, "recommend_indexes never flagged mcpg_demo.orders"
+            assert orders_rec is not None, "recommend_indexes never flagged mcpg_demo.orders"
+            # The planted flaw is the unindexed FK orders.customer_id; the
+            # advisor must actually catch it with a btree recommendation (this
+            # is exactly what docs/demo.md promises).
+            fk_suggestion = next(
+                (s for s in orders_rec.suggestions if s.column == "customer_id"), None
+            )
+            assert fk_suggestion is not None, "recommend_indexes did not flag the unindexed FK customer_id"
+            assert fk_suggestion.index_type == "btree"
 
             # Planted prose: review text is full-text searchable.
             matches = await full_text_search(driver, DEMO_SCHEMA, "reviews", "review_text", '"battery life"', limit=5)

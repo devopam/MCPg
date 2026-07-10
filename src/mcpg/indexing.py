@@ -1,9 +1,11 @@
 """Index recommendations from table scan statistics and column types.
 
 A table-level heuristic flags large tables read mostly by sequential scan;
-for each, column types drive per-column index-type suggestions (GIN for
-``jsonb``/arrays, trigram GIN for text). Choosing exactly which columns a
-workload filters on still needs query analysis (see ``analyze_workload``).
+for each, it recommends a btree on any unindexed single-column foreign key
+(PostgreSQL doesn't auto-index FKs) and column types drive per-column
+index-type suggestions (GIN for ``jsonb``/arrays, trigram GIN for text).
+Choosing exactly which columns a workload filters on still needs query
+analysis (see ``analyze_workload``).
 
 The companion :func:`recommend_index_drops` looks at the same scan
 statistics from the opposite angle — flagging *existing* indexes that
@@ -78,18 +80,33 @@ class _TableAgg:
         self.live_tuples += live_tup
         self.partitioned = self.partitioned or is_partition
 
-    def add_suggestion(self, column: str, data_type: str) -> None:
+    def add_suggestion(self, column: str, data_type: str, is_unindexed_fk: bool = False) -> None:
         if column in self._seen_columns:
             return
-        suggestion = _suggest(column, data_type)
+        suggestion = _suggest(column, data_type, is_unindexed_fk)
         if suggestion is None:
             return
         self._seen_columns.add(column)
         self.suggestions.append(suggestion)
 
 
-def _suggest(column: str, data_type: str) -> IndexSuggestion | None:
-    """Suggest an index type for a column based on its data type, if any."""
+# Rationale for a foreign-key column that has no covering index. PostgreSQL
+# indexes PRIMARY KEY / UNIQUE columns automatically but NOT foreign keys, so
+# an unindexed FK is a common, high-impact gap: joins from the referenced side
+# fall back to sequential scans, and every UPDATE/DELETE on the parent has to
+# seq-scan the child to enforce the constraint.
+_FK_RATIONALE = (
+    "foreign-key column with no covering index — unindexed FKs force sequential "
+    "scans on joins and slow cascading UPDATE/DELETE on the referenced table"
+)
+
+
+def _suggest(column: str, data_type: str, is_unindexed_fk: bool = False) -> IndexSuggestion | None:
+    """Suggest an index for a column based on FK status, then data type."""
+    # An unindexed foreign key wins: a plain btree on the FK column is the
+    # highest-value fix, independent of the column's data type.
+    if is_unindexed_fk:
+        return IndexSuggestion(column, "btree", _FK_RATIONALE)
     if data_type == "jsonb":
         return IndexSuggestion(column, "gin", "GIN supports jsonb containment and key lookups")
     if data_type == "ARRAY":
@@ -105,8 +122,12 @@ async def recommend_indexes(
     """Recommend tables that may benefit from indexing, with column hints.
 
     Heuristic: large tables (at least ``min_live_tuples`` rows) read more
-    often by sequential scan than by index scan. For each, columns with
-    GIN-friendly types yield an :class:`IndexSuggestion`. A flagged partition
+    often by sequential scan than by index scan. For each, two kinds of
+    per-column suggestion are emitted: a **btree** on any single-column
+    foreign key that has no covering index (PostgreSQL doesn't auto-index FKs,
+    so these silently force seq-scan joins), and a type-driven suggestion for
+    GIN-friendly columns (``jsonb`` / arrays → GIN, text → trigram GIN). A
+    flagged partition
     is rolled up to its partitioned parent, since an index belongs on the
     parent; scan and row counts are summed across the partitions. The
     partitioned parent's own (empty) stats row is excluded from the
@@ -119,7 +140,19 @@ async def recommend_indexes(
     rows = await driver.execute_query(
         "SELECT s.schemaname, s.relname, s.seq_scan, s.n_live_tup, "
         "c.column_name, c.data_type, "
-        "pn.nspname AS parent_schema, parent.relname AS parent_table "
+        "pn.nspname AS parent_schema, parent.relname AS parent_table, "
+        # A single-column foreign key on this column with no index whose
+        # leading column is that FK column — PostgreSQL doesn't auto-index FKs.
+        "EXISTS ("
+        "  SELECT 1 FROM pg_constraint con "
+        "  JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[1] "
+        "  WHERE con.contype = 'f' AND array_length(con.conkey, 1) = 1 "
+        "    AND con.conrelid = self.oid AND a.attname = c.column_name "
+        "    AND NOT EXISTS ("
+        "      SELECT 1 FROM pg_index ix "
+        "      WHERE ix.indrelid = con.conrelid AND ix.indkey[0] = con.conkey[1]"
+        "    )"
+        ") AS is_unindexed_fk "
         "FROM pg_stat_user_tables s "
         "JOIN pg_class self ON self.oid = s.relid AND self.relkind <> 'p' "
         "JOIN information_schema.columns c "
@@ -152,7 +185,7 @@ async def recommend_indexes(
         if physical not in counted:
             counted.add(physical)
             agg.add_stats(row.cells["seq_scan"], row.cells["n_live_tup"], is_partition)
-        agg.add_suggestion(row.cells["column_name"], row.cells["data_type"])
+        agg.add_suggestion(row.cells["column_name"], row.cells["data_type"], bool(row.cells.get("is_unindexed_fk")))
 
     return [
         IndexRecommendation(
