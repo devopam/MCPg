@@ -140,21 +140,26 @@ def redact_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
 def record(event: AuditEvent) -> None:
     """Emit an audit event to the ``mcpg.audit`` logger."""
     safe_arguments = redact_arguments(event.arguments)
+    # The error is free-form ``str(exc)`` and can embed a connection string
+    # (e.g. a secondary/replica/data-movement DSN whose driver didn't
+    # pre-obfuscate); redact it exactly like the arguments so a password can't
+    # reach the audit sink.
+    safe_error = obfuscate_password(event.error) if event.error is not None else None
     if _log_format == "json":
         payload = {
             "tool": event.tool,
             "status": event.status,
             "arguments": safe_arguments,
         }
-        if event.error is not None:
-            payload["error"] = event.error
+        if safe_error is not None:
+            payload["error"] = safe_error
         msg = json.dumps(payload)
-        if event.error is None:
+        if safe_error is None:
             audit_logger.info(msg)
         else:
             audit_logger.warning(msg)
     else:
-        if event.error is None:
+        if safe_error is None:
             audit_logger.info("tool=%s status=%s arguments=%s", event.tool, event.status, safe_arguments)
         else:
             audit_logger.warning(
@@ -162,7 +167,7 @@ def record(event: AuditEvent) -> None:
                 event.tool,
                 event.status,
                 safe_arguments,
-                event.error,
+                safe_error,
             )
 
 
@@ -1025,6 +1030,7 @@ async def audit_slow_queries(driver: SqlDriver) -> CategoryResult:
             "LIMIT 1",
             force_readonly=True,
         )
+        calls = 0
         if rows:
             cells = rows[0].cells
             calls = int(cells["calls"] or 0)
