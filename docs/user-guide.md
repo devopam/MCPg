@@ -246,16 +246,12 @@ HTTP requests override the default by sending
 `MCPG_OIDC_ROLE_CLAIM` — the named JWT claim's value becomes the
 per-request role automatically.
 
-> **Known limitation on `streamable-http` / `sse` (fixed in 0.6.11).**
-> The per-request *override* (`X-MCPG-Role` header / per-request OIDC
-> role claim) is currently pinned to the **first request of a session**
-> on the HTTP/SSE transports — a role set later in the session is not
-> applied, because the value is set in the ASGI request task but the
-> tool runs in the session's long-lived dispatch task. A **static**
-> `MCPG_DEFAULT_ROLE` is unaffected, and **stdio** is unaffected. Until
-> 0.6.11, don't rely on per-request `X-MCPG-Role` for tenant isolation
-> over a shared HTTP session — use a separate connection (or a distinct
-> static `MCPG_DEFAULT_ROLE`) per tenant.
+Per-request role selection is honoured **per message** on the
+`streamable-http` / `sse` transports — every tool call resolves the role
+from its own request, so two tenants sharing one MCP session each run
+under their own role. (This is threaded through the SDK's per-message
+request context; earlier releases up to 0.6.10 pinned the role to a
+session's first request — fixed in 0.6.11.)
 
 Role names are identifier-validated
 (`[A-Za-z_][A-Za-z0-9_]*`) so they're safe to inline into

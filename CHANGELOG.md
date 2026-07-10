@@ -31,6 +31,15 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **Per-request tenancy role now works on `streamable-http` / `sse`.** The
+  `X-MCPG-Role` header (and per-request OIDC role claim) was set in a ContextVar
+  in the ASGI request task, but FastMCP dispatches tool calls in a long-lived
+  per-session task whose context is copied once at session start — so the
+  override was silently **pinned to the session's first request**, a
+  multi-tenant isolation break (static `MCPG_DEFAULT_ROLE` and stdio were
+  unaffected). The middleware now stashes the validated role on the request,
+  and the tenancy driver resolves it **per message** from the SDK's request
+  context at query time. Regression tests cover the frozen-ContextVar case.
 - **Audit log: error text is now redacted.** A DSN embedded in a tool's error
   message (e.g. a secondary/replica/data-movement connection) is run through
   `obfuscate_password` before logging, matching the existing argument

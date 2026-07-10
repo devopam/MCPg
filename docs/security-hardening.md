@@ -37,16 +37,17 @@ only (RS256-RS512 + ES256-ES512); HS-family explicitly excluded.
 Static (`MCPG_DEFAULT_ROLE`) plus per-request override
 (`X-MCPG-Role` HTTP header / `MCPG_OIDC_ROLE_CLAIM` from the JWT).
 Allowlist via `MCPG_ALLOWED_ROLES`. Role names identifier-validated.
+The per-request override is resolved **per message** on `streamable-http`
+/ `sse` — the middleware validates the role and stashes it on the request,
+and the tenancy driver reads it from the SDK's per-message request context
+at query time, so it can't be pinned to a session's first request.
 
-> 🟡 **Known limitation (HTTP/SSE), fix landing in 0.6.11.** The
-> per-request *override* is currently pinned to the **first request of a
-> session** on the `streamable-http` / `sse` transports: `current_role`
-> is set in the ASGI request task, but tools execute in the session's
-> long-lived dispatch task, whose context was copied once at session
-> start. Static `MCPG_DEFAULT_ROLE` and stdio are unaffected. The fix
-> resolves the role from the per-message request context at query time
-> (tracked for 0.6.11). Until then, isolate tenants with a separate
-> connection/role rather than per-request `X-MCPG-Role` over one session.
+> **Fixed in 0.6.11.** Releases up to 0.6.10 set the role only in a
+> ContextVar in the ASGI request task, which FastMCP's long-lived per-
+> session dispatch task never saw — so a per-request `X-MCPG-Role` was
+> effectively pinned to the session's first request. It now reads the
+> authoritative role from the per-message request; static
+> `MCPG_DEFAULT_ROLE` and stdio were never affected.
 
 ### ✅ Read-replica routing
 `MCPG_REPLICA_URLS` round-robins read-only queries to healthy

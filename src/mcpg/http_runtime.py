@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any, cast
 from mcpg.config import Settings
 from mcpg.observability import render_prometheus
 from mcpg.oidc import OIDCError, OIDCVerifier
-from mcpg.tenancy import TenancyError, current_role, validate_role
+from mcpg.tenancy import _ROLE_SCOPE_KEY, TenancyError, current_role, validate_role
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -183,6 +183,10 @@ class _OIDCAuthMiddleware:
             await _send_401(send, "role claim contains an invalid identifier")
             return
 
+        # Stash on the scope so the tool-dispatch task (a separate, session-
+        # scoped task on HTTP/SSE) reads the correct per-request role via the
+        # SDK request context; the ContextVar alone doesn't reach it.
+        scope[_ROLE_SCOPE_KEY] = verified.role
         reset_token = current_role.set(verified.role)
         try:
             await self._app(scope, receive, send)  # type: ignore[operator]
@@ -250,6 +254,10 @@ class _TenantRoleMiddleware:
             await _send_403(send, "X-MCPG-Role is not in the allowed-roles list")
             return
 
+        # Stash on the scope so the tool-dispatch task (a separate, session-
+        # scoped task on HTTP/SSE) reads the correct per-request role via the
+        # SDK request context; the ContextVar alone doesn't reach it.
+        scope[_ROLE_SCOPE_KEY] = role
         token = current_role.set(role)
         try:
             await self._app(scope, receive, send)  # type: ignore[operator]
