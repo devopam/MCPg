@@ -262,6 +262,13 @@ def test_tenant_role_middleware_sets_contextvar_for_the_inner_app() -> None:
     assert observed_roles == ["tenant_a"]
     # ContextVar is reset on exit so the next request starts clean.
     assert current_role.get() is None
+    # The role is also stashed on the ASGI scope — this is what reaches the
+    # tool-dispatch task (a separate, session-scoped task) via the SDK request
+    # context, since the ContextVar alone does not. Unlike the ContextVar, the
+    # scope stash is NOT reset: the scope is per-request and discarded after.
+    from mcpg.tenancy import _ROLE_SCOPE_KEY
+
+    assert scope[_ROLE_SCOPE_KEY] == "tenant_a"
 
 
 def test_tenant_role_middleware_returns_403_when_role_is_not_in_allowlist() -> None:
