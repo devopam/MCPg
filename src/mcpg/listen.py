@@ -248,7 +248,7 @@ class ListenManager:
             # __aexit__ still runs.
             try:
                 await asyncio.wait_for(conn.close(), timeout=2.0)
-            except (TimeoutError, Exception):
+            except Exception:
                 pass
         if task is not None:
             task.cancel()

@@ -714,6 +714,7 @@ async def optimize_query(driver: SqlDriver, sql: str) -> OptimizationResult:
     """Analyze a SQL query for anti-patterns and performance issues, returning an optimized version."""
     findings = []
     ex_summary = ""
+    plan = None
 
     # 1. Plan analysis
     try:
@@ -789,7 +790,7 @@ async def optimize_query(driver: SqlDriver, sql: str) -> OptimizationResult:
         )
 
     try:
-        if "plan" in locals() and plan.sequential_scans:
+        if plan is not None and plan.sequential_scans:
             rationale_parts.append(
                 "- Consider adding indexes on columns used in WHERE or JOIN clauses for tables with Seq Scan."
             )

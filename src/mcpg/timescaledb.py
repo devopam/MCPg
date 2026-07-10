@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
@@ -43,10 +42,6 @@ def _check_identifier(name: str, kind: str) -> None:
 def _check_interval(value: str) -> None:
     if not _INTERVAL.match(value.strip()):
         raise TimescaleError(f"invalid interval {value!r}; expected e.g. '7 days', '1 hour', '30 minutes'")
-
-
-def _quoted(name: str) -> str:
-    return f'"{name}"'
 
 
 @dataclass(frozen=True)
@@ -260,10 +255,3 @@ async def add_retention_policy(
     )
     detail = f"job_id={rows[0].cells['job_id']}" if rows else "policy added"
     return TimescaleWriteResult(available=True, function="add_retention_policy", details=detail)
-
-
-def _quoted_unused(_: Any) -> None:
-    # Placeholder so an editor's "unused import" warning on _quoted
-    # doesn't fire in modules that only validate identifiers but never
-    # build qualified relations directly.
-    pass

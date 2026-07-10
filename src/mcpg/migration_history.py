@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from mcpg.sql import SqlDriver
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -180,8 +183,12 @@ async def read_migration_history(
                 alembic.extend(
                     [AlembicMigration(version_num=str(row.cells["version_num"])) for row in alembic_rows or []]
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # The table exists but couldn't be read (permissions, or a
+                # column shape that doesn't match this framework's expected
+                # layout) — skip this framework rather than fail the whole
+                # report, and leave a breadcrumb for debugging.
+                logger.debug("migration_history: skipping %s (%s)", t, exc)
 
         elif t == "flyway_schema_history":
             try:
@@ -211,8 +218,12 @@ async def read_migration_history(
                         for row in flyway_rows or []
                     ]
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # The table exists but couldn't be read (permissions, or a
+                # column shape that doesn't match this framework's expected
+                # layout) — skip this framework rather than fail the whole
+                # report, and leave a breadcrumb for debugging.
+                logger.debug("migration_history: skipping %s (%s)", t, exc)
 
         elif t == "__diesel_schema_migrations":
             try:
@@ -231,8 +242,12 @@ async def read_migration_history(
                         for row in diesel_rows or []
                     ]
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # The table exists but couldn't be read (permissions, or a
+                # column shape that doesn't match this framework's expected
+                # layout) — skip this framework rather than fail the whole
+                # report, and leave a breadcrumb for debugging.
+                logger.debug("migration_history: skipping %s (%s)", t, exc)
 
         elif t == "django_migrations":
             try:
@@ -253,8 +268,12 @@ async def read_migration_history(
                         for row in django_rows or []
                     ]
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # The table exists but couldn't be read (permissions, or a
+                # column shape that doesn't match this framework's expected
+                # layout) — skip this framework rather than fail the whole
+                # report, and leave a breadcrumb for debugging.
+                logger.debug("migration_history: skipping %s (%s)", t, exc)
 
         elif t == "_prisma_migrations":
             try:
@@ -282,8 +301,12 @@ async def read_migration_history(
                         for row in prisma_rows or []
                     ]
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # The table exists but couldn't be read (permissions, or a
+                # column shape that doesn't match this framework's expected
+                # layout) — skip this framework rather than fail the whole
+                # report, and leave a breadcrumb for debugging.
+                logger.debug("migration_history: skipping %s (%s)", t, exc)
 
         elif t == "schema_migrations":
             try:
@@ -303,8 +326,12 @@ async def read_migration_history(
                         for row in gm_rows or []
                     ]
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # The table exists but couldn't be read (permissions, or a
+                # column shape that doesn't match this framework's expected
+                # layout) — skip this framework rather than fail the whole
+                # report, and leave a breadcrumb for debugging.
+                logger.debug("migration_history: skipping %s (%s)", t, exc)
 
         elif t == "goose_db_version":
             try:
@@ -325,8 +352,12 @@ async def read_migration_history(
                         for row in goose_rows or []
                     ]
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # The table exists but couldn't be read (permissions, or a
+                # column shape that doesn't match this framework's expected
+                # layout) — skip this framework rather than fail the whole
+                # report, and leave a breadcrumb for debugging.
+                logger.debug("migration_history: skipping %s (%s)", t, exc)
 
         elif t == "SequelizeMeta":
             try:
@@ -337,8 +368,12 @@ async def read_migration_history(
                 if sequelize is None:
                     sequelize = []
                 sequelize.extend([SequelizeMigration(name=str(row.cells["name"])) for row in seq_rows or []])
-            except Exception:
-                pass
+            except Exception as exc:
+                # The table exists but couldn't be read (permissions, or a
+                # column shape that doesn't match this framework's expected
+                # layout) — skip this framework rather than fail the whole
+                # report, and leave a breadcrumb for debugging.
+                logger.debug("migration_history: skipping %s (%s)", t, exc)
 
     return MigrationHistoryReport(
         alembic=alembic,
