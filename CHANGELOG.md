@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.11] - 2026-07-10
+
 ### Added
 
 - **`recommend_indexes` now flags unindexed foreign keys.** PostgreSQL indexes
