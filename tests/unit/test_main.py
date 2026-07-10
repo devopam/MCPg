@@ -9,6 +9,7 @@ from mcpg.config import Settings
 def test_main_returns_1_and_reports_when_config_is_missing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    monkeypatch.setattr("sys.argv", ["mcpg"])
     monkeypatch.delenv("MCPG_DATABASE_URL", raising=False)
 
     exit_code = __main__.main()
@@ -18,6 +19,7 @@ def test_main_returns_1_and_reports_when_config_is_missing(
 
 
 def test_main_runs_the_server_with_loaded_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["mcpg"])
     monkeypatch.setenv("MCPG_DATABASE_URL", "postgresql://u:p@localhost/db")
     received: list[Settings] = []
     monkeypatch.setattr(__main__, "run", received.append)
@@ -27,6 +29,56 @@ def test_main_runs_the_server_with_loaded_settings(monkeypatch: pytest.MonkeyPat
     assert exit_code == 0
     assert len(received) == 1
     assert received[0].database_url == "postgresql://u:p@localhost/db"
+
+
+@pytest.mark.parametrize("flag", ["--help", "-h"])
+def test_help_flag_prints_usage_without_a_database(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], flag: str
+) -> None:
+    # --help must work with NO configuration set — it's the first thing a new
+    # user types, so it can't depend on load_settings().
+    monkeypatch.delenv("MCPG_DATABASE_URL", raising=False)
+    monkeypatch.setattr("sys.argv", ["mcpg", flag])
+
+    exit_code = __main__.main()
+
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Usage:" in out
+    assert "MCPG_DATABASE_URL" in out
+    assert "configuration error" not in out
+
+
+@pytest.mark.parametrize("flag", ["--version", "-V"])
+def test_version_flag_works_without_a_database(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], flag: str
+) -> None:
+    from mcpg import __version__
+
+    monkeypatch.delenv("MCPG_DATABASE_URL", raising=False)
+    monkeypatch.setattr("sys.argv", ["mcpg", flag])
+
+    exit_code = __main__.main()
+
+    assert exit_code == 0
+    assert capsys.readouterr().out.strip() == f"mcpg {__version__}"
+
+
+def test_unknown_argument_reports_clearly_not_a_config_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An unknown flag must not fall through to a confusing "MCPG_DATABASE_URL
+    # is required" config error.
+    monkeypatch.delenv("MCPG_DATABASE_URL", raising=False)
+    monkeypatch.setattr("sys.argv", ["mcpg", "--bogus"])
+
+    exit_code = __main__.main()
+
+    err = capsys.readouterr().err
+    assert exit_code == 2
+    assert "unknown argument" in err
+    assert "--bogus" in err
+    assert "configuration error" not in err
 
 
 def test_demo_flag_seeds_and_prints_the_summary(

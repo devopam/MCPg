@@ -6,6 +6,39 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`recommend_indexes` now flags unindexed foreign keys.** PostgreSQL indexes
+  PRIMARY KEY / UNIQUE columns automatically but *not* foreign keys, so an
+  unindexed FK silently forces sequential-scan joins and slow cascading
+  UPDATE/DELETE. For each seq-scan-heavy table the advisor now recommends a
+  **btree** on any single-column FK that has no covering index (leading the
+  type-driven GIN/trigram suggestions). Closes the gap the demo walkthrough
+  demonstrates.
+
+### Fixed
+
+- **`mcpg --help` / `-h`** now prints usage instead of dying with a
+  `MCPG_DATABASE_URL is required` config error; an unknown argument is
+  reported clearly (exit 2) rather than falling through to the same misleading
+  message.
+- **README HTTP quickstart** pointed clients at `http://localhost:8000`; the
+  handler is mounted at `/mcp` (`/sse` for SSE) — corrected so a copy-pasted
+  first connection doesn't 404.
+- **Stdio startup is no longer silent** — `mcpg` logs one line to stderr
+  (`ready on stdio (<mode> mode) — waiting for an MCP client`) so a first-time
+  user doesn't think it hung.
+
+### Security
+
+- **Audit log: error text is now redacted.** A DSN embedded in a tool's error
+  message (e.g. a secondary/replica/data-movement connection) is run through
+  `obfuscate_password` before logging, matching the existing argument
+  redaction, so a password can't leak into the audit sink.
+- **`EXPLAIN ANALYZE` (`io=True`) now runs read-only.** The only agent-SQL path
+  that executed at `force_readonly=False`, reachable in read-only mode, now
+  wraps execution in `BEGIN TRANSACTION READ ONLY` like every other path.
+
 ## [0.6.10] - 2026-07-09
 
 ### Fixed

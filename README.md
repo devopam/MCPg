@@ -203,7 +203,8 @@ MCPG_HTTP_PORT=8000 \
 mcpg
 ```
 
-Then point any MCP-aware client at `http://localhost:8000`. Set
+Then point any MCP-aware client at `http://localhost:8000/mcp` (or
+`/sse` for the SSE transport). Set
 `MCPG_HTTP_AUTH_TOKEN=...` for a static bearer, or
 `MCPG_AUTH_MODE=oidc` for full JWT validation against an OIDC issuer.
 

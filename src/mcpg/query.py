@@ -252,8 +252,13 @@ async def explain_query(
             # the raw driver doesn't, so reinstate the bound here. Without
             # this an EXPLAIN ANALYZE on a runaway query (long sort, missing
             # index, deadlock) would block the server worker indefinitely.
+            # force_readonly wraps the execution in BEGIN TRANSACTION READ ONLY
+            # so EXPLAIN ANALYZE (which really runs the query) can't have a
+            # write side effect even if a future allowlist gap let one through
+            # — matching every other agent-SQL path. EXPLAIN ANALYZE of a
+            # validated SELECT runs fine inside a read-only transaction.
             rows = await asyncio.wait_for(
-                driver.execute_query(f"EXPLAIN (ANALYZE, BUFFERS, TIMING, FORMAT JSON) {sql}"),
+                driver.execute_query(f"EXPLAIN (ANALYZE, BUFFERS, TIMING, FORMAT JSON) {sql}", force_readonly=True),
                 timeout=timeout,
             )
         else:

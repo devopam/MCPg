@@ -291,11 +291,14 @@ async def test_explain_query_io_true_runs_analyze_buffers_timing() -> None:
     options on the EXPLAIN — otherwise PG won't emit the I/O fields."""
     driver = FakeDriver([{"QUERY PLAN": [{"Plan": {"Node Type": "Result"}}]}])
     await explain_query(driver, "SELECT 1", io=True)
-    sent_query, _, _ = driver.calls[-1]
+    sent_query, _, force_readonly = driver.calls[-1]
     assert "ANALYZE" in sent_query
     assert "BUFFERS" in sent_query
     assert "TIMING" in sent_query
     assert "FORMAT JSON" in sent_query
+    # EXPLAIN ANALYZE executes the query — it must run inside a read-only
+    # transaction so a validated SELECT can't have a write side effect.
+    assert force_readonly is True
 
 
 async def test_explain_query_default_keeps_the_plan_only_path() -> None:

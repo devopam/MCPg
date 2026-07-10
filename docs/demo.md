@@ -254,6 +254,11 @@ The plan shows a **sequential scan over every order** to find one customer's row
     "reason": "large table read mostly by sequential scan",
     "suggestions": [
       {
+        "column": "customer_id",
+        "index_type": "btree",
+        "rationale": "foreign-key column with no covering index — unindexed FKs force sequential scans on joins and slow cascading UPDATE/DELETE on the referenced table"
+      },
+      {
         "column": "status",
         "index_type": "gin_trgm",
         "rationale": "trigram GIN (pg_trgm) accelerates LIKE/ILIKE pattern search"
@@ -263,6 +268,11 @@ The plan shows a **sequential scan over every order** to find one customer's row
   }
 ]
 ```
+
+The advisor leads with a **btree on `orders.customer_id`** — the planted flaw
+and the exact fix for the slow query above (PostgreSQL doesn't index foreign
+keys automatically, so it took a seq scan). It also spots the free-text
+`status` column as a trigram-GIN candidate for `LIKE`/`ILIKE` search.
 
 ---
 

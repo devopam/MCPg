@@ -8,6 +8,7 @@ mutable global state.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -239,6 +240,15 @@ def run(settings: Settings) -> None:
     server = create_server(settings)
     match settings.transport:
         case Transport.STDIO:
+            # stdout carries the JSON-RPC stream, so this reassuring banner
+            # goes to the logger (stderr) — otherwise a first-time user who
+            # runs `mcpg` just to see it work stares at a silent, blocked
+            # process and assumes it hung.
+            logging.getLogger("mcpg.server").info(
+                "mcpg %s ready on stdio (%s mode) — waiting for an MCP client to connect",
+                __version__,
+                settings.access_mode.value,
+            )
             server.run(transport="stdio")
         case Transport.STREAMABLE_HTTP:
             from mcpg.http_runtime import run_http
