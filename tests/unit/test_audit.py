@@ -377,3 +377,29 @@ def test_audit_record_json_format(caplog) -> None:
             logger.propagate = old_propagate
     finally:
         configure_log_format("text")
+
+
+def test_audit_record_redacts_password_in_error_text(caplog) -> None:
+    """A DSN embedded in a tool's error message must not leak into the audit log."""
+    import logging
+
+    from mcpg.audit import AuditEvent, record
+
+    event = AuditEvent(
+        tool="copy_table_between_databases",
+        arguments={},
+        status="error",
+        error="connection to postgresql://admin:hunter2@db.internal:5432/app failed",
+    )
+    logger = logging.getLogger("mcpg")
+    old_propagate = logger.propagate
+    logger.propagate = True
+    try:
+        caplog.set_level(logging.WARNING)
+        record(event)
+        messages = " ".join(r.message for r in caplog.records if r.name == "mcpg.audit")
+        assert "hunter2" not in messages  # the password is masked
+        assert "****" in messages
+        assert "db.internal" in messages  # non-secret host is preserved
+    finally:
+        logger.propagate = old_propagate
