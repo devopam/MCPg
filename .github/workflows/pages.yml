@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Configure Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Build with Jekyll
         # Uses the same github-pages gem set the legacy build used, so
         # the output is byte-for-byte what was publishing before —
