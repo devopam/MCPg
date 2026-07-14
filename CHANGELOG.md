@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Bumped `pglast` 7.15 → 8.2** (the SQL-safety kernel's parser). pglast 8
+  tracks `libpg_query` 18-latest (PostgreSQL 18 grammar) and now ships type
+  hints. No behaviour change for MCPg: the full adversarial + fuzz +
+  differential-parity SQL-kernel suites and the PG-grammar characterisation
+  tests all pass unchanged. The AST walker's `__slots__` recursion gets a
+  targeted `type: ignore` since pglast 8's `Node` base type doesn't declare it
+  (the concrete node subclasses still carry their fields there at runtime).
+
 ## [0.6.11] - 2026-07-10
 
 ### Added

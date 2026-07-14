@@ -195,7 +195,8 @@ strict = true
 exclude = ["scratch/"]
 
 [[tool.mypy.overrides]]
-# pglast ships no type stubs.
+# pglast ships partial type hints (as of v8); ignore import-resolution gaps
+# for the submodules we don't have full types for.
 module = ["pglast", "pglast.*"]
 ignore_missing_imports = true
 
