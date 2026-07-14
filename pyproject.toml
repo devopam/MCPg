@@ -53,7 +53,7 @@ dependencies = [
     "mcp[cli]>=1.25.0",
     "psycopg[binary]>=3.3.2",
     "psycopg-pool>=3.3.0",
-    "pglast==7.15",
+    "pglast==8.2",
     "typing-extensions>=4.12",
     # httpx ships transitively via mcp; declare it explicitly so the
     # NL→SQL providers in mcpg.nl2sql have a guaranteed surface.
@@ -195,7 +195,8 @@ strict = true
 exclude = ["scratch/"]
 
 [[tool.mypy.overrides]]
-# pglast ships no type stubs.
+# pglast ships partial type hints (as of v8); ignore import-resolution gaps
+# for the submodules we don't have full types for.
 module = ["pglast", "pglast.*"]
 ignore_missing_imports = true
 

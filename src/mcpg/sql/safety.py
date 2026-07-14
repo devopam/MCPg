@@ -115,8 +115,12 @@ class SafeSqlDriver(SqlDriver):
             if node.extname not in self.ALLOWED_EXTENSIONS:
                 raise ValueError(f"CREATE EXTENSION {node.extname} is not supported")
 
-        # Recurse into every child node.
-        for attr_name in node.__slots__:
+        # Recurse into every child node. pglast's concrete Node subclasses
+        # carry their fields in ``__slots__``; the base ``Node`` type (typed
+        # as of pglast 8) doesn't declare it, so mypy needs the ignore. This
+        # is the walker's core and is pinned by the differential-parity +
+        # adversarial suites, so a runtime regression would fail those.
+        for attr_name in node.__slots__:  # type: ignore[attr-defined]
             if attr_name.startswith("_"):
                 continue
             try:
