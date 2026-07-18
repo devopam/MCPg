@@ -280,6 +280,29 @@ gate.
 |---|---|---|---|---|
 | 18.1 | ✅ **Shipped.** Replaced the vendored `crystaldba/postgres-mcp` kernel with a first-party `src/mcpg/sql/` package — `allowlist.py` (policy as data), `safety.py` (`SafeSqlDriver` walker), `driver.py` (`SqlDriver`/`DbConnPool`/`obfuscate_password`). The dead `bind_params.py` / `extension_utils.py` / `index.py` were deleted, not rebuilt. All ~74 consumers swung to `mcpg.sql`; `_vendor/` + `tests/vendor/` deleted; the 5 quality-gate carve-outs removed (the kernel is now inside coverage + `mypy --strict` + `ruff` + `bandit`). Faithful re-author, proven identical by a differential parity harness (0 divergence) + the ported 760-LOC adversarial suite + a fuzz pass + `/security-review` (no findings). Supersedes ADR-0001 with [ADR-0007](adr/0007-first-party-sql-kernel.md); plan in [`plans/devendor-sql-kernel.md`](plans/devendor-sql-kernel.md), sign-off in [`reviews/devendor-sql-kernel-security-review.md`](reviews/devendor-sql-kernel-security-review.md). | L | Medium | Removes the last third-party runtime core; full control over the safety semantics. |
 
+## 19. Benchmark suite — public, evidence-driven
+
+A reproducible benchmark making a conclusive, publishable case for MCPg on
+the axes where the evidence is unassailable: **token efficiency** and **agent
+reliability**, at **negligible performance overhead**, with safety guarantees.
+Full spec (thesis, methodology, TPC-H scale, token break-even model, reusable
+HTML dashboard, honest-caveats section) in
+[`plans/benchmark-suite.md`](plans/benchmark-suite.md). Explicitly does **not**
+claim MCPg out-executes PostgreSQL — the perf tier disarms that objection by
+quantifying the sub-ms overhead; the win is measured elsewhere. **v1 = the
+performance rows (19.1–19.3); the token study (19.4–19.6) is v2**, inheriting
+the same dashboard. Published heavy scale is TPC-H SF10; dashboard is
+self-contained static HTML.
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 19.1 | **(v1) Perf harness + overhead decomposition.** Native (persistent psycopg) vs MCPg server-side vs MCPg end-to-end (stdio + http), with a timed waterfall (`t_parse`/`t_pool`/`t_txn`/`t_db`/`t_serialize`/`t_protocol`). TPC-H heavy tier (SF1 dev / SF10 published) + ultralight/light + throughput-under-concurrency; p50/p95/p99, cold/warm, cache-hit path separate. Deterministic (no LLM). | M-L | High | Phase 1. Proves `t_db == native` and the overhead is sub-ms. |
+| 19.2 | **(v1) Static HTML dashboard.** JSON results → self-contained, theme-aware HTML (latency percentiles, overhead waterfall, throughput). Evolves to add the token charts in v2. | M | High | Phase 2. Portable, publishable, re-generated per run. |
+| 19.3 | **(v1) Performance writeup** — the "negligible overhead" result, publishable on its own, with the "run it yourself" harness. | S | High | Phase 3. |
+| 19.4 | **(v2) Token accounting — Tier A (deterministic).** Tokenize MCPg's compact/structured tool I/O vs the raw-SQL equivalent (compact schema vs `information_schema` dump; structured advisor reports vs raw rows). CI-able. Adds the token + **break-even** charts (net of the 252-tool context cost) to the dashboard. | M | High | Phase 4. Backbone of the token claim. |
+| 19.5 | **(v2) Token study — Tier B (agent-loop).** Fixed model at temp 0, N trials per task, published transcripts; total tokens + tool-calls + turns + correctness to completion. Captures the round-trip savings. | L | High | Phase 5. The costed phase; task set has known-correct answers via the demo dataset. |
+| 19.6 | **(v2) Combined writeup** drawing performance + tokens together, with the honest-caveats section. | S-M | High | Phase 6. |
+
 ---
 
 ## Currently deferred (no commitments)
