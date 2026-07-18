@@ -266,7 +266,13 @@ async def _run(args: argparse.Namespace) -> PerfRun:
         if args.concurrency:
             results.extend(await _run_concurrency(args.database_url, args.iterations))
     finally:
-        for e2e in e2e_runners:
+        # Close e2e runners in REVERSE start order. Each one opens an internal
+        # anyio task-group / cancel scope when started (in-memory, then stdio,
+        # then http), nested in that order; anyio requires the inner scope exit
+        # before the outer, so tearing down forward raises "Attempted to exit a
+        # cancel scope that isn't the current task's current cancel scope" and
+        # (from the finally) aborts the whole run before the JSON is written.
+        for e2e in reversed(e2e_runners):
             await e2e.close()
         await native.close()
         await database.close()
