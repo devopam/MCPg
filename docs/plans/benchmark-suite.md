@@ -40,6 +40,15 @@ scrupulous about the overhead is a feature of the argument, not a weakness.
    purpose-built surface vs a bare SQL-execution tool, **net of** the
    tool-definition context cost.
 
+### Scope: v1 vs later
+
+**v1 is the performance objective + the dashboard.** It's fully deterministic
+(no model, no cost, no non-determinism), proves the "negligible overhead" half
+of the thesis, and stands on its own as a publishable result. The **token
+objective (2) is v2** — it inherits the same dashboard, which evolves to add
+the token charts as those results land. This keeps v1 shippable fast and defers
+the costed/non-deterministic agent work until the free result is in hand.
+
 ## Non-goals / honesty guardrails
 
 - Not a claim that MCPg out-executes Postgres.
@@ -185,12 +194,17 @@ queries, tasks, transcripts, raw JSON — committed alongside the results.
 
 The harness writes **structured JSON** result files; a generator renders a
 **self-contained, theme-aware HTML dashboard** (no external hosts — same rules
-as an Artifact): latency percentiles by query class, the overhead
-**waterfall**, throughput-vs-concurrency, token-savings by task, and the
-**break-even curve**. Re-run the harness → regenerate the dashboard. Portable,
-reviewable, publishable. (MCPg already exposes Prometheus metrics, so a Grafana
-variant is a cheap follow-on if we want a live dashboard, but the committed
-HTML is the primary, self-contained artifact.)
+as an Artifact). It ships in **v1** rendering the performance results (latency
+percentiles by query class, the overhead **waterfall**, throughput-vs-
+concurrency) and **evolves** to add the token charts (savings by task, the
+break-even curve) in v2. Re-run the harness → regenerate. Portable, reviewable,
+publishable.
+
+*(A Grafana/Prometheus live variant was considered — MCPg already exposes
+Prometheus metrics — but rejected for v1: a benchmark result is a snapshot, not
+a live feed, so the runnable-infra overhead buys little. The self-contained
+committed HTML is the artifact; a live variant can come later if a genuine need
+appears.)*
 
 ## Repo layout
 
@@ -208,12 +222,17 @@ benchmarks/
 
 ## Phasing
 
+**v1 (performance):**
 1. **Perf harness + overhead decomposition** on TPC-H (deterministic, no LLM).
-2. **Tier-A token accounting** (deterministic).
-3. **Dashboard generator** (JSON → HTML).
-4. **Tier-B agent study** (fixed model, N trials, published transcripts — the
+2. **Dashboard generator** (JSON → self-contained HTML) rendering the perf
+   results.
+3. **v1 writeup** — the "negligible overhead" result, publishable on its own.
+
+**v2 (tokens), inheriting the same dashboard:**
+4. **Tier-A token accounting** (deterministic).
+5. **Tier-B agent study** (fixed model, N trials, published transcripts — the
    costed phase).
-5. **Public writeup** drawing the four together.
+6. **Combined writeup** drawing performance + tokens together.
 
 Each phase is independently valuable and lands as its own PR.
 
@@ -227,18 +246,23 @@ Each phase is independently valuable and lands as its own PR.
 | "Cherry-picked queries/tasks." | Full sets committed; TPC-H is a standard; demo tasks have known answers. |
 | "Non-deterministic agent runs." | Tier A is deterministic; Tier B pins model+temp, N trials, reports distribution. |
 
-## Defaults (override in review)
+## Resolved decisions (locked for v1)
 
-- **Tier-B model:** pin one fixed model at temperature 0 for reproducible token
-  counts (candidate: a fixed Claude model; final choice recorded in the run
-  metadata).
-- **TPC-H scale:** SF1 dev / SF10 published.
+- **v1 scope:** performance objective + the HTML dashboard. Token objective is v2.
+- **TPC-H scale:** **SF1** for development, **SF10** for the published run —
+  SF10 is the ceiling (no SF30).
+- **Dashboard:** self-contained **static HTML** (no Grafana/Prometheus in v1 —
+  a result is a snapshot, not a live feed). Evolves to add token charts in v2.
 - **Concurrency points:** 1 / 4 / 16 / 64 clients.
-- **Trials:** ≥ 20 per perf point; ≥ 10 Tier-B trials per task.
+- **Trials:** ≥ 20 per perf data-point (medians + variance reported).
+- **Token baseline (v2):** a bare `run_select` tool, same model — isolates
+  MCPg's tool *design*, not merely DB access.
+- **Writeup home:** the reproducible harness + JSON + generated HTML under
+  `benchmarks/`, plus a narrative writeup on the docs site (surfaced as a
+  shareable Artifact).
 
-## Open questions
+## Deferred to v2 (decide then)
 
-- Which exact model(s) to pin for Tier B (and whether to run a second model to
-  show the effect generalizes).
-- SF10 vs SF30 for the published heavy run (infra cost vs impressiveness).
-- Whether to ship the Grafana/Prometheus live variant in v1 or defer it.
+- The exact Tier-B model(s) to pin at temperature 0 (and whether to run a
+  second model to show the token savings generalize across models).
+- Tier-B trial count (default ≥ 10 per task) and the final task set.
