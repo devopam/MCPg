@@ -27,6 +27,7 @@ import argparse
 import asyncio
 import gc
 import json
+import logging
 import platform
 import sys
 from pathlib import Path
@@ -42,6 +43,8 @@ from benchmarks.perf.schema import Assertion, Decomposition, LatencyBlock, PerfR
 from mcpg import __version__
 from mcpg.config import load_settings
 from mcpg.database import Database
+
+logger = logging.getLogger(__name__)
 
 _WARMUP = 5
 
@@ -129,12 +132,15 @@ def _conc_row(path: str, query: BenchQuery, cr: ConcurrencyResult) -> ResultRow:
 
 
 async def _run_concurrency(database_url: str, iterations: int) -> list[ResultRow]:
-    """Sweep the **non-heavy** queries across the concurrency levels.
+    """Sweep the **ultralight** queries across the concurrency levels.
 
-    Throughput-under-load exists to expose the *pool + per-call* overhead, which
-    only shows on cheap queries — a heavy TPC-H query at 64 clients just measures
-    the database's own execution time (and takes impractically long), so the
-    sweep skips ``compute_class == "heavy"``.
+    Throughput-under-load exists to expose the *pool + per-call* overhead, so it
+    only makes sense on trivially-cheap queries (point lookups, ``SELECT 1``).
+    Anything heavier measures the database instead of MCPg: a heavy TPC-H query
+    at 64 clients just times the DB's own execution, and even a "light" 90 ms
+    GROUP BY (or a 100k-row fetch) run 64-way saturates CPU / serialization and
+    can blow past the per-query timeout. So the sweep restricts to
+    ``compute_class == "ultralight"``.
 
     Owns its own resources: a dedicated pool sized to the sweep ceiling (so the
     server-side path isn't starved) and one persistent native connection per
@@ -157,7 +163,7 @@ async def _run_concurrency(database_url: str, iterations: int) -> list[ResultRow
     rows: list[ResultRow] = []
     try:
         for query in all_queries():
-            if query.compute_class == "heavy":
+            if query.compute_class != "ultralight":
                 continue
             for level in CONCURRENCY_LEVELS:
                 native_result = await sweep_level(
@@ -262,9 +268,15 @@ async def _run(args: argparse.Namespace) -> PerfRun:
             native_db_ns_by_query[query.id] = await _sample_native_db(native, query, args.iterations)
 
         # Throughput-under-concurrency sweep (opt-in; owns its own pool sized to
-        # the sweep ceiling so the server-side path isn't starved).
+        # the sweep ceiling so the server-side path isn't starved). It runs last
+        # and is non-essential, so a failure here (e.g. connection exhaustion or
+        # a per-query timeout under load) must not discard the expensive
+        # core + e2e results already collected — log and carry on.
         if args.concurrency:
-            results.extend(await _run_concurrency(args.database_url, args.iterations))
+            try:
+                results.extend(await _run_concurrency(args.database_url, args.iterations))
+            except Exception as exc:
+                logger.warning("Concurrency sweep failed; writing results without it: %s", exc)
     finally:
         # Close e2e runners in REVERSE start order. Each one opens an internal
         # anyio task-group / cancel scope when started (in-memory, then stdio,
