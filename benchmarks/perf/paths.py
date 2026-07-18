@@ -73,6 +73,27 @@ class NativeRunner:
                 await cur.execute("ROLLBACK")
         return time.perf_counter_ns() - start
 
+    async def db_segment_once(self, sql: str) -> int:
+        """Time **only** ``execute`` + ``fetchall`` — the pure DB segment.
+
+        The comparison anchor for the ``t_db == native`` claim: it isolates the
+        exact work the server path's ``t_db`` measures (query + fetch), inside
+        the same ``BEGIN READ ONLY`` … ``ROLLBACK`` envelope so connection state
+        matches, but excludes the txn statements and serialization from the
+        timed region.
+        """
+        conn = self._conn
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute("BEGIN TRANSACTION READ ONLY")
+            try:
+                start = time.perf_counter_ns()
+                await cur.execute(sql)
+                await cur.fetchall()
+                elapsed = time.perf_counter_ns() - start
+            finally:
+                await cur.execute("ROLLBACK")
+        return elapsed
+
 
 class ServerSideRunner:
     """MCPg in-process: real ``run_select`` over the real driver + pool."""
