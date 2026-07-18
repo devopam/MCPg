@@ -10,9 +10,12 @@ structured JSON document under ``benchmarks/results/``.
 
 It also runs the **overhead decomposition** (perf/decompose.py) on the
 server-side path and records the load-bearing ``t_db == native`` assertion.
-Provenance (git SHA, timestamp) is passed in so a result always carries the
-exact conditions that produced it. The end-to-end transport paths and the
-concurrency sweep land in follow-up phases (see docs/plans/benchmark-suite.md).
+With ``--e2e`` it additionally measures the **end-to-end paths** through the
+real MCP protocol (perf/e2e.py): in-memory + stdio subprocess, plus streamable
+HTTP against an operator-started server via ``--e2e-http-url``. Provenance (git
+SHA, timestamp) is passed in so a result always carries the exact conditions
+that produced it. The concurrency sweep lands in a follow-up phase (see
+docs/plans/benchmark-suite.md).
 
 Operator tool — not unit-tested (needs a live PostgreSQL); the pure helpers it
 calls (stats, queries, schema, decompose) are.
@@ -31,6 +34,7 @@ from typing import Any
 
 from benchmarks.perf import stats
 from benchmarks.perf.decompose import DecompositionRunner, SegmentSample, summarize_segments, t_db_within_native
+from benchmarks.perf.e2e import E2EHttpRunner, E2EInMemoryRunner, E2ERunner, E2EStdioRunner
 from benchmarks.perf.paths import NativeRunner, PathRunner, ServerSideRunner
 from benchmarks.perf.queries import BenchQuery, all_queries
 from benchmarks.perf.schema import Assertion, Decomposition, LatencyBlock, PerfRun, ResultRow
@@ -134,6 +138,7 @@ async def _run(args: argparse.Namespace) -> PerfRun:
     # Pre-initialised so a failure in the metadata query below can't mask the
     # original exception with an UnboundLocalError when `metadata` is built.
     pg_meta: dict[str, Any] = {}
+    e2e_runners: list[E2ERunner] = []
     try:
         pg = await database.driver().execute_query(
             "SELECT current_setting('server_version') AS v, current_setting('server_version_num')::int AS num",
@@ -142,10 +147,33 @@ async def _run(args: argparse.Namespace) -> PerfRun:
         if pg:
             pg_meta = {"version_string": pg[0].cells["v"], "server_version_num": pg[0].cells["num"]}
 
+        # Opt-in end-to-end paths (through the real MCP protocol). Started once
+        # and reused across every query; torn down in the finally.
+        e2e_paths: list[tuple[str, PathRunner]] = []
+        if args.e2e:
+            inmem = E2EInMemoryRunner(settings)
+            await inmem.start()
+            e2e_runners.append(inmem)
+            e2e_paths.append(("e2e_inmemory", inmem))
+            stdio = E2EStdioRunner(args.database_url)
+            await stdio.start()
+            e2e_runners.append(stdio)
+            e2e_paths.append(("e2e_stdio", stdio))
+        if args.e2e_http_url:
+            http = E2EHttpRunner(args.e2e_http_url)
+            await http.start()
+            e2e_runners.append(http)
+            e2e_paths.append(("e2e_http", http))
+
+        paths: list[tuple[str, PathRunner]] = [
+            ("native", native),
+            ("server_side", ServerSideRunner(database)),
+            *e2e_paths,
+        ]
         decomposer = DecompositionRunner(database)
         native_db_ns_by_query: dict[str, float] = {}
         for query in all_queries():
-            for label, runner in (("native", native), ("server_side", ServerSideRunner(database))):
+            for label, runner in paths:
                 warm, cold = await _sample_path(runner, query, args.iterations)
                 # Attach the overhead waterfall to the server-side warm row —
                 # the one the report reads t_db from for the native comparison.
@@ -157,6 +185,8 @@ async def _run(args: argparse.Namespace) -> PerfRun:
             # The native DB segment (execute + fetch only) anchors t_db == native.
             native_db_ns_by_query[query.id] = await _sample_native_db(native, query, args.iterations)
     finally:
+        for e2e in e2e_runners:
+            await e2e.close()
         await native.close()
         await database.close()
 
@@ -237,6 +267,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--scale-factor", type=int, default=1, help="TPC-H scale factor the DB was loaded at.")
     parser.add_argument("--output", type=Path, required=True, help="Path to write the result JSON.")
+    parser.add_argument(
+        "--e2e",
+        action="store_true",
+        help="Also measure the end-to-end paths through the MCP protocol (in-memory + stdio subprocess).",
+    )
+    parser.add_argument(
+        "--e2e-http-url",
+        default=None,
+        help="Add the streamable-HTTP e2e path against an operator-started mcpg server at this URL (e.g. "
+        "http://127.0.0.1:8000/mcp). Implies the HTTP transport is already running.",
+    )
     parser.add_argument("--git-sha", default="unknown", help="Provenance: the commit under test.")
     parser.add_argument("--timestamp", default="unknown", help="Provenance: ISO-8601 run timestamp.")
     args = parser.parse_args(argv)

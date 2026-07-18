@@ -10,10 +10,16 @@ proves MCPg's overhead is small and predictable (and decomposes exactly where
 it goes), so `t_db` is provably identical to native. That "you lose nothing"
 result is what earns credibility for the real wins (measured in v2: tokens).
 
-## What runs today (Phase 1)
+## What runs today
 
 - `perf/paths.py` — the **native** (persistent psycopg, same txn envelope, no
   MCPg overhead) and **server-side** (in-process `run_select`) measurement paths.
+- `perf/decompose.py` — the **overhead-decomposition waterfall**: times the
+  server path segment-by-segment (`t_parse → t_pool → t_txn → t_db →
+  t_serialize`) and records the load-bearing **`t_db == native`** assertion.
+- `perf/e2e.py` — the **end-to-end paths** through the real MCP protocol
+  (in-memory, stdio subprocess, streamable HTTP) — the `t_protocol` band. Opt-in
+  via `--e2e` / `--e2e-http-url`.
 - `perf/queries.py` — the two-axis query set (compute x result-size), heavy tier
   from TPC-H.
 - `perf/stats.py` — percentiles + bootstrap median CI + warm-up handling (pure,
@@ -21,9 +27,7 @@ result is what earns credibility for the real wins (measured in v2: tokens).
 - `perf/runner.py` — orchestrates paths x queries (cold + warm) → structured JSON.
 - `datasets/` — TPC-H schema/index DDL + a DuckDB→`COPY` loader.
 
-The end-to-end transport paths, the overhead-decomposition waterfall (the
-`t_db == native` gate), the concurrency sweep, and the HTML dashboard land in
-subsequent phases.
+The concurrency sweep and the HTML dashboard land in subsequent phases.
 
 ## Running it
 
@@ -41,6 +45,23 @@ uv run python -m benchmarks.perf.runner \
     --scale-factor 1 --iterations 50 \
     --git-sha "$(git rev-parse HEAD)" --timestamp "$(date -u +%FT%TZ)" \
     --output benchmarks/results/perf-$(date -u +%Y%m%dT%H%M%SZ).json
+```
+
+### Also measuring the end-to-end MCP paths (`--e2e`)
+
+`--e2e` adds the in-memory and stdio-subprocess paths (they self-configure from
+`--database-url`). For the HTTP path, start a server first and point the runner
+at it:
+
+```bash
+# In one shell: an operator-started streamable-HTTP server on the same DB.
+MCPG_DATABASE_URL="$MCPG_TEST_DATABASE_URL" mcpg --transport streamable-http
+
+# In another: run with the e2e paths, including HTTP.
+uv run python -m benchmarks.perf.runner \
+    --database-url "$MCPG_TEST_DATABASE_URL" --scale-factor 1 --iterations 50 \
+    --e2e --e2e-http-url http://127.0.0.1:8000/mcp \
+    --output benchmarks/results/perf-e2e.json
 ```
 
 Provenance (git SHA, timestamp, versions, host, scale factor) is embedded in

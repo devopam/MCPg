@@ -11,9 +11,11 @@ from __future__ import annotations
 import json
 
 import pytest
+from mcp.types import CallToolResult, TextContent
 
 from benchmarks.perf import queries, runner, stats
 from benchmarks.perf.decompose import SegmentSample, summarize_segments, t_db_within_native
+from benchmarks.perf.e2e import row_count_of
 from benchmarks.perf.schema import Assertion, Decomposition, LatencyBlock, PerfRun, ResultRow
 
 # --- stats ----------------------------------------------------------------
@@ -195,3 +197,17 @@ def test_assertions_include_t_db_gate() -> None:
     assert len(gate) == 1
     assert gate[0].passed is True
     assert gate[0].detail["native_t_db_ms"] == 4.1
+
+
+# --- e2e helper (pure) ----------------------------------------------------
+
+
+def test_row_count_of_reads_structured_content() -> None:
+    result = CallToolResult(content=[], structuredContent={"row_count": 42})
+    assert row_count_of(result) == 42
+
+
+def test_row_count_of_none_when_absent() -> None:
+    # A text-only result (no structuredContent) yields None rather than raising.
+    result = CallToolResult(content=[TextContent(type="text", text="[]")])
+    assert row_count_of(result) is None
