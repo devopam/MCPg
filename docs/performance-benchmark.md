@@ -4,9 +4,12 @@ title: Performance benchmark
 
 # MCPg performance benchmark — the overhead is small, and we show exactly where it goes
 
-**The one-sentence claim:** running a query *through MCPg* costs a small,
-fixed, sub-millisecond amount more than running the same SQL directly — and on
-any query that does real work, that overhead disappears into the noise.
+**The one-sentence claim:** running a query *through MCPg* costs about a
+millisecond of fixed overhead more than running the same SQL directly —
+dominated by the read-only-transaction envelope, plus serialization that scales
+with the number of rows returned — and on any query that does real work, that
+overhead disappears into the noise. The database execution itself
+(`t_db`) is **identical** to native.
 
 This page is the v1 (performance) result of the [benchmark
 suite](plans/benchmark-suite.md). It is deliberately narrow and deliberately
@@ -98,26 +101,51 @@ the only cost is a small, bounded envelope, and here it is, itemized.*
 The dashboard renders the decomposition as a **100 %-normalized** bar per query,
 which is the honest way to show it:
 
-- On a **heavy** query, `t_db` fills almost the entire bar — the parse and
-  serialize bands are slivers. The overhead is a *negligible fraction* of the
-  total, because it is fixed-cost and the query is expensive.
+- On a **heavy** query, `t_db` fills almost the entire bar — the overhead bands
+  are slivers. The overhead is a *negligible fraction* of the total, because it
+  is fixed-cost and the query is expensive.
 - On an **ultralight** query (`SELECT 1`), the same fixed bands are a *large
   fraction* of a tiny total. This is the honest flip side: in **relative** terms
   the overhead on a trivial query can be several-fold; in **absolute** terms it
-  is still sub-millisecond, so it is immaterial to anything an agent actually
+  is still about a millisecond, so it is immaterial to anything an agent actually
   does. We lead with the absolute numbers to keep the relative ones honest.
 
-Parse and serialize dominate the overhead; pool checkout and the transaction
-statements are small and flat. All of it is fixed-cost — it does not grow with
-the query — which is exactly why it vanishes as a share of real work.
+Two things the measured decomposition makes plain, and both are worth being
+straight about:
+
+- **The read-only transaction envelope dominates the fixed overhead** — not
+  parsing. On `SELECT 1` the `BEGIN TRANSACTION READ ONLY` + `ROLLBACK` round
+  trips (`t_txn`) are roughly **two-thirds** of the added cost and several times
+  the query itself; parse (`t_parse`) is next, and pool checkout (`t_pool`) is
+  negligible. That envelope is not waste — it is the read-only guarantee that
+  makes running agent-supplied SQL safe. You are paying ~0.5 ms for the property
+  that a `SELECT` *cannot* have written anything.
+- **Serialization scales with rows.** For small results `t_serialize` is
+  nothing; for a 100 k-row fetch it is the largest band (tens of milliseconds),
+  because every row is materialized into the tool's dict shape. Agents rarely
+  pull 100 k rows through a single call — but where they do, this is the cost,
+  and it is real.
+
+Everything except serialization is fixed-cost — it does not grow with the query
+— which is why it vanishes as a share of any query that does real work.
 
 ## Throughput under concurrency
 
 Single-client latency hides the costs that only appear under load — the bounded
-connection pool and per-call serialization competing for CPU. The sweep drives
-native and server-side at **1 / 4 / 16 / 64 concurrent clients** and reports
-aggregate queries-per-second, with each path given an equal connection budget so
-the comparison measures genuine overhead rather than artificial pool starvation.
+connection pool and per-call work competing for CPU. The sweep drives native and
+server-side at **1 / 4 / 16 / 64 concurrent clients** on **ultralight point
+lookups** (the only class where per-call overhead is the signal rather than the
+database's own execution or serialization volume), each path given an equal
+connection budget so the comparison measures genuine overhead rather than
+artificial pool starvation.
+
+Here the fixed per-call cost shows its teeth honestly: on a sub-millisecond
+point lookup, the server-side path sustains **roughly half** the native
+throughput, because ~0.5–1 ms of fixed overhead on top of a ~0.3 ms query is a
+large *relative* tax. This is the same fact as the latency numbers, seen from
+the throughput side — and it is the *worst case*, a query so trivial the
+overhead is most of the total. On any query that does real work the two paths
+converge.
 
 ## Reproduce it yourself
 
@@ -134,7 +162,7 @@ uv run python -m benchmarks.datasets.load_tpch \
 
 uv run python -m benchmarks.perf.runner \
     --database-url "$MCPG_TEST_DATABASE_URL" \
-    --scale-factor 1 --iterations 50 --e2e --concurrency \
+    --scale-factor 1 --iterations 20 --e2e --concurrency \
     --git-sha "$(git rev-parse HEAD)" --timestamp "$(date -u +%FT%TZ)" \
     --output benchmarks/results/perf.json
 
@@ -153,21 +181,58 @@ every flag.
 |---|---|
 | "MCPg can't be faster than Postgres." | Correct, and we never claim it. The benchmark proves *negligible overhead*, itemized. |
 | "`psql -c` would be a fairer baseline." | It would be an *unfair* one — it pays process + connection startup per call. The native baseline is a warm persistent connection running MCPg's exact transaction envelope. |
-| "You're hiding the cost on trivial queries." | The opposite — the normalized decomposition shows the overhead is a *large relative share* of `SELECT 1`. It is still sub-millisecond absolute. |
+| "You're hiding the cost on trivial queries." | The opposite — the normalized decomposition shows the overhead is a *large relative share* of `SELECT 1` (about half its throughput under load). It is still ~1 ms absolute, and we say so. |
+| "You're hand-waving 'negligible' — where does it go?" | Itemized: the read-only transaction envelope dominates (~⅔), then parse; serialization scales with rows. Nothing is hidden in a rounded-down mean. |
 | "Cherry-picked queries." | The heavy tier is standard TPC-H; the full two-axis query set, the harness, and the raw JSON are committed. Run it yourself. |
 | "Single-shot numbers are noise." | N ≥ 20 with warm-up discarded, p50/p95/p99, seeded bootstrap CIs, GC pinned out of the timed region. |
 
 ## Results
 
-The published figures come from a run of the harness above at **TPC-H SF10** on
-fixed reference hardware; the committed run JSON and the generated dashboard
-(`benchmarks/results/`) are the source of truth, and this section is populated
-from that run rather than from estimates — in keeping with the project rule that
-every published number is verified against a real measurement, never asserted
-from memory. The shape the design predicts and the harness checks: `t_db`
-matches native on every query (the `t_db_matches_native` gate passes), the
-server-side envelope adds a fixed sub-millisecond overhead, and that overhead is
-a negligible fraction of any heavy query.
+The numbers below are a real run — every figure is verified against a live
+measurement, never asserted from memory. The committed run JSON and generated
+dashboard ([`benchmarks/results/`](https://github.com/devopam/MCPg/tree/main/benchmarks/results))
+are the source of truth. This run is **TPC-H SF1 on PostgreSQL 16**, N = 20
+warm iterations; SF10 on dedicated hardware is the eventual *headline* scale
+(numbers shift, the shape does not), and the "run it yourself" harness above
+reproduces both.
+
+**`t_db == native`: 11 / 11 queries pass.** Across queries spanning 0.3 ms to
+2 s, the server-side database segment matches the native baseline — deltas from
+about −0.05 s to +0.02 s on the multi-second queries (i.e. measurement noise),
+sub-millisecond on the rest. MCPg adds nothing to the execution itself.
+
+**Warm p50 latency, native vs MCPg server-side** — on anything doing real work,
+the overhead is a rounding error:
+
+| Query | Native | MCPg server-side | Overhead |
+|---|---|---|---|
+| `SELECT 1` | 375 µs | 794 µs | +0.42 ms |
+| `orders_status_counts` (90 ms GROUP BY) | 91.6 ms | 95.2 ms | **+3.6 ms (+4 %)** |
+| TPC-H Q3 | 399 ms | 401 ms | **+2 ms (+0.5 %)** |
+| TPC-H Q6 | 424 ms | 431 ms | +7.7 ms (+1.8 %) |
+| TPC-H Q1 | 2087 ms | 1999 ms | −88 ms (−4 %, noise) |
+| 100 k-row fetch | 199 ms | 237 ms | +38 ms (serialization) |
+
+The `SELECT 1` overhead is +0.42 ms — a large *percentage* of a 0.4 ms query,
+an irrelevance in absolute terms. The one query with a visible cost is the
+100 k-row fetch, where materializing every row adds ~40 ms; that is the honest
+price of pulling a large result through a tool call (agents paginate instead).
+
+**Where that fixed overhead goes** (decomposition of `SELECT 1`): the read-only
+transaction envelope `t_txn` is **≈ two-thirds** of it (~0.57 ms), parse is
+next (~0.1 ms), pool checkout is ~0.02 ms, serialization ~0.002 ms. The
+dominant cost is the safety guarantee, not overhead you'd want to remove.
+
+**Throughput under concurrency** (ultralight point lookups, 1→64 clients):
+native sustains ~3500 q/s, server-side ~1600 q/s — the server path holds
+**~half** native throughput on a sub-millisecond query, the worst case for a
+fixed per-call cost, and the two converge on any heavier query.
+
+**The end-to-end path** an agent actually drives (through the MCP protocol +
+server middleware — audit logging, rate limiting, tracing) adds a few
+milliseconds per call on top of server-side; and shipping a 100 k-row result
+through JSON-RPC is expensive (seconds), which is a further argument for
+paginating rather than bulk-fetching through a tool.
 
 ## Scope, and what's next
 

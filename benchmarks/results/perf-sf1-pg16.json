@@ -1,0 +1,4151 @@
+{
+  "metadata": {
+    "timestamp": "2026-07-18T17:03:39Z",
+    "git_sha": "1e64d26aa7260092a42b4a95bc56779a4453c00f",
+    "mcpg_version": "0.6.11",
+    "postgres": {
+      "version_string": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
+      "server_version_num": 160013
+    },
+    "scale_factor": 1,
+    "host": {
+      "python": "3.13.12",
+      "os": "Linux-6.18.5-x86_64-with-glibc2.39",
+      "machine": "x86_64"
+    },
+    "iterations": 20,
+    "warmup_discarded": 5,
+    "concurrency_levels": [
+      1,
+      4,
+      16,
+      64
+    ]
+  },
+  "results": [
+    {
+      "path": "native",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 0.37502599999999997,
+        "p95": 0.6521,
+        "p99": 0.779901,
+        "mean": 0.41535159999999993,
+        "stdev": 0.14676524094133603,
+        "min": 0.262486,
+        "max": 0.779901,
+        "median_ci95": [
+          0.34910199999999997,
+          0.416477
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        422694,
+        402354,
+        416084,
+        779901,
+        635017,
+        351459,
+        379004,
+        346745,
+        359882,
+        375026,
+        368126,
+        647955,
+        416870,
+        375689,
+        262486,
+        281934,
+        306982,
+        264140,
+        262584,
+        652100
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 1.127309,
+        "p95": 1.127309,
+        "p99": 1.127309,
+        "mean": 1.127309,
+        "stdev": 0.0,
+        "min": 1.127309,
+        "max": 1.127309,
+        "median_ci95": [
+          1.127309,
+          1.127309
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1127309
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 0.7938529999999999,
+        "p95": 1.30156,
+        "p99": 1.3270899999999999,
+        "mean": 0.89750515,
+        "stdev": 0.22463744533529084,
+        "min": 0.611475,
+        "max": 1.3270899999999999,
+        "median_ci95": [
+          0.73557,
+          0.9950869999999999
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        676988,
+        691950,
+        611475,
+        1327090,
+        1301560,
+        966487,
+        981952,
+        793853,
+        916871,
+        689463,
+        860487,
+        1253738,
+        1146535,
+        782349,
+        773277,
+        1008223,
+        697863,
+        780608,
+        642622,
+        1046712
+      ],
+      "decomposition_ns": {
+        "t_parse": 98992.0,
+        "t_pool": 19328.0,
+        "t_txn": 569238.0,
+        "t_db": 166873.0,
+        "t_serialize": 3062.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 1.579974,
+        "p95": 1.579974,
+        "p99": 1.579974,
+        "mean": 1.579974,
+        "stdev": 0.0,
+        "min": 1.579974,
+        "max": 1.579974,
+        "median_ci95": [
+          1.579974,
+          1.579974
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1579974
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 7.789949,
+        "p95": 8.547805,
+        "p99": 8.707984,
+        "mean": 7.8267754,
+        "stdev": 0.4786461772563815,
+        "min": 7.131209999999999,
+        "max": 8.707984,
+        "median_ci95": [
+          7.488791,
+          8.086
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        7247165,
+        7443588,
+        8044840,
+        8412974,
+        8291841,
+        8707984,
+        7436670,
+        7482453,
+        8547805,
+        7498797,
+        7789949,
+        8358968,
+        7495130,
+        7946870,
+        7517548,
+        7140057,
+        8127161,
+        7131210,
+        8000152,
+        7914346
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 19.554325,
+        "p95": 19.554325,
+        "p99": 19.554325,
+        "mean": 19.554325,
+        "stdev": 0.0,
+        "min": 19.554325,
+        "max": 19.554325,
+        "median_ci95": [
+          19.554325,
+          19.554325
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        19554325
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 8.883974,
+        "p95": 9.892719,
+        "p99": 9.988477999999999,
+        "mean": 9.075343199999999,
+        "stdev": 0.47890243476621674,
+        "min": 8.566231,
+        "max": 9.988477999999999,
+        "median_ci95": [
+          8.690322,
+          9.499212
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        9574128,
+        8566231,
+        9528297,
+        9645463,
+        9601369,
+        9988478,
+        8582417,
+        8625375,
+        8967715,
+        8582341,
+        8974307,
+        8883974,
+        8950166,
+        9470128,
+        8880393,
+        8786400,
+        8626319,
+        8727470,
+        8653174,
+        9892719
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 60.082749,
+        "p95": 60.082749,
+        "p99": 60.082749,
+        "mean": 60.082749,
+        "stdev": 0.0,
+        "min": 60.082749,
+        "max": 60.082749,
+        "median_ci95": [
+          60.082749,
+          60.082749
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        60082749
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 0.326916,
+        "p95": 0.729287,
+        "p99": 0.945232,
+        "mean": 0.41269785,
+        "stdev": 0.17525416881572917,
+        "min": 0.291381,
+        "max": 0.945232,
+        "median_ci95": [
+          0.317357,
+          0.411666
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        311707,
+        332150,
+        304395,
+        729287,
+        417054,
+        317861,
+        316853,
+        320792,
+        406278,
+        446905,
+        336315,
+        678596,
+        502951,
+        327547,
+        322361,
+        326916,
+        291381,
+        303376,
+        316000,
+        945232
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 1.696755,
+        "p95": 1.696755,
+        "p99": 1.696755,
+        "mean": 1.696755,
+        "stdev": 0.0,
+        "min": 1.696755,
+        "max": 1.696755,
+        "median_ci95": [
+          1.696755,
+          1.696755
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1696755
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 0.909608,
+        "p95": 1.229636,
+        "p99": 1.362385,
+        "mean": 0.97315315,
+        "stdev": 0.1786410635478378,
+        "min": 0.721474,
+        "max": 1.362385,
+        "median_ci95": [
+          0.881701,
+          1.0647959999999999
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        773508,
+        903128,
+        1362385,
+        1215904,
+        976083,
+        916529,
+        1134768,
+        889776,
+        810974,
+        721474,
+        764931,
+        1099204,
+        1030389,
+        947173,
+        888940,
+        1229636,
+        874462,
+        909608,
+        815961,
+        1198230
+      ],
+      "decomposition_ns": {
+        "t_parse": 107223.0,
+        "t_pool": 12914.0,
+        "t_txn": 473689.0,
+        "t_db": 174049.0,
+        "t_serialize": 2403.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 2.389818,
+        "p95": 2.389818,
+        "p99": 2.389818,
+        "mean": 2.389818,
+        "stdev": 0.0,
+        "min": 2.389818,
+        "max": 2.389818,
+        "median_ci95": [
+          2.389818,
+          2.389818
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        2389818
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 7.664082,
+        "p95": 8.562282,
+        "p99": 8.578769,
+        "mean": 7.775681499999999,
+        "stdev": 0.3290209861458208,
+        "min": 7.416744,
+        "max": 8.578769,
+        "median_ci95": [
+          7.590856,
+          7.8830599999999995
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        7464063,
+        7725027,
+        7664082,
+        8012956,
+        7997453,
+        7864466,
+        7686685,
+        7439486,
+        7569457,
+        7416744,
+        7579734,
+        7679993,
+        8562282,
+        8578769,
+        7644634,
+        7901654,
+        7603904,
+        7500718,
+        7601979,
+        8019544
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 9.028595,
+        "p95": 9.028595,
+        "p99": 9.028595,
+        "mean": 9.028595,
+        "stdev": 0.0,
+        "min": 9.028595,
+        "max": 9.028595,
+        "median_ci95": [
+          9.028595,
+          9.028595
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        9028595
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 9.158197,
+        "p95": 9.893241,
+        "p99": 10.100303,
+        "mean": 9.24732085,
+        "stdev": 0.45878782941840335,
+        "min": 8.481497,
+        "max": 10.100303,
+        "median_ci95": [
+          8.994750999999999,
+          9.531988
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        8481497,
+        9161923,
+        9006503,
+        9893241,
+        9661887,
+        10100303,
+        9321758,
+        8570246,
+        9158197,
+        9157434,
+        8785192,
+        9402090,
+        9144467,
+        8716514,
+        9366645,
+        9691991,
+        9722775,
+        9812931,
+        8983000,
+        8807823
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 11.434714,
+        "p95": 11.434714,
+        "p99": 11.434714,
+        "mean": 11.434714,
+        "stdev": 0.0,
+        "min": 11.434714,
+        "max": 11.434714,
+        "median_ci95": [
+          11.434714,
+          11.434714
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        11434714
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 0.36702999999999997,
+        "p95": 0.822707,
+        "p99": 0.9172319999999999,
+        "mean": 0.46918594999999996,
+        "stdev": 0.2011071898456864,
+        "min": 0.279336,
+        "max": 0.9172319999999999,
+        "median_ci95": [
+          0.330449,
+          0.509672
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        279336,
+        533819,
+        418346,
+        822707,
+        489675,
+        766030,
+        529669,
+        367030,
+        297392,
+        299653,
+        333476,
+        817865,
+        414921,
+        327110,
+        347301,
+        327423,
+        438546,
+        318202,
+        337986,
+        917232
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 1.2637509999999998,
+        "p95": 1.2637509999999998,
+        "p99": 1.2637509999999998,
+        "mean": 1.2637509999999998,
+        "stdev": 0.0,
+        "min": 1.2637509999999998,
+        "max": 1.2637509999999998,
+        "median_ci95": [
+          1.2637509999999998,
+          1.2637509999999998
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1263751
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 1.058219,
+        "p95": 1.480499,
+        "p99": 1.527399,
+        "mean": 1.09192655,
+        "stdev": 0.219916908244784,
+        "min": 0.765992,
+        "max": 1.527399,
+        "median_ci95": [
+          0.952696,
+          1.229292
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        978298,
+        962585,
+        1117621,
+        1480499,
+        1309894,
+        1527399,
+        1058219,
+        1045323,
+        1141373,
+        1290234,
+        1247015,
+        1147745,
+        942808,
+        892427,
+        796937,
+        765992,
+        843155,
+        826082,
+        1211569,
+        1253356
+      ],
+      "decomposition_ns": {
+        "t_parse": 158865.0,
+        "t_pool": 19633.0,
+        "t_txn": 568954.0,
+        "t_db": 214135.0,
+        "t_serialize": 3721.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 1.969398,
+        "p95": 1.969398,
+        "p99": 1.969398,
+        "mean": 1.969398,
+        "stdev": 0.0,
+        "min": 1.969398,
+        "max": 1.969398,
+        "median_ci95": [
+          1.969398,
+          1.969398
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1969398
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 7.9585349999999995,
+        "p95": 9.319324,
+        "p99": 9.562825,
+        "mean": 8.22970415,
+        "stdev": 0.618324814587325,
+        "min": 7.510477,
+        "max": 9.562825,
+        "median_ci95": [
+          7.863366999999999,
+          8.315444
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        9319324,
+        9562825,
+        9148216,
+        9046048,
+        8850972,
+        8222085,
+        7918306,
+        7958535,
+        8326760,
+        7902389,
+        8304128,
+        7824345,
+        8021141,
+        7629194,
+        8073492,
+        7632720,
+        7510477,
+        7717924,
+        7681036,
+        7944166
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 12.110196,
+        "p95": 12.110196,
+        "p99": 12.110196,
+        "mean": 12.110196,
+        "stdev": 0.0,
+        "min": 12.110196,
+        "max": 12.110196,
+        "median_ci95": [
+          12.110196,
+          12.110196
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        12110196
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 9.970127,
+        "p95": 10.751330999999999,
+        "p99": 11.057602,
+        "mean": 9.9262075,
+        "stdev": 0.47908703527509927,
+        "min": 9.037758,
+        "max": 11.057602,
+        "median_ci95": [
+          9.599416,
+          10.118105
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        11057602,
+        9606162,
+        9977380,
+        10025901,
+        10167737,
+        9037758,
+        9552948,
+        9440440,
+        10057578,
+        9278139,
+        9592670,
+        10205765,
+        9459227,
+        10068474,
+        10751331,
+        9959875,
+        10266256,
+        10196417,
+        9852363,
+        9970127
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 10.903433999999999,
+        "p95": 10.903433999999999,
+        "p99": 10.903433999999999,
+        "mean": 10.903433999999999,
+        "stdev": 0.0,
+        "min": 10.903433999999999,
+        "max": 10.903433999999999,
+        "median_ci95": [
+          10.903433999999999,
+          10.903433999999999
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        10903434
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "orders_status_counts",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 91.55223199999999,
+        "p95": 93.449579,
+        "p99": 98.649863,
+        "mean": 91.93679145,
+        "stdev": 1.859660920301884,
+        "min": 90.09342199999999,
+        "max": 98.649863,
+        "median_ci95": [
+          90.979506,
+          92.061049
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        90634579,
+        93004277,
+        93449579,
+        92913177,
+        91082069,
+        91487074,
+        91807956,
+        92091645,
+        91144997,
+        90876943,
+        91552232,
+        90672141,
+        90287391,
+        90093422,
+        90197693,
+        92030454,
+        91923750,
+        92907948,
+        91928639,
+        98649863
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "orders_status_counts",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 288.093238,
+        "p95": 288.093238,
+        "p99": 288.093238,
+        "mean": 288.093238,
+        "stdev": 0.0,
+        "min": 288.093238,
+        "max": 288.093238,
+        "median_ci95": [
+          288.093238,
+          288.093238
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        288093238
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "orders_status_counts",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 95.184235,
+        "p95": 101.17901499999999,
+        "p99": 104.104345,
+        "mean": 96.06712595,
+        "stdev": 3.326656621950546,
+        "min": 90.714423,
+        "max": 104.104345,
+        "median_ci95": [
+          94.10364799999999,
+          97.33269399999999
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        93126044,
+        96961354,
+        90714423,
+        94162529,
+        95184235,
+        94119236,
+        96567307,
+        94025547,
+        94088061,
+        97468817,
+        97196571,
+        100102337,
+        98459707,
+        95042116,
+        93019762,
+        101179015,
+        104104345,
+        98590980,
+        91278310,
+        95951823
+      ],
+      "decomposition_ns": {
+        "t_parse": 343978.0,
+        "t_pool": 27692.0,
+        "t_txn": 1429422.0,
+        "t_db": 93087360.0,
+        "t_serialize": 8744.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "orders_status_counts",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 132.382679,
+        "p95": 132.382679,
+        "p99": 132.382679,
+        "mean": 132.382679,
+        "stdev": 0.0,
+        "min": 132.382679,
+        "max": 132.382679,
+        "median_ci95": [
+          132.382679,
+          132.382679
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        132382679
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "orders_status_counts",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 104.435677,
+        "p95": 123.476191,
+        "p99": 129.177321,
+        "mean": 107.87814999999999,
+        "stdev": 8.209511265363416,
+        "min": 100.64681,
+        "max": 129.177321,
+        "median_ci95": [
+          102.97618899999999,
+          107.598672
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        102060037,
+        123476191,
+        101393598,
+        107201936,
+        107028516,
+        109940348,
+        104773316,
+        122933335,
+        107995408,
+        113953278,
+        103480217,
+        129177321,
+        101736438,
+        101459530,
+        104435677,
+        104103252,
+        102472161,
+        100646810,
+        105713641,
+        103581990
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "orders_status_counts",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 140.95063199999998,
+        "p95": 140.95063199999998,
+        "p99": 140.95063199999998,
+        "mean": 140.95063199999998,
+        "stdev": 0.0,
+        "min": 140.95063199999998,
+        "max": 140.95063199999998,
+        "median_ci95": [
+          140.95063199999998,
+          140.95063199999998
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        140950632
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "orders_status_counts",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 104.300032,
+        "p95": 107.700808,
+        "p99": 108.85235499999999,
+        "mean": 104.72424529999999,
+        "stdev": 1.950216717293777,
+        "min": 101.599352,
+        "max": 108.85235499999999,
+        "median_ci95": [
+          103.479348,
+          105.606543
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        104300032,
+        102286936,
+        102780956,
+        105391619,
+        105686631,
+        106221642,
+        103200071,
+        103545764,
+        105135466,
+        101599352,
+        103774476,
+        103412933,
+        104764168,
+        104137429,
+        107659184,
+        102446117,
+        106062512,
+        105526455,
+        107700808,
+        108852355
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "orders_status_counts",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 142.406901,
+        "p95": 142.406901,
+        "p99": 142.406901,
+        "mean": 142.406901,
+        "stdev": 0.0,
+        "min": 142.406901,
+        "max": 142.406901,
+        "median_ci95": [
+          142.406901,
+          142.406901
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        142406901
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "tpch_q1",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 2086.650568,
+        "p95": 2182.262357,
+        "p99": 2192.501868,
+        "mean": 2079.90378435,
+        "stdev": 62.834636093997254,
+        "min": 1933.1876499999998,
+        "max": 2192.501868,
+        "median_ci95": [
+          2058.390842,
+          2093.337985
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        2139896954,
+        2040379636,
+        1933187650,
+        2182262357,
+        2160985373,
+        1989986641,
+        2048367393,
+        2111097069,
+        2090755088,
+        2076710793,
+        2091465412,
+        2068414292,
+        2032097281,
+        2087163665,
+        2086650568,
+        2075665786,
+        2095210558,
+        2192501868,
+        2089078609,
+        2006198694
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "tpch_q1",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 2107.415193,
+        "p95": 2107.415193,
+        "p99": 2107.415193,
+        "mean": 2107.415193,
+        "stdev": 0.0,
+        "min": 2107.415193,
+        "max": 2107.415193,
+        "median_ci95": [
+          2107.415193,
+          2107.415193
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        2107415193
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "tpch_q1",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 1998.82241,
+        "p95": 2112.944419,
+        "p99": 2120.7252359999998,
+        "mean": 2013.8139506999999,
+        "stdev": 53.20162476633228,
+        "min": 1938.368374,
+        "max": 2120.7252359999998,
+        "median_ci95": [
+          1982.090035,
+          2052.7232
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1989395476,
+        1991961372,
+        1959881448,
+        1960247893,
+        2057188863,
+        2120725236,
+        2062745102,
+        2058372701,
+        2064949930,
+        2006002822,
+        2013935720,
+        1990251677,
+        1974784594,
+        2112944419,
+        2048257537,
+        1998822410,
+        1964469753,
+        2020381257,
+        1938368374,
+        1942592430
+      ],
+      "decomposition_ns": {
+        "t_parse": 789342.0,
+        "t_pool": 33811.0,
+        "t_txn": 866426.0,
+        "t_db": 1965200492.0,
+        "t_serialize": 10723.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "tpch_q1",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 2010.588113,
+        "p95": 2010.588113,
+        "p99": 2010.588113,
+        "mean": 2010.588113,
+        "stdev": 0.0,
+        "min": 2010.588113,
+        "max": 2010.588113,
+        "median_ci95": [
+          2010.588113,
+          2010.588113
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        2010588113
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "tpch_q1",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 1994.4198,
+        "p95": 2103.000524,
+        "p99": 2112.304959,
+        "mean": 2005.8546915499999,
+        "stdev": 50.50724802347896,
+        "min": 1927.2878019999998,
+        "max": 2112.304959,
+        "median_ci95": [
+          1971.703069,
+          2029.760534
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1994419800,
+        2103000524,
+        2112304959,
+        2007902921,
+        2015161931,
+        1948774314,
+        1947945644,
+        2040058989,
+        1961710401,
+        2035791415,
+        1992323795,
+        2069596862,
+        2045288784,
+        1997254576,
+        1963037762,
+        1972911942,
+        1970494196,
+        1927287802,
+        1988097561,
+        2023729653
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "tpch_q1",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 2103.1234839999997,
+        "p95": 2103.1234839999997,
+        "p99": 2103.1234839999997,
+        "mean": 2103.1234839999997,
+        "stdev": 0.0,
+        "min": 2103.1234839999997,
+        "max": 2103.1234839999997,
+        "median_ci95": [
+          2103.1234839999997,
+          2103.1234839999997
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        2103123484
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "tpch_q1",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 1976.976009,
+        "p95": 2070.299036,
+        "p99": 2076.299082,
+        "mean": 1998.6717474499999,
+        "stdev": 42.011764570004146,
+        "min": 1942.3632349999998,
+        "max": 2076.299082,
+        "median_ci95": [
+          1968.8904249999998,
+          2023.130532
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1976297215,
+        1949853936,
+        1948437009,
+        2036099677,
+        2070299036,
+        2024097450,
+        2007871739,
+        2052478509,
+        1942363235,
+        1966287909,
+        2046008642,
+        1971492941,
+        2013990025,
+        2022163615,
+        2076299082,
+        1976976009,
+        1963649324,
+        1957531683,
+        1974942409,
+        1996295504
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "tpch_q1",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 1991.611805,
+        "p95": 1991.611805,
+        "p99": 1991.611805,
+        "mean": 1991.611805,
+        "stdev": 0.0,
+        "min": 1991.611805,
+        "max": 1991.611805,
+        "median_ci95": [
+          1991.611805,
+          1991.611805
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1991611805
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "tpch_q6",
+      "compute_class": "heavy",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 423.563287,
+        "p95": 452.00377399999996,
+        "p99": 453.945701,
+        "mean": 428.86146885,
+        "stdev": 11.216664520316241,
+        "min": 417.031406,
+        "max": 453.945701,
+        "median_ci95": [
+          421.536743,
+          431.52102199999996
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        453945701,
+        422606577,
+        419277411,
+        422264274,
+        438319495,
+        439903522,
+        420809212,
+        427306205,
+        452003774,
+        445140827,
+        426014282,
+        417031406,
+        423563287,
+        432518295,
+        430523750,
+        419608740,
+        420294794,
+        422598032,
+        418932816,
+        424566977
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "tpch_q6",
+      "compute_class": "heavy",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 540.858123,
+        "p95": 540.858123,
+        "p99": 540.858123,
+        "mean": 540.858123,
+        "stdev": 0.0,
+        "min": 540.858123,
+        "max": 540.858123,
+        "median_ci95": [
+          540.858123,
+          540.858123
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        540858123
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "tpch_q6",
+      "compute_class": "heavy",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 431.240302,
+        "p95": 447.843889,
+        "p99": 461.292782,
+        "mean": 432.93390139999997,
+        "stdev": 10.396863688315557,
+        "min": 417.821012,
+        "max": 461.292782,
+        "median_ci95": [
+          427.747533,
+          435.80623299999996
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        429203794,
+        429612072,
+        434376198,
+        461292782,
+        447843889,
+        431240302,
+        420826072,
+        426291272,
+        417821012,
+        422882155,
+        420908587,
+        445701614,
+        437109497,
+        430493648,
+        440321679,
+        424333697,
+        436402436,
+        433390611,
+        435210031,
+        433416680
+      ],
+      "decomposition_ns": {
+        "t_parse": 588446.0,
+        "t_pool": 32503.0,
+        "t_txn": 977963.0,
+        "t_db": 442205525.0,
+        "t_serialize": 7438.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "tpch_q6",
+      "compute_class": "heavy",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 450.84214,
+        "p95": 450.84214,
+        "p99": 450.84214,
+        "mean": 450.84214,
+        "stdev": 0.0,
+        "min": 450.84214,
+        "max": 450.84214,
+        "median_ci95": [
+          450.84214,
+          450.84214
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        450842140
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "tpch_q6",
+      "compute_class": "heavy",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 442.958399,
+        "p95": 480.754755,
+        "p99": 480.96351699999997,
+        "mean": 450.98634465,
+        "stdev": 17.996631090589126,
+        "min": 426.706437,
+        "max": 480.96351699999997,
+        "median_ci95": [
+          436.76753499999995,
+          460.481545
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        454465478,
+        480754755,
+        480963517,
+        466911257,
+        442958399,
+        435571368,
+        429377523,
+        471699942,
+        436597686,
+        464248925,
+        441417212,
+        441898948,
+        480334741,
+        455341323,
+        433249108,
+        450852733,
+        436937385,
+        432725991,
+        426706437,
+        456714165
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "tpch_q6",
+      "compute_class": "heavy",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 480.049244,
+        "p95": 480.049244,
+        "p99": 480.049244,
+        "mean": 480.049244,
+        "stdev": 0.0,
+        "min": 480.049244,
+        "max": 480.049244,
+        "median_ci95": [
+          480.049244,
+          480.049244
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        480049244
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "tpch_q6",
+      "compute_class": "heavy",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 439.77863299999996,
+        "p95": 471.409812,
+        "p99": 482.008015,
+        "mean": 446.11619394999997,
+        "stdev": 13.522351595447194,
+        "min": 434.21738999999997,
+        "max": 482.008015,
+        "median_ci95": [
+          437.764847,
+          445.08453399999996
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        439778633,
+        437491254,
+        438764437,
+        446368612,
+        443800457,
+        443049974,
+        437020476,
+        436394329,
+        443562035,
+        438038440,
+        435365104,
+        471409812,
+        436467117,
+        440578939,
+        451485900,
+        482008015,
+        466425680,
+        461463850,
+        434217390,
+        438633425
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "tpch_q6",
+      "compute_class": "heavy",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 519.397469,
+        "p95": 519.397469,
+        "p99": 519.397469,
+        "mean": 519.397469,
+        "stdev": 0.0,
+        "min": 519.397469,
+        "max": 519.397469,
+        "median_ci95": [
+          519.397469,
+          519.397469
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        519397469
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "tpch_q3",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 398.533625,
+        "p95": 429.781663,
+        "p99": 431.291294,
+        "mean": 405.04777095,
+        "stdev": 12.065698516446282,
+        "min": 393.035624,
+        "max": 431.291294,
+        "median_ci95": [
+          396.190997,
+          411.12783199999996
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        398533625,
+        395532237,
+        396982025,
+        417740446,
+        429781663,
+        411883148,
+        410372517,
+        402374442,
+        416076340,
+        431291294,
+        417641826,
+        407601681,
+        394734349,
+        394394179,
+        399066032,
+        395626526,
+        396755468,
+        393808250,
+        393035624,
+        397723747
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "tpch_q3",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 614.01988,
+        "p95": 614.01988,
+        "p99": 614.01988,
+        "mean": 614.01988,
+        "stdev": 0.0,
+        "min": 614.01988,
+        "max": 614.01988,
+        "median_ci95": [
+          614.01988,
+          614.01988
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        614019880
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "tpch_q3",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 400.615879,
+        "p95": 424.98551899999995,
+        "p99": 434.622683,
+        "mean": 405.57164005,
+        "stdev": 12.784736745611902,
+        "min": 388.488875,
+        "max": 434.622683,
+        "median_ci95": [
+          397.89815699999997,
+          411.258715
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        400455655,
+        396981184,
+        405221478,
+        412960878,
+        403568779,
+        424985519,
+        434622683,
+        415419640,
+        399768056,
+        394414323,
+        405078622,
+        419361770,
+        409556552,
+        393280362,
+        398815131,
+        400615879,
+        392059352,
+        424593894,
+        388488875,
+        391184169
+      ],
+      "decomposition_ns": {
+        "t_parse": 675280.0,
+        "t_pool": 33448.0,
+        "t_txn": 920427.0,
+        "t_db": 397103423.0,
+        "t_serialize": 17851.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "tpch_q3",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 406.026276,
+        "p95": 406.026276,
+        "p99": 406.026276,
+        "mean": 406.026276,
+        "stdev": 0.0,
+        "min": 406.026276,
+        "max": 406.026276,
+        "median_ci95": [
+          406.026276,
+          406.026276
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        406026276
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "tpch_q3",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 413.775306,
+        "p95": 439.731562,
+        "p99": 451.165322,
+        "mean": 418.2423833,
+        "stdev": 11.962876914433936,
+        "min": 405.876631,
+        "max": 451.165322,
+        "median_ci95": [
+          410.729157,
+          418.258848
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        439731562,
+        451165322,
+        413335700,
+        408867277,
+        430903792,
+        424199924,
+        418404423,
+        413775306,
+        412031448,
+        416010199,
+        418006935,
+        405975895,
+        409228715,
+        418113273,
+        433017400,
+        415105928,
+        409639622,
+        409646973,
+        405876631,
+        411811341
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "tpch_q3",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 496.33881299999996,
+        "p95": 496.33881299999996,
+        "p99": 496.33881299999996,
+        "mean": 496.33881299999996,
+        "stdev": 0.0,
+        "min": 496.33881299999996,
+        "max": 496.33881299999996,
+        "median_ci95": [
+          496.33881299999996,
+          496.33881299999996
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        496338813
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "tpch_q3",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 413.56681499999996,
+        "p95": 435.75316,
+        "p99": 441.361826,
+        "mean": 414.70586019999996,
+        "stdev": 12.231007059318905,
+        "min": 393.448307,
+        "max": 441.361826,
+        "median_ci95": [
+          409.125904,
+          416.74638999999996
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        416954927,
+        400568936,
+        413566815,
+        409897956,
+        402125285,
+        416537854,
+        414575285,
+        405585992,
+        410745745,
+        393448307,
+        402855079,
+        414945443,
+        408353852,
+        411887701,
+        415141812,
+        433761255,
+        435753160,
+        441361826,
+        428345466,
+        417704508
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "tpch_q3",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 446.842494,
+        "p95": 446.842494,
+        "p99": 446.842494,
+        "mean": 446.842494,
+        "stdev": 0.0,
+        "min": 446.842494,
+        "max": 446.842494,
+        "median_ci95": [
+          446.842494,
+          446.842494
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        446842494
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "tpch_q5",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 424.36238199999997,
+        "p95": 454.55107,
+        "p99": 460.34828999999996,
+        "mean": 427.16469585,
+        "stdev": 14.28241600520215,
+        "min": 408.733697,
+        "max": 460.34828999999996,
+        "median_ci95": [
+          416.452515,
+          431.433019
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        435122986,
+        435574903,
+        427743052,
+        460348290,
+        424362382,
+        421214282,
+        426057187,
+        422063282,
+        426123891,
+        413521562,
+        415185889,
+        454551070,
+        415586766,
+        412529123,
+        417318265,
+        436694300,
+        415528186,
+        408733697,
+        426039311,
+        448995493
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "tpch_q5",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 585.490415,
+        "p95": 585.490415,
+        "p99": 585.490415,
+        "mean": 585.490415,
+        "stdev": 0.0,
+        "min": 585.490415,
+        "max": 585.490415,
+        "median_ci95": [
+          585.490415,
+          585.490415
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        585490415
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "tpch_q5",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 441.30582599999997,
+        "p95": 458.977247,
+        "p99": 460.89477,
+        "mean": 437.90660139999994,
+        "stdev": 15.910324839383314,
+        "min": 409.639101,
+        "max": 460.89477,
+        "median_ci95": [
+          428.400946,
+          445.436016
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        418218519,
+        410530003,
+        409639101,
+        453436068,
+        423512590,
+        441021328,
+        421635509,
+        433803181,
+        421267340,
+        433289303,
+        441350111,
+        460894770,
+        442863134,
+        441305826,
+        443810019,
+        458977247,
+        443519785,
+        453710709,
+        447062014,
+        458285471
+      ],
+      "decomposition_ns": {
+        "t_parse": 816013.0,
+        "t_pool": 36211.0,
+        "t_txn": 977375.0,
+        "t_db": 449520243.0,
+        "t_serialize": 11684.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "tpch_q5",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 474.82849899999997,
+        "p95": 474.82849899999997,
+        "p99": 474.82849899999997,
+        "mean": 474.82849899999997,
+        "stdev": 0.0,
+        "min": 474.82849899999997,
+        "max": 474.82849899999997,
+        "median_ci95": [
+          474.82849899999997,
+          474.82849899999997
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        474828499
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "tpch_q5",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 428.159613,
+        "p95": 461.631733,
+        "p99": 461.98792,
+        "mean": 430.6845739,
+        "stdev": 15.77088220949976,
+        "min": 406.08991699999996,
+        "max": 461.98792,
+        "median_ci95": [
+          421.19307599999996,
+          438.42515599999996
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        418891519,
+        422541532,
+        423995512,
+        461631733,
+        420526633,
+        406089917,
+        408456785,
+        415467781,
+        428214594,
+        421859520,
+        440589551,
+        461987920,
+        428159613,
+        437230484,
+        443446762,
+        448937991,
+        437270445,
+        433775014,
+        415038304,
+        439579868
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "tpch_q5",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 447.253375,
+        "p95": 447.253375,
+        "p99": 447.253375,
+        "mean": 447.253375,
+        "stdev": 0.0,
+        "min": 447.253375,
+        "max": 447.253375,
+        "median_ci95": [
+          447.253375,
+          447.253375
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        447253375
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "tpch_q5",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 426.474741,
+        "p95": 458.47229899999996,
+        "p99": 479.755973,
+        "mean": 433.09387675,
+        "stdev": 19.27754607159732,
+        "min": 406.923451,
+        "max": 479.755973,
+        "median_ci95": [
+          418.51530299999996,
+          446.766413
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        406923451,
+        418068324,
+        422598116,
+        445282456,
+        479755973,
+        450574207,
+        426808598,
+        437576659,
+        448367998,
+        417140210,
+        409368829,
+        418962282,
+        426474741,
+        423012348,
+        413597612,
+        417299153,
+        440307215,
+        453036694,
+        448250370,
+        458472299
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "tpch_q5",
+      "compute_class": "heavy",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 439.567591,
+        "p95": 439.567591,
+        "p99": 439.567591,
+        "mean": 439.567591,
+        "stdev": 0.0,
+        "min": 439.567591,
+        "max": 439.567591,
+        "median_ci95": [
+          439.567591,
+          439.567591
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        439567591
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "rows_1",
+      "compute_class": "light",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 38.894559,
+        "p95": 41.552561,
+        "p99": 41.630193,
+        "mean": 39.247413200000004,
+        "stdev": 1.4290335694192846,
+        "min": 37.257048,
+        "max": 41.630193,
+        "median_ci95": [
+          38.190411,
+          40.131890999999996
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        40642343,
+        41552561,
+        41405037,
+        41630193,
+        39298851,
+        38978251,
+        38116790,
+        37706944,
+        37537919,
+        38523775,
+        38226561,
+        40999273,
+        38256052,
+        37936521,
+        38154262,
+        37257048,
+        38894559,
+        39567541,
+        39761012,
+        40502771
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "rows_1",
+      "compute_class": "light",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 89.29148099999999,
+        "p95": 89.29148099999999,
+        "p99": 89.29148099999999,
+        "mean": 89.29148099999999,
+        "stdev": 0.0,
+        "min": 89.29148099999999,
+        "max": 89.29148099999999,
+        "median_ci95": [
+          89.29148099999999,
+          89.29148099999999
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        89291481
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "rows_1",
+      "compute_class": "light",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 40.370329999999996,
+        "p95": 42.987894999999995,
+        "p99": 43.184784,
+        "mean": 40.6502176,
+        "stdev": 1.3416400855501802,
+        "min": 39.032215,
+        "max": 43.184784,
+        "median_ci95": [
+          39.464479,
+          41.24319
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        40619675,
+        39519293,
+        39087938,
+        42729494,
+        41648880,
+        42244075,
+        40370330,
+        40976966,
+        40415063,
+        39390236,
+        40181636,
+        43184784,
+        41314405,
+        41171976,
+        39377737,
+        39032215,
+        39300305,
+        39409666,
+        40041783,
+        42987895
+      ],
+      "decomposition_ns": {
+        "t_parse": 234956.0,
+        "t_pool": 21226.0,
+        "t_txn": 729657.0,
+        "t_db": 38822026.0,
+        "t_serialize": 4234.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "rows_1",
+      "compute_class": "light",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 43.282171,
+        "p95": 43.282171,
+        "p99": 43.282171,
+        "mean": 43.282171,
+        "stdev": 0.0,
+        "min": 43.282171,
+        "max": 43.282171,
+        "median_ci95": [
+          43.282171,
+          43.282171
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        43282171
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "rows_1",
+      "compute_class": "light",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 50.934914,
+        "p95": 61.273154999999996,
+        "p99": 73.653139,
+        "mean": 52.9917915,
+        "stdev": 5.713946740146764,
+        "min": 48.444995,
+        "max": 73.653139,
+        "median_ci95": [
+          50.175565,
+          52.822192
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        50154582,
+        50798808,
+        52544980,
+        51890943,
+        49393555,
+        50196549,
+        49897289,
+        51287044,
+        57206712,
+        50934914,
+        53998889,
+        53099405,
+        73653139,
+        53525403,
+        61273155,
+        52150022,
+        50606040,
+        48444995,
+        50103273,
+        48676133
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "rows_1",
+      "compute_class": "light",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 51.959263,
+        "p95": 51.959263,
+        "p99": 51.959263,
+        "mean": 51.959263,
+        "stdev": 0.0,
+        "min": 51.959263,
+        "max": 51.959263,
+        "median_ci95": [
+          51.959263,
+          51.959263
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        51959263
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "rows_1",
+      "compute_class": "light",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 51.572936,
+        "p95": 54.424664,
+        "p99": 56.16195,
+        "mean": 51.86421805,
+        "stdev": 2.198862919505957,
+        "min": 48.230855,
+        "max": 56.16195,
+        "median_ci95": [
+          50.674201,
+          53.493406
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        51058477,
+        49706540,
+        49074718,
+        54032767,
+        52477283,
+        50289925,
+        48646070,
+        51487969,
+        48856027,
+        48230855,
+        52565642,
+        54424664,
+        53577160,
+        53752535,
+        52823759,
+        53409653,
+        51572936,
+        51550025,
+        53585406,
+        56161950
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "rows_1",
+      "compute_class": "light",
+      "result_size": "1",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 58.130480999999996,
+        "p95": 58.130480999999996,
+        "p99": 58.130480999999996,
+        "mean": 58.130480999999996,
+        "stdev": 0.0,
+        "min": 58.130480999999996,
+        "max": 58.130480999999996,
+        "median_ci95": [
+          58.130480999999996,
+          58.130480999999996
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        58130481
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "rows_100",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 0.518762,
+        "p95": 0.856085,
+        "p99": 0.880448,
+        "mean": 0.56295815,
+        "stdev": 0.13765611904011693,
+        "min": 0.433909,
+        "max": 0.880448,
+        "median_ci95": [
+          0.49091999999999997,
+          0.566153
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        578966,
+        535242,
+        505769,
+        856085,
+        596125,
+        535244,
+        553341,
+        433909,
+        444445,
+        442219,
+        500549,
+        846909,
+        598524,
+        497715,
+        518762,
+        539322,
+        484126,
+        458279,
+        453184,
+        880448
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "rows_100",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 1.33589,
+        "p95": 1.33589,
+        "p99": 1.33589,
+        "mean": 1.33589,
+        "stdev": 0.0,
+        "min": 1.33589,
+        "max": 1.33589,
+        "median_ci95": [
+          1.33589,
+          1.33589
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1335890
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "rows_100",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 1.1782439999999998,
+        "p95": 1.596968,
+        "p99": 1.6343779999999999,
+        "mean": 1.25670755,
+        "stdev": 0.1993517811900083,
+        "min": 1.008334,
+        "max": 1.6343779999999999,
+        "median_ci95": [
+          1.148567,
+          1.278841
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1173864,
+        1150944,
+        1178244,
+        1634378,
+        1559294,
+        1596968,
+        1146190,
+        1032462,
+        1128280,
+        1226096,
+        1310111,
+        1490839,
+        1221512,
+        1057569,
+        1247572,
+        1008334,
+        1042717,
+        1157692,
+        1224539,
+        1546546
+      ],
+      "decomposition_ns": {
+        "t_parse": 239556.0,
+        "t_pool": 21689.0,
+        "t_txn": 610412.0,
+        "t_db": 400374.0,
+        "t_serialize": 47949.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "rows_100",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 2.104246,
+        "p95": 2.104246,
+        "p99": 2.104246,
+        "mean": 2.104246,
+        "stdev": 0.0,
+        "min": 2.104246,
+        "max": 2.104246,
+        "median_ci95": [
+          2.104246,
+          2.104246
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        2104246
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "rows_100",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 9.805653,
+        "p95": 10.506076,
+        "p99": 11.096561999999999,
+        "mean": 9.833496349999999,
+        "stdev": 0.5173096528021098,
+        "min": 9.074617,
+        "max": 11.096561999999999,
+        "median_ci95": [
+          9.50931,
+          10.087878
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        10082017,
+        10093740,
+        11096562,
+        9709473,
+        9862458,
+        9263710,
+        9351183,
+        9074915,
+        9558832,
+        9362640,
+        9532533,
+        10297565,
+        10506076,
+        10234420,
+        10336652,
+        9486088,
+        9074617,
+        10027845,
+        9912948,
+        9805653
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "rows_100",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 12.962404999999999,
+        "p95": 12.962404999999999,
+        "p99": 12.962404999999999,
+        "mean": 12.962404999999999,
+        "stdev": 0.0,
+        "min": 12.962404999999999,
+        "max": 12.962404999999999,
+        "median_ci95": [
+          12.962404999999999,
+          12.962404999999999
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        12962405
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "rows_100",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 11.937019,
+        "p95": 14.901919999999999,
+        "p99": 14.980951,
+        "mean": 12.324205249999999,
+        "stdev": 1.2562605197144618,
+        "min": 10.655607999999999,
+        "max": 14.980951,
+        "median_ci95": [
+          11.464722,
+          13.050904
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        11267677,
+        11073465,
+        11332902,
+        14980951,
+        13425294,
+        14901920,
+        13110492,
+        12207580,
+        11836994,
+        13580216,
+        12991316,
+        13602298,
+        11748062,
+        11596542,
+        11937019,
+        11972463,
+        11053075,
+        10655608,
+        11209867,
+        12000364
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "rows_100",
+      "compute_class": "light",
+      "result_size": "~100",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 13.915066999999999,
+        "p95": 13.915066999999999,
+        "p99": 13.915066999999999,
+        "mean": 13.915066999999999,
+        "stdev": 0.0,
+        "min": 13.915066999999999,
+        "max": 13.915066999999999,
+        "median_ci95": [
+          13.915066999999999,
+          13.915066999999999
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        13915067
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "rows_100k",
+      "compute_class": "light",
+      "result_size": "large",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 198.85178399999998,
+        "p95": 285.93627799999996,
+        "p99": 415.13510399999996,
+        "mean": 212.20592424999998,
+        "stdev": 52.33257095067261,
+        "min": 182.292726,
+        "max": 415.13510399999996,
+        "median_ci95": [
+          194.444523,
+          201.179507
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        212688198,
+        201637721,
+        415135104,
+        199077739,
+        199998493,
+        194549768,
+        194339278,
+        189689244,
+        195483780,
+        285936278,
+        212629448,
+        201822274,
+        198851784,
+        200721293,
+        195520794,
+        182292726,
+        183353960,
+        186409998,
+        194193139,
+        199787466
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "rows_100k",
+      "compute_class": "light",
+      "result_size": "large",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 459.009028,
+        "p95": 459.009028,
+        "p99": 459.009028,
+        "mean": 459.009028,
+        "stdev": 0.0,
+        "min": 459.009028,
+        "max": 459.009028,
+        "median_ci95": [
+          459.009028,
+          459.009028
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        459009028
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "rows_100k",
+      "compute_class": "light",
+      "result_size": "large",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 236.57950699999998,
+        "p95": 250.730999,
+        "p99": 270.258063,
+        "mean": 238.85963605,
+        "stdev": 10.839818744315979,
+        "min": 222.52454,
+        "max": 270.258063,
+        "median_ci95": [
+          232.22667299999998,
+          241.469394
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        241085471,
+        229702184,
+        227929983,
+        250054834,
+        244958354,
+        250730999,
+        236024901,
+        222524540,
+        229008569,
+        228949520,
+        234783233,
+        241401900,
+        270258063,
+        233124025,
+        237350777,
+        236579507,
+        241536889,
+        231329321,
+        239281902,
+        250577749
+      ],
+      "decomposition_ns": {
+        "t_parse": 353373.0,
+        "t_pool": 48400.0,
+        "t_txn": 1870394.0,
+        "t_db": 182022609.0,
+        "t_serialize": 70341738.0,
+        "t_protocol": null,
+        "t_cache": null
+      }
+    },
+    {
+      "path": "server_side",
+      "query_id": "rows_100k",
+      "compute_class": "light",
+      "result_size": "large",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 480.19762,
+        "p95": 480.19762,
+        "p99": 480.19762,
+        "mean": 480.19762,
+        "stdev": 0.0,
+        "min": 480.19762,
+        "max": 480.19762,
+        "median_ci95": [
+          480.19762,
+          480.19762
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        480197620
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "rows_100k",
+      "compute_class": "light",
+      "result_size": "large",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 1788.175258,
+        "p95": 1928.575965,
+        "p99": 1993.7836049999999,
+        "mean": 1820.1941973499997,
+        "stdev": 70.26008383453363,
+        "min": 1719.515275,
+        "max": 1993.7836049999999,
+        "median_ci95": [
+          1774.8025,
+          1844.676442
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        1779304517,
+        1852153977,
+        1887533809,
+        1876067902,
+        1786049406,
+        1779751765,
+        1719515275,
+        1769453380,
+        1809358240,
+        1751192127,
+        1837198908,
+        1834609662,
+        1913211242,
+        1817061519,
+        1928575965,
+        1788175258,
+        1993783605,
+        1761398183,
+        1770300483,
+        1749188724
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_inmemory",
+      "query_id": "rows_100k",
+      "compute_class": "light",
+      "result_size": "large",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 2169.945863,
+        "p95": 2169.945863,
+        "p99": 2169.945863,
+        "mean": 2169.945863,
+        "stdev": 0.0,
+        "min": 2169.945863,
+        "max": 2169.945863,
+        "median_ci95": [
+          2169.945863,
+          2169.945863
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        2169945863
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "rows_100k",
+      "compute_class": "light",
+      "result_size": "large",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 5050.886641,
+        "p95": 5340.123756999999,
+        "p99": 5371.501359,
+        "mean": 5078.70754545,
+        "stdev": 153.40985862192926,
+        "min": 4826.538509,
+        "max": 5371.501359,
+        "median_ci95": [
+          5023.810391999999,
+          5108.446924
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        5087326431,
+        4826538509,
+        5043680362,
+        5072574718,
+        5043687114,
+        5340123757,
+        5088342237,
+        4840976738,
+        5059986597,
+        5012757182,
+        5285823258,
+        5371501359,
+        4985042824,
+        4833581716,
+        5128551611,
+        5234938807,
+        5220210264,
+        5032573634,
+        5050886641,
+        5015047150
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "e2e_stdio",
+      "query_id": "rows_100k",
+      "compute_class": "light",
+      "result_size": "large",
+      "temperature": "cold",
+      "concurrency": 1,
+      "n": 1,
+      "latency_ms": {
+        "p50": 6118.869202999999,
+        "p95": 6118.869202999999,
+        "p99": 6118.869202999999,
+        "mean": 6118.869202999999,
+        "stdev": 0.0,
+        "min": 6118.869202999999,
+        "max": 6118.869202999999,
+        "median_ci95": [
+          6118.869202999999,
+          6118.869202999999
+        ]
+      },
+      "throughput_rps": null,
+      "samples_ns": [
+        6118869203
+      ],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 0.299068,
+        "p95": 0.6646799999999999,
+        "p99": 0.9093509999999999,
+        "mean": 0.38656979999999996,
+        "stdev": 0.17429436254149863,
+        "min": 0.25599099999999997,
+        "max": 0.9093509999999999,
+        "median_ci95": [
+          0.27691699999999997,
+          0.39747899999999997
+        ]
+      },
+      "throughput_rps": 2541.3809889707877,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 0.753914,
+        "p95": 1.135981,
+        "p99": 1.3512279999999999,
+        "mean": 0.80864855,
+        "stdev": 0.17363706734464848,
+        "min": 0.6346579999999999,
+        "max": 1.3512279999999999,
+        "median_ci95": [
+          0.722992,
+          0.79875
+        ]
+      },
+      "throughput_rps": 1222.6605460279732,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 4,
+      "n": 80,
+      "latency_ms": {
+        "p50": 1.0112839999999998,
+        "p95": 1.2938859999999999,
+        "p99": 1.793637,
+        "mean": 1.0678798624999999,
+        "stdev": 0.19098898957360852,
+        "min": 0.6214029999999999,
+        "max": 1.793637,
+        "median_ci95": [
+          1.000558,
+          1.059717
+        ]
+      },
+      "throughput_rps": 3667.6644853537778,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 4,
+      "n": 80,
+      "latency_ms": {
+        "p50": 2.0933479999999998,
+        "p95": 2.903893,
+        "p99": 3.463459,
+        "mean": 2.1131062875,
+        "stdev": 0.3663550792171543,
+        "min": 1.1535229999999999,
+        "max": 3.463459,
+        "median_ci95": [
+          2.027832,
+          2.1398859999999997
+        ]
+      },
+      "throughput_rps": 1841.6852801577404,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 16,
+      "n": 320,
+      "latency_ms": {
+        "p50": 3.8809519999999997,
+        "p95": 5.179422,
+        "p99": 6.891912,
+        "mean": 4.14795506875,
+        "stdev": 0.7596906391386384,
+        "min": 2.2075389999999997,
+        "max": 7.074065,
+        "median_ci95": [
+          3.860073,
+          3.9041099999999997
+        ]
+      },
+      "throughput_rps": 3786.735281678848,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 16,
+      "n": 320,
+      "latency_ms": {
+        "p50": 10.160478,
+        "p95": 14.760537999999999,
+        "p99": 16.626663,
+        "mean": 10.152004162499999,
+        "stdev": 2.789753924399993,
+        "min": 1.431968,
+        "max": 18.159606999999998,
+        "median_ci95": [
+          9.604925,
+          10.595551
+        ]
+      },
+      "throughput_rps": 1522.077139097721,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 64,
+      "n": 1280,
+      "latency_ms": {
+        "p50": 17.317602,
+        "p95": 20.731866999999998,
+        "p99": 29.986895999999998,
+        "mean": 17.79220008125,
+        "stdev": 2.9147703353665575,
+        "min": 9.219154999999999,
+        "max": 30.867772,
+        "median_ci95": [
+          17.291816,
+          17.349489
+        ]
+      },
+      "throughput_rps": 3536.630251338835,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "select_1",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 64,
+      "n": 1280,
+      "latency_ms": {
+        "p50": 38.005911,
+        "p95": 45.123565,
+        "p99": 48.919393,
+        "mean": 37.387025647656245,
+        "stdev": 5.61917027331416,
+        "min": 13.36047,
+        "max": 54.147760999999996,
+        "median_ci95": [
+          37.72209,
+          38.172142
+        ]
+      },
+      "throughput_rps": 1679.9167431162216,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 0.392907,
+        "p95": 0.5514669999999999,
+        "p99": 0.690325,
+        "mean": 0.42672134999999994,
+        "stdev": 0.08869808225558441,
+        "min": 0.3344,
+        "max": 0.690325,
+        "median_ci95": [
+          0.37163799999999997,
+          0.464063
+        ]
+      },
+      "throughput_rps": 2297.43593513741,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 2.8243169999999997,
+        "p95": 3.63704,
+        "p99": 3.6834469999999997,
+        "mean": 2.85913155,
+        "stdev": 0.5320531836169126,
+        "min": 1.992147,
+        "max": 3.6834469999999997,
+        "median_ci95": [
+          2.608667,
+          3.21853
+        ]
+      },
+      "throughput_rps": 348.12931061327726,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 4,
+      "n": 80,
+      "latency_ms": {
+        "p50": 1.109813,
+        "p95": 1.317375,
+        "p99": 1.513615,
+        "mean": 1.12505985,
+        "stdev": 0.13146696966371246,
+        "min": 0.677268,
+        "max": 1.513615,
+        "median_ci95": [
+          1.072647,
+          1.147151
+        ]
+      },
+      "throughput_rps": 3494.209047345834,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 4,
+      "n": 80,
+      "latency_ms": {
+        "p50": 2.492426,
+        "p95": 2.920588,
+        "p99": 3.5052079999999997,
+        "mean": 2.4892677874999998,
+        "stdev": 0.2643867594746112,
+        "min": 1.631889,
+        "max": 3.5052079999999997,
+        "median_ci95": [
+          2.4581329999999997,
+          2.526785
+        ]
+      },
+      "throughput_rps": 1580.2147318244245,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 16,
+      "n": 320,
+      "latency_ms": {
+        "p50": 4.294803,
+        "p95": 4.704344,
+        "p99": 5.446829999999999,
+        "mean": 4.297781565625,
+        "stdev": 0.4006042369803599,
+        "min": 1.155654,
+        "max": 7.981388,
+        "median_ci95": [
+          4.2544439999999994,
+          4.312869
+        ]
+      },
+      "throughput_rps": 3667.858915669264,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 16,
+      "n": 320,
+      "latency_ms": {
+        "p50": 9.310056,
+        "p95": 11.199000999999999,
+        "p99": 12.068416,
+        "mean": 9.558839690625,
+        "stdev": 1.0539436616984335,
+        "min": 4.613886,
+        "max": 16.125849,
+        "median_ci95": [
+          9.275456,
+          9.371654999999999
+        ]
+      },
+      "throughput_rps": 1651.1686685461405,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 64,
+      "n": 1280,
+      "latency_ms": {
+        "p50": 17.673413999999998,
+        "p95": 23.965977,
+        "p99": 24.711705,
+        "mean": 18.96010919375,
+        "stdev": 2.7630210893285567,
+        "min": 8.806471,
+        "max": 26.075456,
+        "median_ci95": [
+          17.580211,
+          17.966533
+        ]
+      },
+      "throughput_rps": 3336.715181062965,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_orders",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 64,
+      "n": 1280,
+      "latency_ms": {
+        "p50": 38.20548,
+        "p95": 55.941108,
+        "p99": 65.417688,
+        "mean": 39.83937154921875,
+        "stdev": 8.599088737094519,
+        "min": 7.833940999999999,
+        "max": 83.43247099999999,
+        "median_ci95": [
+          37.846354,
+          38.575623
+        ]
+      },
+      "throughput_rps": 1576.807590597017,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 0.312569,
+        "p95": 0.371346,
+        "p99": 0.465344,
+        "mean": 0.32105079999999997,
+        "stdev": 0.04484523012786368,
+        "min": 0.26241,
+        "max": 0.465344,
+        "median_ci95": [
+          0.298049,
+          0.32767599999999997
+        ]
+      },
+      "throughput_rps": 3062.5404446747475,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 1,
+      "n": 20,
+      "latency_ms": {
+        "p50": 1.627087,
+        "p95": 1.871999,
+        "p99": 1.882305,
+        "mean": 1.6475861,
+        "stdev": 0.17187193715300444,
+        "min": 1.347994,
+        "max": 1.882305,
+        "median_ci95": [
+          1.5583179999999999,
+          1.7685549999999999
+        ]
+      },
+      "throughput_rps": 602.7868160637623,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 4,
+      "n": 80,
+      "latency_ms": {
+        "p50": 1.121238,
+        "p95": 1.360582,
+        "p99": 1.919287,
+        "mean": 1.1578385,
+        "stdev": 0.17866462945198522,
+        "min": 0.585475,
+        "max": 1.919287,
+        "median_ci95": [
+          1.11182,
+          1.137869
+        ]
+      },
+      "throughput_rps": 3389.008817438416,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 4,
+      "n": 80,
+      "latency_ms": {
+        "p50": 2.6034219999999997,
+        "p95": 3.936238,
+        "p99": 4.014995,
+        "mean": 2.73108635,
+        "stdev": 0.4756579809322389,
+        "min": 1.9777959999999999,
+        "max": 4.014995,
+        "median_ci95": [
+          2.5366999999999997,
+          2.696932
+        ]
+      },
+      "throughput_rps": 1443.353507746848,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 16,
+      "n": 320,
+      "latency_ms": {
+        "p50": 4.159689,
+        "p95": 5.151224,
+        "p99": 5.99424,
+        "mean": 4.247411146875,
+        "stdev": 0.43515108543822223,
+        "min": 2.807857,
+        "max": 6.040414999999999,
+        "median_ci95": [
+          4.148562,
+          4.17703
+        ]
+      },
+      "throughput_rps": 3720.89657142404,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 16,
+      "n": 320,
+      "latency_ms": {
+        "p50": 8.971898999999999,
+        "p95": 11.60149,
+        "p99": 12.081005,
+        "mean": 9.349892946875,
+        "stdev": 1.1666924067732172,
+        "min": 5.750305,
+        "max": 16.355933999999998,
+        "median_ci95": [
+          8.92546,
+          9.131696
+        ]
+      },
+      "throughput_rps": 1692.5622162333493,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "native",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 64,
+      "n": 1280,
+      "latency_ms": {
+        "p50": 17.682927,
+        "p95": 21.110426,
+        "p99": 25.091562999999997,
+        "mean": 18.1076269890625,
+        "stdev": 1.8588756439349452,
+        "min": 11.430482999999999,
+        "max": 25.859626,
+        "median_ci95": [
+          17.664104,
+          17.7201
+        ]
+      },
+      "throughput_rps": 3491.4230982176105,
+      "samples_ns": [],
+      "decomposition_ns": null
+    },
+    {
+      "path": "server_side",
+      "query_id": "pk_lookup_customer",
+      "compute_class": "ultralight",
+      "result_size": "1",
+      "temperature": "warm",
+      "concurrency": 64,
+      "n": 1280,
+      "latency_ms": {
+        "p50": 34.867763,
+        "p95": 41.024707,
+        "p99": 43.215516,
+        "mean": 35.735155178125,
+        "stdev": 3.312138779956586,
+        "min": 4.031866,
+        "max": 48.615773,
+        "median_ci95": [
+          34.812533,
+          34.938291
+        ]
+      },
+      "throughput_rps": 1771.4974036719534,
+      "samples_ns": [],
+      "decomposition_ns": null
+    }
+  ],
+  "assertions": [
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "orders_status_counts",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 91.55223199999999,
+        "server_side_p50_ms": 95.184235,
+        "overhead_p50_ms": 3.6320030000000116
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "orders_status_counts",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 90.482297,
+        "server_t_db_ms": 93.08736,
+        "delta_ms": 2.605063
+      }
+    },
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "pk_lookup_customer",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 0.36702999999999997,
+        "server_side_p50_ms": 1.058219,
+        "overhead_p50_ms": 0.691189
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "pk_lookup_customer",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 0.124096,
+        "server_t_db_ms": 0.214135,
+        "delta_ms": 0.090039
+      }
+    },
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "pk_lookup_orders",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 0.326916,
+        "server_side_p50_ms": 0.909608,
+        "overhead_p50_ms": 0.582692
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "pk_lookup_orders",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 0.125664,
+        "server_t_db_ms": 0.174049,
+        "delta_ms": 0.048385
+      }
+    },
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "rows_1",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 38.894559,
+        "server_side_p50_ms": 40.370329999999996,
+        "overhead_p50_ms": 1.4757709999999946
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "rows_1",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 38.83357,
+        "server_t_db_ms": 38.822026,
+        "delta_ms": -0.011544
+      }
+    },
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "rows_100",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 0.518762,
+        "server_side_p50_ms": 1.1782439999999998,
+        "overhead_p50_ms": 0.6594819999999999
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "rows_100",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 0.292217,
+        "server_t_db_ms": 0.400374,
+        "delta_ms": 0.108157
+      }
+    },
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "rows_100k",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 198.85178399999998,
+        "server_side_p50_ms": 236.57950699999998,
+        "overhead_p50_ms": 37.727723
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "rows_100k",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 175.506583,
+        "server_t_db_ms": 182.022609,
+        "delta_ms": 6.516026
+      }
+    },
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "select_1",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 0.37502599999999997,
+        "server_side_p50_ms": 0.7938529999999999,
+        "overhead_p50_ms": 0.41882699999999995
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "select_1",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 0.110097,
+        "server_t_db_ms": 0.166873,
+        "delta_ms": 0.056776
+      }
+    },
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "tpch_q1",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 2086.650568,
+        "server_side_p50_ms": 1998.82241,
+        "overhead_p50_ms": -87.82815800000003
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "tpch_q1",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 2013.430589,
+        "server_t_db_ms": 1965.200492,
+        "delta_ms": -48.230097
+      }
+    },
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "tpch_q3",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 398.533625,
+        "server_side_p50_ms": 400.615879,
+        "overhead_p50_ms": 2.0822540000000345
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "tpch_q3",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 403.333248,
+        "server_t_db_ms": 397.103423,
+        "delta_ms": -6.229825
+      }
+    },
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "tpch_q5",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 424.36238199999997,
+        "server_side_p50_ms": 441.30582599999997,
+        "overhead_p50_ms": 16.943444
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "tpch_q5",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 417.998852,
+        "server_t_db_ms": 449.520243,
+        "delta_ms": 31.521391
+      }
+    },
+    {
+      "name": "server_side_overhead_p50_ms",
+      "query_id": "tpch_q6",
+      "passed": true,
+      "detail": {
+        "native_p50_ms": 423.563287,
+        "server_side_p50_ms": 431.240302,
+        "overhead_p50_ms": 7.677014999999983
+      }
+    },
+    {
+      "name": "t_db_matches_native",
+      "query_id": "tpch_q6",
+      "passed": true,
+      "detail": {
+        "native_t_db_ms": 471.273115,
+        "server_t_db_ms": 442.205525,
+        "delta_ms": -29.06759
+      }
+    }
+  ],
+  "schema_version": 1,
+  "kind": "performance"
+}
