@@ -59,12 +59,18 @@ class NativeRunner:
         start = time.perf_counter_ns()
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute("BEGIN TRANSACTION READ ONLY")
-            await cur.execute(sql)
-            rows = await cur.fetchall()
-            # Match run_select's max_rows truncation + dict materialization so
-            # the serialization work compared is like-for-like.
-            _ = [dict(r) for r in rows[:max_rows]]
-            await cur.execute("ROLLBACK")
+            try:
+                await cur.execute(sql)
+                rows = await cur.fetchall()
+                # Match run_select's max_rows truncation + dict materialization
+                # so the serialization work compared is like-for-like.
+                _ = [dict(r) for r in rows[:max_rows]]
+            finally:
+                # Always close the transaction. A failing query on this
+                # persistent connection would otherwise leave it in an aborted
+                # state and poison every subsequent measurement. ROLLBACK is
+                # valid (and the correct recovery) even after an error.
+                await cur.execute("ROLLBACK")
         return time.perf_counter_ns() - start
 
 

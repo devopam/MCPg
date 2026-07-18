@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 
-from benchmarks.perf import queries, stats
+import pytest
+
+from benchmarks.perf import queries, runner, stats
 from benchmarks.perf.schema import Assertion, Decomposition, LatencyBlock, PerfRun, ResultRow
 
 # --- stats ----------------------------------------------------------------
@@ -107,3 +109,14 @@ def test_perf_run_serializes_to_json() -> None:
     assert payload["results"][0]["path"] == "server_side"
     assert payload["results"][0]["decomposition_ns"]["t_db"] == 800_000.0
     assert payload["assertions"][0]["name"] == "server_side_overhead_p50_ms"
+
+
+# --- runner CLI validation (DB-free; fails before any connection) ---------
+
+
+def test_runner_rejects_too_few_iterations() -> None:
+    # Below _WARMUP + 1 the warm bucket is empty after dropping warmup, so the
+    # guard must fail fast (SystemExit from argparse) before touching the DB.
+    with pytest.raises(SystemExit) as exc:
+        runner.main(["--database-url", "postgresql://unused", "--output", "/tmp/unused.json", "--iterations", "0"])
+    assert exc.value.code == 2

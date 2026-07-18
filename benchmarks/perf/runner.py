@@ -86,12 +86,16 @@ async def _run(args: argparse.Namespace) -> PerfRun:
     await database.connect()
     native = await NativeRunner.connect(args.database_url)
     results: list[ResultRow] = []
+    # Pre-initialised so a failure in the metadata query below can't mask the
+    # original exception with an UnboundLocalError when `metadata` is built.
+    pg_meta: dict[str, Any] = {}
     try:
         pg = await database.driver().execute_query(
             "SELECT current_setting('server_version') AS v, current_setting('server_version_num')::int AS num",
             force_readonly=True,
         )
-        pg_meta = {"version_string": pg[0].cells["v"], "server_version_num": pg[0].cells["num"]} if pg else {}
+        if pg:
+            pg_meta = {"version_string": pg[0].cells["v"], "server_version_num": pg[0].cells["num"]}
 
         for query in all_queries():
             for label, runner in (("native", native), ("server_side", ServerSideRunner(database))):
@@ -150,12 +154,18 @@ def _assertions(results: list[ResultRow]) -> list[Assertion]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="MCPg performance benchmark (native vs server-side).")
     parser.add_argument("--database-url", required=True, help="PostgreSQL DSN (a TPC-H-loaded database).")
-    parser.add_argument("--iterations", type=int, default=50, help="Warm iterations per pathxquery (>= 20).")
+    parser.add_argument(
+        "--iterations", type=int, default=50, help=f"Warm iterations per pathxquery (>= {_WARMUP + 1})."
+    )
     parser.add_argument("--scale-factor", type=int, default=1, help="TPC-H scale factor the DB was loaded at.")
     parser.add_argument("--output", type=Path, required=True, help="Path to write the result JSON.")
     parser.add_argument("--git-sha", default="unknown", help="Provenance: the commit under test.")
     parser.add_argument("--timestamp", default="unknown", help="Provenance: ISO-8601 run timestamp.")
     args = parser.parse_args(argv)
+    if args.iterations < _WARMUP + 1:
+        # Below this the warm bucket is empty after dropping warmup, and
+        # summarize() would report misleading all-zero stats that look valid.
+        parser.error(f"--iterations must be >= {_WARMUP + 1} (warm measurements would be empty)")
 
     run = asyncio.run(_run(args))
     args.output.parent.mkdir(parents=True, exist_ok=True)

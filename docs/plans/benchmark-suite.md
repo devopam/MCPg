@@ -16,7 +16,7 @@ Every clause of that sentence maps to a measured number:
 
 | Clause | Evidence |
 |---|---|
-| *dramatically more token-efficient* | 40–70 %+ fewer tokens per database task vs a bare `run_select` tool (the headline) |
+| *dramatically more token-efficient* | 40–70%+ fewer tokens per database task vs a bare `run_select` tool (the headline) |
 | *more reliable* | fewer error→retry loops, higher task-completion rate |
 | *negligible performance cost* | sub-millisecond, decomposed overhead; ~0 % on heavy queries; cache **beats** native on repeat reads |
 | *safety guarantees* | dangerous statements provably rejected |

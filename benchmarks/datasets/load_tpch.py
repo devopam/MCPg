@@ -24,6 +24,10 @@ from pathlib import Path
 import psycopg
 
 _DIR = Path(__file__).resolve().parent
+# The only values interpolated into SQL below are ``scale_factor`` (an int, via
+# argparse ``type=int``) and these table names — a frozen tuple of literals.
+# There is no untrusted input: table identifiers and DDL (COPY/VACUUM) cannot be
+# passed as bound parameters, so f-string composition here is safe by construction.
 _TABLES = ("region", "nation", "part", "supplier", "partsupp", "customer", "orders", "lineitem")
 
 
