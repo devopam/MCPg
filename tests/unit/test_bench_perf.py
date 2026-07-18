@@ -14,6 +14,7 @@ import pytest
 from mcp.types import CallToolResult, TextContent
 
 from benchmarks.perf import queries, runner, stats
+from benchmarks.perf.concurrency import aggregate, throughput_rps
 from benchmarks.perf.decompose import SegmentSample, summarize_segments, t_db_within_native
 from benchmarks.perf.e2e import row_count_of
 from benchmarks.perf.schema import Assertion, Decomposition, LatencyBlock, PerfRun, ResultRow
@@ -211,3 +212,33 @@ def test_row_count_of_none_when_absent() -> None:
     # A text-only result (no structuredContent) yields None rather than raising.
     result = CallToolResult(content=[TextContent(type="text", text="[]")])
     assert row_count_of(result) is None
+
+
+# --- concurrency sweep (pure helpers) -------------------------------------
+
+
+def test_throughput_rps_basic_and_guard() -> None:
+    assert throughput_rps(100, 2.0) == 50.0
+    assert throughput_rps(100, 0.0) == 0.0  # zero wall time -> 0, not a crash
+    assert throughput_rps(0, 1.0) == 0.0
+
+
+def test_aggregate_folds_workers_and_computes_rps() -> None:
+    # 2 workers x 2 calls each = 4 queries in 1e9 ns (1.0 s) -> 4 rps.
+    per_worker = [[1_000_000, 2_000_000], [3_000_000, 4_000_000]]
+    cr = aggregate(concurrency=2, per_worker_latencies=per_worker, wall_ns=1_000_000_000)
+    assert cr.concurrency == 2
+    assert cr.total_queries == 4
+    assert cr.wall_seconds == 1.0
+    assert cr.throughput_rps == 4.0
+    assert sorted(cr.latencies_ns) == [1_000_000, 2_000_000, 3_000_000, 4_000_000]
+
+
+def test_conc_row_omits_raw_samples_but_keeps_throughput() -> None:
+    cr = aggregate(concurrency=4, per_worker_latencies=[[1_000_000] * 4], wall_ns=2_000_000_000)
+    q = next(iter(queries.all_queries()))
+    row = runner._conc_row("server_side", q, cr)
+    assert row.concurrency == 4
+    assert row.throughput_rps == cr.throughput_rps
+    assert row.samples_ns == []  # not persisted for concurrency rows
+    assert row.latency_ms.p50 == 1.0

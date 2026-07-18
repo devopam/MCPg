@@ -20,6 +20,9 @@ result is what earns credibility for the real wins (measured in v2: tokens).
 - `perf/e2e.py` — the **end-to-end paths** through the real MCP protocol
   (in-memory, stdio subprocess, streamable HTTP) — the `t_protocol` band. Opt-in
   via `--e2e` / `--e2e-http-url`.
+- `perf/concurrency.py` — the **throughput sweep** at 1/4/16/64 concurrent
+  clients (native + server-side), where pool + serialization overhead surface.
+  Opt-in via `--concurrency`.
 - `perf/queries.py` — the two-axis query set (compute x result-size), heavy tier
   from TPC-H.
 - `perf/stats.py` — percentiles + bootstrap median CI + warm-up handling (pure,
@@ -27,7 +30,7 @@ result is what earns credibility for the real wins (measured in v2: tokens).
 - `perf/runner.py` — orchestrates paths x queries (cold + warm) → structured JSON.
 - `datasets/` — TPC-H schema/index DDL + a DuckDB→`COPY` loader.
 
-The concurrency sweep and the HTML dashboard land in subsequent phases.
+The HTML dashboard (rendering these JSON results) lands in the next phase.
 
 ## Running it
 
