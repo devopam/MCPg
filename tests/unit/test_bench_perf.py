@@ -200,6 +200,39 @@ def test_assertions_include_t_db_gate() -> None:
     assert gate[0].detail["native_t_db_ms"] == 4.1
 
 
+def test_assertions_ignore_concurrency_rows() -> None:
+    # Concurrency-sweep rows share (path, query_id) with the single-client
+    # baseline but carry under-load latencies; they must NOT feed the overhead
+    # assertion (which keys off the concurrency==1 baseline).
+    def _row(path: str, concurrency: int, p50: float) -> ResultRow:
+        return ResultRow(
+            path=path,
+            query_id="q",
+            compute_class="light",
+            result_size="~100",
+            temperature="warm",
+            concurrency=concurrency,
+            n=20,
+            latency_ms=LatencyBlock(
+                p50=p50, p95=p50, p99=p50, mean=p50, stdev=0.0, min=p50, max=p50, median_ci95=(p50, p50)
+            ),
+            samples_ns=[],
+        )
+
+    # Baseline: native 1.0 ms, server 1.2 ms -> overhead 0.2 ms. The 64-client
+    # rows (10x slower) must be ignored.
+    results = [
+        _row("native", 1, 1.0),
+        _row("server_side", 1, 1.2),
+        _row("native", 64, 10.0),
+        _row("server_side", 64, 12.0),
+    ]
+    out = runner._assertions(results, {})
+    overhead = [a for a in out if a.name == "server_side_overhead_p50_ms"]
+    assert len(overhead) == 1
+    assert overhead[0].detail["overhead_p50_ms"] == pytest.approx(0.2)
+
+
 # --- e2e helper (pure) ----------------------------------------------------
 
 

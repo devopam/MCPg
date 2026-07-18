@@ -210,19 +210,22 @@ async def _run(args: argparse.Namespace) -> PerfRun:
         # Opt-in end-to-end paths (through the real MCP protocol). Started once
         # and reused across every query; torn down in the finally.
         e2e_paths: list[tuple[str, PathRunner]] = []
+        # Register each runner for teardown *before* starting it, so a failure
+        # partway through start() still gets closed by the finally (close() is a
+        # no-op on an un-entered stack).
         if args.e2e:
             inmem = E2EInMemoryRunner(settings)
-            await inmem.start()
             e2e_runners.append(inmem)
+            await inmem.start()
             e2e_paths.append(("e2e_inmemory", inmem))
             stdio = E2EStdioRunner(args.database_url)
-            await stdio.start()
             e2e_runners.append(stdio)
+            await stdio.start()
             e2e_paths.append(("e2e_stdio", stdio))
         if args.e2e_http_url:
             http = E2EHttpRunner(args.e2e_http_url)
-            await http.start()
             e2e_runners.append(http)
+            await http.start()
             e2e_paths.append(("e2e_http", http))
 
         paths: list[tuple[str, PathRunner]] = [
@@ -287,7 +290,10 @@ def _assertions(results: list[ResultRow], native_db_ns_by_query: dict[str, float
     on.
     """
     out: list[Assertion] = []
-    by_key = {(r.path, r.query_id): r for r in results if r.temperature == "warm"}
+    # Only the single-client baseline rows (concurrency == 1) feed the overhead
+    # and t_db assertions — the concurrency-sweep rows share (path, query_id) but
+    # carry under-load latencies, and must not overwrite the baseline here.
+    by_key = {(r.path, r.query_id): r for r in results if r.temperature == "warm" and r.concurrency == 1}
     query_ids = {r.query_id for r in results}
     for qid in sorted(query_ids):
         native = by_key.get(("native", qid))

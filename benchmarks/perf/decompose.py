@@ -83,25 +83,35 @@ class DecompositionRunner:
                 await cur.execute("BEGIN TRANSACTION READ ONLY")
                 t_txn_begin = time.perf_counter_ns() - t0
 
-                # t_db — the query + fetch. This is the segment that must match
-                # native; it runs the exact statement the server sends.
-                t0 = time.perf_counter_ns()
-                await cur.execute(f"{_MARKER}{sql}")
-                rows = await cur.fetchall()
-                t_db = time.perf_counter_ns() - t0
+                try:
+                    # t_db — the query + fetch. This is the segment that must
+                    # match native; it runs the exact statement the server sends.
+                    t0 = time.perf_counter_ns()
+                    await cur.execute(f"{_MARKER}{sql}")
+                    rows = await cur.fetchall()
+                    t_db = time.perf_counter_ns() - t0
 
-                # t_serialize — RowResult wrap (driver) + dict + max_rows
-                # truncation (run_select), mirrored exactly.
-                t0 = time.perf_counter_ns()
-                row_results = [SqlDriver.RowResult(cells=dict(row)) for row in rows]
-                all_rows = [dict(rr.cells) for rr in row_results]
-                _ = all_rows[:max_rows]
-                t_serialize = time.perf_counter_ns() - t0
+                    # t_serialize — RowResult wrap (driver) + dict + max_rows
+                    # truncation (run_select), mirrored exactly.
+                    t0 = time.perf_counter_ns()
+                    row_results = [SqlDriver.RowResult(cells=dict(row)) for row in rows]
+                    all_rows = [dict(rr.cells) for rr in row_results]
+                    _ = all_rows[:max_rows]
+                    t_serialize = time.perf_counter_ns() - t0
 
-                # Close the read-only transaction (second half of t_txn).
-                t0 = time.perf_counter_ns()
-                await cur.execute("ROLLBACK")
-                t_txn = t_txn_begin + (time.perf_counter_ns() - t0)
+                    # Close the read-only transaction (second half of t_txn).
+                    t0 = time.perf_counter_ns()
+                    await cur.execute("ROLLBACK")
+                    t_txn = t_txn_begin + (time.perf_counter_ns() - t0)
+                except BaseException:
+                    # A failing sample must not return the pooled connection mid
+                    # transaction and poison later checkouts. Best-effort close,
+                    # then re-raise the original error.
+                    try:
+                        await cur.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    raise
 
         return SegmentSample(
             t_parse=t_parse,
