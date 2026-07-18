@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Bumped `mcp` SDK ≥ 1.28.1** (from `≥ 1.25.0`) to clear three advisories in
+  the resolved `mcp` 1.27.1: CVE-2026-52870 and CVE-2026-52869 (fixed in
+  1.27.2) and CVE-2026-59950 (fixed in 1.28.1). No MCPg source change required:
+  the tenancy per-request role path (`tenancy._role_from_request` →
+  `mcp.server.lowlevel.server.request_ctx` +
+  `ServerMessageMetadata.request_context`) is unchanged in 1.28.1, and the full
+  unit + contract suite (incl. `test_tenancy.py`, `test_http_runtime.py`)
+  passes. `pip-audit --strict` on the resolved runtime deps is clean.
+
 ### Changed
 
 - **Bumped `pglast` 7.15 → 8.2** (the SQL-safety kernel's parser). pglast 8
