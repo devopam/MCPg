@@ -204,7 +204,7 @@ def test_assertions_ignore_concurrency_rows() -> None:
     # Concurrency-sweep rows share (path, query_id) with the single-client
     # baseline but carry under-load latencies; they must NOT feed the overhead
     # assertion (which keys off the concurrency==1 baseline).
-    def _row(path: str, concurrency: int, p50: float) -> ResultRow:
+    def _row(path: str, concurrency: int, p50: float, throughput: float | None = None) -> ResultRow:
         return ResultRow(
             path=path,
             query_id="q",
@@ -216,21 +216,25 @@ def test_assertions_ignore_concurrency_rows() -> None:
             latency_ms=LatencyBlock(
                 p50=p50, p95=p50, p99=p50, mean=p50, stdev=0.0, min=p50, max=p50, median_ci95=(p50, p50)
             ),
+            throughput_rps=throughput,
             samples_ns=[],
         )
 
-    # Baseline: native 1.0 ms, server 1.2 ms -> overhead 0.2 ms. The 64-client
-    # rows (10x slower) must be ignored.
+    # Baseline: native 1.0 ms, server 1.2 ms -> overhead 0.2 ms. The sweep rows
+    # must be ignored — including its *concurrency==1* level-1 row (throughput
+    # set), which would otherwise shadow the single-client baseline.
     results = [
         _row("native", 1, 1.0),
         _row("server_side", 1, 1.2),
-        _row("native", 64, 10.0),
-        _row("server_side", 64, 12.0),
+        _row("native", 1, 9.0, throughput=100.0),  # sweep level-1 row (misleading latency)
+        _row("server_side", 1, 9.5, throughput=90.0),
+        _row("native", 64, 10.0, throughput=200.0),
+        _row("server_side", 64, 12.0, throughput=150.0),
     ]
     out = runner._assertions(results, {})
     overhead = [a for a in out if a.name == "server_side_overhead_p50_ms"]
     assert len(overhead) == 1
-    assert overhead[0].detail["overhead_p50_ms"] == pytest.approx(0.2)
+    assert overhead[0].detail["overhead_p50_ms"] == pytest.approx(0.2)  # real baseline, not the sweep row
 
 
 # --- e2e helper (pure) ----------------------------------------------------

@@ -131,6 +131,34 @@ def test_baseline_rows_excludes_concurrency() -> None:
     assert len(rows) == 2  # native + server_side single-client only
 
 
+def test_baseline_rows_excludes_concurrency_level_1_row() -> None:
+    # The concurrency sweep emits a concurrency==1 row (its level-1 point) with
+    # throughput set and no decomposition. It shares (path, query_id) with the
+    # real single-client baseline and must NOT shadow it.
+    run = _run()
+    run["results"].append(
+        {
+            "path": "server_side",
+            "query_id": "q1",
+            "compute_class": "heavy",
+            "result_size": "~100",
+            "temperature": "warm",
+            "concurrency": 1,
+            "n": 20,
+            "latency_ms": _lat(999.0),  # a *different*, misleading latency
+            "throughput_rps": 42.0,  # <-- marks it as a sweep row
+            "samples_ns": [],
+            "decomposition_ns": None,
+        }
+    )
+    rows = dash._baseline_rows(run["results"])
+    # Still exactly the two real baselines; the sweep level-1 row is excluded.
+    assert len(rows) == 2
+    assert all(r.get("throughput_rps") is None for r in rows)
+    server = next(r for r in rows if r["path"] == "server_side")
+    assert server["latency_ms"]["p50"] == 104.0  # the real baseline, not 999.0
+
+
 def test_render_html_is_complete_and_self_contained() -> None:
     out = dash.render_html(_run())
     # A full document.

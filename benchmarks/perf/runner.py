@@ -321,10 +321,18 @@ def _assertions(results: list[ResultRow], native_db_ns_by_query: dict[str, float
     on.
     """
     out: list[Assertion] = []
-    # Only the single-client baseline rows (concurrency == 1) feed the overhead
-    # and t_db assertions — the concurrency-sweep rows share (path, query_id) but
-    # carry under-load latencies, and must not overwrite the baseline here.
-    by_key = {(r.path, r.query_id): r for r in results if r.temperature == "warm" and r.concurrency == 1}
+    # Only the single-client baseline rows feed the overhead and t_db
+    # assertions. A row is the baseline when it is warm, concurrency == 1, AND
+    # carries no throughput (throughput_rps is None) — the concurrency sweep also
+    # emits a concurrency==1 row (its level-1 point), which shares (path,
+    # query_id) but has throughput set and no decomposition; without the
+    # throughput guard it overwrites the real baseline and the t_db gate silently
+    # drops those queries.
+    by_key = {
+        (r.path, r.query_id): r
+        for r in results
+        if r.temperature == "warm" and r.concurrency == 1 and r.throughput_rps is None
+    }
     query_ids = {r.query_id for r in results}
     for qid in sorted(query_ids):
         native = by_key.get(("native", qid))
