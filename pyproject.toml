@@ -50,7 +50,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "mcp[cli]>=1.25.0",
+    "mcp[cli]>=1.28.1",
     "psycopg[binary]>=3.3.2",
     "psycopg-pool>=3.3.0",
     "pglast==8.2",
