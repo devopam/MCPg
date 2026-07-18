@@ -170,6 +170,13 @@ uv run python -m benchmarks.dashboard.generate \
     --input benchmarks/results/perf.json --output benchmarks/results/perf.html
 ```
 
+`--scale-factor 1` (SF1, ~1 GB) is the quick local/dev run — it reproduces the
+committed [`perf-sf1-pg16`](https://github.com/devopam/MCPg/tree/main/benchmarks/results)
+result and the whole qualitative shape. Pass `--scale-factor 10` for the **SF10
+reference run** used for the headline published figures (bigger data, longer
+run, dedicated hardware). Absolute numbers differ between the two; `t_db ==
+native` and the overhead breakdown do not.
+
 The run JSON embeds its full provenance (MCPg version, PostgreSQL version, host,
 scale factor, iteration count, git SHA, timestamp), so a published number always
 carries the exact conditions that produced it. `benchmarks/README.md` documents
