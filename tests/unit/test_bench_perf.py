@@ -11,8 +11,12 @@ from __future__ import annotations
 import json
 
 import pytest
+from mcp.types import CallToolResult, TextContent
 
 from benchmarks.perf import queries, runner, stats
+from benchmarks.perf.concurrency import aggregate, throughput_rps
+from benchmarks.perf.decompose import SegmentSample, summarize_segments, t_db_within_native
+from benchmarks.perf.e2e import row_count_of
 from benchmarks.perf.schema import Assertion, Decomposition, LatencyBlock, PerfRun, ResultRow
 
 # --- stats ----------------------------------------------------------------
@@ -120,3 +124,154 @@ def test_runner_rejects_too_few_iterations() -> None:
     with pytest.raises(SystemExit) as exc:
         runner.main(["--database-url", "postgresql://unused", "--output", "/tmp/unused.json", "--iterations", "0"])
     assert exc.value.code == 2
+
+
+# --- overhead decomposition (pure helpers) --------------------------------
+
+
+def _seg(t_db: int) -> SegmentSample:
+    # Fixed non-db segments; vary only t_db for the median assertions.
+    return SegmentSample(t_parse=100, t_pool=200, t_txn=300, t_db=t_db, t_serialize=400)
+
+
+def test_summarize_segments_medians_per_field() -> None:
+    samples = [_seg(1000), _seg(2000), _seg(3000)]
+    d = summarize_segments(samples)
+    assert d.t_parse == 100
+    assert d.t_pool == 200
+    assert d.t_txn == 300
+    assert d.t_db == 2000  # median of 1000/2000/3000
+    assert d.t_serialize == 400
+
+
+def test_summarize_segments_drops_warmup() -> None:
+    # First two are warmup outliers; only the last three count.
+    samples = [_seg(9_000_000), _seg(9_000_000), _seg(1000), _seg(2000), _seg(3000)]
+    d = summarize_segments(samples, warmup=2)
+    assert d.t_db == 2000
+
+
+def test_summarize_segments_empty_is_all_none() -> None:
+    d = summarize_segments([], warmup=0)
+    assert d.t_db is None and d.t_parse is None
+
+
+def test_t_db_within_native_matches_when_close() -> None:
+    # 1 ms native, server 1.1 ms -> within 30% relative tolerance.
+    assert t_db_within_native(1_100_000, 1_000_000) is True
+
+
+def test_t_db_within_native_absolute_floor_covers_jitter() -> None:
+    # Sub-ms native: a large *relative* wobble under the 0.2 ms floor passes.
+    assert t_db_within_native(150_000, 50_000) is True  # delta 0.1 ms < floor
+    # ...but a delta beyond the floor on a tiny value fails.
+    assert t_db_within_native(500_000, 50_000) is False
+
+
+def test_t_db_within_native_fails_when_far() -> None:
+    # 10 ms native, server 15 ms -> 50% over, well beyond tolerance.
+    assert t_db_within_native(15_000_000, 10_000_000) is False
+
+
+def test_assertions_include_t_db_gate() -> None:
+    # A server-side warm row carrying a decomposition + a native anchor should
+    # yield the machine-checkable t_db_matches_native assertion.
+    def _row(path: str, t_db: float | None) -> ResultRow:
+        return ResultRow(
+            path=path,
+            query_id="tpch_q1",
+            compute_class="heavy",
+            result_size="~100",
+            temperature="warm",
+            concurrency=1,
+            n=20,
+            latency_ms=LatencyBlock(
+                p50=5.0, p95=6.0, p99=6.5, mean=5.1, stdev=0.3, min=4.5, max=7.0, median_ci95=(4.9, 5.2)
+            ),
+            samples_ns=[5_000_000],
+            decomposition_ns=Decomposition(t_db=t_db) if t_db is not None else None,
+        )
+
+    results = [_row("native", None), _row("server_side", 4_000_000.0)]
+    out = runner._assertions(results, {"tpch_q1": 4_100_000.0})
+    gate = [a for a in out if a.name == "t_db_matches_native"]
+    assert len(gate) == 1
+    assert gate[0].passed is True
+    assert gate[0].detail["native_t_db_ms"] == 4.1
+
+
+def test_assertions_ignore_concurrency_rows() -> None:
+    # Concurrency-sweep rows share (path, query_id) with the single-client
+    # baseline but carry under-load latencies; they must NOT feed the overhead
+    # assertion (which keys off the concurrency==1 baseline).
+    def _row(path: str, concurrency: int, p50: float) -> ResultRow:
+        return ResultRow(
+            path=path,
+            query_id="q",
+            compute_class="light",
+            result_size="~100",
+            temperature="warm",
+            concurrency=concurrency,
+            n=20,
+            latency_ms=LatencyBlock(
+                p50=p50, p95=p50, p99=p50, mean=p50, stdev=0.0, min=p50, max=p50, median_ci95=(p50, p50)
+            ),
+            samples_ns=[],
+        )
+
+    # Baseline: native 1.0 ms, server 1.2 ms -> overhead 0.2 ms. The 64-client
+    # rows (10x slower) must be ignored.
+    results = [
+        _row("native", 1, 1.0),
+        _row("server_side", 1, 1.2),
+        _row("native", 64, 10.0),
+        _row("server_side", 64, 12.0),
+    ]
+    out = runner._assertions(results, {})
+    overhead = [a for a in out if a.name == "server_side_overhead_p50_ms"]
+    assert len(overhead) == 1
+    assert overhead[0].detail["overhead_p50_ms"] == pytest.approx(0.2)
+
+
+# --- e2e helper (pure) ----------------------------------------------------
+
+
+def test_row_count_of_reads_structured_content() -> None:
+    result = CallToolResult(content=[], structuredContent={"row_count": 42})
+    assert row_count_of(result) == 42
+
+
+def test_row_count_of_none_when_absent() -> None:
+    # A text-only result (no structuredContent) yields None rather than raising.
+    result = CallToolResult(content=[TextContent(type="text", text="[]")])
+    assert row_count_of(result) is None
+
+
+# --- concurrency sweep (pure helpers) -------------------------------------
+
+
+def test_throughput_rps_basic_and_guard() -> None:
+    assert throughput_rps(100, 2.0) == 50.0
+    assert throughput_rps(100, 0.0) == 0.0  # zero wall time -> 0, not a crash
+    assert throughput_rps(0, 1.0) == 0.0
+
+
+def test_aggregate_folds_workers_and_computes_rps() -> None:
+    # 2 workers x 2 calls each = 4 queries in 1e9 ns (1.0 s) -> 4 rps.
+    per_worker = [[1_000_000, 2_000_000], [3_000_000, 4_000_000]]
+    cr = aggregate(concurrency=2, per_worker_latencies=per_worker, wall_ns=1_000_000_000)
+    assert cr.concurrency == 2
+    assert cr.total_queries == 4
+    assert cr.wall_seconds == 1.0
+    assert cr.throughput_rps == 4.0
+    assert sorted(cr.latencies_ns) == [1_000_000, 2_000_000, 3_000_000, 4_000_000]
+
+
+def test_conc_row_omits_raw_samples_but_keeps_throughput() -> None:
+    cr = aggregate(concurrency=4, per_worker_latencies=[[1_000_000] * 4], wall_ns=2_000_000_000)
+    q = next(iter(queries.all_queries()))
+    row = runner._conc_row("server_side", q, cr)
+    assert row.concurrency == 4
+    assert row.throughput_rps == cr.throughput_rps
+    assert row.samples_ns == []  # not persisted for concurrency rows
+    assert row.latency_ms.p50 == 1.0

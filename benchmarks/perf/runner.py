@@ -8,13 +8,17 @@ structured JSON document under ``benchmarks/results/``.
         --database-url "$MCPG_TEST_DATABASE_URL" \
         --scale-factor 1 --iterations 50 --output benchmarks/results/perf.json
 
-Provenance (git SHA, timestamp) is passed in so a result always carries the
-exact conditions that produced it. This first cut covers native + server-side;
-the end-to-end transport paths, the overhead decomposition, and the
-concurrency sweep land in follow-up phases (see docs/plans/benchmark-suite.md).
+It also runs the **overhead decomposition** (perf/decompose.py) on the
+server-side path and records the load-bearing ``t_db == native`` assertion.
+With ``--e2e`` it additionally measures the **end-to-end paths** through the
+real MCP protocol (perf/e2e.py): in-memory + stdio subprocess, plus streamable
+HTTP against an operator-started server via ``--e2e-http-url``. With
+``--concurrency`` it runs the **throughput sweep** (perf/concurrency.py) at
+1/4/16/64 clients. Provenance (git SHA, timestamp) is passed in so a result
+always carries the exact conditions that produced it.
 
 Operator tool — not unit-tested (needs a live PostgreSQL); the pure helpers it
-calls (stats, queries, schema) are.
+calls (stats, queries, schema, decompose) are.
 """
 
 from __future__ import annotations
@@ -29,9 +33,12 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.perf import stats
+from benchmarks.perf.concurrency import CONCURRENCY_LEVELS, ConcurrencyResult, sweep_level
+from benchmarks.perf.decompose import DecompositionRunner, SegmentSample, summarize_segments, t_db_within_native
+from benchmarks.perf.e2e import E2EHttpRunner, E2EInMemoryRunner, E2ERunner, E2EStdioRunner
 from benchmarks.perf.paths import NativeRunner, PathRunner, ServerSideRunner
 from benchmarks.perf.queries import BenchQuery, all_queries
-from benchmarks.perf.schema import Assertion, LatencyBlock, PerfRun, ResultRow
+from benchmarks.perf.schema import Assertion, Decomposition, LatencyBlock, PerfRun, ResultRow
 from mcpg import __version__
 from mcpg.config import load_settings
 from mcpg.database import Database
@@ -61,7 +68,108 @@ async def _sample_path(runner: PathRunner, query: BenchQuery, iterations: int) -
     return warm, cold
 
 
-def _row(path: str, query: BenchQuery, temperature: str, samples_ns: list[int]) -> ResultRow:
+async def _sample_decomposition(runner: DecompositionRunner, query: BenchQuery, iterations: int) -> Decomposition:
+    """Sample the server-path waterfall, returning per-segment medians (ns).
+
+    Warm-up is discarded exactly like :func:`_sample_path`; GC is disabled
+    around each timed call so no collection pause lands inside a segment.
+    """
+    gc.collect()
+    samples: list[SegmentSample] = []
+    for i in range(iterations + _WARMUP):
+        gc.disable()
+        try:
+            sample = await runner.run_once(query.sql, max_rows=query.max_rows)
+        finally:
+            gc.enable()
+        samples.append(sample)
+        if i % 8 == 7:
+            gc.collect()
+    return summarize_segments(samples, warmup=_WARMUP)
+
+
+async def _sample_native_db(native: NativeRunner, query: BenchQuery, iterations: int) -> float:
+    """Median (ns) of native's pure DB segment — the ``t_db == native`` anchor."""
+    gc.collect()
+    samples: list[int] = []
+    for i in range(iterations + _WARMUP):
+        gc.disable()
+        try:
+            samples.append(await native.db_segment_once(query.sql))
+        finally:
+            gc.enable()
+        if i % 8 == 7:
+            gc.collect()
+    warm = stats.drop_warmup(samples, _WARMUP)
+    return stats.percentile(sorted(warm), 50)
+
+
+def _conc_row(path: str, query: BenchQuery, cr: ConcurrencyResult) -> ResultRow:
+    """Build a ResultRow for one concurrency data-point.
+
+    Raw per-call samples are omitted (``samples_ns=[]``) — at 64 clients x N
+    iterations they'd bloat the JSON with little added value over the
+    percentiles + throughput already summarised here.
+    """
+    s = stats.summarize(cr.latencies_ns)
+    return ResultRow(
+        path=path,
+        query_id=query.id,
+        compute_class=query.compute_class,
+        result_size=query.result_size,
+        temperature="warm",
+        concurrency=cr.concurrency,
+        n=s.n,
+        latency_ms=LatencyBlock(
+            p50=s.p50, p95=s.p95, p99=s.p99, mean=s.mean, stdev=s.stdev, min=s.min, max=s.max, median_ci95=s.median_ci95
+        ),
+        throughput_rps=cr.throughput_rps,
+        samples_ns=[],
+    )
+
+
+async def _run_concurrency(database_url: str, iterations: int) -> list[ResultRow]:
+    """Sweep every query across the concurrency levels for native + server-side.
+
+    Owns its own resources: a dedicated pool sized to the sweep ceiling (so the
+    server-side path isn't starved) and one persistent native connection per
+    concurrent client (opened once, sliced per level). Everything is torn down
+    before returning.
+    """
+    max_c = max(CONCURRENCY_LEVELS)
+    conc_settings = load_settings(
+        {"MCPG_DATABASE_URL": database_url, "MCPG_POOL_MIN_SIZE": "1", "MCPG_POOL_MAX_SIZE": str(max_c)}
+    )
+    conc_db = Database(conc_settings)
+    await conc_db.connect()
+    native_conns = [await NativeRunner.connect(database_url) for _ in range(max_c)]
+    rows: list[ResultRow] = []
+    try:
+        for query in all_queries():
+            for level in CONCURRENCY_LEVELS:
+                native_result = await sweep_level(
+                    list(native_conns[:level]), query, iterations_per_worker=iterations, warmup_per_worker=_WARMUP
+                )
+                rows.append(_conc_row("native", query, native_result))
+                server_runners: list[PathRunner] = [ServerSideRunner(conc_db) for _ in range(level)]
+                server_result = await sweep_level(
+                    server_runners, query, iterations_per_worker=iterations, warmup_per_worker=_WARMUP
+                )
+                rows.append(_conc_row("server_side", query, server_result))
+    finally:
+        for conn in native_conns:
+            await conn.close()
+        await conc_db.close()
+    return rows
+
+
+def _row(
+    path: str,
+    query: BenchQuery,
+    temperature: str,
+    samples_ns: list[int],
+    decomposition: Decomposition | None = None,
+) -> ResultRow:
     s = stats.summarize(samples_ns)
     return ResultRow(
         path=path,
@@ -75,6 +183,7 @@ def _row(path: str, query: BenchQuery, temperature: str, samples_ns: list[int]) 
             p50=s.p50, p95=s.p95, p99=s.p99, mean=s.mean, stdev=s.stdev, min=s.min, max=s.max, median_ci95=s.median_ci95
         ),
         samples_ns=samples_ns,
+        decomposition_ns=decomposition,
     )
 
 
@@ -89,6 +198,7 @@ async def _run(args: argparse.Namespace) -> PerfRun:
     # Pre-initialised so a failure in the metadata query below can't mask the
     # original exception with an UnboundLocalError when `metadata` is built.
     pg_meta: dict[str, Any] = {}
+    e2e_runners: list[E2ERunner] = []
     try:
         pg = await database.driver().execute_query(
             "SELECT current_setting('server_version') AS v, current_setting('server_version_num')::int AS num",
@@ -97,12 +207,54 @@ async def _run(args: argparse.Namespace) -> PerfRun:
         if pg:
             pg_meta = {"version_string": pg[0].cells["v"], "server_version_num": pg[0].cells["num"]}
 
+        # Opt-in end-to-end paths (through the real MCP protocol). Started once
+        # and reused across every query; torn down in the finally.
+        e2e_paths: list[tuple[str, PathRunner]] = []
+        # Register each runner for teardown *before* starting it, so a failure
+        # partway through start() still gets closed by the finally (close() is a
+        # no-op on an un-entered stack).
+        if args.e2e:
+            inmem = E2EInMemoryRunner(settings)
+            e2e_runners.append(inmem)
+            await inmem.start()
+            e2e_paths.append(("e2e_inmemory", inmem))
+            stdio = E2EStdioRunner(args.database_url)
+            e2e_runners.append(stdio)
+            await stdio.start()
+            e2e_paths.append(("e2e_stdio", stdio))
+        if args.e2e_http_url:
+            http = E2EHttpRunner(args.e2e_http_url)
+            e2e_runners.append(http)
+            await http.start()
+            e2e_paths.append(("e2e_http", http))
+
+        paths: list[tuple[str, PathRunner]] = [
+            ("native", native),
+            ("server_side", ServerSideRunner(database)),
+            *e2e_paths,
+        ]
+        decomposer = DecompositionRunner(database)
+        native_db_ns_by_query: dict[str, float] = {}
         for query in all_queries():
-            for label, runner in (("native", native), ("server_side", ServerSideRunner(database))):
+            for label, runner in paths:
                 warm, cold = await _sample_path(runner, query, args.iterations)
-                results.append(_row(label, query, "warm", warm))
+                # Attach the overhead waterfall to the server-side warm row —
+                # the one the report reads t_db from for the native comparison.
+                decomposition = (
+                    await _sample_decomposition(decomposer, query, args.iterations) if label == "server_side" else None
+                )
+                results.append(_row(label, query, "warm", warm, decomposition))
                 results.append(_row(label, query, "cold", [cold]))
+            # The native DB segment (execute + fetch only) anchors t_db == native.
+            native_db_ns_by_query[query.id] = await _sample_native_db(native, query, args.iterations)
+
+        # Throughput-under-concurrency sweep (opt-in; owns its own pool sized to
+        # the sweep ceiling so the server-side path isn't starved).
+        if args.concurrency:
+            results.extend(await _run_concurrency(args.database_url, args.iterations))
     finally:
+        for e2e in e2e_runners:
+            await e2e.close()
         await native.close()
         await database.close()
 
@@ -119,16 +271,29 @@ async def _run(args: argparse.Namespace) -> PerfRun:
         },
         "iterations": args.iterations,
         "warmup_discarded": _WARMUP,
+        "concurrency_levels": list(CONCURRENCY_LEVELS) if args.concurrency else [],
     }
-    return PerfRun(metadata=metadata, results=results, assertions=_assertions(results))
+    return PerfRun(
+        metadata=metadata,
+        results=results,
+        assertions=_assertions(results, native_db_ns_by_query),
+    )
 
 
-def _assertions(results: list[ResultRow]) -> list[Assertion]:
-    """Overhead sanity checks. The fine-grained t_db == native assertion lands
-    with the decomposition phase; here we record the warm total-latency delta
-    per query so the report can show MCPg's overhead is bounded."""
+def _assertions(results: list[ResultRow], native_db_ns_by_query: dict[str, float]) -> list[Assertion]:
+    """Overhead + the load-bearing ``t_db == native`` gate.
+
+    Two assertions per query: an informational warm total-latency delta
+    (``server_side_overhead_p50_ms``), and the machine-checkable claim that the
+    server path's DB segment matches the native baseline
+    (``t_db_matches_native``) — the result the whole performance objective turns
+    on.
+    """
     out: list[Assertion] = []
-    by_key = {(r.path, r.query_id): r for r in results if r.temperature == "warm"}
+    # Only the single-client baseline rows (concurrency == 1) feed the overhead
+    # and t_db assertions — the concurrency-sweep rows share (path, query_id) but
+    # carry under-load latencies, and must not overwrite the baseline here.
+    by_key = {(r.path, r.query_id): r for r in results if r.temperature == "warm" and r.concurrency == 1}
     query_ids = {r.query_id for r in results}
     for qid in sorted(query_ids):
         native = by_key.get(("native", qid))
@@ -140,7 +305,7 @@ def _assertions(results: list[ResultRow]) -> list[Assertion]:
             Assertion(
                 name="server_side_overhead_p50_ms",
                 query_id=qid,
-                passed=True,  # informational; the t_db==native gate lands with decomposition
+                passed=True,  # informational
                 detail={
                     "native_p50_ms": native.latency_ms.p50,
                     "server_side_p50_ms": server.latency_ms.p50,
@@ -148,6 +313,21 @@ def _assertions(results: list[ResultRow]) -> list[Assertion]:
                 },
             )
         )
+        server_t_db = server.decomposition_ns.t_db if server.decomposition_ns else None
+        native_t_db = native_db_ns_by_query.get(qid)
+        if server_t_db is not None and native_t_db is not None:
+            out.append(
+                Assertion(
+                    name="t_db_matches_native",
+                    query_id=qid,
+                    passed=t_db_within_native(server_t_db, native_t_db),
+                    detail={
+                        "native_t_db_ms": native_t_db / 1e6,
+                        "server_t_db_ms": server_t_db / 1e6,
+                        "delta_ms": (server_t_db - native_t_db) / 1e6,
+                    },
+                )
+            )
     return out
 
 
@@ -159,6 +339,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--scale-factor", type=int, default=1, help="TPC-H scale factor the DB was loaded at.")
     parser.add_argument("--output", type=Path, required=True, help="Path to write the result JSON.")
+    parser.add_argument(
+        "--e2e",
+        action="store_true",
+        help="Also measure the end-to-end paths through the MCP protocol (in-memory + stdio subprocess).",
+    )
+    parser.add_argument(
+        "--e2e-http-url",
+        default=None,
+        help="Add the streamable-HTTP e2e path against an operator-started mcpg server at this URL (e.g. "
+        "http://127.0.0.1:8000/mcp). Implies the HTTP transport is already running.",
+    )
+    parser.add_argument(
+        "--concurrency",
+        action="store_true",
+        help=f"Also run the throughput sweep at {'/'.join(map(str, CONCURRENCY_LEVELS))} concurrent clients "
+        "(native + server-side). Multiplies DB load — each level runs --iterations per client.",
+    )
     parser.add_argument("--git-sha", default="unknown", help="Provenance: the commit under test.")
     parser.add_argument("--timestamp", default="unknown", help="Provenance: ISO-8601 run timestamp.")
     args = parser.parse_args(argv)
