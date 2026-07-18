@@ -129,12 +129,23 @@ def _conc_row(path: str, query: BenchQuery, cr: ConcurrencyResult) -> ResultRow:
 
 
 async def _run_concurrency(database_url: str, iterations: int) -> list[ResultRow]:
-    """Sweep every query across the concurrency levels for native + server-side.
+    """Sweep the **non-heavy** queries across the concurrency levels.
+
+    Throughput-under-load exists to expose the *pool + per-call* overhead, which
+    only shows on cheap queries — a heavy TPC-H query at 64 clients just measures
+    the database's own execution time (and takes impractically long), so the
+    sweep skips ``compute_class == "heavy"``.
 
     Owns its own resources: a dedicated pool sized to the sweep ceiling (so the
     server-side path isn't starved) and one persistent native connection per
-    concurrent client (opened once, sliced per level). Everything is torn down
-    before returning.
+    concurrent client (opened once, sliced per level).
+
+    Connection budget: at the top level the native path holds ``max_c``
+    connections **while** the server pool opens up to ``max_c`` -- so PostgreSQL
+    needs ``max_connections`` >= about ``2 * max(CONCURRENCY_LEVELS)`` plus
+    headroom (e.g. 150+ for the 64-client sweep). Below that, connection
+    checkouts fail with "too many clients" and the numbers are degraded; size
+    the server for the sweep before running it.
     """
     max_c = max(CONCURRENCY_LEVELS)
     conc_settings = load_settings(
@@ -146,6 +157,8 @@ async def _run_concurrency(database_url: str, iterations: int) -> list[ResultRow
     rows: list[ResultRow] = []
     try:
         for query in all_queries():
+            if query.compute_class == "heavy":
+                continue
             for level in CONCURRENCY_LEVELS:
                 native_result = await sweep_level(
                     list(native_conns[:level]), query, iterations_per_worker=iterations, warmup_per_worker=_WARMUP
