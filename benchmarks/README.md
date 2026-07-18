@@ -28,9 +28,11 @@ result is what earns credibility for the real wins (measured in v2: tokens).
 - `perf/stats.py` — percentiles + bootstrap median CI + warm-up handling (pure,
   unit-tested).
 - `perf/runner.py` — orchestrates paths x queries (cold + warm) → structured JSON.
+- `dashboard/generate.py` — renders a run's JSON into a **self-contained,
+  theme-aware HTML dashboard** (latency percentiles, the overhead-decomposition
+  waterfall, throughput-vs-concurrency, the `t_db == native` gate). No external
+  hosts; re-run the harness, regenerate.
 - `datasets/` — TPC-H schema/index DDL + a DuckDB→`COPY` loader.
-
-The HTML dashboard (rendering these JSON results) lands in the next phase.
 
 ## Running it
 
@@ -47,7 +49,12 @@ uv run python -m benchmarks.perf.runner \
     --database-url "$MCPG_TEST_DATABASE_URL" \
     --scale-factor 1 --iterations 50 \
     --git-sha "$(git rev-parse HEAD)" --timestamp "$(date -u +%FT%TZ)" \
-    --output benchmarks/results/perf-$(date -u +%Y%m%dT%H%M%SZ).json
+    --output benchmarks/results/perf.json
+
+# 4. Render the JSON into a self-contained HTML dashboard.
+uv run python -m benchmarks.dashboard.generate \
+    --input benchmarks/results/perf.json \
+    --output benchmarks/results/perf.html
 ```
 
 ### Also measuring the end-to-end MCP paths (`--e2e`)
