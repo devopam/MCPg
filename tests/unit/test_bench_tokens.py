@@ -39,6 +39,23 @@ def test_break_even_ceils_tasks() -> None:
     assert be["break_even_tasks"] == 18
 
 
+def test_break_even_per_surface_moves_left() -> None:
+    # Narrower surfaces cost less upfront -> break-even moves left.
+    comps = [
+        derive("schema", "schema", 574, 2375),  # saves 1801
+        derive("plan", "query-plan", 146, 3847),  # saves 3701  -> mean 2751
+        derive("full", "tool-context", 63878, 193, {"surface": "full", "tools": 252}),
+        derive("read-only", "tool-context", 48576, 193, {"surface": "read-only", "tools": 185}),
+        derive("lookup", "tool-context", 11281, 193, {"surface": "lookup", "tools": 53}),
+    ]
+    be = break_even(comps)
+    ks = {s["name"]: s["break_even_tasks"] for s in be["surfaces"]}
+    assert ks == {"full": 24, "read-only": 18, "lookup": 5}  # ceil(extra/2751)
+    # Headline is the worst case (the widest surface).
+    assert be["break_even_tasks"] == 24
+    assert be["upfront_extra_tokens"] == 63878 - 193
+
+
 def test_break_even_none_without_upfront_or_savings() -> None:
     # No tool-context row -> no break-even to compute.
     assert break_even([derive("schema", "schema", 574, 2375)])["break_even_tasks"] is None

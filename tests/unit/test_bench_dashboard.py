@@ -206,22 +206,47 @@ def _token_report() -> dict[str, Any]:
             "detail": {},
         },
         {
-            "name": "tool surface",
+            "name": "tool surface: full (252 tools) vs bare",
             "category": "tool-context",
-            "mcpg_tokens": 48576,
+            "mcpg_tokens": 63878,
             "raw_tokens": 193,
-            "savings_pct": -25069.0,
-            "ratio": 0.004,
-            "detail": {},
+            "savings_pct": -33000.0,
+            "ratio": 0.003,
+            "detail": {"surface": "full (unrestricted)", "tools": 252},
+        },
+        {
+            "name": "tool surface: intent=lookup (53 tools) vs bare",
+            "category": "tool-context",
+            "mcpg_tokens": 11281,
+            "raw_tokens": 193,
+            "savings_pct": -5000.0,
+            "ratio": 0.017,
+            "detail": {"surface": "intent=lookup", "tools": 53},
         },
     ]
     return {
         "metadata": {
             "encoding": "o200k_base",
             "break_even": {
-                "upfront_extra_tokens": 48383,
                 "mean_per_call_saving_tokens": 2751.0,
-                "break_even_tasks": 18,
+                "surfaces": [
+                    {
+                        "name": "full (unrestricted)",
+                        "tool_count": 252,
+                        "mcpg_tokens": 63878,
+                        "upfront_extra_tokens": 63685,
+                        "break_even_tasks": 24,
+                    },
+                    {
+                        "name": "intent=lookup",
+                        "tool_count": 53,
+                        "mcpg_tokens": 11281,
+                        "upfront_extra_tokens": 11088,
+                        "break_even_tasks": 5,
+                    },
+                ],
+                "upfront_extra_tokens": 63685,
+                "break_even_tasks": 24,
             },
         },
         "comparisons": comps,
@@ -234,9 +259,11 @@ def test_render_html_appends_token_section() -> None:
     out = dash.render_html(_run(), token_report=_token_report())
     assert "Token efficiency" in out
     assert "break-even" in out
-    assert "48.4k" in out  # upfront cost shown, not hidden
     assert "o200k_base" in out
     assert "-76%" in out or "-96%" in out  # per-call savings badge
+    # The moves-left surface story: both surfaces + the range appear.
+    assert "5" in out and "24" in out  # break-even range 5-24
+    assert "intent=lookup" in out
     # Still a complete, self-contained document.
     assert out.startswith("<!doctype html>")
     assert "http://" not in out and "https://" not in out

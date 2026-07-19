@@ -9,7 +9,7 @@ dashboard rendered from it by `benchmarks.dashboard.generate`.
 | File | Run |
 |---|---|
 | `perf-sf1-pg16.json` / `.html` | **Performance** — TPC-H **SF1**, PostgreSQL 16, N=20 warm iterations, all paths (native / server-side / e2e in-memory + stdio) + the concurrency sweep. `t_db == native` gate: 11/11. |
-| `tokens-tier-a-sf1.json` | **Tokens, Tier A** — deterministic token accounting on the same SF1 DB (`o200k_base`). Compact schema −76%, query-plan analysis −96% vs the raw-SQL equivalent; full tool surface +48k tokens upfront, break-even ~18 tasks. |
+| `tokens-tier-a-sf1.json` | **Tokens, Tier A** — deterministic token accounting on the same SF1 DB (`o200k_base`). Compact schema −76%, query-plan analysis −96% vs the raw-SQL equivalent; tool-surface break-even by mode — full (252 tools) ~24 tasks, read-only ~18, `intent=lookup` ~5. |
 
 SF1 is the development scale; **SF10 on dedicated hardware is the headline
 published scale** (the absolute numbers shift, the shape holds). Regenerate any

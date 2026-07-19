@@ -1,14 +1,37 @@
 {
   "metadata": {
-    "timestamp": "2026-07-19T02:20:56Z",
-    "git_sha": "eef52537d93bacf64c01158d737d32ee05a292bd",
+    "timestamp": "2026-07-19T04:37:06Z",
+    "git_sha": "95d7a00f9e8e6b91a11f4b4c9f4bdc27c85e017a",
     "mcpg_version": "0.6.11",
     "encoding": "o200k_base",
     "schema": "public",
     "break_even": {
-      "upfront_extra_tokens": 48383,
       "mean_per_call_saving_tokens": 2751.0,
-      "break_even_tasks": 18
+      "surfaces": [
+        {
+          "name": "full (unrestricted)",
+          "tool_count": 252,
+          "mcpg_tokens": 63878,
+          "upfront_extra_tokens": 63685,
+          "break_even_tasks": 24
+        },
+        {
+          "name": "read-only (default)",
+          "tool_count": 185,
+          "mcpg_tokens": 48576,
+          "upfront_extra_tokens": 48383,
+          "break_even_tasks": 18
+        },
+        {
+          "name": "intent=lookup",
+          "tool_count": 53,
+          "mcpg_tokens": 11281,
+          "upfront_extra_tokens": 11088,
+          "break_even_tasks": 5
+        }
+      ],
+      "upfront_extra_tokens": 63685,
+      "break_even_tasks": 24
     },
     "host": {
       "python": "3.13.12",
@@ -42,14 +65,42 @@
       }
     },
     {
-      "name": "full tool surface vs bare run_select (upfront)",
+      "name": "tool surface: full (unrestricted) (252 tools) vs bare run_select",
+      "category": "tool-context",
+      "mcpg_tokens": 63878,
+      "raw_tokens": 193,
+      "savings_pct": -32997.40932642487,
+      "ratio": 0.0030213845142302515,
+      "detail": {
+        "surface": "full (unrestricted)",
+        "tools": 252,
+        "note": "upfront cost; MCPg is larger here by design"
+      }
+    },
+    {
+      "name": "tool surface: read-only (default) (185 tools) vs bare run_select",
       "category": "tool-context",
       "mcpg_tokens": 48576,
       "raw_tokens": 193,
       "savings_pct": -25068.911917098445,
       "ratio": 0.003973155467720685,
       "detail": {
-        "note": "upfront cost, not a per-call saving; MCPg is larger here by design"
+        "surface": "read-only (default)",
+        "tools": 185,
+        "note": "upfront cost; MCPg is larger here by design"
+      }
+    },
+    {
+      "name": "tool surface: intent=lookup (53 tools) vs bare run_select",
+      "category": "tool-context",
+      "mcpg_tokens": 11281,
+      "raw_tokens": 193,
+      "savings_pct": -5745.077720207254,
+      "ratio": 0.01710841237478947,
+      "detail": {
+        "surface": "intent=lookup",
+        "tools": 53,
+        "note": "upfront cost; MCPg is larger here by design"
       }
     }
   ],

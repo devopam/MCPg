@@ -6,6 +6,7 @@ One JSON file per run; provenance is passed in by the caller.
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -53,32 +54,52 @@ def derive(
     )
 
 
+def _break_even_tasks(upfront_extra: int, mean_saving: float) -> int | None:
+    """``ceil(extra / saving)`` tasks, or None when it can't be amortized."""
+    if mean_saving <= 0:
+        return None
+    if upfront_extra <= 0:
+        return 0
+    return math.ceil(upfront_extra / mean_saving)
+
+
 def break_even(comparisons: list[TokenComparison]) -> dict[str, Any]:
     """The break-even accounting — the credibility centerpiece.
 
-    MCPg's rich tool surface costs more context *up front* (the ``tool-context``
-    comparison), and its compact tool output saves tokens *per call* (the rest).
-    After *K* database tasks in a session the per-call savings overtake the
-    upfront cost. We report the upfront extra, the mean per-call saving, and
-    ``K = ceil(extra / saving)``.
+    MCPg's tool surface costs more context *up front* (the ``tool-context``
+    comparisons — one per surface: full / read-only / session-intent), and its
+    compact tool output saves tokens *per call* (the rest). After *K* database
+    tasks the per-call savings overtake the upfront cost; a narrower surface
+    lowers the upfront cost and so moves *K* left.
 
-    Returns an all-present dict with ``break_even_tasks = None`` when there is no
-    upfront cost row or no per-call savings to amortize it (so it serializes
-    cleanly either way).
+    Reports the mean per-call saving, a per-surface breakdown, and — as the
+    headline — the **widest** surface's break-even (the worst case). All fields
+    are always present; ``break_even_tasks`` is ``None`` when there is no upfront
+    row or no per-call savings to amortize it, so it serializes cleanly.
     """
-    upfront = next((c for c in comparisons if c.category == "tool-context"), None)
     per_call = [c for c in comparisons if c.category != "tool-context"]
-    upfront_extra = (upfront.mcpg_tokens - upfront.raw_tokens) if upfront else 0
     savings = [c.raw_tokens - c.mcpg_tokens for c in per_call]
     mean_saving = sum(savings) / len(savings) if savings else 0.0
-    if upfront is None or mean_saving <= 0:
-        k: int | None = None
-    else:
-        k = -(-upfront_extra // int(mean_saving)) if upfront_extra > 0 else 0  # ceil division
+
+    surfaces: list[dict[str, Any]] = []
+    for c in (c for c in comparisons if c.category == "tool-context"):
+        extra = c.mcpg_tokens - c.raw_tokens
+        surfaces.append(
+            {
+                "name": c.detail.get("surface", c.name),
+                "tool_count": c.detail.get("tools"),
+                "mcpg_tokens": c.mcpg_tokens,
+                "upfront_extra_tokens": extra,
+                "break_even_tasks": _break_even_tasks(extra, mean_saving),
+            }
+        )
+    # Headline = the widest surface (largest upfront cost — the worst case).
+    headline = max(surfaces, key=lambda s: s["upfront_extra_tokens"]) if surfaces else None
     return {
-        "upfront_extra_tokens": upfront_extra,
         "mean_per_call_saving_tokens": mean_saving,
-        "break_even_tasks": k,
+        "surfaces": surfaces,
+        "upfront_extra_tokens": headline["upfront_extra_tokens"] if headline else 0,
+        "break_even_tasks": headline["break_even_tasks"] if headline else None,
     }
 
 

@@ -23,7 +23,6 @@ from dataclasses import asdict
 from typing import Any
 
 from mcpg import introspection, query
-from mcpg.config import Settings
 from mcpg.server import create_server
 from mcpg.sql import SqlDriver
 
@@ -72,15 +71,46 @@ def _tool_to_dict(tool: Any) -> dict[str, Any]:
     }
 
 
-async def tool_context_full_vs_bare(settings: Settings) -> tuple[str, str]:
-    """MCPg's **full** tool-schema context vs a lone ``run_select`` tool.
+# The tool-surface variants, from the full unrestricted surface down to a
+# narrow session-intent preset. Each shrinks the upfront context cost and so
+# moves the token break-even left — the honest lever an operator actually pulls.
+_TOOL_SURFACES: list[tuple[str, dict[str, str]]] = [
+    (
+        "full (unrestricted)",
+        {
+            "MCPG_ACCESS_MODE": "unrestricted",
+            "MCPG_ALLOW_DDL": "true",
+            "MCPG_ALLOW_SHELL": "true",
+            "MCPG_ALLOW_LISTEN": "true",
+        },
+    ),
+    ("read-only (default)", {"MCPG_ACCESS_MODE": "read-only"}),
+    ("intent=lookup", {"MCPG_ACCESS_MODE": "read-only", "MCPG_SESSION_INTENT": "lookup"}),
+]
 
-    This is the *upfront* cost — the tool definitions the model carries every
-    turn. MCPg is bigger here (that is the honest cost of a rich surface); the
-    per-call savings above are what pay it back after a handful of tasks.
-    """
-    server = create_server(settings)
+
+async def _surface_json(database_url: str, env: dict[str, str]) -> tuple[int, str]:
+    """Build a server in ``env`` and return (tool count, tools/list JSON)."""
+    from mcpg.config import load_settings
+
+    server = create_server(load_settings({"MCPG_DATABASE_URL": database_url, **env}))
     tools = await server.list_tools()
-    full = json.dumps([_tool_to_dict(t) for t in tools])
-    bare = json.dumps([_tool_to_dict(t) for t in tools if t.name == "run_select"])
-    return full, bare
+    return len(tools), json.dumps([_tool_to_dict(t) for t in tools])
+
+
+async def tool_context_surfaces(database_url: str) -> tuple[list[tuple[str, int, str]], str]:
+    """Measure MCPg's tool-schema context at each surface, plus a bare baseline.
+
+    Returns ``([(surface_name, tool_count, tools_json), ...], bare_json)`` — the
+    *upfront* cost the model carries every turn. MCPg is bigger here (the honest
+    cost of a rich surface); the per-call savings repay it after the break-even,
+    and narrower surfaces (read-only, session-intent) move that break-even left.
+    """
+    surfaces: list[tuple[str, int, str]] = []
+    for name, env in _TOOL_SURFACES:
+        count, text = await _surface_json(database_url, env)
+        surfaces.append((name, count, text))
+    # Bare baseline: a lone run_select tool (taken from the read-only surface).
+    _, ro_json = await _surface_json(database_url, {"MCPG_ACCESS_MODE": "read-only"})
+    bare = json.dumps([t for t in json.loads(ro_json) if t["name"] == "run_select"])
+    return surfaces, bare
