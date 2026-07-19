@@ -37,6 +37,12 @@ result is what earns credibility for the real wins (measured in v2: tokens).
   otherwise pull (`get_compact_schema` vs an `information_schema` dump;
   `analyze_query_plan` vs raw `EXPLAIN`), plus the honest **break-even** against
   the upfront cost of MCPg's full tool surface. No LLM; CI-able.
+- `tokens/tier_b/` — **(v2) costed agent-loop study.** A fixed model at temp 0
+  answers the demo dataset's planted-finding tasks two ways (MCPg's advisors vs
+  a bare `run_select`), N trials each, counting total tokens / tool-calls /
+  turns / correctness. Calls a real model (`ANTHROPIC_API_KEY`) — **never run in
+  CI**; run it yourself (see below). The pure task graders + aggregation are
+  unit-tested.
 - `datasets/` — TPC-H schema/index DDL + a DuckDB→`COPY` loader.
 
 ## Running it
@@ -74,6 +80,20 @@ uv run python -m benchmarks.tokens.tier_a.runner \
 Counts tokens (`tiktoken`, `o200k_base`) of MCPg's compact tool output vs the
 raw-SQL equivalent, and reports the break-even against the upfront cost of the
 full tool surface. Needs the `bench` group (`uv sync --group bench`).
+
+### Token efficiency — Tier B (costed agent loop, run it yourself)
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+mcpg --demo --database-url "$MCPG_TEST_DATABASE_URL"   # planted-flaw dataset
+uv run python -m benchmarks.tokens.tier_b.runner \
+    --database-url "$MCPG_TEST_DATABASE_URL" --trials 5 \
+    --model claude-sonnet-5 --output benchmarks/results/tokens-tier-b.json
+```
+
+Runs a fixed model at temp 0 over the demo tasks, MCPg-advisors arm vs
+bare-`run_select` arm, and reports mean tokens per arm, the ratio, and
+correctness. **Calls a real model — costs money, never runs in CI.**
 
 ### Also measuring the end-to-end MCP paths (`--e2e`)
 

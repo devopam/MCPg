@@ -117,10 +117,33 @@ uv run python -m benchmarks.dashboard.generate \
 ## Scope, and what's next
 
 This is the deterministic floor of the token argument. **Tier B** — the
-agent-loop study with a fixed model, published transcripts, and correctness on
-the planted-finding demo tasks — is the costed phase that captures the larger,
-round-trip saving; it is deferred until it can be run rigorously. Paired with the
-[performance result](performance-benchmark.md) (negligible overhead, `t_db`
-identical to native), Tier A already makes the evidence-based case: **MCPg's
-compact, structured surface saves the tokens that matter, and the cost of the
-surface is shown, not hidden.**
+agent-loop study — captures the larger, *round-trip* saving Tier A cannot: a
+fixed model at temperature 0 answers the demo dataset's planted-finding tasks
+(missing index, PII, naming) two ways, N trials each, and we count total tokens,
+tool-calls, turns, and correctness. One arm has MCPg's advisors (roughly one
+tool call to the answer); the baseline arm has a lone `run_select` and must
+explore with raw SQL and interpret the rows itself.
+
+**The Tier-B harness is built and ready to run** — it is *costed* (it calls a
+real model), so it never runs in CI; you run it on your own machine with your
+own key:
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+export MCPG_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/demo
+mcpg --demo --database-url "$MCPG_TEST_DATABASE_URL"   # load the planted-flaw dataset
+
+uv sync --group bench
+uv run python -m benchmarks.tokens.tier_b.runner \
+    --database-url "$MCPG_TEST_DATABASE_URL" --trials 5 \
+    --model claude-sonnet-5 --output benchmarks/results/tokens-tier-b.json
+```
+
+It prints the headline — baseline-vs-MCPg mean tokens, the ratio, and each arm's
+correctness — and writes per-trial detail to JSON. Published figures will land
+here once a run is done on reference conditions.
+
+Paired with the [performance result](performance-benchmark.md) (negligible
+overhead, `t_db` identical to native), Tier A already makes the evidence-based
+case: **MCPg's compact, structured surface saves the tokens that matter, and the
+cost of the surface is shown, not hidden.**
