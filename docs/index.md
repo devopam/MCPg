@@ -36,6 +36,9 @@ them" — pick the section that matches what you're trying to do.
 - [**Performance benchmark**](performance-benchmark.md) — the honest,
   reproducible overhead result: MCPg's added latency is small, fixed, and
   decomposed (`t_db` is identical to native), with a run-it-yourself harness.
+- [**Token efficiency**](token-efficiency.md) — the deterministic Tier-A result:
+  MCPg's compact tool output vs the raw-SQL equivalent (−76 % schema, −96 % query
+  plan), with the honest break-even against the full tool surface (~18 tasks).
 
 ## Operate
 
