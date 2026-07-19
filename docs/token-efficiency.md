@@ -57,36 +57,33 @@ raw `EXPLAIN` JSON, which is mostly nested bookkeeping an agent must wade throug
 
 ## The break-even — the honest centerpiece
 
-MCPg exposes **252 tools**, and every tool definition costs context tokens on
-every turn. A "tokens saved" number that ignores that is dishonest, and a
-reviewer would rightly pounce. So we measure it head-on:
+MCPg's full surface is **252 tools**, and every tool definition costs context
+tokens on every turn. A "tokens saved" number that ignores that is dishonest,
+and a reviewer would rightly pounce. So we measure it head-on — a bare
+`run_select` tool is **193** tokens, and MCPg's surface is far larger. With a
+mean per-call saving of ~2,750 tokens per database task, the surface is repaid
+after a break-even number of tasks — **and that number depends on how much
+surface you expose**, which is a real operator lever:
 
-| | Tokens |
-|---|---|
-| MCPg's full tool surface (252 tools) | **48,576** |
-| a bare `run_select` tool | 193 |
-| **upfront extra MCPg carries** | **+48,383** |
+| Tool surface | Tools | Upfront tokens | Extra vs bare | Break-even |
+|---|---|---|---|---|
+| full (unrestricted) | 252 | 63,878 | +63,685 | **~24 tasks** |
+| read-only (the default) | 185 | 48,576 | +48,383 | **~18 tasks** |
+| `MCPG_SESSION_INTENT=lookup` | 53 | 11,281 | +11,088 | **~5 tasks** |
 
-That is a real, large upfront cost. It is repaid by the per-call savings: with a
-mean saving of ~2,750 tokens per database task, MCPg overtakes the bare-tool
-baseline after
+The dashboard draws the worst case (the full surface) as two cumulative-token
+lines: MCPg starts high (its tool surface) but rises slowly; the bare tool
+starts near zero but pays the raw cost every task. They cross at ~24 tasks,
+after which MCPg is cheaper and the gap widens. Below that, a session of one or
+two quick lookups genuinely does *not* amortize the full surface — and we say
+so.
 
-> **break-even ≈ 18 database tasks** in a session.
-
-The dashboard draws this as two cumulative-token lines: MCPg starts high (its
-tool surface) but rises slowly; the bare tool starts near zero but pays the raw
-cost every task. They cross at ~18 tasks, after which MCPg is cheaper and the gap
-widens. Below that, a session of one or two quick lookups genuinely does *not*
-amortize the surface — and we say so.
-
-Two things move the break-even **left**, and both are honest levers rather than
-spin:
-
-- **Read-only mode** exposes a subset of the 252 tools, so the upfront cost is
-  smaller in the common deployment.
-- **`MCPG_SESSION_INTENT`** filtering narrows the surface to the tools a session
-  actually needs. (Quantifying each is a Tier-A follow-up — the harness already
-  measures the full surface; the filtered variants slot in the same way.)
+But few deployments carry the full surface. **Read-only mode** (the default)
+already drops it to ~18 tasks, and **`MCPG_SESSION_INTENT`** filtering — which
+narrows the surface to the tools a session actually needs — brings a `lookup`
+session to **~5 tasks**. These are not spin: they are the same knobs an operator
+sets for safety and prompt-injection resilience, measured here for their token
+effect too.
 
 ## Reproduce it yourself
 
@@ -111,11 +108,11 @@ uv run python -m benchmarks.dashboard.generate \
 
 | Attack | Answer |
 |---|---|
-| "You ignored the 252-tool context cost." | It is the headline of this page: +48,383 tokens upfront, and the break-even against it is charted. |
+| "You ignored the 252-tool context cost." | It is the headline of this page: +63,685 tokens upfront for the full surface, and the break-even against it (per surface) is charted. |
 | "Token counts are tokenizer-specific." | True in absolute terms; the *ratio* MCPg-vs-raw is stable across tokenizers, and the encoding is stated. |
 | "Tier A isn't a real agent." | Correct — it is deterministic per-call compactness, a *floor*. The round-trip saving is Tier B, explicitly future and costed. |
 | "SF1 is small." | The compactness ratios are a property of the representation, not the row count; they hold across scales. |
-| "Break-even 18 is a lot." | For a one-off lookup, yes — MCPg's surface doesn't pay off, and we say so. For an agent doing sustained DB work it is quickly cleared, and read-only / session-intent filtering move it left. |
+| "Break-even ~24 is a lot." | For a one-off lookup on the full surface, yes — and we say so. But read-only (the default) is ~18, and a session-intent-filtered `lookup` surface is ~5 tasks; for an agent doing sustained DB work it is quickly cleared. |
 
 ## Scope, and what's next
 

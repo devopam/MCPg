@@ -62,17 +62,21 @@ async def _run(args: argparse.Namespace) -> TokenReport:
     finally:
         await database.close()
 
-    # Upfront tool-schema context cost (no DB needed for the counting itself).
-    full, bare = await cmp.tool_context_full_vs_bare(settings)
-    results.append(
-        derive(
-            "full tool surface vs bare run_select (upfront)",
-            "tool-context",
-            count_tokens(full),
-            count_tokens(bare),
-            {"note": "upfront cost, not a per-call saving; MCPg is larger here by design"},
+    # Upfront tool-schema context cost, at each surface (full / read-only /
+    # session-intent). Narrower surfaces cost less up front, moving the
+    # break-even left. Building the servers needs no DB connection.
+    surfaces, bare = await cmp.tool_context_surfaces(args.database_url)
+    bare_tokens = count_tokens(bare)
+    for name, tool_count, text in surfaces:
+        results.append(
+            derive(
+                f"tool surface: {name} ({tool_count} tools) vs bare run_select",
+                "tool-context",
+                count_tokens(text),
+                bare_tokens,
+                {"surface": name, "tools": tool_count, "note": "upfront cost; MCPg is larger here by design"},
+            )
         )
-    )
 
     metadata: dict[str, Any] = {
         "timestamp": args.timestamp,
@@ -99,16 +103,16 @@ def main(argv: list[str] | None = None) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report.to_dict(), indent=2) + "\n")
     for c in report.comparisons:
-        if c.category == "tool-context":
-            # Upfront cost, not a per-call saving — present it as such.
-            print(f"  {c.name:52} mcpg={c.mcpg_tokens:6} raw={c.raw_tokens:6}  upfront cost (MCPg is larger)")
-        else:
-            print(f"  {c.name:52} mcpg={c.mcpg_tokens:6} raw={c.raw_tokens:6}  savings={c.savings_pct:+.0f}%")
+        if c.category != "tool-context":
+            print(f"  {c.name:56} mcpg={c.mcpg_tokens:6} raw={c.raw_tokens:6}  savings={c.savings_pct:+.0f}%")
     be = report.metadata["break_even"]
-    print(
-        f"  break-even: MCPg's upfront tool surface (+{be['upfront_extra_tokens']} tok) is repaid after "
-        f"~{be['break_even_tasks']} tasks (mean saving {be['mean_per_call_saving_tokens']:.0f} tok/task)"
-    )
+    print(f"  per-call mean saving: {be['mean_per_call_saving_tokens']:.0f} tok/task")
+    print("  break-even by tool surface (narrower surface -> fewer tasks):")
+    for s in be["surfaces"]:
+        print(
+            f"    {s['name']:24} {s['tool_count']:4} tools  "
+            f"+{s['upfront_extra_tokens']:6} tok upfront  ~{s['break_even_tasks']} tasks"
+        )
     print(f"wrote {args.output}")
     return 0
 

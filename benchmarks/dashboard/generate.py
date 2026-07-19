@@ -459,9 +459,11 @@ def _break_even_chart(per_call: list[dict[str, Any]], upfront_full: int, upfront
     cx, cy = px(k), py(mcpg_at(k))
     parts.append(f'<line x1="{cx:.1f}" y1="{top}" x2="{cx:.1f}" y2="{top + plot_h:.1f}" class="grid"/>')
     parts.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="4" fill="var(--ink)"/>')
+    import math
+
     parts.append(
         f'<text x="{cx + 6:.1f}" y="{top + 14:.1f}" class="cat" style="fill:var(--ink)">'
-        f"break-even ~ {k:.0f} tasks</text>"
+        f"break-even ~ {math.ceil(k)} tasks</text>"
     )
     parts.append("</svg>")
     legend = _legend([("MCPg", _TOK_MCPG), ("bare run_select tool", _TOK_BASELINE)])
@@ -469,23 +471,43 @@ def _break_even_chart(per_call: list[dict[str, Any]], upfront_full: int, upfront
 
 
 def _token_table(comparisons: list[dict[str, Any]]) -> str:
+    """Per-call savings table (tool-context surfaces are shown separately)."""
     body = []
     for c in comparisons:
-        tc = c["category"] == "tool-context"
-        verdict = (
-            f'<span class="badge critical">+{_esc(_fmt_tok(c["mcpg_tokens"] - c["raw_tokens"]))} upfront</span>'
-            if tc
-            else f'<span class="badge good">-{c["savings_pct"]:.0f}%</span>'
-        )
+        if c["category"] == "tool-context":
+            continue
         body.append(
             f'<tr><th scope="row">{_esc(c["name"])}</th>'
             f"<td>{_esc(_fmt_tok(c['mcpg_tokens']))}</td>"
             f"<td>{_esc(_fmt_tok(c['raw_tokens']))}</td>"
-            f"<td>{verdict}</td></tr>"
+            f'<td><span class="badge good">-{c["savings_pct"]:.0f}%</span></td></tr>'
         )
     return (
-        '<table class="data"><thead><tr><th scope="col">comparison</th><th scope="col">MCPg</th>'
-        '<th scope="col">raw SQL</th><th scope="col"></th></tr></thead><tbody>' + "".join(body) + "</tbody></table>"
+        '<table class="data"><thead><tr><th scope="col">per-call comparison</th><th scope="col">MCPg</th>'
+        '<th scope="col">raw SQL</th><th scope="col">saving</th></tr></thead><tbody>'
+        + "".join(body)
+        + "</tbody></table>"
+    )
+
+
+def _surface_table(surfaces: list[dict[str, Any]]) -> str:
+    """Break-even by tool surface — the honest 'filtering moves it left' story."""
+    if not surfaces:
+        return ""
+    body = []
+    for s in surfaces:
+        k = s.get("break_even_tasks")
+        body.append(
+            f'<tr><th scope="row">{_esc(s.get("name"))}</th>'
+            f"<td>{_esc(s.get('tool_count'))}</td>"
+            f"<td>+{_esc(_fmt_tok(s.get('upfront_extra_tokens', 0)))} tok</td>"
+            f'<td><span class="badge good">~{_esc(k)} tasks</span></td></tr>'
+        )
+    return (
+        '<table class="data"><thead><tr><th scope="col">tool surface</th><th scope="col">tools</th>'
+        '<th scope="col">upfront</th><th scope="col">break-even</th></tr></thead><tbody>'
+        + "".join(body)
+        + "</tbody></table>"
     )
 
 
@@ -496,15 +518,16 @@ def _token_section(token_report: dict[str, Any]) -> str:
     meta = token_report.get("metadata", {}) or {}
     be = meta.get("break_even", {}) or {}
     per_call = [c for c in comparisons if c["category"] != "tool-context"]
-    upfront = next((c for c in comparisons if c["category"] == "tool-context"), None)
-    k = be.get("break_even_tasks")
-    tiles = []
-    for c in per_call:
-        tiles.append((c["category"], f"-{c['savings_pct']:.0f}%"))
-    if upfront:
-        tiles.append(("tool surface upfront", f"+{_fmt_tok(upfront['mcpg_tokens'] - upfront['raw_tokens'])} tok"))
-    if k is not None:
-        tiles.append(("break-even", f"~{k} tasks"))
+    surfaces = be.get("surfaces", []) or []
+    # Headline = the widest surface (largest upfront), the worst case for the chart.
+    headline = max(surfaces, key=lambda s: s.get("upfront_extra_tokens", 0)) if surfaces else None
+    bare_tokens = next((c["raw_tokens"] for c in comparisons if c["category"] == "tool-context"), 0)
+
+    tiles: list[tuple[str, str]] = [(c["category"], f"-{c['savings_pct']:.0f}%") for c in per_call]
+    ks = [s["break_even_tasks"] for s in surfaces if s.get("break_even_tasks") is not None]
+    if ks:
+        lo, hi = min(ks), max(ks)
+        tiles.append(("break-even", f"~{lo} tasks" if lo == hi else f"{lo}-{hi} tasks"))
     tiles_html = (
         '<div class="tiles">'
         + "".join(
@@ -513,13 +536,17 @@ def _token_section(token_report: dict[str, Any]) -> str:
         )
         + "</div>"
     )
-    chart = _break_even_chart(per_call, upfront["mcpg_tokens"], upfront["raw_tokens"]) if upfront else ""
+    chart = ""
+    if headline and per_call:
+        chart = _break_even_chart(per_call, int(headline["mcpg_tokens"]), int(bare_tokens))
     return f"""<section><h2>Token efficiency <span class="tag">v2 · Tier A</span></h2>
       <p class="note">MCPg's compact, structured tool output vs the raw-SQL equivalent an agent would otherwise
       pull and interpret — counted with <code>{_esc(meta.get("encoding", "o200k_base"))}</code>. The rich tool
-      surface costs more context up front (shown, not hidden); the per-call savings repay it after the break-even.</p>
+      surface costs more context up front (shown, not hidden); the per-call savings repay it after the break-even.
+      The chart is the worst case (the full surface); narrower surfaces cost less up front and cross sooner.</p>
       {tiles_html}
       {chart}
+      {_surface_table(surfaces)}
       {_token_table(comparisons)}</section>"""
 
 
