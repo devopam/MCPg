@@ -33,6 +33,9 @@ them" — pick the section that matches what you're trying to do.
   (server, drivers, replicas, cursors, audit, transports).
 - [**Scaling guide**](scaling.md) — pool sizing, replica fan-out,
   observability, performance tuning notes.
+- [**Performance benchmark**](performance-benchmark.md) — the honest,
+  reproducible overhead result: MCPg's added latency is small, fixed, and
+  decomposed (`t_db` is identical to native), with a run-it-yourself harness.
 
 ## Operate
 

@@ -27,6 +27,7 @@ import argparse
 import asyncio
 import gc
 import json
+import logging
 import platform
 import sys
 from pathlib import Path
@@ -42,6 +43,8 @@ from benchmarks.perf.schema import Assertion, Decomposition, LatencyBlock, PerfR
 from mcpg import __version__
 from mcpg.config import load_settings
 from mcpg.database import Database
+
+logger = logging.getLogger(__name__)
 
 _WARMUP = 5
 
@@ -129,12 +132,26 @@ def _conc_row(path: str, query: BenchQuery, cr: ConcurrencyResult) -> ResultRow:
 
 
 async def _run_concurrency(database_url: str, iterations: int) -> list[ResultRow]:
-    """Sweep every query across the concurrency levels for native + server-side.
+    """Sweep the **ultralight** queries across the concurrency levels.
+
+    Throughput-under-load exists to expose the *pool + per-call* overhead, so it
+    only makes sense on trivially-cheap queries (point lookups, ``SELECT 1``).
+    Anything heavier measures the database instead of MCPg: a heavy TPC-H query
+    at 64 clients just times the DB's own execution, and even a "light" 90 ms
+    GROUP BY (or a 100k-row fetch) run 64-way saturates CPU / serialization and
+    can blow past the per-query timeout. So the sweep restricts to
+    ``compute_class == "ultralight"``.
 
     Owns its own resources: a dedicated pool sized to the sweep ceiling (so the
     server-side path isn't starved) and one persistent native connection per
-    concurrent client (opened once, sliced per level). Everything is torn down
-    before returning.
+    concurrent client (opened once, sliced per level).
+
+    Connection budget: at the top level the native path holds ``max_c``
+    connections **while** the server pool opens up to ``max_c`` -- so PostgreSQL
+    needs ``max_connections`` >= about ``2 * max(CONCURRENCY_LEVELS)`` plus
+    headroom (e.g. 150+ for the 64-client sweep). Below that, connection
+    checkouts fail with "too many clients" and the numbers are degraded; size
+    the server for the sweep before running it.
     """
     max_c = max(CONCURRENCY_LEVELS)
     conc_settings = load_settings(
@@ -146,6 +163,8 @@ async def _run_concurrency(database_url: str, iterations: int) -> list[ResultRow
     rows: list[ResultRow] = []
     try:
         for query in all_queries():
+            if query.compute_class != "ultralight":
+                continue
             for level in CONCURRENCY_LEVELS:
                 native_result = await sweep_level(
                     list(native_conns[:level]), query, iterations_per_worker=iterations, warmup_per_worker=_WARMUP
@@ -249,11 +268,23 @@ async def _run(args: argparse.Namespace) -> PerfRun:
             native_db_ns_by_query[query.id] = await _sample_native_db(native, query, args.iterations)
 
         # Throughput-under-concurrency sweep (opt-in; owns its own pool sized to
-        # the sweep ceiling so the server-side path isn't starved).
+        # the sweep ceiling so the server-side path isn't starved). It runs last
+        # and is non-essential, so a failure here (e.g. connection exhaustion or
+        # a per-query timeout under load) must not discard the expensive
+        # core + e2e results already collected — log and carry on.
         if args.concurrency:
-            results.extend(await _run_concurrency(args.database_url, args.iterations))
+            try:
+                results.extend(await _run_concurrency(args.database_url, args.iterations))
+            except Exception as exc:
+                logger.warning("Concurrency sweep failed; writing results without it: %s", exc)
     finally:
-        for e2e in e2e_runners:
+        # Close e2e runners in REVERSE start order. Each one opens an internal
+        # anyio task-group / cancel scope when started (in-memory, then stdio,
+        # then http), nested in that order; anyio requires the inner scope exit
+        # before the outer, so tearing down forward raises "Attempted to exit a
+        # cancel scope that isn't the current task's current cancel scope" and
+        # (from the finally) aborts the whole run before the JSON is written.
+        for e2e in reversed(e2e_runners):
             await e2e.close()
         await native.close()
         await database.close()
@@ -290,10 +321,18 @@ def _assertions(results: list[ResultRow], native_db_ns_by_query: dict[str, float
     on.
     """
     out: list[Assertion] = []
-    # Only the single-client baseline rows (concurrency == 1) feed the overhead
-    # and t_db assertions — the concurrency-sweep rows share (path, query_id) but
-    # carry under-load latencies, and must not overwrite the baseline here.
-    by_key = {(r.path, r.query_id): r for r in results if r.temperature == "warm" and r.concurrency == 1}
+    # Only the single-client baseline rows feed the overhead and t_db
+    # assertions. A row is the baseline when it is warm, concurrency == 1, AND
+    # carries no throughput (throughput_rps is None) — the concurrency sweep also
+    # emits a concurrency==1 row (its level-1 point), which shares (path,
+    # query_id) but has throughput set and no decomposition; without the
+    # throughput guard it overwrites the real baseline and the t_db gate silently
+    # drops those queries.
+    by_key = {
+        (r.path, r.query_id): r
+        for r in results
+        if r.temperature == "warm" and r.concurrency == 1 and r.throughput_rps is None
+    }
     query_ids = {r.query_id for r in results}
     for qid in sorted(query_ids):
         native = by_key.get(("native", qid))

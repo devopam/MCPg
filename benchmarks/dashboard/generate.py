@@ -82,8 +82,19 @@ def _fmt_rps(value: float | None) -> str:
 
 
 def _baseline_rows(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Warm, single-client rows — the latency comparison the report leads with."""
-    return [r for r in results if r.get("temperature") == "warm" and r.get("concurrency") == 1]
+    """Warm, single-client baseline rows — the latency comparison the report leads with.
+
+    A baseline row is warm, concurrency 1, and carries no throughput. The
+    concurrency sweep also emits a concurrency==1 row (its level-1 point) with
+    throughput set and no decomposition; the ``throughput_rps is None`` guard
+    keeps it from shadowing the real single-client baseline for ultralight
+    queries.
+    """
+    return [
+        r
+        for r in results
+        if r.get("temperature") == "warm" and r.get("concurrency") == 1 and r.get("throughput_rps") is None
+    ]
 
 
 def _ordered_paths(rows: list[dict[str, Any]]) -> list[str]:
