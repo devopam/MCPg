@@ -1,0 +1,58 @@
+{
+  "metadata": {
+    "timestamp": "2026-07-19T02:20:56Z",
+    "git_sha": "eef52537d93bacf64c01158d737d32ee05a292bd",
+    "mcpg_version": "0.6.11",
+    "encoding": "o200k_base",
+    "schema": "public",
+    "break_even": {
+      "upfront_extra_tokens": 48383,
+      "mean_per_call_saving_tokens": 2751.0,
+      "break_even_tasks": 18
+    },
+    "host": {
+      "python": "3.13.12",
+      "os": "Linux-6.18.5-x86_64-with-glibc2.39",
+      "machine": "x86_64"
+    }
+  },
+  "comparisons": [
+    {
+      "name": "compact_schema[public] vs information_schema",
+      "category": "schema",
+      "mcpg_tokens": 574,
+      "raw_tokens": 2375,
+      "savings_pct": 75.83157894736843,
+      "ratio": 4.137630662020906,
+      "detail": {
+        "tool": "get_compact_schema",
+        "raw": "information_schema.columns dump"
+      }
+    },
+    {
+      "name": "analyze_query_plan vs raw EXPLAIN",
+      "category": "query-plan",
+      "mcpg_tokens": 146,
+      "raw_tokens": 3847,
+      "savings_pct": 96.20483493631401,
+      "ratio": 26.34931506849315,
+      "detail": {
+        "tool": "analyze_query_plan",
+        "raw": "EXPLAIN (FORMAT JSON)"
+      }
+    },
+    {
+      "name": "full tool surface vs bare run_select (upfront)",
+      "category": "tool-context",
+      "mcpg_tokens": 48576,
+      "raw_tokens": 193,
+      "savings_pct": -25068.911917098445,
+      "ratio": 0.003973155467720685,
+      "detail": {
+        "note": "upfront cost, not a per-call saving; MCPg is larger here by design"
+      }
+    }
+  ],
+  "schema_version": 1,
+  "kind": "tokens_tier_a"
+}

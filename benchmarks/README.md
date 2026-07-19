@@ -32,6 +32,11 @@ result is what earns credibility for the real wins (measured in v2: tokens).
   theme-aware HTML dashboard** (latency percentiles, the overhead-decomposition
   waterfall, throughput-vs-concurrency, the `t_db == native` gate). No external
   hosts; re-run the harness, regenerate.
+- `tokens/tier_a/` — **(v2) deterministic token accounting.** Tokenizes what
+  MCPg's purpose-built tools return vs the raw-SQL equivalent an agent would
+  otherwise pull (`get_compact_schema` vs an `information_schema` dump;
+  `analyze_query_plan` vs raw `EXPLAIN`), plus the honest **break-even** against
+  the upfront cost of MCPg's full tool surface. No LLM; CI-able.
 - `datasets/` — TPC-H schema/index DDL + a DuckDB→`COPY` loader.
 
 ## Running it
@@ -56,6 +61,19 @@ uv run python -m benchmarks.dashboard.generate \
     --input benchmarks/results/perf.json \
     --output benchmarks/results/perf.html
 ```
+
+### Token efficiency — Tier A (deterministic, no LLM)
+
+```bash
+uv run python -m benchmarks.tokens.tier_a.runner \
+    --database-url "$MCPG_TEST_DATABASE_URL" --schema public \
+    --git-sha "$(git rev-parse HEAD)" --timestamp "$(date -u +%FT%TZ)" \
+    --output benchmarks/results/tokens-tier-a.json
+```
+
+Counts tokens (`tiktoken`, `o200k_base`) of MCPg's compact tool output vs the
+raw-SQL equivalent, and reports the break-even against the upfront cost of the
+full tool surface. Needs the `bench` group (`uv sync --group bench`).
 
 ### Also measuring the end-to-end MCP paths (`--e2e`)
 
