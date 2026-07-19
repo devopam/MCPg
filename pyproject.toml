@@ -151,9 +151,12 @@ dev = [
     "opentelemetry-exporter-otlp-proto-http>=1.27",
 ]
 # Benchmark suite (roadmap 19) — dev-only. Keeps the shipped package lean;
-# `duckdb` generates the TPC-H dataset for benchmarks/datasets/load_tpch.py.
+# `duckdb` generates the TPC-H dataset for benchmarks/datasets/load_tpch.py,
+# `tiktoken` counts tokens for the Tier-A token-efficiency accounting
+# (benchmarks/tokens/).
 bench = [
     "duckdb>=1.1",
+    "tiktoken>=0.7",
 ]
 
 [tool.pytest.ini_options]
