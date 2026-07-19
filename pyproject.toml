@@ -153,10 +153,12 @@ dev = [
 # Benchmark suite (roadmap 19) — dev-only. Keeps the shipped package lean;
 # `duckdb` generates the TPC-H dataset for benchmarks/datasets/load_tpch.py,
 # `tiktoken` counts tokens for the Tier-A token-efficiency accounting
-# (benchmarks/tokens/).
+# (benchmarks/tokens/), and `anthropic` drives the costed Tier-B agent-loop
+# study (benchmarks/tokens/tier_b/ — never run in CI).
 bench = [
     "duckdb>=1.1",
     "tiktoken>=0.7",
+    "anthropic>=0.40",
 ]
 
 [tool.pytest.ini_options]
