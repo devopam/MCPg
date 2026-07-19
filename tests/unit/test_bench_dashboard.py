@@ -185,6 +185,68 @@ def test_render_html_has_sections_and_verdict() -> None:
     assert "match" in out  # gate badge
 
 
+def _token_report() -> dict[str, Any]:
+    comps = [
+        {
+            "name": "compact_schema",
+            "category": "schema",
+            "mcpg_tokens": 574,
+            "raw_tokens": 2375,
+            "savings_pct": 75.8,
+            "ratio": 4.1,
+            "detail": {},
+        },
+        {
+            "name": "analyze_plan",
+            "category": "query-plan",
+            "mcpg_tokens": 146,
+            "raw_tokens": 3847,
+            "savings_pct": 96.2,
+            "ratio": 26.3,
+            "detail": {},
+        },
+        {
+            "name": "tool surface",
+            "category": "tool-context",
+            "mcpg_tokens": 48576,
+            "raw_tokens": 193,
+            "savings_pct": -25069.0,
+            "ratio": 0.004,
+            "detail": {},
+        },
+    ]
+    return {
+        "metadata": {
+            "encoding": "o200k_base",
+            "break_even": {
+                "upfront_extra_tokens": 48383,
+                "mean_per_call_saving_tokens": 2751.0,
+                "break_even_tasks": 18,
+            },
+        },
+        "comparisons": comps,
+        "schema_version": 1,
+        "kind": "tokens_tier_a",
+    }
+
+
+def test_render_html_appends_token_section() -> None:
+    out = dash.render_html(_run(), token_report=_token_report())
+    assert "Token efficiency" in out
+    assert "break-even" in out
+    assert "48.4k" in out  # upfront cost shown, not hidden
+    assert "o200k_base" in out
+    assert "-76%" in out or "-96%" in out  # per-call savings badge
+    # Still a complete, self-contained document.
+    assert out.startswith("<!doctype html>")
+    assert "http://" not in out and "https://" not in out
+
+
+def test_render_html_no_token_section_without_report() -> None:
+    out = dash.render_html(_run())  # token_report defaults to None
+    assert "Token efficiency" not in out
+
+
 def test_render_html_omits_absent_sections() -> None:
     run = _run()
     # Strip decomposition + concurrency -> those sections should not render.

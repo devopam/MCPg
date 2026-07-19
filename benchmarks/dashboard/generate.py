@@ -391,8 +391,144 @@ def _stat_tiles(meta: dict[str, Any]) -> str:
     )
 
 
-def render_html(run: dict[str, Any]) -> str:
-    """Render a PerfRun dict into a complete, self-contained HTML document."""
+# --- token efficiency (Tier-A) --------------------------------------------
+
+# baseline (bare run_select) = blue; MCPg = green — "the win".
+_TOK_BASELINE = "var(--series-1)"
+_TOK_MCPG = "var(--series-2)"
+
+
+def _fmt_tok(n: float) -> str:
+    return f"{n / 1000:.1f}k" if n >= 1000 else f"{n:.0f}"
+
+
+def _break_even_chart(per_call: list[dict[str, Any]], upfront_full: int, upfront_bare: int) -> str:
+    """Cumulative-tokens line chart: MCPg vs a bare run_select tool over tasks.
+
+    MCPg starts high (its full tool surface) but rises slower (compact output);
+    the bare baseline starts low but pays the raw-SQL cost every task. They cross
+    at the break-even, after which MCPg is cheaper and the gap widens.
+    """
+    if not per_call:
+        return ""
+    mcpg_per = sum(float(c["mcpg_tokens"]) for c in per_call) / len(per_call)
+    raw_per = sum(float(c["raw_tokens"]) for c in per_call) / len(per_call)
+    if raw_per <= mcpg_per:
+        return ""
+    k = (upfront_full - upfront_bare) / (raw_per - mcpg_per)
+    n_max = max(4.0, k * 2)
+
+    def mcpg_at(n: float) -> float:
+        return upfront_full + mcpg_per * n
+
+    def base_at(n: float) -> float:
+        return upfront_bare + raw_per * n
+
+    vmax = _nice_max(max(mcpg_at(n_max), base_at(n_max)))
+    left, right, top, bottom = 64, 120, 12, 34
+    plot_w, plot_h = 760 - left - right, 260 - top - bottom
+    parts = [_svg_open(760, 260, "Token break-even: MCPg vs a bare run_select tool")]
+    for i in range(5):
+        gy = top + plot_h * i / 4
+        parts.append(f'<line x1="{left}" y1="{gy:.1f}" x2="{left + plot_w}" y2="{gy:.1f}" class="grid"/>')
+        parts.append(
+            f'<text x="{left - 8}" y="{gy + 4:.1f}" text-anchor="end" class="tick">'
+            f"{_esc(_fmt_tok(vmax * (4 - i) / 4))}</text>"
+        )
+
+    def px(n: float) -> float:
+        return left + plot_w * n / n_max
+
+    def py(v: float) -> float:
+        return top + plot_h * (1 - v / vmax)
+
+    for i in range(5):
+        n = n_max * i / 4
+        parts.append(
+            f'<text x="{px(n):.1f}" y="{top + plot_h + 20:.1f}" text-anchor="middle" class="tick">{n:.0f}</text>'
+        )
+    parts.append(
+        f'<text x="{left + plot_w / 2:.1f}" y="258" text-anchor="middle" class="axis-title">'
+        "database tasks in a session</text>"
+    )
+    # The two cumulative lines.
+    for _label, color, fn in (("bare run_select", _TOK_BASELINE, base_at), ("MCPg", _TOK_MCPG, mcpg_at)):
+        d = f"M{px(0):.1f},{py(fn(0)):.1f} L{px(n_max):.1f},{py(fn(n_max)):.1f}"
+        parts.append(f'<path d="{d}" fill="none" stroke="{color}" stroke-width="2" stroke-linecap="round"/>')
+    # Mark the crossing.
+    cx, cy = px(k), py(mcpg_at(k))
+    parts.append(f'<line x1="{cx:.1f}" y1="{top}" x2="{cx:.1f}" y2="{top + plot_h:.1f}" class="grid"/>')
+    parts.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="4" fill="var(--ink)"/>')
+    parts.append(
+        f'<text x="{cx + 6:.1f}" y="{top + 14:.1f}" class="cat" style="fill:var(--ink)">'
+        f"break-even ~ {k:.0f} tasks</text>"
+    )
+    parts.append("</svg>")
+    legend = _legend([("MCPg", _TOK_MCPG), ("bare run_select tool", _TOK_BASELINE)])
+    return legend + "".join(parts)
+
+
+def _token_table(comparisons: list[dict[str, Any]]) -> str:
+    body = []
+    for c in comparisons:
+        tc = c["category"] == "tool-context"
+        verdict = (
+            f'<span class="badge critical">+{_esc(_fmt_tok(c["mcpg_tokens"] - c["raw_tokens"]))} upfront</span>'
+            if tc
+            else f'<span class="badge good">-{c["savings_pct"]:.0f}%</span>'
+        )
+        body.append(
+            f'<tr><th scope="row">{_esc(c["name"])}</th>'
+            f"<td>{_esc(_fmt_tok(c['mcpg_tokens']))}</td>"
+            f"<td>{_esc(_fmt_tok(c['raw_tokens']))}</td>"
+            f"<td>{verdict}</td></tr>"
+        )
+    return (
+        '<table class="data"><thead><tr><th scope="col">comparison</th><th scope="col">MCPg</th>'
+        '<th scope="col">raw SQL</th><th scope="col"></th></tr></thead><tbody>' + "".join(body) + "</tbody></table>"
+    )
+
+
+def _token_section(token_report: dict[str, Any]) -> str:
+    comparisons = token_report.get("comparisons", []) or []
+    if not comparisons:
+        return ""
+    meta = token_report.get("metadata", {}) or {}
+    be = meta.get("break_even", {}) or {}
+    per_call = [c for c in comparisons if c["category"] != "tool-context"]
+    upfront = next((c for c in comparisons if c["category"] == "tool-context"), None)
+    k = be.get("break_even_tasks")
+    tiles = []
+    for c in per_call:
+        tiles.append((c["category"], f"-{c['savings_pct']:.0f}%"))
+    if upfront:
+        tiles.append(("tool surface upfront", f"+{_fmt_tok(upfront['mcpg_tokens'] - upfront['raw_tokens'])} tok"))
+    if k is not None:
+        tiles.append(("break-even", f"~{k} tasks"))
+    tiles_html = (
+        '<div class="tiles">'
+        + "".join(
+            f'<div class="tile"><div class="k">{_esc(kk)}</div><div class="v">{_esc(vv)}</div></div>'
+            for kk, vv in tiles
+        )
+        + "</div>"
+    )
+    chart = _break_even_chart(per_call, upfront["mcpg_tokens"], upfront["raw_tokens"]) if upfront else ""
+    return f"""<section><h2>Token efficiency <span class="tag">v2 · Tier A</span></h2>
+      <p class="note">MCPg's compact, structured tool output vs the raw-SQL equivalent an agent would otherwise
+      pull and interpret — counted with <code>{_esc(meta.get("encoding", "o200k_base"))}</code>. The rich tool
+      surface costs more context up front (shown, not hidden); the per-call savings repay it after the break-even.</p>
+      {tiles_html}
+      {chart}
+      {_token_table(comparisons)}</section>"""
+
+
+def render_html(run: dict[str, Any], token_report: dict[str, Any] | None = None) -> str:
+    """Render a PerfRun dict into a complete, self-contained HTML document.
+
+    When ``token_report`` (a Tier-A tokens JSON) is given, a token-efficiency
+    section is appended — the same dashboard, evolved for v2.
+    """
     meta = run.get("metadata", {}) or {}
     results = run.get("results", []) or []
     assertions = run.get("assertions", []) or []
@@ -442,6 +578,11 @@ def render_html(run: dict[str, Any]) -> str:
     atable = _assertion_table(assertions)
     if atable:
         sections.append(f"""<section><h2>The <code>t_db == native</code> gate</h2>{atable}</section>""")
+
+    if token_report:
+        token_section = _token_section(token_report)
+        if token_section:
+            sections.append(token_section)
 
     body = "\n".join(sections)
     return _DOCUMENT.format(
@@ -494,6 +635,8 @@ h1 {{ font-size:22px; margin:0; }}
 section {{ background:var(--surface-1); border:1px solid var(--border); border-radius:14px;
   padding:20px 22px; margin-top:20px; overflow-x:auto; }}
 h2 {{ font-size:16px; margin:0 0 4px; }}
+.tag {{ font-size:11px; font-weight:600; color:var(--muted); border:1px solid var(--border);
+  border-radius:20px; padding:1px 8px; margin-left:6px; vertical-align:middle; }}
 .note, .lede {{ color:var(--ink-2); font-size:13.5px; margin:4px 0 14px; }}
 .hero {{ display:grid; gap:16px; }}
 .verdict {{ display:flex; align-items:center; gap:16px; }}
@@ -548,10 +691,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Render a perf-run JSON into a self-contained HTML dashboard.")
     parser.add_argument("--input", type=Path, required=True, help="Perf-run JSON (from benchmarks.perf.runner).")
     parser.add_argument("--output", type=Path, required=True, help="Path to write the HTML dashboard.")
+    parser.add_argument(
+        "--tokens", type=Path, default=None, help="Optional Tier-A tokens JSON (from benchmarks.tokens.tier_a.runner)."
+    )
     args = parser.parse_args(argv)
     run = json.loads(args.input.read_text())
+    token_report = json.loads(args.tokens.read_text()) if args.tokens else None
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(render_html(run))
+    args.output.write_text(render_html(run, token_report))
     print(f"wrote {args.output}")
     return 0
 
