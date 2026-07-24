@@ -722,10 +722,10 @@ def main(argv: list[str] | None = None) -> int:
         "--tokens", type=Path, default=None, help="Optional Tier-A tokens JSON (from benchmarks.tokens.tier_a.runner)."
     )
     args = parser.parse_args(argv)
-    run = json.loads(args.input.read_text())
-    token_report = json.loads(args.tokens.read_text()) if args.tokens else None
+    run = json.loads(args.input.read_text(encoding="utf-8"))
+    token_report = json.loads(args.tokens.read_text(encoding="utf-8")) if args.tokens else None
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(render_html(run, token_report))
+    args.output.write_text(render_html(run, token_report), encoding="utf-8")
     print(f"wrote {args.output}")
     return 0
 
