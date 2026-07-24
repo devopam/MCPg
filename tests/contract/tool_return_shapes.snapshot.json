@@ -2222,7 +2222,9 @@
         "refused",
         "row_count",
         "rows",
-        "sql"
+        "sql",
+        "tokens_in",
+        "tokens_out"
       ],
       "kind": "scalar"
     },
