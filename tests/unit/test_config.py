@@ -1,10 +1,20 @@
 """Tests for the env-driven configuration loader."""
 
+import sys
+
 import pytest
 
 from mcpg.config import AccessMode, ConfigError, Transport, load_settings
 
 _DB_URL = "postgresql://user:secret@localhost:5432/app"
+
+# os.path.isabs requires a drive letter on Windows (ntpath), so Unix-style
+# paths like "/usr/bin" aren't absolute there — pick real absolute paths per
+# platform for allowlist tests that need one.
+if sys.platform == "win32":
+    _ABS_BIN_1, _ABS_BIN_2 = "C:\\bin", "C:\\Windows\\System32"
+else:
+    _ABS_BIN_1, _ABS_BIN_2 = "/usr/bin", "/usr/local/bin"
 
 
 def test_loads_database_url_and_applies_safe_defaults() -> None:
@@ -989,12 +999,12 @@ def test_subprocess_hardening_parses_allowlist_and_limits() -> None:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _DB_URL,
-            "MCPG_SUBPROCESS_BIN_ALLOWLIST": "/usr/bin, /usr/local/bin",
+            "MCPG_SUBPROCESS_BIN_ALLOWLIST": f"{_ABS_BIN_1}, {_ABS_BIN_2}",
             "MCPG_SUBPROCESS_CPU_SECONDS": "30",
             "MCPG_SUBPROCESS_MEMORY_MB": "512",
         }
     )
-    assert settings.subprocess_bin_allowlist == ("/usr/bin", "/usr/local/bin")
+    assert settings.subprocess_bin_allowlist == (_ABS_BIN_1, _ABS_BIN_2)
     assert settings.subprocess_cpu_seconds == 30
     assert settings.subprocess_memory_mb == 512
 
@@ -1004,7 +1014,7 @@ def test_subprocess_bin_allowlist_rejects_relative_paths() -> None:
         load_settings(
             {
                 "MCPG_DATABASE_URL": _DB_URL,
-                "MCPG_SUBPROCESS_BIN_ALLOWLIST": "/usr/bin, relative/dir",
+                "MCPG_SUBPROCESS_BIN_ALLOWLIST": f"{_ABS_BIN_1}, relative/dir",
             }
         )
 

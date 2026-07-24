@@ -650,7 +650,13 @@ def run_http(server: object, settings: Settings, *, kind: str) -> None:
     # tell uvicorn to leave the loop alone (``loop="none"``) so it runs on
     # the loop our policy creates. No-op off Windows.
     if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        # Python 3.14 renamed this to the private ``_WindowsSelectorEventLoopPolicy``
+        # (per typeshed); getattr keeps this working across 3.12-3.14 without a
+        # static attribute reference mypy can only resolve for one target version.
+        _selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None) or getattr(  # noqa: B009
+            asyncio, "_WindowsSelectorEventLoopPolicy"
+        )
+        asyncio.set_event_loop_policy(_selector_policy())
         tls_kwargs["loop"] = "none"
     # mypy can't reason about ``**dict[str, object]`` against the
     # large, overloaded ``uvicorn.run`` signature; the dict's contents
