@@ -75,7 +75,7 @@ def test_planted_findings_are_present_in_the_ddl() -> None:
     assert '"reviewSource"' in ddl
     # order_items and reviews carry FK indexes; orders.customer_id must NOT.
     index_ddl = [stmt for stmt in _TABLE_DDL if stmt.lstrip().startswith("CREATE INDEX")]
-    assert len(index_ddl) == 3
+    assert len(index_ddl) == 4
     assert not any("orders (customer_id" in stmt or "orders(customer_id" in stmt for stmt in index_ddl)
     # PII bait for the sensitive-columns advisor.
     assert "email" in ddl and "phone" in ddl
