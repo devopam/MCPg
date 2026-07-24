@@ -1,23 +1,35 @@
 """The Tier-B task set — database questions with **known-correct answers**.
 
-Each task is a question an agent answers by exploring the database, graded
-deterministically against the flaws the demo dataset (``mcpg --demo``) plants on
-purpose. That makes correctness checkable without a human or an LLM judge:
+Two kinds of task, both graded deterministically (no human or LLM judge):
+
+**Planted-flaw audit tasks** (``missing_index``, ``pii_columns``,
+``naming_violation``) — the demo dataset (``mcpg --demo``) plants these on
+purpose:
 
 - ``orders.customer_id`` is a foreign key with **no covering index** (the other
   FKs are indexed, so this one is a real finding).
 - ``customers.email`` / ``customers.phone`` are **PII**.
 - ``reviews."reviewSource"`` is a deliberate **camelCase naming** violation.
 
-The point of the study: MCPg's purpose-built advisors (index / sensitive-column
-/ naming) answer these in roughly one tool call, while a bare ``run_select``
-agent must run many exploratory queries and interpret raw rows itself — so the
-two arms diverge on tokens, tool-calls, and turns while (ideally) both reaching
-the same correct answer.
+MCPg's purpose-built advisors (index / sensitive-column / naming) answer these
+in roughly one tool call, while a bare ``run_select`` agent must run many
+exploratory queries and interpret raw rows itself.
 
-Graders are pure and case-insensitive, matching on the identifying tokens of the
-planted finding. They are intentionally lenient about prose and strict about the
-identifiers that constitute a correct answer.
+**Analytical NL→SQL tasks** (``top_revenue_category``,
+``top_customer_lifetime_spend``) — plain-English business questions requiring
+a real multi-table join + aggregation to answer correctly, not a lookup.
+Ground truth was computed directly against the live demo dataset (not
+asserted from memory) and each has a clear, unambiguous margin over the
+runner-up so an approximately-right answer still passes and a wrong one still
+fails. These exercise MCPg's actual NL→SQL tool (``translate_nl_to_sql``) and
+are more likely than the audit tasks to provoke a wrong first SQL attempt —
+the baseline arm has no tool for this beyond raw ``run_select``.
+
+Across both kinds, the two arms diverge on tokens, tool-calls, and turns while
+(ideally) both reaching the same correct answer. Graders are pure and
+case-insensitive, matching on the identifying tokens of the correct answer.
+They are intentionally lenient about prose and strict about the identifiers
+that constitute a correct answer.
 """
 
 from __future__ import annotations
@@ -84,5 +96,23 @@ def default_tasks() -> list[Task]:
             # Correct answer names the camelCase column.
             grade=lambda a: "reviewsource" in _norm(a),
             ideal_tools=("audit_database",),
+        ),
+        Task(
+            id="top_revenue_category",
+            prompt="Which product category generated the most revenue overall? Name the category.",
+            # Verified against the live demo dataset: "Home" leads at 95.6M
+            # cents vs. the runner-up Computing's 80.4M — a clear margin, not
+            # a close call sensitive to rounding.
+            grade=lambda a: "home" in _norm(a),
+            ideal_tools=("translate_nl_to_sql", "run_select"),
+        ),
+        Task(
+            id="top_customer_lifetime_spend",
+            prompt="Who is our single highest-spending customer by total lifetime order value? Give their name.",
+            # Verified against the live demo dataset: Liam Okafor
+            # (customer_id 1) leads at 12.85M cents vs. the runner-up's
+            # 6.25M — more than double, not a close call.
+            grade=lambda a: "liam" in _norm(a) and "okafor" in _norm(a),
+            ideal_tools=("translate_nl_to_sql", "run_select"),
         ),
     ]

@@ -59,6 +59,22 @@ def _tool_result_text(result: Any) -> str:
     return "\n".join(getattr(b, "text", "") for b in blocks) or "(no output)"
 
 
+# Tools that make their own internal LLM call, separate from the outer agent
+# loop this file drives — that internal call's tokens are otherwise invisible
+# to this study (they never pass through model.complete()). translate_nl_to_sql
+# is the only one today; it reports usage via TranslationResult.tokens_in/out
+# (see src/mcpg/nl2sql.py), surfaced here in the tool result's structuredContent.
+_TOOLS_WITH_HIDDEN_LLM_COST = {"translate_nl_to_sql"}
+
+
+def _hidden_tokens(tool_name: str, result: Any) -> tuple[int, int]:
+    """The tokens ``tool_name``'s own internal LLM call spent, or (0, 0)."""
+    if tool_name not in _TOOLS_WITH_HIDDEN_LLM_COST:
+        return 0, 0
+    structured = getattr(result, "structuredContent", None) or {}
+    return int(structured.get("tokens_in") or 0), int(structured.get("tokens_out") or 0)
+
+
 async def run_trial(
     task: Task,
     *,
@@ -74,6 +90,7 @@ async def run_trial(
     tools = _anthropic_tools(listed.tools, allowed_tools)
     messages: list[dict[str, Any]] = [{"role": "user", "content": task.prompt}]
     tokens_in = tokens_out = turns = tool_calls = 0
+    hidden_tokens_in = hidden_tokens_out = 0
     final = ""
     try:
         for _ in range(max_turns):
@@ -88,6 +105,9 @@ async def run_trial(
                 for tu in tool_uses:
                     tool_calls += 1
                     out = await session.call_tool(tu["name"], tu.get("input") or {})
+                    hin, hout = _hidden_tokens(tu["name"], out)
+                    hidden_tokens_in += hin
+                    hidden_tokens_out += hout
                     results.append({"type": "tool_result", "tool_use_id": tu["id"], "content": _tool_result_text(out)})
                 messages.append({"role": "user", "content": results})
             else:
@@ -103,6 +123,8 @@ async def run_trial(
             tool_calls=tool_calls,
             passed=task.grade(final),
             final_answer=final,
+            hidden_tokens_in=hidden_tokens_in,
+            hidden_tokens_out=hidden_tokens_out,
         )
     except Exception as exc:
         return TrialResult(
@@ -116,4 +138,6 @@ async def run_trial(
             passed=False,
             final_answer=final,
             error=str(exc),
+            hidden_tokens_in=hidden_tokens_in,
+            hidden_tokens_out=hidden_tokens_out,
         )

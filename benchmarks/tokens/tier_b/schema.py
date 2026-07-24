@@ -31,10 +31,17 @@ class TrialResult:
     passed: bool
     final_answer: str
     error: str | None = None
+    # translate_nl_to_sql makes its own internal LLM call, invisible to the
+    # outer agent loop's own tokens_in/tokens_out above — this is that call's
+    # cost, folded in separately so the writeup can show both the outer-loop
+    # total and the internal-call breakdown. 0 for any trial that never calls
+    # it (including every baseline-arm trial, which doesn't have the tool).
+    hidden_tokens_in: int = 0
+    hidden_tokens_out: int = 0
 
     @property
     def total_tokens(self) -> int:
-        return self.tokens_in + self.tokens_out
+        return self.tokens_in + self.tokens_out + self.hidden_tokens_in + self.hidden_tokens_out
 
 
 @dataclass(frozen=True)

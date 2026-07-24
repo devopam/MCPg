@@ -54,6 +54,7 @@ _DEFAULT_MCPG_TOOLS = [
     "recommend_indexes",
     "find_sensitive_columns",
     "audit_database",
+    "translate_nl_to_sql",
 ]
 _READ_TIMEOUT = timedelta(seconds=60)
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from benchmarks.tokens.tier_b.agent import _hidden_tokens
 from benchmarks.tokens.tier_b.schema import ARM_BASELINE, ARM_MCPG, TrialResult, aggregate
 from benchmarks.tokens.tier_b.tasks import default_tasks
 
@@ -90,3 +91,65 @@ def test_aggregate_empty_is_safe() -> None:
     agg = aggregate([])
     assert agg["token_ratio"] == 0.0
     assert agg["mcpg"]["trials"] == 0
+
+
+def test_total_tokens_includes_hidden_tokens() -> None:
+    """translate_nl_to_sql's internal LLM call is invisible to the outer
+    agent loop's own tokens_in/tokens_out — total_tokens must still count it,
+    or the study would silently underweight MCPg's true cost."""
+    trial = TrialResult(
+        task_id="a",
+        arm=ARM_MCPG,
+        trial=0,
+        tokens_in=1000,
+        tokens_out=200,
+        turns=2,
+        tool_calls=1,
+        passed=True,
+        final_answer="",
+        hidden_tokens_in=300,
+        hidden_tokens_out=50,
+    )
+    assert trial.total_tokens == 1550
+
+
+def test_total_tokens_defaults_hidden_to_zero_when_unset() -> None:
+    """A trial that never calls translate_nl_to_sql (e.g. every baseline
+    trial, which doesn't have the tool at all) must not be penalized or
+    inflated — hidden tokens default to 0."""
+    trial = TrialResult(
+        task_id="a",
+        arm=ARM_BASELINE,
+        trial=0,
+        tokens_in=1000,
+        tokens_out=200,
+        turns=2,
+        tool_calls=1,
+        passed=True,
+        final_answer="",
+    )
+    assert trial.hidden_tokens_in == 0
+    assert trial.hidden_tokens_out == 0
+    assert trial.total_tokens == 1200
+
+
+class _FakeToolResult:
+    def __init__(self, structured: dict[str, object] | None) -> None:
+        self.structuredContent = structured
+
+
+def test_hidden_tokens_reads_translate_nl_to_sql_structured_content() -> None:
+    result = _FakeToolResult({"tokens_in": 42, "tokens_out": 17, "sql": "SELECT 1"})
+    assert _hidden_tokens("translate_nl_to_sql", result) == (42, 17)
+
+
+def test_hidden_tokens_ignores_other_tools() -> None:
+    """A tool that isn't known to make its own internal LLM call must never
+    contribute hidden tokens, even if its result happens to have similarly
+    named fields — only the documented allowlist counts."""
+    result = _FakeToolResult({"tokens_in": 999, "tokens_out": 999})
+    assert _hidden_tokens("run_select", result) == (0, 0)
+
+
+def test_hidden_tokens_defaults_to_zero_on_missing_structured_content() -> None:
+    assert _hidden_tokens("translate_nl_to_sql", _FakeToolResult(None)) == (0, 0)
