@@ -28,7 +28,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from mcpg.database import Database
-from mcpg.query import run_select
+from mcpg.query import DEFAULT_TIMEOUT_SECONDS, run_select
 
 
 class PathRunner(Protocol):
@@ -96,13 +96,22 @@ class NativeRunner:
 
 
 class ServerSideRunner:
-    """MCPg in-process: real ``run_select`` over the real driver + pool."""
+    """MCPg in-process: real ``run_select`` over the real driver + pool.
 
-    def __init__(self, database: Database) -> None:
+    ``timeout`` defaults to ``run_select``'s own product default (30s); the
+    runner CLI can raise it for heavy-tier queries at large scale factors
+    (e.g. SF10 TPC-H Q1) whose native runtime approaches that ceiling on
+    slower hardware. This affects only the in-process path measured here —
+    the e2e paths call the real, unmodified server tool, which is not
+    configurable this way, so they still enforce the product's 30s default.
+    """
+
+    def __init__(self, database: Database, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> None:
         self._database = database
+        self._timeout = timeout
 
     async def run_once(self, sql: str, *, max_rows: int) -> int:
         driver = self._database.driver()
         start = time.perf_counter_ns()
-        await run_select(driver, sql, max_rows=max_rows)
+        await run_select(driver, sql, max_rows=max_rows, timeout=self._timeout)
         return time.perf_counter_ns() - start
