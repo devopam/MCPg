@@ -175,7 +175,9 @@ committed [`perf-sf1-pg16`](https://github.com/devopam/MCPg/tree/main/benchmarks
 result and the whole qualitative shape. Pass `--scale-factor 10` for the **SF10
 reference run** used for the headline published figures (bigger data, longer
 run, dedicated hardware). Absolute numbers differ between the two; `t_db ==
-native` and the overhead breakdown do not.
+native` and the overhead breakdown do not. (A real, if non-dedicated-hardware,
+SF10 run is already committed and analyzed below in
+["SF10 validation run"](#sf10-validation-run--a-real-result-on-a-constrained-environment).)
 
 The run JSON embeds its full provenance (MCPg version, PostgreSQL version, host,
 scale factor, iteration count, git SHA, timestamp), so a published number always
@@ -240,6 +242,110 @@ server middleware — audit logging, rate limiting, tracing) adds a few
 milliseconds per call on top of server-side; and shipping a 100 k-row result
 through JSON-RPC is expensive (seconds), which is a further argument for
 paginating rather than bulk-fetching through a tool.
+
+## SF10 validation run — a real result, on a constrained environment
+
+Everything above is the committed **SF1** run. This section adds a real **TPC-H
+SF10** run — not the polished, dedicated-hardware headline scale the
+"reproduce it yourself" section above describes, but a genuine execution
+against 60 million `lineitem` rows on a resource-shared Docker Desktop
+container on Windows. It is included because the numbers are real and the
+result is useful: it tests whether the SF1 claims — `t_db == native`, the
+overhead-decomposition shape, the concurrency-throughput ratio — hold at 10×
+the data on a *worse*, not better, machine. They do. The absolute latencies
+below are **not** comparable to a dedicated-hardware run; the invariants are.
+
+**Methodology deviations from the default harness, stated plainly:**
+
+- **`--timeout 60`** (vs the product default of 30 s), applied to the
+  in-process server-side path only. TPC-H Q1 at SF10 runs ~25–30 s natively on
+  this hardware — close enough to the product's interactive-workload default
+  that the harness needed headroom to measure it at all. This required two
+  code additions to `benchmarks/perf/runner.py` (a `--timeout` CLI flag
+  threaded into `ServerSideRunner`, and deriving `MCPG_STATEMENT_TIMEOUT_MS`
+  from the same flag for the Postgres-level GUC) — both benchmark-harness-only
+  changes; the shipped product's `run_select` timeout is untouched.
+- **Postgres tuning**: `shared_buffers` raised from the stock 128 MB to 2 GB,
+  `effective_cache_size` to 6 GB, `work_mem` to 64 MB, and the container's
+  `--shm-size` raised from Docker's 64 MB default to 2 GB (the default was too
+  small for concurrent heavy-query memory use and produced a `DiskFull`
+  shared-memory error). All are operational tuning, not query-semantics
+  changes.
+- **`--e2e` omitted.** Across several earlier attempts, the run process was
+  terminated from outside Python (no traceback, no exception — the OS-level
+  process simply stopped) at unpredictable points, several times shortly after
+  the `e2e_stdio` end-to-end path logged an expected timeout warning. Dropping
+  `--e2e` for the final run avoided a further recurrence, but the correlation
+  was not conclusively proven as *causal* — one interruption happened with
+  `--e2e` absent entirely, so this is recorded as an unresolved harness/
+  environment instability on this machine, not a confirmed bug in the e2e
+  path or the product itself (native and server-side never crashed). The
+  harness was also given a **checkpointing** capability during this
+  investigation — `benchmarks/perf/runner.py` now writes
+  `benchmarks/results/perf-sf10.json` incrementally after every query rather
+  than only at the end, so a future interruption loses at most one query's
+  measurement, not the run.
+- Despite `--e2e` being off for the completed run, the **real, unconfigurable
+  30 s query timeout on the product's actual MCP-protocol path** was
+  independently observed and logged cleanly (as a caught, expected condition,
+  not a crash) on both `tpch_q1` and `tpch_q6` in two earlier partial runs
+  before `--e2e` was dropped — a genuine finding in its own right: at SF10 on
+  constrained hardware, several heavy analytical queries exceed the 30 s
+  ceiling an agent would hit over the real protocol. `MCPg`'s `run_select`
+  timeout has no environment-variable override; an operator running heavy
+  analytical workloads through the real MCP path at this scale would need
+  smaller/paginated queries, not a longer wait.
+- The **concurrency sweep** hit `sorry, too many clients already` at points
+  during the 64-client level — Postgres's `max_connections` wasn't sized for
+  the sweep's connection budget (documented in the harness itself: it needs
+  roughly `2 × max(concurrency levels)` plus headroom). The failure was caught
+  by the sweep's own resilience wrapper and did not abort the run; concurrency
+  data below at levels 4/16/64 is real but may be a partial sample of the
+  intended iteration count at the highest level.
+
+**`t_db == native`: 11 / 11 queries pass** — every query in the set, including
+all four TPC-H heavy queries at SF10, on this environment. This is the same
+invariant as the SF1 result, now confirmed at 10× the data and on
+meaningfully worse hardware.
+
+**Warm p50 latency, native vs MCPg server-side:**
+
+| Query | Native | MCPg server-side | Overhead |
+|---|---|---|---|
+| `SELECT 1` | 1.67 ms | 2.35 ms | +0.68 ms (+41 %) |
+| `orders_status_counts` (indexed `GROUP BY`) | 456 ms | 495 ms | +38 ms (+8 %) |
+| TPC-H Q3 | 12.40 s | 12.09 s | −0.31 s (−3 %, noise) |
+| TPC-H Q5 | 22.98 s | 23.29 s | +0.31 s (+1 %) |
+| TPC-H Q1 | 30.38 s | 30.37 s | −8 ms (≈0 %) |
+| TPC-H Q6 | 48.60 s | 49.52 s | +0.93 s (+2 %) |
+| 100 k-row fetch | 302 ms | 376 ms | +74 ms (serialization) |
+
+The shape matches SF1 exactly: on every query that does real work, MCPg's
+overhead is a rounding error (≤2 % on every TPC-H query, some runs even
+measuring server-side as *faster* than native — timing noise on multi-second
+queries, not a real effect). `SELECT 1` still shows the largest relative
+overhead (+41 %) for the same reason as SF1 — a fixed cost is a bigger share
+of a near-zero total — and it is still under a millisecond in absolute terms.
+
+**Decomposition of `SELECT 1`** (server-side, warm p50): `t_parse` 97 µs,
+`t_pool` 18 µs, `t_txn` 1.70 ms, `t_db` 540 µs, `t_serialize` 3 µs. The
+read-only transaction envelope (`t_txn`) is **~93 %** of the added overhead on
+this run — even more dominant than at SF1 — confirming the same structural
+finding: the fixed cost is almost entirely the safety guarantee (the
+`BEGIN … READ ONLY` / `ROLLBACK` round trip), not parsing or pool checkout.
+
+**Throughput under concurrency** (ultralight point lookups, 4/16/64 clients):
+native sustains roughly 1.7–2.0 k req/s across all three levels; server-side
+sustains roughly 1.0 k req/s — **server-side holds about half of native
+throughput**, the same ratio the SF1 run found, at every concurrency level
+tested. At 64 clients, native's p50 latency is ~32 ms versus server-side's
+~59–61 ms — again, roughly double, matching the throughput ratio from the
+other direction.
+
+**Provenance:** PostgreSQL 17.10, MCPg 0.6.11, Python 3.13.7,
+Windows-11-10.0.26200-SP0/AMD64, 20 warm iterations (5 discarded warm-up),
+`git_sha fc48f4d`. Full raw JSON: `benchmarks/results/perf-sf10.json`;
+rendered dashboard: `benchmarks/results/perf-sf10.html`.
 
 ## Scope, and what's next
 
