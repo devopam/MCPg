@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 252
+    "tool_count": 253
   },
   "tools": {
     "add_compression_policy": {
@@ -233,6 +233,9 @@
       "kind": "scalar"
     },
     "check_segment_health": {
+      "kind": "opaque"
+    },
+    "clear_cache": {
       "kind": "opaque"
     },
     "close_cursor": {

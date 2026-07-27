@@ -644,6 +644,7 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     # run_advisors / run_maintenance are ops not query.
     "run_advisors": "advisors",
     "run_maintenance": "operations_and_health",
+    "clear_cache": "operations_and_health",
     # tune_vector_index / migrate_vector_to_halfvec are vector_search.
     "tune_vector_index": "vector_search",
     # recommend_hnsw_ef_search — HNSW ef_search recall/speed advisor.
