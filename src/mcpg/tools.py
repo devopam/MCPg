@@ -197,6 +197,7 @@ async def _cached_call(  # noqa: UP047
     func: Callable[[], Awaitable[T]],
     *key_args: Any,
     database: str | None = None,
+    fresh: bool = False,
 ) -> T:
     """Execute and cache the result of the given callable if caching is enabled.
 
@@ -205,6 +206,13 @@ async def _cached_call(  # noqa: UP047
     cache, so a key that omits it would serve one database's cached result for
     another. Every read tool that accepts a ``database`` argument threads it
     here; ``None`` / ``"primary"`` both denote the primary.
+
+    ``fresh`` bypasses the cache **read** and re-queries the database, then
+    overwrites the cached entry so the next ordinary call is current too. The
+    cache is invalidated automatically by MCPg's own write/DDL tools, but it is
+    blind to *out-of-band* schema changes (a change made outside this server, or
+    another connection) until the entry's TTL expires — ``fresh`` is the
+    per-call escape hatch for a change→verify loop.
     """
     cache = ctx.request_context.lifespan_context.cache
     if not cache.is_enabled():
@@ -225,9 +233,10 @@ async def _cached_call(  # noqa: UP047
     arg_hash = hashlib.sha256(arg_bytes).hexdigest()
     key = f"{key_prefix}:{arg_hash}"
 
-    cached = await cache.get(key)
-    if cached is not None:
-        return cast(T, cached)
+    if not fresh:
+        cached = await cache.get(key)
+        if cached is not None:
+            return cast(T, cached)
 
     result = await func()
     await cache.set(key, result)
@@ -403,24 +412,26 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         name="describe_table",
         description=_with_example(
             "Describe the columns of a table, in ordinal order. "
+            "Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). "
             "Returns a list of objects with `name`, `data_type`, `nullable`, `default`, "
             "and `vector_dimension` (set only for pgvector `vector(N)` columns).",
             "describe_table(schema='public', table='users')",
         ),
     )
     async def describe_table(
-        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None
+        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None, fresh: bool = False
     ) -> list[introspection.ColumnInfo]:
         async def _run() -> list[introspection.ColumnInfo]:
             columns = await introspection.describe_table(_driver(ctx, database), schema, table)
             return columns
 
-        return await _cached_call(ctx, "describe_table", _run, schema, table, database=database)
+        return await _cached_call(ctx, "describe_table", _run, schema, table, database=database, fresh=fresh)
 
     @server.tool(
         name="list_indexes",
         description=_with_example(
             "List the indexes defined on a table. "
+            "Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). "
             "Returns a list of objects with `name`, `method` (btree / gin / gist / brin / hash / "
             "spgist / hnsw / ivfflat / …), `definition` (the CREATE INDEX statement), "
             "and `partitioned`.",
@@ -428,48 +439,50 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         ),
     )
     async def list_indexes(
-        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None
+        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None, fresh: bool = False
     ) -> list[introspection.IndexInfo]:
         async def _run() -> list[introspection.IndexInfo]:
             indexes = await introspection.list_indexes(_driver(ctx, database), schema, table)
             return indexes
 
-        return await _cached_call(ctx, "list_indexes", _run, schema, table, database=database)
+        return await _cached_call(ctx, "list_indexes", _run, schema, table, database=database, fresh=fresh)
 
     @server.tool(
         name="list_constraints",
         description=_with_example(
             "List a table's constraints — primary/foreign keys, unique, check, exclusion. "
+            "Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). "
             "Returns a list of objects with `name`, `type`, and `definition` (the constraint SQL).",
             "list_constraints(schema='public', table='orders')",
         ),
     )
     async def list_constraints(
-        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None
+        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None, fresh: bool = False
     ) -> list[introspection.ConstraintInfo]:
         async def _run() -> list[introspection.ConstraintInfo]:
             constraints = await introspection.list_constraints(_driver(ctx, database), schema, table)
             return constraints
 
-        return await _cached_call(ctx, "list_constraints", _run, schema, table, database=database)
+        return await _cached_call(ctx, "list_constraints", _run, schema, table, database=database, fresh=fresh)
 
     @server.tool(
         name="list_foreign_keys",
         description=_with_example(
             "List foreign keys in a schema, resolved to columns and referenced table. "
+            "Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). "
             "Returns a list of objects with `name`, `from_table`, `from_columns`, `to_schema`, "
             "`to_table`, `to_columns`.",
             "list_foreign_keys(schema='public')",
         ),
     )
     async def list_foreign_keys(
-        ctx: _Ctx, schema: str, database: _DatabaseArg = None
+        ctx: _Ctx, schema: str, database: _DatabaseArg = None, fresh: bool = False
     ) -> list[introspection.ForeignKeyInfo]:
         async def _run() -> list[introspection.ForeignKeyInfo]:
             fks = await introspection.list_foreign_keys(_driver(ctx, database), schema)
             return fks
 
-        return await _cached_call(ctx, "list_foreign_keys", _run, schema, database=database)
+        return await _cached_call(ctx, "list_foreign_keys", _run, schema, database=database, fresh=fresh)
 
     @server.tool(
         name="list_views",
@@ -968,14 +981,15 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         name="get_compact_schema",
         description=(
             "Return a highly condensed, token-efficient text summary of a schema's "
-            "tables, columns, primary keys, nullability, and relations to save context window tokens."
+            "tables, columns, primary keys, nullability, and relations to save context window tokens. "
+            "Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change)."
         ),
     )
-    async def get_compact_schema(ctx: _Ctx, schema: str, database: _DatabaseArg = None) -> str:
+    async def get_compact_schema(ctx: _Ctx, schema: str, database: _DatabaseArg = None, fresh: bool = False) -> str:
         async def _run() -> str:
             return await introspection.get_compact_schema(_driver(ctx, database), schema)
 
-        return await _cached_call(ctx, "get_compact_schema", _run, schema, database=database)
+        return await _cached_call(ctx, "get_compact_schema", _run, schema, database=database, fresh=fresh)
 
     @server.tool(
         name="read_migration_history",
@@ -3284,13 +3298,14 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             "and health audit over the specified schema. Scans memory, checkpoints, "
             "temp file spills, contention locks, dead tuple cleanliness, and "
             "optionally scans custom logging tables. "
+            "Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). "
             "Returns an object with `timestamp`, `database`, `version`, `overall_health` "
             "('GOOD' / 'WARNING' / 'CRITICAL'), `health_score` (int), `categories` "
             "(per-area results), `top_issues`, `recommendations`, and `raw_stats_snapshot`."
         ),
     )
     async def audit_database(
-        ctx: _Ctx, schema: str, log_table: str | None = None, database: _DatabaseArg = None
+        ctx: _Ctx, schema: str, log_table: str | None = None, database: _DatabaseArg = None, fresh: bool = False
     ) -> audit.AuditReport:
         _check_heavy_diagnostics(ctx, "audit_database")
 
@@ -3298,7 +3313,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             report = await audit.audit_database(_driver(ctx, database), schema, log_table=log_table)
             return report
 
-        return await _cached_call(ctx, "audit_database", _run, schema, log_table, database=database)
+        return await _cached_call(ctx, "audit_database", _run, schema, log_table, database=database, fresh=fresh)
 
     @server.tool(
         name="analyze_workload",
@@ -3389,13 +3404,17 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         name="recommend_indexes",
         description=_with_example(
             "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan. "
+            "Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). "
             "Returns a list of objects with `schema`, `table`, `live_tuples`, `sequential_scans`, "
             "`index_scans`, and a `reason` explaining why the table is a candidate.",
             "recommend_indexes(min_live_tuples=10000)",
         ),
     )
     async def recommend_indexes(
-        ctx: _Ctx, min_live_tuples: int = indexing.DEFAULT_MIN_LIVE_TUPLES, database: _DatabaseArg = None
+        ctx: _Ctx,
+        min_live_tuples: int = indexing.DEFAULT_MIN_LIVE_TUPLES,
+        database: _DatabaseArg = None,
+        fresh: bool = False,
     ) -> list[indexing.IndexRecommendation]:
         _check_heavy_diagnostics(ctx, "recommend_indexes")
 
@@ -3403,7 +3422,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
             recommendations = await indexing.recommend_indexes(_driver(ctx, database), min_live_tuples=min_live_tuples)
             return recommendations
 
-        return await _cached_call(ctx, "recommend_indexes", _run, min_live_tuples, database=database)
+        return await _cached_call(ctx, "recommend_indexes", _run, min_live_tuples, database=database, fresh=fresh)
 
     @server.tool(
         name="recommend_index_drops",
@@ -6118,6 +6137,27 @@ def _register_maintenance(server: FastMCP[AppContext]) -> None:
         )
         return result
 
+    @server.tool(
+        name="clear_cache",
+        description=(
+            "Flush MCPg's server-side result cache — the cache that speeds up schema "
+            "introspection and advisor reads. MCPg clears this cache automatically after "
+            "its own write / DDL tools, but it cannot observe schema changes made "
+            "out-of-band (another connection, or a change made outside MCPg) until each "
+            "entry's TTL (MCPG_CACHE_TTL_SECONDS, default 300s) expires — call this after "
+            "such a change so the next read is live. For a single tool, prefer its "
+            "`fresh=true` argument. Touches no database data. Available when writes are "
+            "permitted (restricted or unrestricted mode). Returns an object with `status` "
+            "('cleared') and `detail`."
+        ),
+    )
+    async def clear_cache(ctx: _Ctx) -> dict[str, str]:
+        await ctx.request_context.lifespan_context.cache.clear()
+        return {
+            "status": "cleared",
+            "detail": "MCPg result cache flushed; the next call to each cached read re-queries the database.",
+        }
+
 
 def _register_backend_control(server: FastMCP[AppContext]) -> None:
     @server.tool(
@@ -6812,6 +6852,8 @@ _NON_DESTRUCTIVE_WRITE_TOOLS = frozenset(
         "reindex_turboquant_index",
         "repack_table",
         "run_maintenance",
+        # Flushes MCPg's own result cache only — no database data touched.
+        "clear_cache",
         "prewarm_recommended",
         "prewarm_relation",
         # Always rolls back.

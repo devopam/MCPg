@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Cache-freshness controls for out-of-band schema changes.** MCPg's read
+  cache is invalidated automatically by MCPg's own write/DDL tools, but it
+  could serve stale introspection/advisor results for up to
+  `MCPG_CACHE_TTL_SECONDS` (default 300s) after a schema change made *outside*
+  MCPg (a direct `psql`/migration change, another connection, or a second
+  process) — e.g. re-running index/constraint validation after altering a
+  foreign key returned the pre-change answer. Two escape hatches:
+  - a per-call **`fresh: bool = False`** argument on the introspection/advisor
+    reads (`describe_table`, `list_indexes`, `list_constraints`,
+    `list_foreign_keys`, `get_compact_schema`, `recommend_indexes`,
+    `audit_database`) — bypasses the cache read, re-queries live, and refreshes
+    the entry;
+  - a new **`clear_cache`** tool — a full flush for a known out-of-band change,
+    gated to write-capable modes (not exposed on the read-only surface).
+
+  Tool surface **252 → 253**. `docs/user-guide.md` caching section corrected
+  (automatic invalidation covers through-MCPg mutations, not arbitrary
+  out-of-band DDL).
+
 ### Security
 
 - **Bumped `mcp` SDK ≥ 1.28.1** (from `≥ 1.25.0`) to clear three advisories in

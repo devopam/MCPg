@@ -57,8 +57,10 @@ raw `EXPLAIN` JSON, which is mostly nested bookkeeping an agent must wade throug
 
 ## The break-even — the honest centerpiece
 
-MCPg's full surface is **252 tools**, and every tool definition costs context
-tokens on every turn. A "tokens saved" number that ignores that is dishonest,
+MCPg's full surface was **252 tools** at the time of this SF1 run (the committed
+JSON is that snapshot; the surface grows as tools are added), and every tool
+definition costs context tokens on every turn. A "tokens saved" number that
+ignores that is dishonest,
 and a reviewer would rightly pounce. So we measure it head-on — a bare
 `run_select` tool is **193** tokens, and MCPg's surface is far larger. With a
 mean per-call saving of ~2,750 tokens per database task, the surface is repaid
