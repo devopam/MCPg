@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.12] - 2026-07-28
+
 ### Added
 
 - **`run_analytical_query` — long-running reads on an isolated pool.**
