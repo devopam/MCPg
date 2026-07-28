@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - run: uv sync --frozen
+      - run: uv sync --locked
       - name: Sanity check — tag matches package version
         # Tag is the source of truth for the release; the version is
         # single-sourced in src/mcpg/__init__.py (__version__) and read

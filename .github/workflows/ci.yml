@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - run: uv sync --frozen
+      - run: uv sync --locked
       - name: ruff (lint)
         run: uv run ruff check .
       - name: ruff (format)
@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - run: uv sync --frozen
+      - run: uv sync --locked
       # pip-audit consults the PyPI advisory DB + OSV.dev for known
       # CVEs in resolved dependencies. ``--strict`` upgrades warnings
       # to failures so a vulnerable transitive dep blocks merge. We
@@ -193,7 +193,7 @@ jobs:
         with:
           python-version: "3.14"
           enable-cache: true
-      - run: uv sync --frozen
+      - run: uv sync --locked
       # Runs unit, vendored-kernel, and integration suites with the coverage
       # gate (fail_under = 90, authored code only) against each PG version.
       - name: pytest
