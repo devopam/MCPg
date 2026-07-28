@@ -2989,12 +2989,14 @@ def _register_query(server: FastMCP[AppContext]) -> None:
     ) -> query.QueryResult:
         try:
             return await query.run_select(_driver(ctx, database), sql, max_rows=max_rows)
-        except query.QueryError as exc:
-            # Self-correcting fallback: when a query hit the short fast-path
-            # timeout and the analytical path is available, point the agent at
-            # it so it needn't predict duration up front.
-            settings = ctx.request_context.lifespan_context.settings
-            if settings.enable_analytical_queries and "timed out" in str(exc).lower():
+        except query.QueryTimeoutError as exc:
+            # Self-correcting fallback: a timeout — whether the client-side
+            # wall-clock cap or a server-side statement_timeout — is surfaced
+            # as a typed QueryTimeoutError, so we branch on the type instead of
+            # matching message text. Point the agent at the analytical path,
+            # but only when it's actually wired up (a runner is present); the
+            # runner is the source of truth, not the settings flag.
+            if ctx.request_context.lifespan_context.analytical_runner is not None:
                 raise query.QueryError(
                     f"{exc} If this is a legitimate long-running analytical query, retry with "
                     "run_analytical_query — a higher, bounded timeout on an isolated connection."
@@ -7025,7 +7027,9 @@ def _apply_tool_wire_metadata(server: FastMCP[AppContext], read_only_names: set[
             tool.annotations = existing.model_copy(update=derived)
 
 
-def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
+def register_tools(
+    server: FastMCP[AppContext], settings: Settings, *, analytical_available: bool | None = None
+) -> None:
     """Register the MCP tools permitted by the configured access mode.
 
     ``get_server_info`` is always available. Read tools (introspection,
@@ -7036,7 +7040,15 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
     MCP resources (the ``mcpg://…`` preload surface) are registered
     alongside READ tools — they're conceptually a read-shape operation
     and they share the same gate.
+
+    ``analytical_available`` decides whether ``run_analytical_query`` is
+    registered. ``create_server`` passes ``True`` only when an
+    :class:`~mcpg.analytical.AnalyticalRunner` will actually back the tool, so
+    the surface never advertises a tool that would error on call. Left
+    ``None`` (the default, used by contract tests that register directly), it
+    falls back to ``settings.enable_analytical_queries``.
     """
+    analytical_on = settings.enable_analytical_queries if analytical_available is None else analytical_available
     _register_server_info(server)
     if is_permitted(settings.access_mode, Capability.READ):
         _register_resources(server)
@@ -7054,7 +7066,7 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_data_movement(server)
         _register_audit_trail(server)
         _register_query(server)
-        if settings.enable_analytical_queries:
+        if analytical_on:
             _register_analytical(server)
         _register_health(server)
         _register_liveops(server)

@@ -38,6 +38,54 @@ class QueryError(Exception):
     """Raised when a query is rejected as unsafe or fails to execute."""
 
 
+class QueryTimeoutError(QueryError):
+    """Raised when a query exceeds its execution budget.
+
+    A subclass of :class:`QueryError` so existing ``except QueryError``
+    handlers keep catching it; callers that care specifically about a
+    timeout (e.g. to point the agent at :func:`run_analytical_query`)
+    can branch on this type instead of string-matching the message.
+    """
+
+
+# SQLSTATE 57014 (``query_canceled``) is what PostgreSQL raises when a
+# ``statement_timeout`` fires — psycopg surfaces it as an exception carrying
+# ``.sqlstate == "57014"``.
+_PG_QUERY_CANCELED_SQLSTATE = "57014"
+
+
+def _is_timeout_exc(exc: BaseException) -> bool:
+    """Return True if ``exc`` originates from a query-execution timeout.
+
+    Two independent timeout mechanisms guard query execution, and both must
+    be recognised without depending on message wording (locale-sensitive and
+    brittle):
+
+    * the **client-side** wall-clock cap — ``asyncio.timeout`` /
+      ``asyncio.wait_for`` raise ``TimeoutError``. ``SafeSqlDriver`` re-wraps
+      that in a ``ValueError`` but chains the original as ``__cause__``.
+    * the **server-side** ``statement_timeout`` — psycopg raises with
+      SQLSTATE ``57014`` (``query_canceled``).
+
+    We walk the whole exception chain rather than just the immediate
+    exception and its direct ``__cause__``: a driver or caller may add extra
+    wrapping layers, and an implicit re-raise chains via ``__context__``
+    rather than ``__cause__``. Each link is checked for both signals;
+    ``__cause__`` is preferred over ``__context__`` (the explicit link), and
+    a ``seen`` set guards the rare cyclic chain.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, TimeoutError):
+            return True
+        if getattr(current, "sqlstate", None) == _PG_QUERY_CANCELED_SQLSTATE:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 @dataclass(frozen=True)
 class QueryResult:
     """The outcome of a read-only query.
@@ -81,6 +129,8 @@ async def run_select(
         # SafeSqlDriver parses and validates this runtime SQL before running it.
         rows = await safe_driver.execute_query(sql)
     except Exception as exc:
+        if _is_timeout_exc(exc):
+            raise QueryTimeoutError(str(exc)) from exc
         raise QueryError(str(exc)) from exc
 
     all_rows = [dict(row.cells) for row in rows or []]
@@ -185,6 +235,8 @@ async def run_select_tuned(
             timeout=timeout,
         )
     except Exception as exc:
+        if _is_timeout_exc(exc):
+            raise QueryTimeoutError(str(exc)) from exc
         raise QueryError(str(exc)) from exc
 
     all_rows = [dict(row.cells) for row in rows or []]

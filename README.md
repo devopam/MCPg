@@ -298,6 +298,10 @@ are one-shot commands, not configuration). The only required one is
 | `MCPG_POOL_MAX_SIZE` | `5` | Maximum pool connections. Must be ≥ `MCPG_POOL_MIN_SIZE`. |
 | `MCPG_STATEMENT_TIMEOUT_MS` | `30000` | Per-session `statement_timeout` set on connection checkout. Runaway queries self-terminate. |
 | `MCPG_LOCK_TIMEOUT_MS` | `5000` | Per-session `lock_timeout`. Hanging lock waits self-terminate. |
+| `MCPG_ENABLE_ANALYTICAL_QUERIES` | `true` | Expose `run_analytical_query` (long-running reads on an isolated pool). Set `false` to withdraw the tool. |
+| `MCPG_ANALYTICAL_TIMEOUT_MS` | `120000` | Default per-call budget for `run_analytical_query` (2 min). |
+| `MCPG_ANALYTICAL_MAX_TIMEOUT_MS` | `600000` | Hard ceiling for `run_analytical_query`; a per-call `timeout_ms` is clamped to this (10 min). Must be ≥ `MCPG_ANALYTICAL_TIMEOUT_MS`. |
+| `MCPG_ANALYTICAL_MAX_CONCURRENCY` | `2` | Size of the isolated analytical pool — max simultaneous `run_analytical_query` calls. |
 | `MCPG_ALLOW_INSECURE_TLS` | `false` | Bypass the startup TLS check that refuses remote DSNs without `sslmode=require` (or stronger). Loopback hosts are always exempt. |
 | `MCPG_SHUTDOWN_DRAIN_SECONDS` | `30` | On SIGTERM, wait up to this long for in-flight tool calls to finish before closing the pool and cursors. |
 

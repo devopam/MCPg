@@ -193,6 +193,7 @@ def create_server(
     database: Database | None = None,
     listen_manager: ListenManager | None = None,
     cursor_manager: CursorManager | None = None,
+    analytical_runner: AnalyticalRunner | None = None,
 ) -> FastMCP[AppContext]:
     """Construct a configured FastMCP server.
 
@@ -203,6 +204,11 @@ def create_server(
         listen_manager: Optional pre-built listen manager (used by tests
             to inject a fake connection factory); otherwise a default
             one is created from ``settings``.
+        analytical_runner: Optional pre-built analytical runner. When omitted
+            a real one is built only in production (i.e. when ``database`` is
+            also omitted) and analytical queries are enabled. Tests inject one
+            here to exercise ``run_analytical_query`` against a fake database
+            without standing up a second real pool.
     """
     from mcpg.obs_logging import setup_logging
 
@@ -215,13 +221,20 @@ def create_server(
         else ListenManager(database_url=settings.database_url, queue_max=settings.listen_queue_max)
     )
     cm = cursor_manager if cursor_manager is not None else CursorManager(database_url=settings.database_url)
-    # Build the (real, second-pool) analytical runner only when the main
-    # database wasn't injected — i.e. production. Tests inject a mock
-    # ``database``; building a real analytical pool there would try to connect
-    # its own pool to the (fake) DSN and hang. The tool's registration is gated
-    # separately on ``enable_analytical_queries`` (register_tools), so a mock
-    # setup still advertises it; calling it there hits the defensive None check.
-    ar = AnalyticalRunner(settings) if (database is None and settings.enable_analytical_queries) else None
+    # ``enable_analytical_queries`` is the authoritative off-switch: when it's
+    # false we neither build nor honour an injected runner, so the tool is
+    # never registered regardless of injection (an operator's config wins over
+    # a caller-supplied runner). When it's true, use an injected runner if
+    # given; otherwise build the real (second-pool) one — but only in
+    # production (no injected ``database``). Tests inject a mock ``database``;
+    # building a real analytical pool there would try to connect its own pool
+    # to the (fake) DSN and hang, so a test that wants a functional
+    # ``run_analytical_query`` injects its own runner. Registration is gated on
+    # the runner actually existing (below), so the surface never advertises a
+    # tool that has no runner behind it.
+    ar = analytical_runner if settings.enable_analytical_queries else None
+    if ar is None and database is None and settings.enable_analytical_queries:
+        ar = AnalyticalRunner(settings)
     server: AuditedFastMCP = AuditedFastMCP(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
@@ -240,7 +253,7 @@ def create_server(
         heavy_max=settings.rate_limit_heavy_max,
         heavy_window=settings.rate_limit_heavy_window,
     )
-    register_tools(server, settings)
+    register_tools(server, settings, analytical_available=ar is not None)
     return server
 
 
