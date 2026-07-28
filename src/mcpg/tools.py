@@ -2987,8 +2987,19 @@ def _register_query(server: FastMCP[AppContext]) -> None:
     async def run_select(
         ctx: _Ctx, sql: str, max_rows: int = query.DEFAULT_MAX_ROWS, database: _DatabaseArg = None
     ) -> query.QueryResult:
-        result = await query.run_select(_driver(ctx, database), sql, max_rows=max_rows)
-        return result
+        try:
+            return await query.run_select(_driver(ctx, database), sql, max_rows=max_rows)
+        except query.QueryError as exc:
+            # Self-correcting fallback: when a query hit the short fast-path
+            # timeout and the analytical path is available, point the agent at
+            # it so it needn't predict duration up front.
+            settings = ctx.request_context.lifespan_context.settings
+            if settings.enable_analytical_queries and "timed out" in str(exc).lower():
+                raise query.QueryError(
+                    f"{exc} If this is a legitimate long-running analytical query, retry with "
+                    "run_analytical_query — a higher, bounded timeout on an isolated connection."
+                ) from exc
+            raise
 
     @server.tool(
         name="run_select_tuned",
@@ -3212,6 +3223,37 @@ def _register_query(server: FastMCP[AppContext]) -> None:
             max_rows=max_rows,
         )
         return result
+
+
+def _register_analytical(server: FastMCP[AppContext]) -> None:
+    @server.tool(
+        name="run_analytical_query",
+        description=_with_example(
+            "Run a read-only SELECT that may take longer than the standard limit — for "
+            "genuine analytical work (large aggregations, multi-table joins, window functions, "
+            "DISTINCT/GROUP BY over millions of rows). Validated by the same allowlist as "
+            "run_select, but executed on a DEDICATED connection pool (isolated from the "
+            "fast-path tools) with an elevated, bounded timeout. Prefer run_select for ordinary "
+            "queries; reach for this only when a query legitimately needs more time. "
+            "`timeout_ms` overrides the per-call budget (clamped to the server's configured "
+            "maximum, MCPG_ANALYTICAL_MAX_TIMEOUT_MS); `work_mem` (e.g. '256MB') elevates sort/"
+            "hash memory for this statement. Runs against the primary database. "
+            "Returns an object with `columns`, `rows`, `row_count`, and `truncated` "
+            "(true when more rows than `max_rows` were produced) — same shape as run_select.",
+            "run_analytical_query(sql='SELECT c, count(*) FROM big GROUP BY c', timeout_ms=180000)",
+        ),
+    )
+    async def run_analytical_query(
+        ctx: _Ctx,
+        sql: str,
+        max_rows: int = query.DEFAULT_MAX_ROWS,
+        timeout_ms: int | None = None,
+        work_mem: str | None = None,
+    ) -> query.QueryResult:
+        runner = ctx.request_context.lifespan_context.analytical_runner
+        if runner is None:  # defensive: tool only registered when enabled
+            raise query.QueryError("analytical queries are disabled (MCPG_ENABLE_ANALYTICAL_QUERIES=false)")
+        return await runner.run(sql, timeout_ms=timeout_ms, max_rows=max_rows, work_mem=work_mem)
 
 
 def _register_health(server: FastMCP[AppContext]) -> None:
@@ -7012,6 +7054,8 @@ def register_tools(server: FastMCP[AppContext], settings: Settings) -> None:
         _register_data_movement(server)
         _register_audit_trail(server)
         _register_query(server)
+        if settings.enable_analytical_queries:
+            _register_analytical(server)
         _register_health(server)
         _register_liveops(server)
         _register_turboquant_reads(server)

@@ -64,7 +64,7 @@ flowchart TD
 ---
 
 <!-- BEGIN generated: module-map (python tools/generate_doc_tables.py --modules) -->
-## Module map (103 modules)
+## Module map (104 modules)
 
 Every `mcpg.*` module and what it owns, alphabetical. The layered
 request path through these lives in the [Overview](#overview) diagram;
@@ -76,6 +76,7 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.about` | MCPg self-description. |
 | `mcpg.advisors` | Schema advisors — codified lint rules over the PG catalog. |
 | `mcpg.aio` | `AIO` — PG 19 asynchronous-I/O subsystem coverage. |
+| `mcpg.analytical` | Long-running analytical read path — an isolated pool, capped concurrency. |
 | `mcpg.audit` | Audit logging of tool invocations and DBA database performance checks. |
 | `mcpg.audit_integrity` | Audit trail verification utility. |
 | `mcpg.audit_nl2sql` | NL→SQL audit table — partitioned, compressed, RLS-gated. |

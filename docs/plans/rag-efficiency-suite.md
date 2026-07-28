@@ -6,7 +6,7 @@
 > `analyze_topk_stability`, `analyze_rerank_score_distribution`,
 > `analyze_rerank_ndcg`, `recommend_rerank_strategy`) plus the telemetry
 > capture/threshold tools — see the
-> [tool index](../tools.md#tool-index-253-tools). Kept for design
+> [tool index](../tools.md#tool-index-254-tools). Kept for design
 > rationale; no longer a live roadmap. Current gaps live in
 > [feature-shortlist.md](../feature-shortlist.md).
 

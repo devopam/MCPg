@@ -6,12 +6,12 @@ surface, not the full catalogue — the exhaustive per-tool reference is
 in [`tools.md`](tools.md), and task-oriented recipes live in
 [`cookbook.md`](cookbook.md).
 
-**253 tools** across 19 capability areas as of trunk. Each line shows
+**254 tools** across 19 capability areas as of trunk. Each line shows
 the tool name + how its parameters land (required first, common
 defaults after). Capability gates are noted in section titles where
 they apply. A few specialist areas (PITR, WarehousePG MPP, Redis FDW,
 SQL/PGQ property graphs, `pg_prewarm`, `pg_repack`, PG 19 runtime
-toggles) aren't walked below — see the [tool index](tools.md#tool-index-253-tools)
+toggles) aren't walked below — see the [tool index](tools.md#tool-index-254-tools)
 for those.
 
 ---

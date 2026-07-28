@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ContentBlock
 
 from mcpg import __version__, about, audit
+from mcpg.analytical import AnalyticalRunner
 from mcpg.config import Settings, Transport
 from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
@@ -115,6 +116,7 @@ def make_lifespan(
     database: Database,
     listen_manager: ListenManager,
     cursor_manager: CursorManager,
+    analytical_runner: AnalyticalRunner | None = None,
 ) -> Callable[[FastMCP[AppContext]], AbstractAsyncContextManager[AppContext]]:
     """Build the server lifespan: open the database on start, close on stop.
 
@@ -137,6 +139,8 @@ def make_lifespan(
             namespace=cache_namespace(settings.database_url),
         )
         await cache_manager.start()
+        if analytical_runner is not None:
+            await analytical_runner.start()
         try:
             async with database, listen_manager, cursor_manager:
                 yield AppContext(
@@ -145,8 +149,11 @@ def make_lifespan(
                     listen_manager=listen_manager,
                     cursor_manager=cursor_manager,
                     cache=cache_manager,
+                    analytical_runner=analytical_runner,
                 )
         finally:
+            if analytical_runner is not None:
+                await analytical_runner.close()
             if hasattr(_server, "in_flight_calls"):
                 import asyncio
                 import logging
@@ -208,11 +215,18 @@ def create_server(
         else ListenManager(database_url=settings.database_url, queue_max=settings.listen_queue_max)
     )
     cm = cursor_manager if cursor_manager is not None else CursorManager(database_url=settings.database_url)
+    # Build the (real, second-pool) analytical runner only when the main
+    # database wasn't injected — i.e. production. Tests inject a mock
+    # ``database``; building a real analytical pool there would try to connect
+    # its own pool to the (fake) DSN and hang. The tool's registration is gated
+    # separately on ``enable_analytical_queries`` (register_tools), so a mock
+    # setup still advertises it; calling it there hits the defensive None check.
+    ar = AnalyticalRunner(settings) if (database is None and settings.enable_analytical_queries) else None
     server: AuditedFastMCP = AuditedFastMCP(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
         version=__version__,
-        lifespan=make_lifespan(settings, db, lm, cm),
+        lifespan=make_lifespan(settings, db, lm, cm, ar),
         host=settings.http_host,
         port=settings.http_port,
     )
