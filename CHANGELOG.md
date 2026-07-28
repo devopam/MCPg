@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`run_analytical_query` — long-running reads on an isolated pool.**
+  `run_select` is bounded to a short (~30s) timeout on the shared 5-connection
+  pool so an agent can't pin a connection with a runaway query — which made
+  genuine analytical queries (large aggregations / joins / window functions)
+  infeasible, and `MCPG_STATEMENT_TIMEOUT_MS` didn't help (it moves Postgres's
+  `statement_timeout` but not the client-side asyncio cap). The new tool runs a
+  read-only SELECT through the **same** allowlist + tenancy/RLS + read-only
+  transaction, but on a **dedicated connection pool** isolated from the main
+  one, with an **elevated, bounded** timeout — so a slow query can never starve
+  the fast-path tools. A per-call `timeout_ms` (clamped to the max) and optional
+  `work_mem` are exposed; a `run_select` timeout now points the agent at the
+  tool. Boot-time knobs: `MCPG_ENABLE_ANALYTICAL_QUERIES` (default true, gates
+  the tool — it's a READ tool, so set false to withdraw it from an anonymous
+  read-only deployment), `MCPG_ANALYTICAL_TIMEOUT_MS` (default 120000),
+  `MCPG_ANALYTICAL_MAX_TIMEOUT_MS` (600000), `MCPG_ANALYTICAL_MAX_CONCURRENCY`
+  (2 — the isolated pool size, which is also the concurrency cap). Primary
+  database only for now. Tool surface **253 → 254**.
+
 - **Cache-freshness controls for out-of-band schema changes.** MCPg's read
   cache is invalidated automatically by MCPg's own write/DDL tools, but it
   could serve stale introspection/advisor results for up to

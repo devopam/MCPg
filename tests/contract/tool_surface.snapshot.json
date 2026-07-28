@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 253
+    "tool_count": 254
   },
   "tools": [
     {
@@ -7736,6 +7736,52 @@
         "type": "object"
       },
       "name": "run_advisors"
+    },
+    {
+      "description": "Run a read-only SELECT that may take longer than the standard limit — for genuine analytical work (large aggregations, multi-table joins, window functions, DISTINCT/GROUP BY over millions of rows). Validated by the same allowlist as run_select, but executed on a DEDICATED connection pool (isolated from the fast-path tools) with an elevated, bounded timeout. Prefer run_select for ordinary queries; reach for this only when a query legitimately needs more time. `timeout_ms` overrides the per-call budget (clamped to the server's configured maximum, MCPG_ANALYTICAL_MAX_TIMEOUT_MS); `work_mem` (e.g. '256MB') elevates sort/hash memory for this statement. Runs against the primary database. Returns an object with `columns`, `rows`, `row_count`, and `truncated` (true when more rows than `max_rows` were produced) — same shape as run_select.\n\nExample: `run_analytical_query(sql='SELECT c, count(*) FROM big GROUP BY c', timeout_ms=180000)`",
+      "inputSchema": {
+        "properties": {
+          "max_rows": {
+            "default": 1000,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timeout Ms"
+          },
+          "work_mem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Work Mem"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "run_analytical_queryArguments",
+        "type": "object"
+      },
+      "name": "run_analytical_query"
     },
     {
       "description": "Execute an openCypher query on a specific graph database. Supports read queries (MATCH) and write/modifying queries (CREATE, SET, DELETE, MERGE, REMOVE). Returns an object with `columns` (list of result column names) and `rows` (list of result rows as dicts keyed by column).",

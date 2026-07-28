@@ -38,7 +38,7 @@ first time, skim it as a reference after.
 ## What MCPg is
 
 MCPg is an MCP server that exposes a PostgreSQL database to an AI
-agent through a fixed, audited set of **253 tools** (read-only mode exposes ~185). The agent never
+agent through a fixed, audited set of **254 tools** (read-only mode exposes ~186). The agent never
 gets a raw database connection — it can only call the tools MCPg
 registers, every call is validated, and every call is logged. MCPg
 runs as a single async process and ships as both a PyPI package
@@ -149,6 +149,26 @@ validated against the SafeSQL allowlist, executed under a forced
 read-only transaction, and capped with a `truncated` flag.
 `run_select_parallel(statements)` fans out concurrently with
 per-statement error isolation.
+
+**Long-running analytical queries.** `run_select` is bounded to a short
+timeout (~30 s) on the shared pool so an agent can't pin a connection with a
+runaway query. For genuine analytical work that needs more time (large
+aggregations, multi-table joins, window functions), use
+`run_analytical_query(sql, timeout_ms=…, work_mem=…)`. It validates SQL through
+the same allowlist and applies the same tenancy/RLS, but runs on a **dedicated,
+isolated connection pool** with an elevated, bounded timeout — so a slow query
+can never starve the fast-path tools. Boot-time knobs (all optional):
+
+```bash
+export MCPG_ENABLE_ANALYTICAL_QUERIES=true   # gate the tool (default true; set false to withdraw it)
+export MCPG_ANALYTICAL_TIMEOUT_MS=120000     # default per-call budget (2 min)
+export MCPG_ANALYTICAL_MAX_TIMEOUT_MS=600000 # hard ceiling; a per-call timeout_ms is clamped to this (10 min)
+export MCPG_ANALYTICAL_MAX_CONCURRENCY=2     # max simultaneous analytical queries (isolated pool size)
+```
+
+If a `run_select` call times out, the error points the agent at
+`run_analytical_query` — so it needn't predict a query's duration up front. The
+analytical path targets the **primary** database.
 
 `explain_query(sql)` returns a query plan; `analyze_query_plan(sql)`
 summarises it (cost, node types, sequential scans);

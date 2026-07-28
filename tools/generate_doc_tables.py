@@ -49,7 +49,7 @@ _TOOL_ROWS: list[tuple[str, list[str], str]] = [
     ("Catalog — schemas / tables / columns", ["@catalog"], "read"),
     ("Catalog — compact", ["get_compact_schema"], "read"),
     ("Visualisation & structural diff", ["_register_diagrams", "_register_schema_diff"], "read"),
-    ("Query & cursors", ["_register_query"], "read"),
+    ("Query & cursors", ["_register_query", "_register_analytical"], "read"),
     (
         "Health, tuning & advisors",
         ["@health_rest", "@advisors_rest", "_register_composite"],

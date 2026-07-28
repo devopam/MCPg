@@ -6,7 +6,7 @@ stays true; verify anything here against the code before relying on it.
 ## What MCPg is
 
 A production-grade PostgreSQL MCP server. Single-process, async
-(`asyncio`), Python 3.12–3.14. **253 MCP tools** (read-only mode exposes
+(`asyncio`), Python 3.12–3.14. **254 MCP tools** (read-only mode exposes
 a subset). Ships to PyPI (`mcpg`), GHCR, the MCP registry, Smithery, and
 a read-only HF Spaces demo.
 
