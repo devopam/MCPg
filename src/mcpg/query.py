@@ -63,14 +63,27 @@ def _is_timeout_exc(exc: BaseException) -> bool:
 
     * the **client-side** wall-clock cap — ``asyncio.timeout`` /
       ``asyncio.wait_for`` raise ``TimeoutError``. ``SafeSqlDriver`` re-wraps
-      that in a ``ValueError`` but chains the original as ``__cause__``, so we
-      check both the exception and its cause.
+      that in a ``ValueError`` but chains the original as ``__cause__``.
     * the **server-side** ``statement_timeout`` — psycopg raises with
-      SQLSTATE ``57014`` (``query_canceled``), which propagates unwrapped.
+      SQLSTATE ``57014`` (``query_canceled``).
+
+    We walk the whole exception chain rather than just the immediate
+    exception and its direct ``__cause__``: a driver or caller may add extra
+    wrapping layers, and an implicit re-raise chains via ``__context__``
+    rather than ``__cause__``. Each link is checked for both signals;
+    ``__cause__`` is preferred over ``__context__`` (the explicit link), and
+    a ``seen`` set guards the rare cyclic chain.
     """
-    if isinstance(exc, TimeoutError) or isinstance(exc.__cause__, TimeoutError):
-        return True
-    return bool(getattr(exc, "sqlstate", None) == _PG_QUERY_CANCELED_SQLSTATE)
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, TimeoutError):
+            return True
+        if getattr(current, "sqlstate", None) == _PG_QUERY_CANCELED_SQLSTATE:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 @dataclass(frozen=True)

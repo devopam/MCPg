@@ -103,6 +103,24 @@ def test_is_timeout_exc_pg_statement_timeout() -> None:
     assert _is_timeout_exc(_CanceledError("canceling statement due to statement timeout")) is True
 
 
+def test_is_timeout_exc_walks_deep_cause_chain() -> None:
+    # Robust against extra wrapping layers: a timeout buried two __cause__
+    # links deep is still detected.
+    inner = TimeoutError()
+    mid = ValueError("mid-layer")
+    mid.__cause__ = inner
+    outer = RuntimeError("outer wrapper")
+    outer.__cause__ = mid
+    assert _is_timeout_exc(outer) is True
+
+
+def test_is_timeout_exc_walks_implicit_context_chain() -> None:
+    # An implicit re-raise chains via __context__, not __cause__ — walk it too.
+    outer = ValueError("wrapper")
+    outer.__context__ = TimeoutError()
+    assert _is_timeout_exc(outer) is True
+
+
 def test_is_timeout_exc_ignores_non_timeout() -> None:
     assert _is_timeout_exc(ValueError("syntax error at or near")) is False
 
@@ -110,6 +128,15 @@ def test_is_timeout_exc_ignores_non_timeout() -> None:
         sqlstate = "42601"
 
     assert _is_timeout_exc(_SyntaxStateError("boom")) is False
+
+
+def test_is_timeout_exc_tolerates_cyclic_chain() -> None:
+    # Pathological but legal: a self-referential context must not loop forever.
+    a = ValueError("a")
+    b = ValueError("b")
+    a.__context__ = b
+    b.__context__ = a
+    assert _is_timeout_exc(a) is False
 
 
 # --- registration aligns with runner presence (injected-database case) ---
@@ -138,3 +165,17 @@ async def test_tool_present_with_injected_runner() -> None:
     )
     names = {t.name for t in await server.list_tools()}
     assert "run_analytical_query" in names
+
+
+async def test_flag_off_wins_over_injected_runner() -> None:
+    # The config flag is the authoritative off-switch: MCPG_ENABLE_ANALYTICAL_
+    # QUERIES=false disables the tool even if a runner is injected, so an
+    # operator can reliably withdraw it via config.
+    settings = _settings(MCPG_ENABLE_ANALYTICAL_QUERIES="false")
+    server = create_server(
+        settings,
+        database=FakeDatabase(FakeDriver()),  # type: ignore[arg-type]
+        analytical_runner=AnalyticalRunner(settings),
+    )
+    names = {t.name for t in await server.list_tools()}
+    assert "run_analytical_query" not in names

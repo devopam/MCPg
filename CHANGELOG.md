@@ -68,9 +68,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   a runner is actually wired up. `AnalyticalRunner` is injectable via
   `create_server(..., analytical_runner=...)`, and `run_analytical_query` is
   registered only when a runner will back it, so an injected-database setup no
-  longer advertises a non-functional tool. Also documents the analytical
-  env vars in the README env-var table, the T3 (DoS) threat model, and the
-  scaling pool-overhead budget. No tool-surface change (still 254).
+  longer advertises a non-functional tool. `MCPG_ENABLE_ANALYTICAL_QUERIES` is
+  the authoritative off-switch — it wins even over an injected runner. Timeout
+  detection walks the full `__cause__`/`__context__` exception chain (not just
+  the immediate cause), so extra wrapping layers can't hide a timeout. Also
+  documents the analytical env vars in the README env-var table, the T3 (DoS)
+  threat model, and the scaling pool-overhead budget. No tool-surface change
+  (still 254).
 
 - **Bumped `pglast` 7.15 → 8.2** (the SQL-safety kernel's parser). pglast 8
   tracks `libpg_query` 18-latest (PostgreSQL 18 grammar) and now ships type
