@@ -38,6 +38,41 @@ class QueryError(Exception):
     """Raised when a query is rejected as unsafe or fails to execute."""
 
 
+class QueryTimeoutError(QueryError):
+    """Raised when a query exceeds its execution budget.
+
+    A subclass of :class:`QueryError` so existing ``except QueryError``
+    handlers keep catching it; callers that care specifically about a
+    timeout (e.g. to point the agent at :func:`run_analytical_query`)
+    can branch on this type instead of string-matching the message.
+    """
+
+
+# SQLSTATE 57014 (``query_canceled``) is what PostgreSQL raises when a
+# ``statement_timeout`` fires — psycopg surfaces it as an exception carrying
+# ``.sqlstate == "57014"``.
+_PG_QUERY_CANCELED_SQLSTATE = "57014"
+
+
+def _is_timeout_exc(exc: BaseException) -> bool:
+    """Return True if ``exc`` originates from a query-execution timeout.
+
+    Two independent timeout mechanisms guard query execution, and both must
+    be recognised without depending on message wording (locale-sensitive and
+    brittle):
+
+    * the **client-side** wall-clock cap — ``asyncio.timeout`` /
+      ``asyncio.wait_for`` raise ``TimeoutError``. ``SafeSqlDriver`` re-wraps
+      that in a ``ValueError`` but chains the original as ``__cause__``, so we
+      check both the exception and its cause.
+    * the **server-side** ``statement_timeout`` — psycopg raises with
+      SQLSTATE ``57014`` (``query_canceled``), which propagates unwrapped.
+    """
+    if isinstance(exc, TimeoutError) or isinstance(exc.__cause__, TimeoutError):
+        return True
+    return bool(getattr(exc, "sqlstate", None) == _PG_QUERY_CANCELED_SQLSTATE)
+
+
 @dataclass(frozen=True)
 class QueryResult:
     """The outcome of a read-only query.
@@ -81,6 +116,8 @@ async def run_select(
         # SafeSqlDriver parses and validates this runtime SQL before running it.
         rows = await safe_driver.execute_query(sql)
     except Exception as exc:
+        if _is_timeout_exc(exc):
+            raise QueryTimeoutError(str(exc)) from exc
         raise QueryError(str(exc)) from exc
 
     all_rows = [dict(row.cells) for row in rows or []]
@@ -185,6 +222,8 @@ async def run_select_tuned(
             timeout=timeout,
         )
     except Exception as exc:
+        if _is_timeout_exc(exc):
+            raise QueryTimeoutError(str(exc)) from exc
         raise QueryError(str(exc)) from exc
 
     all_rows = [dict(row.cells) for row in rows or []]

@@ -9,9 +9,11 @@ DB-touching paths.
 from __future__ import annotations
 
 import pytest
+from _fakes import FakeDatabase, FakeDriver
 
 from mcpg.analytical import AnalyticalRunner
 from mcpg.config import ConfigError, load_settings
+from mcpg.query import QueryError, QueryTimeoutError, _is_timeout_exc
 from mcpg.server import create_server
 
 _DSN = "postgresql://u:p@localhost:5432/db"
@@ -67,3 +69,72 @@ async def test_tool_registered_when_enabled() -> None:
 async def test_tool_absent_when_disabled() -> None:
     names = await _tool_names(_settings(MCPG_ENABLE_ANALYTICAL_QUERIES="false"))
     assert "run_analytical_query" not in names
+
+
+# --- structured timeout detection (replaces the old message string-match) ---
+
+
+def test_query_timeout_error_is_query_error() -> None:
+    # A QueryTimeoutError must still be caught by existing `except QueryError`
+    # handlers (e.g. run_select_parallel) — it only *narrows* the signal.
+    assert issubclass(QueryTimeoutError, QueryError)
+
+
+def test_is_timeout_exc_asyncio_cap_direct() -> None:
+    # run_select_tuned surfaces the asyncio.wait_for TimeoutError directly.
+    assert _is_timeout_exc(TimeoutError("timed out")) is True
+
+
+def test_is_timeout_exc_asyncio_cap_wrapped() -> None:
+    # SafeSqlDriver re-wraps the asyncio TimeoutError in a ValueError but
+    # chains the original as __cause__ — we detect it via the cause, not text.
+    wrapped = ValueError("Query execution timed out after 30 seconds")
+    wrapped.__cause__ = TimeoutError()
+    assert _is_timeout_exc(wrapped) is True
+
+
+def test_is_timeout_exc_pg_statement_timeout() -> None:
+    # Server-side statement_timeout — psycopg raises SQLSTATE 57014, whose
+    # message ("canceling statement due to statement timeout") never contains
+    # "timed out", so the old string-match missed it.
+    class _CanceledError(Exception):
+        sqlstate = "57014"
+
+    assert _is_timeout_exc(_CanceledError("canceling statement due to statement timeout")) is True
+
+
+def test_is_timeout_exc_ignores_non_timeout() -> None:
+    assert _is_timeout_exc(ValueError("syntax error at or near")) is False
+
+    class _SyntaxStateError(Exception):
+        sqlstate = "42601"
+
+    assert _is_timeout_exc(_SyntaxStateError("boom")) is False
+
+
+# --- registration aligns with runner presence (injected-database case) ---
+
+
+async def test_tool_absent_with_injected_database_and_no_runner() -> None:
+    # Enabled + an injected database but no runner: create_server builds no
+    # real pool (it would hang on the fake DSN), so the tool must NOT be
+    # advertised — otherwise it would error on every call.
+    server = create_server(
+        _settings(MCPG_ENABLE_ANALYTICAL_QUERIES="true"),
+        database=FakeDatabase(FakeDriver()),  # type: ignore[arg-type]
+    )
+    names = {t.name for t in await server.list_tools()}
+    assert "run_analytical_query" not in names
+
+
+async def test_tool_present_with_injected_runner() -> None:
+    # A test that wants a functional tool injects its own runner; then it is
+    # registered even though the main database is a fake.
+    settings = _settings(MCPG_ENABLE_ANALYTICAL_QUERIES="true")
+    server = create_server(
+        settings,
+        database=FakeDatabase(FakeDriver()),  # type: ignore[arg-type]
+        analytical_runner=AnalyticalRunner(settings),
+    )
+    names = {t.name for t in await server.list_tools()}
+    assert "run_analytical_query" in names
