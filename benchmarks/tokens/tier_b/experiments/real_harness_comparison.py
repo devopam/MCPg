@@ -19,6 +19,21 @@ artificially handicapped by not knowing how to connect — the only variable
 under test is whether MCPg's tools are available, not whether the model
 knows the DSN.
 
+Uses ``--output-format stream-json`` (not the single-blob ``json`` format) so
+each trial's real tool-call sequence is captured — not just aggregate
+token/turn counts — via the per-turn ``assistant`` events' ``tool_use``
+content blocks. This is what actually answers "did translate_nl_to_sql fire,"
+confirmed working in a live dry run before being wired in here (it also
+caught the model calling a tool name — ``list_tables`` — that doesn't exist
+in MCPg, and recovering from the error).
+
+Deliberately **not** ``--bare`` mode: it would strip Claude Code's personal
+hooks/CLAUDE.md/skills overhead (real, but identical in both arms, so it
+doesn't bias the ratio — it just adds shared noise/cost), but it also
+requires a plain ``ANTHROPIC_API_KEY`` for the top-level session's own auth
+(confirmed: fails "Not logged in" otherwise), which this project authenticates
+via OAuth instead. Not worth asking for another key over.
+
 **Known limitation, disclosed rather than silently ignored**: if
 ``translate_nl_to_sql`` fires in the "mcpg" arm, its internal LLM call (a
 separate, out-of-band HTTP request MCPg's server process makes directly to a
@@ -35,7 +50,7 @@ CI; never wired into `benchmarks.tokens.tier_b.runner`.
     uv run python -m benchmarks.tokens.tier_b.experiments.real_harness_comparison \
         --database-url postgresql://postgres:postgres@localhost:5433/demo \
         --worktree-dir "C:\\Users\\devop\\OneDrive\\Documents\\GitHub\\MCPg-bench-worktree" \
-        --trials 1 --model claude-sonnet-5 --max-budget-usd 0.50 \
+        --trials 1 --model claude-sonnet-5 --max-budget-usd 1.00 \
         --output benchmarks/results/real-harness-comparison.json
 """
 
@@ -117,17 +132,37 @@ async def _invoke_claude(
     max_budget_usd: float,
     mcp_config_path: Path | None,
     allowed_tools: list[str],
-) -> dict[str, Any]:
-    """Run one headless ``claude -p`` invocation; return the parsed JSON result."""
+) -> tuple[dict[str, Any], list[str]]:
+    """Run one headless ``claude -p`` invocation; return ``(result_event, tool_names)``.
+
+    The prompt is sent over **stdin**, not as a CLI argument — confirmed
+    necessary on Windows during the smoke test: this project's prompts
+    contain backticks and embedded double quotes (the DB-connection hint),
+    and passing that through ``asyncio.create_subprocess_exec`` to the
+    resolved ``claude.CMD`` shim produced empty/garbled stdout. Piping via
+    stdin (the documented default text input for ``--print``) sidesteps
+    Windows batch-file argument quoting entirely.
+
+    ``--output-format stream-json`` emits one JSON object per line: several
+    ``type: "assistant"`` turn events (whose ``message.content`` blocks
+    include any ``tool_use`` calls, in order — this is where ``tool_names``
+    comes from) followed by one terminal ``type: "result"`` event carrying
+    ``total_cost_usd``/``usage``/``result``/``num_turns`` — the same fields
+    the single-blob ``json`` format returns, confirmed identical between the
+    two formats. That terminal event is written to stdout **even on a
+    non-zero exit** (confirmed: a budget-exhausted run exits 1 with an empty
+    stderr and a full result line on stdout), so this always scans stdout
+    first and only raises if no ``result`` line is found at all.
+    """
     claude_bin = shutil.which("claude")
     if not claude_bin:
         raise SystemExit("`claude` CLI not found on PATH.")
     cmd = [
         claude_bin,
         "-p",
-        prompt,
         "--output-format",
-        "json",
+        "stream-json",
+        "--verbose",
         "--model",
         model,
         "--max-budget-usd",
@@ -139,33 +174,66 @@ async def _invoke_claude(
     ]
     if mcp_config_path is not None:
         cmd += ["--mcp-config", str(mcp_config_path)]
-    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    stdout, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        raise RuntimeError(f"claude -p exited {proc.returncode}: {stderr.decode(errors='replace')[:2000]}")
-    return cast("dict[str, Any]", json.loads(stdout.decode(errors="replace")))
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate(input=prompt.encode("utf-8"))
+    tool_names: list[str] = []
+    result_event: dict[str, Any] | None = None
+    for line in stdout.decode(errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = cast("dict[str, Any]", json.loads(line))
+        except json.JSONDecodeError:
+            continue  # non-JSON noise on a line; the events we need are well-formed
+        if event.get("type") == "assistant":
+            for block in event.get("message", {}).get("content", []):
+                if block.get("type") == "tool_use":
+                    tool_names.append(str(block.get("name")))
+        elif event.get("type") == "result":
+            result_event = event
+    if result_event is None:
+        raise RuntimeError(
+            f"claude -p exited {proc.returncode} with no result event: "
+            f"{stderr.decode(errors='replace')[:1000] or stdout.decode(errors='replace')[-1000:]}"
+        )
+    return result_event, tool_names
 
 
-def _result_to_trial(task_id: str, arm: str, trial: int, raw: dict[str, Any], passed: bool) -> TrialResult:
-    """Map a `claude -p --output-format json` result onto the shared TrialResult schema.
+def _result_to_trial(
+    task_id: str, arm: str, trial: int, raw: dict[str, Any], tool_names: list[str], passed: bool
+) -> TrialResult:
+    """Map a `claude -p --output-format stream-json` result event onto the shared TrialResult schema.
 
-    Field names are unconfirmed until the smoke-test step verifies them
-    against a real invocation — this reads defensively (``.get`` with 0/""
-    fallbacks) rather than assuming a shape, and records whatever the raw
-    payload's usage block actually contains.
+    Field names confirmed against real invocations during the smoke test:
+    ``usage.input_tokens``/``cache_creation_input_tokens``/``cache_read_input_tokens``
+    (all summed into ``tokens_in`` — a cache read is still real prompt
+    content the model processed, just discounted, and Tier-B's token_ratio
+    has always counted raw tokens moved, not cost), ``usage.output_tokens``,
+    ``num_turns``, ``total_cost_usd``, and ``result`` (the final answer
+    text). On an error/budget-exhausted run, ``result`` is absent and usage
+    fields are 0 — the real per-model breakdown lives in
+    ``modelUsage.<model>`` instead, but that path already means the trial
+    didn't produce a usable answer.
     """
     usage = raw.get("usage") or {}
+    error = None if raw.get("is_error") is False else (raw.get("errors") or raw.get("terminal_reason"))
     return TrialResult(
         task_id=task_id,
         arm=arm,
         trial=trial,
-        tokens_in=int(usage.get("input_tokens") or 0),
+        tokens_in=int(usage.get("input_tokens") or 0)
+        + int(usage.get("cache_creation_input_tokens") or 0)
+        + int(usage.get("cache_read_input_tokens") or 0),
         tokens_out=int(usage.get("output_tokens") or 0),
         turns=int(raw.get("num_turns") or 0),
-        tool_calls=0,  # not extracted from --output-format json; see module docstring limitation
+        tool_calls=len(tool_names),
         passed=passed,
         final_answer=str(raw.get("result") or ""),
-        error=raw.get("error"),
+        error=str(error) if error else None,
+        cost_usd=float(raw.get("total_cost_usd") or 0.0),
+        tool_names=tuple(tool_names),
     )
 
 
@@ -242,7 +310,7 @@ async def _run(args: argparse.Namespace) -> TierBReport:
                         continue
                     prompt = task.prompt + _DB_HINT_TEMPLATE.format(database_url=args.database_url)
                     try:
-                        raw = await _invoke_claude(
+                        raw, tool_names = await _invoke_claude(
                             prompt,
                             model=args.model,
                             max_budget_usd=args.max_budget_usd,
@@ -250,7 +318,7 @@ async def _run(args: argparse.Namespace) -> TierBReport:
                             allowed_tools=allowed_tools,
                         )
                         passed = task.grade(str(raw.get("result") or ""))
-                        result = _result_to_trial(task.id, arm, trial, raw, passed)
+                        result = _result_to_trial(task.id, arm, trial, raw, tool_names, passed)
                     except Exception as exc:  # record and continue, same as runner.py's pattern
                         result = TrialResult(
                             task_id=task.id,
@@ -266,7 +334,11 @@ async def _run(args: argparse.Namespace) -> TierBReport:
                         )
                     trials.append(result)
                     flag = "PASS" if result.passed else ("ERR " if result.error else "FAIL")
-                    print(f"  {task.id:20} {arm:9} #{trial}: tok={result.total_tokens:6} turns={result.turns:2} {flag}")
+                    nl2sql_flag = "nl2sql=YES" if "mcp__mcpg__translate_nl_to_sql" in result.tool_names else ""
+                    print(
+                        f"  {task.id:20} {arm:9} #{trial}: tok={result.total_tokens:6} turns={result.turns:2} "
+                        f"${result.cost_usd:.3f} {flag} {nl2sql_flag} tools={list(result.tool_names)}"
+                    )
                     _checkpoint(args, trials, complete=False)
     finally:
         mcp_config_path.unlink(missing_ok=True)
@@ -285,19 +357,36 @@ def main(argv: list[str] | None = None) -> int:
         "--model", default="claude-sonnet-5", help="Model id for both the CLI session and MCPg's nl2sql provider."
     )
     parser.add_argument(
-        "--max-budget-usd", type=float, default=0.50, help="Hard spend cap per claude -p invocation. Default 0.50."
+        "--max-budget-usd",
+        type=float,
+        default=1.00,
+        help=(
+            "Hard spend cap per claude -p invocation. Default 1.00 - Claude Code's own system-prompt/"
+            "tool-schema overhead alone costs ~$0.10-0.20 in cache-write tokens before the task even "
+            "starts, observed during the smoke test, so a tighter cap risks premature budget_exhausted."
+        ),
     )
     parser.add_argument("--output", type=Path, required=True, help="Path to write the result JSON.")
     args = parser.parse_args(argv)
 
     report = asyncio.run(_run(args))
     agg = report.aggregate
+    trials = report.trials
+    baseline_cost = sum(t.cost_usd for t in trials if t.arm == ARM_BASELINE and t.error is None)
+    mcpg_cost = sum(t.cost_usd for t in trials if t.arm == ARM_MCPG and t.error is None)
+    nl2sql_fired = sum(1 for t in trials if t.arm == ARM_MCPG and "mcp__mcpg__translate_nl_to_sql" in t.tool_names)
+    mcpg_trial_count = sum(1 for t in trials if t.arm == ARM_MCPG)
     print(
         f"\naggregate: baseline(no-mcpg) {agg['baseline']['mean_total_tokens']:.0f} tok vs "
         f"mcpg-on {agg['mcpg']['mean_total_tokens']:.0f} tok  ->  {agg['token_ratio']:.2f}x  "
         f"(correctness: baseline {agg['baseline']['correctness']:.0%} / mcpg {agg['mcpg']['correctness']:.0%}; "
         f"{agg['errored']} errored)"
     )
+    print(
+        f"total spend: baseline ${baseline_cost:.3f}  mcpg ${mcpg_cost:.3f}  "
+        f"(all-trials ${baseline_cost + mcpg_cost:.3f})"
+    )
+    print(f"translate_nl_to_sql fired in {nl2sql_fired}/{mcpg_trial_count} mcpg-arm trial(s)")
     print(f"wrote {args.output}")
     return 0
 
