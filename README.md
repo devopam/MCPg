@@ -2,6 +2,8 @@
 
 # MCPg
 
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.devopam%2Fmcpg.svg)](https://mcptoplist.com/server/io.github.devopam%2Fmcpg)
+
 **A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
 server for PostgreSQL.** Lets AI agents safely inspect, query, operate, and
 tune a Postgres database — 254 tools spanning catalog introspection,
