@@ -38,6 +38,8 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+_WORD_BOUNDARY_US = re.compile(r"\bus\b")
+
 
 def _norm(text: str) -> str:
     return re.sub(r'["`\']', "", text).lower()
@@ -113,6 +115,50 @@ def default_tasks() -> list[Task]:
             # (customer_id 1) leads at 12.85M cents vs. the runner-up's
             # 6.25M — more than double, not a close call.
             grade=lambda a: "liam" in _norm(a) and "okafor" in _norm(a),
+            ideal_tools=("translate_nl_to_sql", "run_select"),
+        ),
+    ]
+
+
+def real_harness_tasks() -> list[Task]:
+    """Tasks for the real-harness (Claude Code on/off) comparison.
+
+    Kept separate from ``default_tasks()`` — these were designed after that
+    set was already committed and are used only by the real-harness
+    experiment, never by the synthetic-loop runner. Both require a genuine
+    multi-table join + ``GROUP BY``, not a lookup; ``worst_rated_product``
+    additionally needs a ``HAVING`` threshold, a clause that's easy to get
+    wrong syntactically. Ground truth verified directly against the live
+    demo dataset (``mcpg-postgres``, ``demo`` db, ``mcpg_demo`` schema).
+    """
+    return [
+        Task(
+            id="worst_rated_product",
+            prompt=(
+                "Which product has the lowest average customer rating? Only consider products with "
+                "at least 5 reviews. Name the product."
+            ),
+            # Verified: "Nimbus Laptop Stand" averages 2.000 (n=5) vs. the
+            # runner-up "Aurora Camera Backpack" at 3.000 (n=7) — a full
+            # 1-star margin, not a close call. "Nimbus" and "Laptop Stand"
+            # are each reused across several other products, but no other
+            # product combines both words.
+            grade=lambda a: _mentions_all(a, ["nimbus", "stand"]),
+            ideal_tools=("translate_nl_to_sql", "run_select"),
+        ),
+        Task(
+            id="top_revenue_country",
+            prompt="Which country generates the most total revenue from our orders? Give the country.",
+            # Verified: US leads at 100.56M cents total vs. India's 60.83M —
+            # a 65% margin. Word-boundary match on "us" (periods stripped,
+            # so "U.S." still matches) to avoid false positives from
+            # substrings like "customers" or "status"; "usa" and "united
+            # states" covered as alternate spellings.
+            grade=lambda a: (
+                bool(_WORD_BOUNDARY_US.search(re.sub(r"\.", "", _norm(a))))
+                or "usa" in _norm(a)
+                or "united states" in _norm(a)
+            ),
             ideal_tools=("translate_nl_to_sql", "run_select"),
         ),
     ]
