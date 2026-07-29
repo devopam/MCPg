@@ -98,7 +98,7 @@ _DB_HINT_TEMPLATE = (
     "if no local client is installed.)"
 )
 
-_RESUME_KEYS = ("model", "trials_per_arm", "max_budget_usd")
+_RESUME_KEYS = ("model", "trials_per_arm", "max_budget_usd", "mcpg_system_prompt_hint")
 
 
 def _build_mcp_config(database_url: str, worktree_dir: Path, nl2sql_api_key: str) -> dict[str, Any]:
@@ -132,6 +132,7 @@ async def _invoke_claude(
     max_budget_usd: float,
     mcp_config_path: Path | None,
     allowed_tools: list[str],
+    append_system_prompt: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Run one headless ``claude -p`` invocation; return ``(result_event, tool_names)``.
 
@@ -174,6 +175,8 @@ async def _invoke_claude(
     ]
     if mcp_config_path is not None:
         cmd += ["--mcp-config", str(mcp_config_path)]
+    if append_system_prompt:
+        cmd += ["--append-system-prompt", append_system_prompt]
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
@@ -243,6 +246,7 @@ def _checkpoint(args: argparse.Namespace, trials: list[TrialResult], *, complete
         "model": args.model,
         "trials_per_arm": args.trials,
         "max_budget_usd": args.max_budget_usd,
+        "mcpg_system_prompt_hint": args.mcpg_system_prompt_hint,
         "host": {"python": platform.python_version(), "os": platform.platform()},
         "complete": complete,
         "known_limitation": (
@@ -267,7 +271,12 @@ def _load_resumable(args: argparse.Namespace) -> list[TrialResult]:
     if meta.get("complete"):
         print(f"note: {args.output} already holds a complete run; overwriting with a fresh one.")
         return []
-    this_run = {"model": args.model, "trials_per_arm": args.trials, "max_budget_usd": args.max_budget_usd}
+    this_run = {
+        "model": args.model,
+        "trials_per_arm": args.trials,
+        "max_budget_usd": args.max_budget_usd,
+        "mcpg_system_prompt_hint": args.mcpg_system_prompt_hint,
+    }
     if any(meta.get(k) != this_run[k] for k in _RESUME_KEYS):
         print(f"note: {args.output} exists but its config differs from this run; starting fresh, not resuming.")
         return []
@@ -298,13 +307,16 @@ async def _run(args: argparse.Namespace) -> TierBReport:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(mcp_config, f)
 
-        arms: tuple[tuple[str, Path | None, list[str]], ...] = (
-            (ARM_BASELINE, None, _BASELINE_ALLOWED_TOOLS),
-            (ARM_MCPG, mcp_config_path, _MCPG_ALLOWED_TOOLS),
+        # append_system_prompt is None for baseline unconditionally — the
+        # "prefer mcpg" hint has nothing to refer to when mcpg isn't even
+        # in the tool list, so applying it there would be meaningless noise.
+        arms: tuple[tuple[str, Path | None, list[str], str | None], ...] = (
+            (ARM_BASELINE, None, _BASELINE_ALLOWED_TOOLS, None),
+            (ARM_MCPG, mcp_config_path, _MCPG_ALLOWED_TOOLS, args.mcpg_system_prompt_hint),
         )
         for task in tasks:
             for trial in range(args.trials):
-                for arm, cfg_path, allowed_tools in arms:
+                for arm, cfg_path, allowed_tools, hint in arms:
                     if (task.id, arm, trial) in done:
                         print(f"  {task.id:20} {arm:9} #{trial}: skipped (already recorded)")
                         continue
@@ -316,6 +328,7 @@ async def _run(args: argparse.Namespace) -> TierBReport:
                             max_budget_usd=args.max_budget_usd,
                             mcp_config_path=cfg_path,
                             allowed_tools=allowed_tools,
+                            append_system_prompt=hint,
                         )
                         passed = task.grade(str(raw.get("result") or ""))
                         result = _result_to_trial(task.id, arm, trial, raw, tool_names, passed)
@@ -364,6 +377,17 @@ def main(argv: list[str] | None = None) -> int:
             "Hard spend cap per claude -p invocation. Default 1.00 - Claude Code's own system-prompt/"
             "tool-schema overhead alone costs ~$0.10-0.20 in cache-write tokens before the task even "
             "starts, observed during the smoke test, so a tighter cap risks premature budget_exhausted."
+        ),
+    )
+    parser.add_argument(
+        "--mcpg-system-prompt-hint",
+        default=None,
+        help=(
+            "Text appended (via --append-system-prompt) to the mcpg arm only, e.g. the standing "
+            "'prefer mcpg over ad-hoc SQL' instruction some real projects inject via a SessionStart "
+            "hook — lets this diagnose whether that standing instruction, not the harness or task "
+            "design, is what makes translate_nl_to_sql actually get chosen. Omitted for the baseline "
+            "arm (mcpg isn't in its tool list, so the hint would have nothing to refer to)."
         ),
     )
     parser.add_argument("--output", type=Path, required=True, help="Path to write the result JSON.")
