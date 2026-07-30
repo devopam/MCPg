@@ -6,6 +6,42 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Capped `mcp[cli]` below 2.0** (`>=1.28.1,<2`). The upstream `mcp` SDK
+  published a `2.0.0` release that renames `mcp.server.fastmcp.FastMCP` to
+  `mcp.server.mcpserver.MCPServer` (and restructures the module tree around
+  it) with no back-compat shim — since MCPg's dependency spec had no upper
+  bound, a fresh `pip install mcpg` started resolving `mcp==2.0.0` and
+  crashing at import (`ModuleNotFoundError: No module named
+  'mcp.server.fastmcp'`) before `src/mcpg/server.py` could even start. Pins
+  the resolved SDK to the last compatible 1.x line until MCPg migrates to
+  the new `MCPServer` API (tracked separately). `uv.lock` regenerated
+  (resolves `mcp==1.28.1`); full unit + contract suite green.
+- **`asyncio.WindowsSelectorEventLoopPolicy` forward-compat for CPython
+  3.14.** CPython 3.14 privatized the class to
+  `_WindowsSelectorEventLoopPolicy` (confirmed against typeshed's
+  `windows_events.pyi`); the two Windows-only call sites that pin the
+  selector policy for psycopg (`__main__.py`, `http_runtime.run_http`) now
+  fall back to the private name when the public one is gone, instead of
+  raising `AttributeError` at startup on 3.14. Surfaced by `mypy --strict`
+  run on Windows (the repo's `python_version = "3.14"` target). Hardened
+  per review feedback (#290): the public-name lookup now uses
+  `try`/`except (AttributeError, NameError)` rather than
+  `getattr(..., default)`, since CPython 3.14's own deprecation shim can
+  raise `NameError` reading the removed name — a bare `getattr` with a
+  default only swallows `AttributeError` and would have re-raised
+  uncaught. Covered by
+  `test_run_http_falls_back_to_private_policy_name_when_public_name_raises`.
+- **Two Windows-only test bugs**, surfaced while verifying the above on a
+  Windows dev box: `test_subprocess_hardening_parses_allowlist_and_limits`
+  (and the adjacent relative-path-rejection test) hardcoded POSIX
+  `/usr/bin`-style paths that `os.path.isabs` doesn't accept on Windows —
+  now anchored via `abspath()` so the assertion holds on either platform.
+  `test_run_http_builds_app_and_serves_via_uvicorn`'s fake `uvicorn.run`
+  didn't accept the `loop` kwarg that `run_http` has always passed on
+  `win32` — now accepts `**kwargs`.
+
 ## [0.6.12] - 2026-07-28
 
 ### Added

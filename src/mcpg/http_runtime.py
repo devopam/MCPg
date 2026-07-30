@@ -650,7 +650,29 @@ def run_http(server: object, settings: Settings, *, kind: str) -> None:
     # tell uvicorn to leave the loop alone (``loop="none"``) so it runs on
     # the loop our policy creates. No-op off Windows.
     if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        # CPython 3.14 privatized WindowsSelectorEventLoopPolicy to
+        # _WindowsSelectorEventLoopPolicy; fall back to it when the public
+        # name is gone so this keeps working on 3.12-3.14. Reading the
+        # removed public name can raise NameError (not AttributeError) via
+        # asyncio's own deprecation shim, which a bare getattr(..., default)
+        # would NOT catch — a plain try/except is used instead, and a
+        # missing private name too fails with the clear RuntimeError below
+        # rather than an obscure AttributeError/NameError.
+        try:
+            # mypy's python_version=3.14 target sheds the public name from
+            # typeshed entirely (see pyproject.toml's [tool.mypy]) — this is
+            # exactly the removed-on-3.14 case the except branch below handles
+            # at runtime; ignore is scoped to this one attribute reference.
+            selector_policy_cls = asyncio.WindowsSelectorEventLoopPolicy  # type: ignore[attr-defined]
+        except (AttributeError, NameError):
+            selector_policy_cls = getattr(asyncio, "_WindowsSelectorEventLoopPolicy", None)
+        if selector_policy_cls is None:
+            raise RuntimeError(
+                "mcpg: this Python's asyncio module exposes neither WindowsSelectorEventLoopPolicy "
+                "nor _WindowsSelectorEventLoopPolicy; the Windows selector-loop policy mcpg needs for "
+                "psycopg can't be set. Please file a bug with your Python version."
+            )
+        asyncio.set_event_loop_policy(selector_policy_cls())
         tls_kwargs["loop"] = "none"
     # mypy can't reason about ``**dict[str, object]`` against the
     # large, overloaded ``uvicorn.run`` signature; the dict's contents
