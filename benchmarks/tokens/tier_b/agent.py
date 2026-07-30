@@ -71,7 +71,9 @@ def _hidden_tokens(tool_name: str, result: Any) -> tuple[int, int]:
     """The tokens ``tool_name``'s own internal LLM call spent, or (0, 0)."""
     if tool_name not in _TOOLS_WITH_HIDDEN_LLM_COST:
         return 0, 0
-    structured = getattr(result, "structuredContent", None) or {}
+    structured = getattr(result, "structuredContent", None)
+    if not isinstance(structured, dict):
+        return 0, 0
     return int(structured.get("tokens_in") or 0), int(structured.get("tokens_out") or 0)
 
 

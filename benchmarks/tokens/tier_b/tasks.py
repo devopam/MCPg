@@ -131,8 +131,17 @@ def audit_tasks() -> list[Task]:
     real Claude Code with tool-trace capture, to see *why*: whether the
     advisor tool gets called and then the agent explores anyway, whether
     its output isn't trusted, or something else.
+
+    Selected by explicit id, not a positional slice of ``default_tasks()``
+    — a slice would silently pick the wrong tasks if that list's order or
+    length ever changes.
     """
-    return default_tasks()[:3]
+    audit_ids = ("missing_index", "pii_columns", "naming_violation")
+    by_id = {task.id: task for task in default_tasks()}
+    missing = [i for i in audit_ids if i not in by_id]
+    if missing:
+        raise RuntimeError(f"audit_tasks(): expected task id(s) missing from default_tasks(): {missing}")
+    return [by_id[i] for i in audit_ids]
 
 
 def real_harness_tasks() -> list[Task]:

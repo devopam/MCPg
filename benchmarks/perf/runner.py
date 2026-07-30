@@ -251,7 +251,7 @@ def _checkpoint(
     }
     run = PerfRun(metadata=metadata, results=results, assertions=_assertions(results, native_db_ns_by_query))
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(run.to_dict(), indent=2) + "\n")
+    args.output.write_text(json.dumps(run.to_dict(), indent=2) + "\n", encoding="utf-8")
     return run
 
 
@@ -476,7 +476,7 @@ def main(argv: list[str] | None = None) -> int:
 
     run = asyncio.run(_run(args))
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(run.to_dict(), indent=2) + "\n")
+    args.output.write_text(json.dumps(run.to_dict(), indent=2) + "\n", encoding="utf-8")
     print(f"wrote {args.output} ({len(run.results)} result rows)")
     return 0
 

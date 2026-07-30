@@ -96,7 +96,15 @@ _DB_HINT_TEMPLATE = (
     "if no local client is installed.)"
 )
 
-_RESUME_KEYS = ("model", "trials_per_arm", "max_budget_usd", "mcpg_system_prompt_hint", "task_set")
+_RESUME_KEYS = (
+    "model",
+    "trials_per_arm",
+    "max_budget_usd",
+    "mcpg_system_prompt_hint",
+    "task_set",
+    "database_url",
+    "worktree_dir",
+)
 
 
 def _build_mcp_config(database_url: str, worktree_dir: Path, nl2sql_api_key: str) -> dict[str, Any]:
@@ -131,6 +139,7 @@ async def _invoke_claude(
     mcp_config_path: Path | None,
     allowed_tools: list[str],
     append_system_prompt: str | None = None,
+    timeout_seconds: float = 600.0,
 ) -> tuple[dict[str, Any], list[str]]:
     """Run one headless ``claude -p`` invocation; return ``(result_event, tool_names)``.
 
@@ -152,6 +161,12 @@ async def _invoke_claude(
     non-zero exit** (confirmed: a budget-exhausted run exits 1 with an empty
     stderr and a full result line on stdout), so this always scans stdout
     first and only raises if no ``result`` line is found at all.
+
+    ``timeout_seconds`` bounds ``communicate()``: a hung CLI/network call
+    would otherwise block this trial (and every trial after it) forever,
+    with nothing checkpointed. On timeout the process is killed and a
+    ``TimeoutError`` raised, which the caller in ``_run`` already catches
+    and records as a per-trial error, same as any other failure.
     """
     claude_bin = shutil.which("claude")
     if not claude_bin:
@@ -178,7 +193,12 @@ async def _invoke_claude(
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
-    stdout, stderr = await proc.communicate(input=prompt.encode("utf-8"))
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(input=prompt.encode("utf-8")), timeout=timeout_seconds)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise TimeoutError(f"claude -p did not finish within {timeout_seconds:.0f}s; killed the process.") from None
     tool_names: list[str] = []
     result_event: dict[str, Any] | None = None
     for line in stdout.decode(errors="replace").splitlines():
@@ -246,6 +266,8 @@ def _checkpoint(args: argparse.Namespace, trials: list[TrialResult], *, complete
         "max_budget_usd": args.max_budget_usd,
         "mcpg_system_prompt_hint": args.mcpg_system_prompt_hint,
         "task_set": args.task_set,
+        "database_url": args.database_url,
+        "worktree_dir": str(args.worktree_dir),
         "host": {"python": platform.python_version(), "os": platform.platform()},
         "complete": complete,
         "known_limitation": (
@@ -276,6 +298,8 @@ def _load_resumable(args: argparse.Namespace) -> list[TrialResult]:
         "max_budget_usd": args.max_budget_usd,
         "mcpg_system_prompt_hint": args.mcpg_system_prompt_hint,
         "task_set": args.task_set,
+        "database_url": args.database_url,
+        "worktree_dir": str(args.worktree_dir),
     }
     if any(meta.get(k) != this_run[k] for k in _RESUME_KEYS):
         print(f"note: {args.output} exists but its config differs from this run; starting fresh, not resuming.")
@@ -329,6 +353,7 @@ async def _run(args: argparse.Namespace) -> TierBReport:
                             mcp_config_path=cfg_path,
                             allowed_tools=allowed_tools,
                             append_system_prompt=hint,
+                            timeout_seconds=args.invocation_timeout_seconds,
                         )
                         passed = task.grade(str(raw.get("result") or ""))
                         result = _result_to_trial(task.id, arm, trial, raw, tool_names, passed)
@@ -388,6 +413,16 @@ def main(argv: list[str] | None = None) -> int:
             "Hard spend cap per claude -p invocation. Default 1.00 - Claude Code's own system-prompt/"
             "tool-schema overhead alone costs ~$0.10-0.20 in cache-write tokens before the task even "
             "starts, observed during the smoke test, so a tighter cap risks premature budget_exhausted."
+        ),
+    )
+    parser.add_argument(
+        "--invocation-timeout-seconds",
+        type=float,
+        default=600.0,
+        help=(
+            "Kill and record-as-error a single claude -p invocation that hasn't finished within this "
+            "many seconds, rather than letting a hung CLI/network call block this trial (and every "
+            "trial after it) forever. Default 600s."
         ),
     )
     parser.add_argument(

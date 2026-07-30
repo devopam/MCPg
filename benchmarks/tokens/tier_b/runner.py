@@ -61,7 +61,7 @@ _READ_TIMEOUT = timedelta(seconds=60)
 # Metadata keys that must match an on-disk checkpoint before it's safe to
 # resume from — anything else and "skip trials already present" would quietly
 # mix results from two different configurations into one aggregate.
-_RESUME_KEYS = ("model", "trials_per_arm", "max_turns", "mcpg_tools")
+_RESUME_KEYS = ("model", "trials_per_arm", "max_turns", "mcpg_tools", "database_url")
 
 
 def _checkpoint(
@@ -84,6 +84,7 @@ def _checkpoint(
         "trials_per_arm": args.trials,
         "max_turns": args.max_turns,
         "mcpg_tools": sorted(resolved_mcpg_tools),
+        "database_url": args.database_url,
         "host": {"python": platform.python_version(), "os": platform.platform()},
         "complete": complete,
     }
@@ -97,8 +98,9 @@ def _load_resumable(args: argparse.Namespace) -> list[TrialResult]:
     """Load already-paid-for trials from ``args.output``, if it's safe to resume.
 
     Safe means: the file exists, isn't already ``complete``, and its recorded
-    config (model / trials-per-arm / max-turns / tool set) matches this
-    invocation's — otherwise silently reusing it would mix incompatible runs
+    config (model / trials-per-arm / max-turns / tool set / database URL)
+    matches this invocation's — otherwise silently reusing it would mix
+    incompatible runs
     into one aggregate. Any mismatch or unreadable file means starting clean;
     this never raises, since a corrupt/foreign file just isn't resumable, not
     a fatal error.
@@ -118,6 +120,7 @@ def _load_resumable(args: argparse.Namespace) -> list[TrialResult]:
         "trials_per_arm": args.trials,
         "max_turns": args.max_turns,
         "mcpg_tools": sorted(args.mcpg_tools),
+        "database_url": args.database_url,
     }
     if any(meta.get(k) != this_run[k] for k in _RESUME_KEYS):
         print(f"note: {args.output} exists but its config differs from this run; starting fresh, not resuming.")
