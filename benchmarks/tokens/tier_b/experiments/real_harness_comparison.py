@@ -68,26 +68,24 @@ from pathlib import Path
 from typing import Any, cast
 
 from benchmarks.tokens.tier_b.schema import ARM_BASELINE, ARM_MCPG, TierBReport, TrialResult, aggregate
-from benchmarks.tokens.tier_b.tasks import real_harness_tasks
+from benchmarks.tokens.tier_b.tasks import audit_tasks, real_harness_tasks
 
-# Same tool surface as runner.py's _DEFAULT_MCPG_TOOLS, given to the "on" arm
-# in full — this is the free-choice comparison the synthetic harness was
-# supposed to be (and the discrepancy investigation showed it wasn't).
-_MCPG_TOOLS = [
-    "run_select",
-    "get_compact_schema",
-    "describe_table",
-    "list_schemas",
-    "analyze_query_plan",
-    "recommend_indexes",
-    "find_sensitive_columns",
-    "audit_database",
-    "translate_nl_to_sql",
-]
+_TASK_SETS = {"analytical": real_harness_tasks, "audit": audit_tasks}
+
 _MCP_SERVER_NAME = "mcpg"
 # Claude Code's naming convention for a configured MCP server's tools,
 # confirmed against this session's own tool list (mcp__<server>__<tool>).
-_MCPG_ALLOWED_TOOLS = [f"mcp__{_MCP_SERVER_NAME}__{name}" for name in _MCPG_TOOLS]
+# Wildcard, not a curated tool-name list: an earlier enumerated allowlist bit
+# twice in back-to-back runs of this same diagnostic — once for "Bash"
+# (missing entirely) and once for "lint_naming_conventions" (a real MCPg
+# tool the 9-name _MCPG_TOOLS curation never anticipated) — both times the
+# model correctly reached for the tool it needed and got stuck at a
+# permission wall it can't clear in headless mode, burning huge token
+# budgets or failing outright, not because the approach was wrong. "Bash"
+# alongside the wildcard: the mcpg arm must be genuine free choice (mcpg's
+# full tool surface *added* to the agent's normal means of double-checking,
+# not substituted for it).
+_MCPG_ALLOWED_TOOLS = [f"mcp__{_MCP_SERVER_NAME}__*", "Bash"]
 _BASELINE_ALLOWED_TOOLS = ["Bash"]
 
 # Both arms get this so the "off" arm isn't handicapped by not knowing how to
@@ -98,7 +96,7 @@ _DB_HINT_TEMPLATE = (
     "if no local client is installed.)"
 )
 
-_RESUME_KEYS = ("model", "trials_per_arm", "max_budget_usd", "mcpg_system_prompt_hint")
+_RESUME_KEYS = ("model", "trials_per_arm", "max_budget_usd", "mcpg_system_prompt_hint", "task_set")
 
 
 def _build_mcp_config(database_url: str, worktree_dir: Path, nl2sql_api_key: str) -> dict[str, Any]:
@@ -247,6 +245,7 @@ def _checkpoint(args: argparse.Namespace, trials: list[TrialResult], *, complete
         "trials_per_arm": args.trials,
         "max_budget_usd": args.max_budget_usd,
         "mcpg_system_prompt_hint": args.mcpg_system_prompt_hint,
+        "task_set": args.task_set,
         "host": {"python": platform.python_version(), "os": platform.platform()},
         "complete": complete,
         "known_limitation": (
@@ -276,6 +275,7 @@ def _load_resumable(args: argparse.Namespace) -> list[TrialResult]:
         "trials_per_arm": args.trials,
         "max_budget_usd": args.max_budget_usd,
         "mcpg_system_prompt_hint": args.mcpg_system_prompt_hint,
+        "task_set": args.task_set,
     }
     if any(meta.get(k) != this_run[k] for k in _RESUME_KEYS):
         print(f"note: {args.output} exists but its config differs from this run; starting fresh, not resuming.")
@@ -296,7 +296,7 @@ async def _run(args: argparse.Namespace) -> TierBReport:
     if not shutil.which("claude"):
         raise SystemExit("`claude` CLI not found on PATH — this experiment drives it via subprocess.")
 
-    tasks = real_harness_tasks()
+    tasks = _TASK_SETS[args.task_set]()
     trials: list[TrialResult] = list(_load_resumable(args))
     done = {(t.task_id, t.arm, t.trial) for t in trials}
 
@@ -366,6 +366,17 @@ def main(argv: list[str] | None = None) -> int:
         "--worktree-dir", type=Path, required=True, help="Path to the MCPg checkout to run via `uv run --directory`."
     )
     parser.add_argument("--trials", type=int, default=1, help="Trials per (task, arm). Default 1.")
+    parser.add_argument(
+        "--task-set",
+        choices=sorted(_TASK_SETS),
+        default="analytical",
+        help=(
+            "'analytical' (default): the two NL->SQL business-question tasks. "
+            "'audit': the three planted-flaw DBA tasks (missing_index/pii_columns/naming_violation) "
+            "that the synthetic harness measured costing the mcpg advisor arm 2.66x more, unexplained — "
+            "use this to re-diagnose that result with real tool-trace capture."
+        ),
+    )
     parser.add_argument(
         "--model", default="claude-sonnet-5", help="Model id for both the CLI session and MCPg's nl2sql provider."
     )

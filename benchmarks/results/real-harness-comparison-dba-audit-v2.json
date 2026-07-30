@@ -1,0 +1,205 @@
+{
+  "metadata": {
+    "kind": "real_harness_comparison",
+    "model": "claude-sonnet-5",
+    "trials_per_arm": 1,
+    "max_budget_usd": 1.0,
+    "mcpg_system_prompt_hint": null,
+    "task_set": "audit",
+    "host": {
+      "python": "3.13.7",
+      "os": "Windows-11-10.0.26200-SP0"
+    },
+    "complete": true,
+    "known_limitation": "translate_nl_to_sql's internal LLM call, if it fires in the mcpg arm, is not included in these token/cost numbers \u2014 see module docstring."
+  },
+  "trials": [
+    {
+      "task_id": "missing_index",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 77375,
+      "tokens_out": 766,
+      "turns": 2,
+      "tool_calls": 1,
+      "passed": true,
+      "final_answer": "The table and column that most need a new index:\n\n**`mcpg_demo.orders.customer_id`**\n\nThis is a foreign key column with no supporting index \u2014 it's the only FK column in the database lacking one. Any query filtering or joining on `customer_id` (e.g. \"orders for customer X\", or joins from `customers` to `orders`) is forced into a sequential scan on `orders`.\n\nFix:\n```sql\nCREATE INDEX idx_orders_customer_id ON mcpg_demo.orders (customer_id);\n```",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.09322949999999999,
+      "tool_names": [
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "missing_index",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 211701,
+      "tokens_out": 1438,
+      "turns": 5,
+      "tool_calls": 4,
+      "passed": true,
+      "final_answer": "Comparing all foreign-key columns against existing indexes in `mcpg_demo`:\n\n| FK column | Indexed? |\n|---|---|\n| `order_items.order_id` \u2192 orders | \u2705 |\n| `order_items.product_id` \u2192 products | \u2705 |\n| `reviews.customer_id` \u2192 customers | \u2705 |\n| `reviews.product_id` \u2192 products | \u2705 |\n| **`orders.customer_id` \u2192 customers** | \u274c **missing** |\n\n**Table: `orders`, Column: `customer_id`**\n\nIt's the only FK column in the schema without a supporting index, so every join or lookup from `customers` to their `orders` (3,000 rows) forces a sequential scan on `orders`. Fix:\n\n```sql\nCREATE INDEX orders_customer_id_idx ON mcpg_demo.orders (customer_id);\n```",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.2178033,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "pii_columns",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 77904,
+      "tokens_out": 626,
+      "turns": 2,
+      "tool_calls": 1,
+      "passed": true,
+      "final_answer": "Based on the schema in the `mcpg_demo` schema, the PII-bearing columns are:\n\n- **`customers.full_name`** \u2014 full name\n- **`customers.email`** \u2014 email address\n- **`customers.phone`** \u2014 phone number\n- **`customers.country`** \u2014 location data (weaker/indirect PII, only meaningful combined with other identifiers)\n\nNo other tables (`orders`, `order_items`, `products`, `reviews`) contain direct personal identifiers \u2014 they reference customers only via `customer_id` (a non-identifying foreign key), and `reviews.review_text` could incidentally contain PII if a reviewer types personal info, but that's not a structured PII column.",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.0940755,
+      "tool_names": [
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "pii_columns",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 258086,
+      "tokens_out": 1686,
+      "turns": 6,
+      "tool_calls": 5,
+      "passed": true,
+      "final_answer": "I confirmed this against the full column list (30 columns across 5 tables). Only the `customers` table has real PII:\n\n**PII columns (table.column):**\n- `mcpg_demo.customers.full_name` \u2014 personal name\n- `mcpg_demo.customers.email` \u2014 email address\n- `mcpg_demo.customers.phone` \u2014 phone number\n\n**Borderline / worth flagging but not counted as direct PII:**\n- `mcpg_demo.customers.customer_id` \u2014 an internal integer key; only PII in combination with the row it's attached to (i.e., it's a pseudonymous identifier, not identifying on its own).\n- `mcpg_demo.customers.country` \u2014 coarse location, not individually identifying.\n- `mcpg_demo.reviews.review_text` \u2014 free text; could incidentally contain PII (e.g., a customer typing their name/email into a review) but has no structural guarantee of it.\n\nNo other tables (`orders`, `order_items`, `products`, `reviews` apart from the free-text field) contain columns holding personal data \u2014 they're transactional/product data keyed by the numeric `customer_id`/`product_id` foreign keys only.",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.2022531,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "ToolSearch",
+        "mcp__mcpg__find_sensitive_columns",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "naming_violation",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 355699,
+      "tokens_out": 1766,
+      "turns": 9,
+      "tool_calls": 8,
+      "passed": true,
+      "final_answer": "The offending column is **`reviews.reviewSource`** \u2014 every other column in the database uses `snake_case`, but this one is `camelCase` (should be `review_source`).",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.20236079999999998,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "naming_violation",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 255244,
+      "tokens_out": 989,
+      "turns": 6,
+      "tool_calls": 5,
+      "passed": false,
+      "final_answer": "The tool call needs your approval to proceed \u2014 please grant permission for `mcp__mcpg__lint_naming_conventions` when prompted, or let me know if you'd rather I query the schema directly via `docker exec`/psql instead.",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.18342719999999998,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "ToolSearch",
+        "mcp__mcpg__lint_naming_conventions",
+        "mcp__mcpg__lint_naming_conventions"
+      ]
+    }
+  ],
+  "aggregate": {
+    "mcpg": {
+      "trials": 3,
+      "mean_total_tokens": 243048.0,
+      "mean_tool_calls": 4.666666666666667,
+      "mean_turns": 5.666666666666667,
+      "correctness": 0.6666666666666666
+    },
+    "baseline": {
+      "trials": 3,
+      "mean_total_tokens": 171378.66666666666,
+      "mean_tool_calls": 3.3333333333333335,
+      "mean_turns": 4.333333333333333,
+      "correctness": 1.0
+    },
+    "token_ratio": 0.7051227192433868,
+    "errored": 0,
+    "per_task": [
+      {
+        "task_id": "missing_index",
+        "mcpg": {
+          "mean_total_tokens": 213139.0,
+          "mean_tool_calls": 4.0,
+          "correctness": 1.0
+        },
+        "baseline": {
+          "mean_total_tokens": 78141.0,
+          "mean_tool_calls": 1.0,
+          "correctness": 1.0
+        }
+      },
+      {
+        "task_id": "pii_columns",
+        "mcpg": {
+          "mean_total_tokens": 259772.0,
+          "mean_tool_calls": 5.0,
+          "correctness": 1.0
+        },
+        "baseline": {
+          "mean_total_tokens": 78530.0,
+          "mean_tool_calls": 1.0,
+          "correctness": 1.0
+        }
+      },
+      {
+        "task_id": "naming_violation",
+        "mcpg": {
+          "mean_total_tokens": 256233.0,
+          "mean_tool_calls": 5.0,
+          "correctness": 0.0
+        },
+        "baseline": {
+          "mean_total_tokens": 357465.0,
+          "mean_tool_calls": 8.0,
+          "correctness": 1.0
+        }
+      }
+    ]
+  },
+  "schema_version": 1,
+  "kind": "tokens_tier_b"
+}

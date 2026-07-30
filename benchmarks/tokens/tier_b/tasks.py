@@ -120,6 +120,21 @@ def default_tasks() -> list[Task]:
     ]
 
 
+def audit_tasks() -> list[Task]:
+    """The three planted-flaw DBA tasks from ``default_tasks()``, isolated for the real-harness diagnostic.
+
+    The synthetic Tier-B harness measured these three costing MCPg's
+    advisor arm 2.66x more tokens than bare SQL — the opposite of what the
+    tool descriptions promise (one advisor call vs. many exploratory
+    queries) — and that number was never explained, only recorded. This
+    subset lets ``real_harness_comparison`` re-run just these three through
+    real Claude Code with tool-trace capture, to see *why*: whether the
+    advisor tool gets called and then the agent explores anyway, whether
+    its output isn't trusted, or something else.
+    """
+    return default_tasks()[:3]
+
+
 def real_harness_tasks() -> list[Task]:
     """Tasks for the real-harness (Claude Code on/off) comparison.
 
