@@ -4,26 +4,15 @@ title: Token efficiency
 
 # MCPg token efficiency — the compact output pays for the rich surface
 
-**The claim:** an LLM agent doing database work spends far fewer tokens through
-MCPg's purpose-built tools than by pulling raw SQL and interpreting it itself —
-enough that MCPg's larger upfront tool surface is repaid after a modest number
-of tasks in a session.
+**The claim:** MCPg's purpose-built tools return dramatically more compact
+output than the raw-SQL equivalent an agent would otherwise pull and interpret
+itself — measured per call, deterministically, no LLM involved.
 
 This is the token half of the [benchmark suite](plans/benchmark-suite.md), and
-the companion to the [performance writeup](performance-benchmark.md). It comes in
-two tiers; this page reports **Tier A**, the deterministic one.
-
-- **Tier A (here)** — deterministic per-call token accounting. Tokenize what
-  MCPg's tools *return* vs the raw-SQL equivalent an agent would otherwise pull.
-  No LLM, no cost, reproducible, CI-able. It measures **per-call compactness**.
-- **Tier B (future)** — a fixed model at temperature 0 runs real tasks to
-  completion, N trials each, counting total tokens + tool calls + turns +
-  correctness. It captures the saving Tier A *cannot*: **fewer round trips** (one
-  `analyze_workload` call instead of many exploratory queries + interpretation).
-  It costs money and is deferred until it is run properly.
-
-Being explicit about that split is the point: Tier A is a floor on the token
-argument — a real, deterministic saving — not the whole of it.
+the companion to the [performance writeup](performance-benchmark.md). It
+measures **per-call compactness**: tokenize what MCPg's tools *return* vs the
+raw-SQL equivalent an agent would otherwise pull. No LLM, no cost, reproducible,
+CI-able.
 
 ## What Tier A measures
 
@@ -110,40 +99,15 @@ uv run python -m benchmarks.dashboard.generate \
 |---|---|
 | "You ignored the 252-tool context cost." | It is the headline of this page: +63,685 tokens upfront for the full surface, and the break-even against it (per surface) is charted. |
 | "Token counts are tokenizer-specific." | True in absolute terms; the *ratio* MCPg-vs-raw is stable across tokenizers, and the encoding is stated. |
-| "Tier A isn't a real agent." | Correct — it is deterministic per-call compactness, a *floor*. The round-trip saving is Tier B, explicitly future and costed. |
+| "Tier A isn't a real agent." | Correct — it measures deterministic per-call compactness, not a full agent session end to end. That's the stated scope of this page. |
 | "SF1 is small." | The compactness ratios are a property of the representation, not the row count; they hold across scales. |
 | "Break-even ~24 is a lot." | For a one-off lookup on the full surface, yes — and we say so. But read-only (the default) is ~18, and a session-intent-filtered `lookup` surface is ~5 tasks; for an agent doing sustained DB work it is quickly cleared. |
 
-## Scope, and what's next
+## Scope
 
-This is the deterministic floor of the token argument. **Tier B** — the
-agent-loop study — captures the larger, *round-trip* saving Tier A cannot: a
-fixed model at temperature 0 answers the demo dataset's planted-finding tasks
-(missing index, PII, naming) two ways, N trials each, and we count total tokens,
-tool-calls, turns, and correctness. One arm has MCPg's advisors (roughly one
-tool call to the answer); the baseline arm has a lone `run_select` and must
-explore with raw SQL and interpret the rows itself.
-
-**The Tier-B harness is built and ready to run** — it is *costed* (it calls a
-real model), so it never runs in CI; you run it on your own machine with your
-own key:
-
-```bash
-export ANTHROPIC_API_KEY=sk-...
-export MCPG_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/demo
-mcpg --demo --database-url "$MCPG_TEST_DATABASE_URL"   # load the planted-flaw dataset
-
-uv sync --group bench
-uv run python -m benchmarks.tokens.tier_b.runner \
-    --database-url "$MCPG_TEST_DATABASE_URL" --trials 5 \
-    --model claude-sonnet-5 --output benchmarks/results/tokens-tier-b.json
-```
-
-It prints the headline — baseline-vs-MCPg mean tokens, the ratio, and each arm's
-correctness — and writes per-trial detail to JSON. Published figures will land
-here once a run is done on reference conditions.
-
-Paired with the [performance result](performance-benchmark.md) (negligible
-overhead, `t_db` identical to native), Tier A already makes the evidence-based
-case: **MCPg's compact, structured surface saves the tokens that matter, and the
-cost of the surface is shown, not hidden.**
+This page reports the deterministic, per-call token argument only — it does not
+claim, measure, or forecast the total tokens an agent spends across a full
+session. Paired with the [performance result](performance-benchmark.md)
+(negligible overhead, `t_db` identical to native), the evidence-based case is:
+**MCPg's compact, structured tool output saves tokens on the calls it's used
+for, and the cost of the tool surface is shown, not hidden.**

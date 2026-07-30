@@ -350,9 +350,8 @@ rendered dashboard: `benchmarks/results/perf-sf10.html`.
 ## Scope, and what's next
 
 This is v1 — the performance half of the thesis, and it stands on its own. It
-does **not** measure the token efficiency that is MCPg's actual headline
-advantage; that is the [v2 study](plans/benchmark-suite.md#objective-2--token-efficiency)
-(deterministic per-call token accounting, then an agent-loop task study with
-published transcripts, net of the tool-schema context cost). The performance
-result exists to clear the obvious objection — *"surely this adds latency"* —
-so the token argument is heard on its merits.
+does **not** measure token efficiency; that is
+[`docs/token-efficiency.md`](token-efficiency.md) — deterministic per-call
+token accounting, net of the tool-schema context cost. The performance result
+exists to clear the obvious objection — *"surely this adds latency"* — so the
+token argument is heard on its merits.
