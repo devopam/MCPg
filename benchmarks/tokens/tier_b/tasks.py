@@ -1,23 +1,35 @@
 """The Tier-B task set — database questions with **known-correct answers**.
 
-Each task is a question an agent answers by exploring the database, graded
-deterministically against the flaws the demo dataset (``mcpg --demo``) plants on
-purpose. That makes correctness checkable without a human or an LLM judge:
+Two kinds of task, both graded deterministically (no human or LLM judge):
+
+**Planted-flaw audit tasks** (``missing_index``, ``pii_columns``,
+``naming_violation``) — the demo dataset (``mcpg --demo``) plants these on
+purpose:
 
 - ``orders.customer_id`` is a foreign key with **no covering index** (the other
   FKs are indexed, so this one is a real finding).
 - ``customers.email`` / ``customers.phone`` are **PII**.
 - ``reviews."reviewSource"`` is a deliberate **camelCase naming** violation.
 
-The point of the study: MCPg's purpose-built advisors (index / sensitive-column
-/ naming) answer these in roughly one tool call, while a bare ``run_select``
-agent must run many exploratory queries and interpret raw rows itself — so the
-two arms diverge on tokens, tool-calls, and turns while (ideally) both reaching
-the same correct answer.
+MCPg's purpose-built advisors (index / sensitive-column / naming) answer these
+in roughly one tool call, while a bare ``run_select`` agent must run many
+exploratory queries and interpret raw rows itself.
 
-Graders are pure and case-insensitive, matching on the identifying tokens of the
-planted finding. They are intentionally lenient about prose and strict about the
-identifiers that constitute a correct answer.
+**Analytical NL→SQL tasks** (``top_revenue_category``,
+``top_customer_lifetime_spend``) — plain-English business questions requiring
+a real multi-table join + aggregation to answer correctly, not a lookup.
+Ground truth was computed directly against the live demo dataset (not
+asserted from memory) and each has a clear, unambiguous margin over the
+runner-up so an approximately-right answer still passes and a wrong one still
+fails. These exercise MCPg's actual NL→SQL tool (``translate_nl_to_sql``) and
+are more likely than the audit tasks to provoke a wrong first SQL attempt —
+the baseline arm has no tool for this beyond raw ``run_select``.
+
+Across both kinds, the two arms diverge on tokens, tool-calls, and turns while
+(ideally) both reaching the same correct answer. Graders are pure and
+case-insensitive, matching on the identifying tokens of the correct answer.
+They are intentionally lenient about prose and strict about the identifiers
+that constitute a correct answer.
 """
 
 from __future__ import annotations
@@ -25,6 +37,8 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+
+_WORD_BOUNDARY_US = re.compile(r"\bus\b")
 
 
 def _norm(text: str) -> str:
@@ -84,5 +98,91 @@ def default_tasks() -> list[Task]:
             # Correct answer names the camelCase column.
             grade=lambda a: "reviewsource" in _norm(a),
             ideal_tools=("audit_database",),
+        ),
+        Task(
+            id="top_revenue_category",
+            prompt="Which product category generated the most revenue overall? Name the category.",
+            # Verified against the live demo dataset: "Home" leads at 95.6M
+            # cents vs. the runner-up Computing's 80.4M — a clear margin, not
+            # a close call sensitive to rounding.
+            grade=lambda a: "home" in _norm(a),
+            ideal_tools=("translate_nl_to_sql", "run_select"),
+        ),
+        Task(
+            id="top_customer_lifetime_spend",
+            prompt="Who is our single highest-spending customer by total lifetime order value? Give their name.",
+            # Verified against the live demo dataset: Liam Okafor
+            # (customer_id 1) leads at 12.85M cents vs. the runner-up's
+            # 6.25M — more than double, not a close call.
+            grade=lambda a: "liam" in _norm(a) and "okafor" in _norm(a),
+            ideal_tools=("translate_nl_to_sql", "run_select"),
+        ),
+    ]
+
+
+def audit_tasks() -> list[Task]:
+    """The three planted-flaw DBA tasks from ``default_tasks()``, isolated for the real-harness diagnostic.
+
+    The synthetic Tier-B harness measured these three costing MCPg's
+    advisor arm 2.66x more tokens than bare SQL — the opposite of what the
+    tool descriptions promise (one advisor call vs. many exploratory
+    queries) — and that number was never explained, only recorded. This
+    subset lets ``real_harness_comparison`` re-run just these three through
+    real Claude Code with tool-trace capture, to see *why*: whether the
+    advisor tool gets called and then the agent explores anyway, whether
+    its output isn't trusted, or something else.
+
+    Selected by explicit id, not a positional slice of ``default_tasks()``
+    — a slice would silently pick the wrong tasks if that list's order or
+    length ever changes.
+    """
+    audit_ids = ("missing_index", "pii_columns", "naming_violation")
+    by_id = {task.id: task for task in default_tasks()}
+    missing = [i for i in audit_ids if i not in by_id]
+    if missing:
+        raise RuntimeError(f"audit_tasks(): expected task id(s) missing from default_tasks(): {missing}")
+    return [by_id[i] for i in audit_ids]
+
+
+def real_harness_tasks() -> list[Task]:
+    """Tasks for the real-harness (Claude Code on/off) comparison.
+
+    Kept separate from ``default_tasks()`` — these were designed after that
+    set was already committed and are used only by the real-harness
+    experiment, never by the synthetic-loop runner. Both require a genuine
+    multi-table join + ``GROUP BY``, not a lookup; ``worst_rated_product``
+    additionally needs a ``HAVING`` threshold, a clause that's easy to get
+    wrong syntactically. Ground truth verified directly against the live
+    demo dataset (``mcpg-postgres``, ``demo`` db, ``mcpg_demo`` schema).
+    """
+    return [
+        Task(
+            id="worst_rated_product",
+            prompt=(
+                "Which product has the lowest average customer rating? Only consider products with "
+                "at least 5 reviews. Name the product."
+            ),
+            # Verified: "Nimbus Laptop Stand" averages 2.000 (n=5) vs. the
+            # runner-up "Aurora Camera Backpack" at 3.000 (n=7) — a full
+            # 1-star margin, not a close call. "Nimbus" and "Laptop Stand"
+            # are each reused across several other products, but no other
+            # product combines both words.
+            grade=lambda a: _mentions_all(a, ["nimbus", "stand"]),
+            ideal_tools=("translate_nl_to_sql", "run_select"),
+        ),
+        Task(
+            id="top_revenue_country",
+            prompt="Which country generates the most total revenue from our orders? Give the country.",
+            # Verified: US leads at 100.56M cents total vs. India's 60.83M —
+            # a 65% margin. Word-boundary match on "us" (periods stripped,
+            # so "U.S." still matches) to avoid false positives from
+            # substrings like "customers" or "status"; "usa" and "united
+            # states" covered as alternate spellings.
+            grade=lambda a: (
+                bool(_WORD_BOUNDARY_US.search(re.sub(r"\.", "", _norm(a))))
+                or "usa" in _norm(a)
+                or "united states" in _norm(a)
+            ),
+            ideal_tools=("translate_nl_to_sql", "run_select"),
         ),
     ]

@@ -1,0 +1,157 @@
+{
+  "metadata": {
+    "kind": "real_harness_comparison",
+    "model": "claude-sonnet-5",
+    "trials_per_arm": 1,
+    "max_budget_usd": 1.0,
+    "mcpg_system_prompt_hint": "Prefer mcpg for DB inspection, schema/design review, query plans, and audits over ad-hoc psql.",
+    "host": {
+      "python": "3.13.7",
+      "os": "Windows-11-10.0.26200-SP0"
+    },
+    "complete": true,
+    "known_limitation": "translate_nl_to_sql's internal LLM call, if it fires in the mcpg arm, is not included in these token/cost numbers \u2014 see module docstring."
+  },
+  "trials": [
+    {
+      "task_id": "worst_rated_product",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 196475,
+      "tokens_out": 956,
+      "turns": 5,
+      "tool_calls": 4,
+      "passed": true,
+      "final_answer": "**Nimbus Laptop Stand** has the lowest average rating \u2014 2.0 average across 5 reviews (the minimum threshold), clearly lower than the next lowest (3.0).",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.17810399999999998,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "worst_rated_product",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 392681,
+      "tokens_out": 1055,
+      "turns": 9,
+      "tool_calls": 8,
+      "passed": true,
+      "final_answer": "**Nimbus Laptop Stand** has the lowest average rating (2.0 across 5 reviews) among products with at least 5 reviews.",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.39757079999999995,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "ToolSearch",
+        "mcp__mcpg__get_compact_schema",
+        "ToolSearch",
+        "mcp__mcpg__list_schemas",
+        "mcp__mcpg__get_compact_schema",
+        "mcp__mcpg__run_select"
+      ]
+    },
+    {
+      "task_id": "top_revenue_country",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 235855,
+      "tokens_out": 927,
+      "turns": 6,
+      "tool_calls": 5,
+      "passed": true,
+      "final_answer": "The US generates the most total revenue, with roughly $1,005,648 from orders \u2014 well ahead of India ($608,329), France ($375,694), and the UK ($347,571).",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.1893972,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "top_revenue_country",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 374429,
+      "tokens_out": 949,
+      "turns": 8,
+      "tool_calls": 7,
+      "passed": true,
+      "final_answer": "The US generates the most total revenue from orders \u2014 about $1,005,648 (100,564,844 cents), well ahead of the next country, India (~$608,329).",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.24522390000000002,
+      "tool_names": [
+        "ToolSearch",
+        "ToolSearch",
+        "mcp__mcpg__run_select",
+        "mcp__mcpg__get_compact_schema",
+        "mcp__mcpg__list_schemas",
+        "mcp__mcpg__get_compact_schema",
+        "mcp__mcpg__run_select"
+      ]
+    }
+  ],
+  "aggregate": {
+    "mcpg": {
+      "trials": 2,
+      "mean_total_tokens": 384557.0,
+      "mean_tool_calls": 7.5,
+      "mean_turns": 8.5,
+      "correctness": 1.0
+    },
+    "baseline": {
+      "trials": 2,
+      "mean_total_tokens": 217106.5,
+      "mean_tool_calls": 4.5,
+      "mean_turns": 5.5,
+      "correctness": 1.0
+    },
+    "token_ratio": 0.5645626006027715,
+    "errored": 0,
+    "per_task": [
+      {
+        "task_id": "worst_rated_product",
+        "mcpg": {
+          "mean_total_tokens": 393736.0,
+          "mean_tool_calls": 8.0,
+          "correctness": 1.0
+        },
+        "baseline": {
+          "mean_total_tokens": 197431.0,
+          "mean_tool_calls": 4.0,
+          "correctness": 1.0
+        }
+      },
+      {
+        "task_id": "top_revenue_country",
+        "mcpg": {
+          "mean_total_tokens": 375378.0,
+          "mean_tool_calls": 7.0,
+          "correctness": 1.0
+        },
+        "baseline": {
+          "mean_total_tokens": 236782.0,
+          "mean_tool_calls": 5.0,
+          "correctness": 1.0
+        }
+      }
+    ]
+  },
+  "schema_version": 1,
+  "kind": "tokens_tier_b"
+}

@@ -54,15 +54,89 @@ _DEFAULT_MCPG_TOOLS = [
     "recommend_indexes",
     "find_sensitive_columns",
     "audit_database",
+    "translate_nl_to_sql",
 ]
 _READ_TIMEOUT = timedelta(seconds=60)
+
+# Metadata keys that must match an on-disk checkpoint before it's safe to
+# resume from — anything else and "skip trials already present" would quietly
+# mix results from two different configurations into one aggregate.
+_RESUME_KEYS = ("model", "trials_per_arm", "max_turns", "mcpg_tools", "database_url")
+
+
+def _checkpoint(
+    args: argparse.Namespace, trials: list[TrialResult], resolved_mcpg_tools: set[str], *, complete: bool
+) -> TierBReport:
+    """Write the run so far to ``args.output``, overwriting the prior checkpoint.
+
+    Each trial is a real, costed model conversation — losing one to an
+    unexplained process interruption (seen repeatedly running the perf harness
+    in this environment) means paying for it again for nothing. Checkpointing
+    after every trial means an interruption loses at most the one in flight,
+    and a rerun against the same --output can skip everything already paid for
+    (see :func:`_load_resumable`).
+    """
+    metadata: dict[str, Any] = {
+        "timestamp": args.timestamp,
+        "git_sha": args.git_sha,
+        "mcpg_version": __version__,
+        "model": args.model,
+        "trials_per_arm": args.trials,
+        "max_turns": args.max_turns,
+        "mcpg_tools": sorted(resolved_mcpg_tools),
+        "database_url": args.database_url,
+        "host": {"python": platform.python_version(), "os": platform.platform()},
+        "complete": complete,
+    }
+    report = TierBReport(metadata=metadata, trials=trials, aggregate=aggregate(trials))
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8")
+    return report
+
+
+def _load_resumable(args: argparse.Namespace) -> list[TrialResult]:
+    """Load already-paid-for trials from ``args.output``, if it's safe to resume.
+
+    Safe means: the file exists, isn't already ``complete``, and its recorded
+    config (model / trials-per-arm / max-turns / tool set / database URL)
+    matches this invocation's — otherwise silently reusing it would mix
+    incompatible runs
+    into one aggregate. Any mismatch or unreadable file means starting clean;
+    this never raises, since a corrupt/foreign file just isn't resumable, not
+    a fatal error.
+    """
+    if not args.output.exists():
+        return []
+    try:
+        data = json.loads(args.output.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    meta = data.get("metadata", {})
+    if meta.get("complete"):
+        print(f"note: {args.output} already holds a complete run; overwriting with a fresh one.")
+        return []
+    this_run = {
+        "model": args.model,
+        "trials_per_arm": args.trials,
+        "max_turns": args.max_turns,
+        "mcpg_tools": sorted(args.mcpg_tools),
+        "database_url": args.database_url,
+    }
+    if any(meta.get(k) != this_run[k] for k in _RESUME_KEYS):
+        print(f"note: {args.output} exists but its config differs from this run; starting fresh, not resuming.")
+        return []
+    trials = [TrialResult(**t) for t in data.get("trials", [])]
+    if trials:
+        print(f"resuming from {args.output}: {len(trials)} trial(s) already recorded, will not be re-run.")
+    return trials
 
 
 async def _run(args: argparse.Namespace) -> TierBReport:
     settings = load_settings({"MCPG_DATABASE_URL": args.database_url})
     model = AnthropicClient(args.model)  # raises a clear error if the key/SDK is missing
     tasks = default_tasks()
-    trials: list[TrialResult] = []
+    trials: list[TrialResult] = list(_load_resumable(args))
+    done = {(t.task_id, t.arm, t.trial) for t in trials}
     async with AsyncExitStack() as stack:
         server = create_server(settings)
         session = await stack.enter_async_context(
@@ -78,6 +152,9 @@ async def _run(args: argparse.Namespace) -> TierBReport:
         for task in tasks:
             for trial in range(args.trials):
                 for arm, allowed in arms:
+                    if (task.id, arm, trial) in done:
+                        print(f"  {task.id:16} {arm:9} #{trial}: skipped (already recorded)")
+                        continue
                     result = await run_trial(
                         task,
                         session=session,
@@ -93,18 +170,11 @@ async def _run(args: argparse.Namespace) -> TierBReport:
                         f"  {task.id:16} {arm:9} #{trial}: "
                         f"tok={result.total_tokens:6} tools={result.tool_calls:2} turns={result.turns:2} {flag}"
                     )
+                    # Each trial just spent real money on a real model call — persist it
+                    # immediately so an interruption never loses more than the one in flight.
+                    _checkpoint(args, trials, mcpg_tools, complete=False)
 
-    metadata: dict[str, Any] = {
-        "timestamp": args.timestamp,
-        "git_sha": args.git_sha,
-        "mcpg_version": __version__,
-        "model": args.model,
-        "trials_per_arm": args.trials,
-        "max_turns": args.max_turns,
-        "mcpg_tools": sorted(mcpg_tools),
-        "host": {"python": platform.python_version(), "os": platform.platform()},
-    }
-    return TierBReport(metadata=metadata, trials=trials, aggregate=aggregate(trials))
+    return _checkpoint(args, trials, mcpg_tools, complete=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,8 +190,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     report = asyncio.run(_run(args))
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report.to_dict(), indent=2) + "\n")
     agg = report.aggregate
     print(
         f"\naggregate: baseline {agg['baseline']['mean_total_tokens']:.0f} tok vs "

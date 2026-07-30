@@ -1,0 +1,216 @@
+{
+  "metadata": {
+    "kind": "real_harness_comparison",
+    "model": "claude-sonnet-5",
+    "trials_per_arm": 1,
+    "max_budget_usd": 1.0,
+    "mcpg_system_prompt_hint": null,
+    "task_set": "audit",
+    "host": {
+      "python": "3.13.7",
+      "os": "Windows-11-10.0.26200-SP0"
+    },
+    "complete": true,
+    "known_limitation": "translate_nl_to_sql's internal LLM call, if it fires in the mcpg arm, is not included in these token/cost numbers \u2014 see module docstring."
+  },
+  "trials": [
+    {
+      "task_id": "missing_index",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 199530,
+      "tokens_out": 1879,
+      "turns": 5,
+      "tool_calls": 4,
+      "passed": true,
+      "final_answer": "**`mcpg_demo.orders.customer_id`** is the missing index.\n\nAll 5 foreign-key columns in the schema were checked against `pg_indexes`:\n\n| Table | FK column | References | Indexed? |\n|---|---|---|---|\n| order_items | order_id | orders | \u2705 |\n| order_items | product_id | products | \u2705 |\n| reviews | customer_id | customers | \u2705 |\n| reviews | product_id | products | \u2705 |\n| **orders** | **customer_id** | **customers** | \u274c |\n\n`orders` has 3,000 rows and is the largest FK-source table without coverage \u2014 every \"find a customer's orders\" join or `WHERE customer_id = ...` lookup on it is doing a sequential scan, and it also blocks index-assisted locking when rows in `customers` are updated/deleted. Fix:\n\n```sql\nCREATE INDEX orders_customer_id_idx ON mcpg_demo.orders (customer_id);\n```",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.16095120000000002,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "missing_index",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 355582,
+      "tokens_out": 2159,
+      "turns": 12,
+      "tool_calls": 11,
+      "passed": true,
+      "final_answer": "**Table: `orders`, Column: `customer_id`**\n\nThe `orders.customer_id` foreign key (referencing `customers.customer_id`) has no supporting index \u2014 `orders` only has its primary-key index on `order_id`. This is the clear outlier: every other FK column in the schema (`order_items.order_id`, `order_items.product_id`, `reviews.customer_id`, `reviews.product_id`) already has a dedicated btree index, but `orders.customer_id` does not.\n\nIt's also the highest-impact fix: `orders` is the largest table by row count (3,000 rows) with the second-highest scan volume in the schema, and any lookup, join, or `ON DELETE`/`ON UPDATE` cascade check from `customers` to `orders` (e.g., \"get all orders for a customer\") is forced into a sequential scan without it.\n\n**Recommended fix:**\n```sql\nCREATE INDEX orders_customer_id_idx ON mcpg_demo.orders USING btree (customer_id);\n```",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.29032949999999996,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "ToolSearch",
+        "mcp__mcpg__list_foreign_keys",
+        "mcp__mcpg__list_tables",
+        "mcp__mcpg__recommend_indexes",
+        "mcp__mcpg__list_indexes",
+        "mcp__mcpg__list_indexes",
+        "mcp__mcpg__list_indexes",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "pii_columns",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 196821,
+      "tokens_out": 1279,
+      "turns": 5,
+      "tool_calls": 4,
+      "passed": true,
+      "final_answer": "Based on the `mcpg_demo` schema (the only application schema in this database), here are the columns containing PII:\n\n**Direct PII**\n- `customers.full_name` \u2014 full legal name\n- `customers.email` \u2014 email address\n- `customers.phone` \u2014 phone number\n\n**Quasi-identifiers / indirect PII** (not identifying alone, but personal attributes tied to an individual)\n- `customers.country` \u2014 geographic location\n- `customers.signup_date` \u2014 behavioral/account metadata\n- `customers.marketing_opt_in` \u2014 consent/preference record tied to the individual\n\n**Linking keys** (not PII themselves, but they join other tables back to a specific person, extending PII exposure to those tables)\n- `orders.customer_id`, `reviews.customer_id` \u2014 foreign keys to `customers.customer_id`\n\nAll other columns (`products.*`, `order_items.*`, `orders.status`/`order_date`/`total_cents`, `reviews.review_text`/`rating`/`reviewSource`/`created_at`) are transactional/product data with no PII \u2014 I checked sample `review_text` values and they don't embed names or contact details.\n\n**Summary list:**\n- `customers.full_name`\n- `customers.email`\n- `customers.phone`\n- `customers.country`\n- `customers.signup_date`\n- `customers.marketing_opt_in`",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.146037,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "pii_columns",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 259773,
+      "tokens_out": 2076,
+      "turns": 10,
+      "tool_calls": 9,
+      "passed": true,
+      "final_answer": "I've reviewed the full schema across all 5 tables (`customers`, `orders`, `order_items`, `products`, `reviews`). Only `customers` holds direct personal data.\n\n## PII columns\n\n| Column | Why it's PII |\n|---|---|\n| **`mcpg_demo.customers.full_name`** | Direct identifier \u2014 a person's name |\n| **`mcpg_demo.customers.email`** | Direct identifier / contact info |\n| **`mcpg_demo.customers.phone`** | Direct identifier / contact info |\n\n## Borderline \u2014 worth flagging but arguably not PII on its own\n\n- **`mcpg_demo.customers.country`** \u2014 coarse geographic data; not identifying by itself, but combined with the other fields in the same row it contributes to a fuller profile. I wouldn't classify it as PII in isolation.\n- **`mcpg_demo.customers.signup_date`** and **`marketing_opt_in`** \u2014 behavioral/account metadata tied to a person, not identifying on their own.\n\nNo other table contains personal data: `orders`, `order_items`, and `products` are transactional/catalog data keyed only by numeric IDs, and `reviews.review_text` / `reviewSource` are free-text/attribution fields that *could* incidentally contain PII if a reviewer wrote personal details in their review, but the column itself isn't designed to hold PII (I didn't sample row content \u2014 this is schema-only heuristic).\n\nIf you want certainty on that last point (e.g., checking whether `review_text` actually contains emails/names in the data), I can sample rows \u2014 just say so.",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.2160306,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "ToolSearch",
+        "mcp__mcpg__find_sensitive_columns",
+        "mcp__mcpg__describe_table",
+        "mcp__mcpg__describe_table",
+        "mcp__mcpg__describe_table",
+        "mcp__mcpg__describe_table",
+        "mcp__mcpg__describe_table"
+      ]
+    },
+    {
+      "task_id": "naming_violation",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 116681,
+      "tokens_out": 438,
+      "turns": 3,
+      "tool_calls": 2,
+      "passed": true,
+      "final_answer": "The offending column is `mcpg_demo.reviews.reviewSource` \u2014 it's camelCase, while every other column in the schema uses snake_case.",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.10307639999999998,
+      "tool_names": [
+        "Bash",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "naming_violation",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 257340,
+      "tokens_out": 895,
+      "turns": 6,
+      "tool_calls": 5,
+      "passed": true,
+      "final_answer": "The offending column is **`reviewSource`** on `mcpg_demo.reviews` \u2014 it's camelCase while the rest of the schema uses snake_case.",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.18834030000000002,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "ToolSearch",
+        "mcp__mcpg__list_schemas",
+        "mcp__mcpg__lint_naming_conventions"
+      ]
+    }
+  ],
+  "aggregate": {
+    "mcpg": {
+      "trials": 3,
+      "mean_total_tokens": 292608.3333333333,
+      "mean_tool_calls": 8.333333333333334,
+      "mean_turns": 9.333333333333334,
+      "correctness": 1.0
+    },
+    "baseline": {
+      "trials": 3,
+      "mean_total_tokens": 172209.33333333334,
+      "mean_tool_calls": 3.3333333333333335,
+      "mean_turns": 4.333333333333333,
+      "correctness": 1.0
+    },
+    "token_ratio": 0.5885318827784582,
+    "errored": 0,
+    "per_task": [
+      {
+        "task_id": "missing_index",
+        "mcpg": {
+          "mean_total_tokens": 357741.0,
+          "mean_tool_calls": 11.0,
+          "correctness": 1.0
+        },
+        "baseline": {
+          "mean_total_tokens": 201409.0,
+          "mean_tool_calls": 4.0,
+          "correctness": 1.0
+        }
+      },
+      {
+        "task_id": "pii_columns",
+        "mcpg": {
+          "mean_total_tokens": 261849.0,
+          "mean_tool_calls": 9.0,
+          "correctness": 1.0
+        },
+        "baseline": {
+          "mean_total_tokens": 198100.0,
+          "mean_tool_calls": 4.0,
+          "correctness": 1.0
+        }
+      },
+      {
+        "task_id": "naming_violation",
+        "mcpg": {
+          "mean_total_tokens": 258235.0,
+          "mean_tool_calls": 5.0,
+          "correctness": 1.0
+        },
+        "baseline": {
+          "mean_total_tokens": 117119.0,
+          "mean_tool_calls": 2.0,
+          "correctness": 1.0
+        }
+      }
+    ]
+  },
+  "schema_version": 1,
+  "kind": "tokens_tier_b"
+}

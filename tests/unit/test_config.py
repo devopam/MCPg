@@ -1,12 +1,20 @@
 """Tests for the env-driven configuration loader."""
 
-from os.path import abspath
+import sys
 
 import pytest
 
 from mcpg.config import AccessMode, ConfigError, Transport, load_settings
 
 _DB_URL = "postgresql://user:secret@localhost:5432/app"
+
+# os.path.isabs requires a drive letter on Windows (ntpath), so Unix-style
+# paths like "/usr/bin" aren't absolute there — pick real absolute paths per
+# platform for allowlist tests that need one.
+if sys.platform == "win32":
+    _ABS_BIN_1, _ABS_BIN_2 = "C:\\bin", "C:\\Windows\\System32"
+else:
+    _ABS_BIN_1, _ABS_BIN_2 = "/usr/bin", "/usr/local/bin"
 
 
 def test_loads_database_url_and_applies_safe_defaults() -> None:
@@ -988,19 +996,15 @@ def test_subprocess_hardening_defaults_to_open() -> None:
 
 
 def test_subprocess_hardening_parses_allowlist_and_limits() -> None:
-    # "/usr/bin"-style paths are absolute on POSIX but not per Windows'
-    # isabs (no drive letter) — abspath() anchors them to something
-    # isabs() accepts on either platform without changing what's asserted.
-    bin_dir, local_bin_dir = abspath("/usr/bin"), abspath("/usr/local/bin")
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _DB_URL,
-            "MCPG_SUBPROCESS_BIN_ALLOWLIST": f"{bin_dir}, {local_bin_dir}",
+            "MCPG_SUBPROCESS_BIN_ALLOWLIST": f"{_ABS_BIN_1}, {_ABS_BIN_2}",
             "MCPG_SUBPROCESS_CPU_SECONDS": "30",
             "MCPG_SUBPROCESS_MEMORY_MB": "512",
         }
     )
-    assert settings.subprocess_bin_allowlist == (bin_dir, local_bin_dir)
+    assert settings.subprocess_bin_allowlist == (_ABS_BIN_1, _ABS_BIN_2)
     assert settings.subprocess_cpu_seconds == 30
     assert settings.subprocess_memory_mb == 512
 
@@ -1010,7 +1014,7 @@ def test_subprocess_bin_allowlist_rejects_relative_paths() -> None:
         load_settings(
             {
                 "MCPG_DATABASE_URL": _DB_URL,
-                "MCPG_SUBPROCESS_BIN_ALLOWLIST": f"{abspath('/usr/bin')}, relative/dir",
+                "MCPG_SUBPROCESS_BIN_ALLOWLIST": f"{_ABS_BIN_1}, relative/dir",
             }
         )
 
