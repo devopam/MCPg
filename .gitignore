@@ -26,3 +26,7 @@ _site/
 .sass-cache/
 .jekyll-cache/
 .jekyll-metadata
+
+# Subagent-driven-development scratch workspace (ledgers, briefs, review
+# packages) — per-plan working state, not part of the shipped repo.
+.superpowers/
