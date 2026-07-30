@@ -845,6 +845,57 @@ def test_run_http_builds_app_and_serves_via_uvicorn(monkeypatch: pytest.MonkeyPa
     assert captured["app"] is not None
 
 
+def test_run_http_falls_back_to_private_policy_name_when_public_name_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CPython 3.14 privatized WindowsSelectorEventLoopPolicy; reading the
+    old public name can raise NameError (not AttributeError) via the
+    module's own deprecation shim — see the comment on
+    test_run_http_pins_selector_loop_on_windows. A bare
+    ``getattr(asyncio, name, default)`` does NOT catch NameError, only
+    AttributeError, so this simulates that exact shim to prove the
+    fallback to the private name still works."""
+    import asyncio
+
+    from mcpg import http_runtime
+
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+    captured_kwargs: dict[str, object] = {}
+
+    def _fake_run(app: object, *, host: str, port: int, **kwargs: object) -> None:
+        captured_kwargs.update(kwargs)
+
+    class _FakePrivateSelectorPolicy:
+        pass
+
+    def _raising_getattr(name: str) -> object:
+        if name == "WindowsSelectorEventLoopPolicy":
+            raise NameError(f"module 'asyncio' has no attribute {name!r} (renamed in 3.14)")
+        raise AttributeError(name)
+
+    policy_calls: list[object] = []
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", _fake_run)
+    monkeypatch.setattr(http_runtime.sys, "platform", "win32")
+    monkeypatch.delitem(asyncio.__dict__, "WindowsSelectorEventLoopPolicy", raising=False)
+    monkeypatch.setattr(asyncio, "__getattr__", _raising_getattr, raising=False)
+    monkeypatch.setitem(asyncio.__dict__, "_WindowsSelectorEventLoopPolicy", _FakePrivateSelectorPolicy)
+    monkeypatch.setattr(asyncio, "set_event_loop_policy", lambda policy: policy_calls.append(policy))
+
+    class _Stub:
+        def streamable_http_app(self) -> Starlette:
+            return _bare_app()
+
+    http_runtime.run_http(_Stub(), settings, kind="streamable-http")
+
+    assert captured_kwargs.get("loop") == "none"
+    assert len(policy_calls) == 1
+    assert isinstance(policy_calls[0], _FakePrivateSelectorPolicy)
+
+
 def test_run_http_pins_selector_loop_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     # async psycopg dies on the ProactorEventLoop; uvicorn reinstalls the
     # proactor policy on Windows, so run_http must re-pin the selector

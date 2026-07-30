@@ -25,7 +25,14 @@ adheres to [Semantic Versioning](https://semver.org/).
   selector policy for psycopg (`__main__.py`, `http_runtime.run_http`) now
   fall back to the private name when the public one is gone, instead of
   raising `AttributeError` at startup on 3.14. Surfaced by `mypy --strict`
-  run on Windows (the repo's `python_version = "3.14"` target).
+  run on Windows (the repo's `python_version = "3.14"` target). Hardened
+  per review feedback (#290): the public-name lookup now uses
+  `try`/`except (AttributeError, NameError)` rather than
+  `getattr(..., default)`, since CPython 3.14's own deprecation shim can
+  raise `NameError` reading the removed name — a bare `getattr` with a
+  default only swallows `AttributeError` and would have re-raised
+  uncaught. Covered by
+  `test_run_http_falls_back_to_private_policy_name_when_public_name_raises`.
 - **Two Windows-only test bugs**, surfaced while verifying the above on a
   Windows dev box: `test_subprocess_hardening_parses_allowlist_and_limits`
   (and the adjacent relative-path-rejection test) hardcoded POSIX
