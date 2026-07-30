@@ -2,7 +2,7 @@
 
 import pytest
 from _fakes import FakePool
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from mcpg.config import Settings, Transport, load_settings
 from mcpg.cursors import CursorManager
@@ -21,18 +21,18 @@ def _settings_with(transport: Transport) -> Settings:
 def test_create_server_returns_named_fastmcp() -> None:
     server = create_server(_SETTINGS)
 
-    assert isinstance(server, FastMCP)
+    assert isinstance(server, MCPServer)
     assert server.name == SERVER_NAME
 
 
 def test_create_server_reports_mcpg_version_in_serverinfo() -> None:
-    # FastMCP doesn't forward a version, so without the pin the initialize
-    # handshake would advertise the MCP SDK's version instead of mcpg's.
+    # MCPServer forwards ``version`` straight through to the low-level server,
+    # so mcpg's version is what gets advertised in the initialize handshake.
     from mcpg import __version__
 
     server = create_server(_SETTINGS)
 
-    init_options = server._mcp_server.create_initialization_options()
+    init_options = server._lowlevel_server.create_initialization_options()
     assert init_options.server_version == __version__
 
 
@@ -58,7 +58,7 @@ async def test_lifespan_connects_database_and_yields_app_context() -> None:
 
 def test_run_dispatches_stdio_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[str] = []
-    monkeypatch.setattr(FastMCP, "run", lambda self, transport: seen.append(transport))
+    monkeypatch.setattr(MCPServer, "run", lambda self, transport: seen.append(transport))
 
     run(_settings_with(Transport.STDIO))
 

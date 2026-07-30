@@ -1,6 +1,6 @@
 """MCP server bootstrap for MCPg.
 
-``create_server`` builds a configured :class:`FastMCP` instance. All shared
+``create_server`` builds a configured :class:`MCPServer` instance. All shared
 state (settings, the database connection) is owned by the server's lifespan
 and exposed to tools via :class:`AppContext` — there is no module-level
 mutable global state.
@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-from mcp.types import ContentBlock
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.types import CallToolResult, InputRequiredResult
 
 from mcpg import __version__, about, audit
 from mcpg.analytical import AnalyticalRunner
@@ -34,11 +34,11 @@ SERVER_INSTRUCTIONS = (
     "MCPg: a PostgreSQL MCP server for inspecting, querying, operating, and tuning a Postgres database."
 )
 
-__all__ = ["SERVER_NAME", "AppContext", "AuditedFastMCP", "create_server", "make_lifespan", "run"]
+__all__ = ["SERVER_NAME", "AppContext", "AuditedMCPServer", "create_server", "make_lifespan", "run"]
 
 
-class AuditedFastMCP(FastMCP[AppContext]):
-    """A FastMCP server that records an audit event for every tool call."""
+class AuditedMCPServer(MCPServer[AppContext]):
+    """An MCPServer that records an audit event for every tool call."""
 
     rate_limiter: RateLimiter
     mcpg_settings: Settings
@@ -47,16 +47,6 @@ class AuditedFastMCP(FastMCP[AppContext]):
     # the ``mcpg[otel]`` extra isn't installed — :func:`tool_span`
     # treats both cases as no-ops so ``call_tool`` doesn't branch.
     otel_tracer: TracerHandle | None = None
-
-    def __init__(self, *args: Any, version: str | None = None, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        # FastMCP's constructor doesn't forward a version to the low-level
-        # MCP server, so the ``initialize`` handshake reports the MCP SDK's
-        # version in ``serverInfo`` rather than ours. This subclass exists
-        # to extend FastMCP, so it's the right place to hold that one bit of
-        # SDK-internal knowledge: pin the advertised version to mcpg's own.
-        if version is not None:
-            self._mcp_server.version = version
 
     def _log_if_slow(self, name: str, duration: float) -> None:
         if not hasattr(self, "mcpg_settings"):
@@ -76,7 +66,9 @@ class AuditedFastMCP(FastMCP[AppContext]):
                 threshold_sec,
             )
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[ContentBlock] | dict[str, Any]:
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], context: Context[AppContext, Any] | None = None
+    ) -> CallToolResult | InputRequiredResult:
         self.in_flight_calls += 1
         try:
             # Enforce rate limiting if configured
@@ -95,7 +87,7 @@ class AuditedFastMCP(FastMCP[AppContext]):
             start = time.monotonic()
             try:
                 with tool_span(self.otel_tracer, name, arguments, bucket=bucket):
-                    result = await super().call_tool(name, arguments)
+                    result = await super().call_tool(name, arguments, context)
             except Exception as exc:
                 duration = time.monotonic() - start
                 self._log_if_slow(name, duration)
@@ -117,7 +109,7 @@ def make_lifespan(
     listen_manager: ListenManager,
     cursor_manager: CursorManager,
     analytical_runner: AnalyticalRunner | None = None,
-) -> Callable[[FastMCP[AppContext]], AbstractAsyncContextManager[AppContext]]:
+) -> Callable[[MCPServer[AppContext]], AbstractAsyncContextManager[AppContext]]:
     """Build the server lifespan: open the database on start, close on stop.
 
     The listen manager is created eagerly (cheap — it doesn't open the
@@ -128,7 +120,7 @@ def make_lifespan(
     """
 
     @asynccontextmanager
-    async def lifespan(_server: FastMCP[AppContext]) -> AsyncIterator[AppContext]:
+    async def lifespan(_server: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
         from mcpg.cache import CacheManager, cache_namespace
 
         cache_manager = CacheManager(
@@ -194,8 +186,8 @@ def create_server(
     listen_manager: ListenManager | None = None,
     cursor_manager: CursorManager | None = None,
     analytical_runner: AnalyticalRunner | None = None,
-) -> FastMCP[AppContext]:
-    """Construct a configured FastMCP server.
+) -> MCPServer[AppContext]:
+    """Construct a configured MCPServer.
 
     Args:
         settings: Validated server configuration.
@@ -235,13 +227,11 @@ def create_server(
     ar = analytical_runner if settings.enable_analytical_queries else None
     if ar is None and database is None and settings.enable_analytical_queries:
         ar = AnalyticalRunner(settings)
-    server: AuditedFastMCP = AuditedFastMCP(
+    server: AuditedMCPServer = AuditedMCPServer(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
         version=__version__,
         lifespan=make_lifespan(settings, db, lm, cm, ar),
-        host=settings.http_host,
-        port=settings.http_port,
     )
     server.mcpg_settings = settings
     server.otel_tracer = setup_tracing(settings)
