@@ -6,7 +6,13 @@ import asyncio
 import sys
 
 if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    # CPython 3.14 privatized WindowsSelectorEventLoopPolicy to
+    # _WindowsSelectorEventLoopPolicy; fall back to it when the public
+    # name is gone so this keeps working on 3.12-3.14.
+    _selector_policy_cls = (
+        getattr(asyncio, "WindowsSelectorEventLoopPolicy", None) or asyncio._WindowsSelectorEventLoopPolicy
+    )
+    asyncio.set_event_loop_policy(_selector_policy_cls())
 
 from mcpg import __version__
 from mcpg.config import ConfigError, load_settings

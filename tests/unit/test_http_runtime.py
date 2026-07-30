@@ -822,7 +822,10 @@ def test_run_http_builds_app_and_serves_via_uvicorn(monkeypatch: pytest.MonkeyPa
 
     captured: dict[str, object] = {}
 
-    def _fake_run(app: object, *, host: str, port: int) -> None:
+    def _fake_run(app: object, *, host: str, port: int, **kwargs: object) -> None:
+        # **kwargs swallows the win32-only ``loop="none"`` kwarg
+        # (see http_runtime.run_http) without coupling this test to
+        # the host platform.
         captured["app"] = app
         captured["host"] = host
         captured["port"] = port
