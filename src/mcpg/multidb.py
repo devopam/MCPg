@@ -125,7 +125,7 @@ class ReadOnlySqlDriver(SqlDriver):
 
 
 # NOTE: these two return shapes intentionally avoid ``slots=True`` and field
-# defaults. FastMCP derives the tool ``outputSchema`` by running pydantic's
+# defaults. MCPServer derives the tool ``outputSchema`` by running pydantic's
 # schema builder over the return annotation; a slotted dataclass with a
 # ``field(default_factory=...)`` trips pydantic's non-serializable-default
 # guard and silently drops the schema. The other nested-return shapes in the

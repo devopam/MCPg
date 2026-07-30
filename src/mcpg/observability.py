@@ -24,7 +24,7 @@ Three series are exported:
   ``rate(..._sum[1m]) / rate(..._count[1m])`` query computes the mean.
 
 A single module-level :class:`Metrics` instance backs the
-:class:`mcpg.server.AuditedFastMCP` hook. Tests get a fresh instance
+:class:`mcpg.server.AuditedMCPServer` hook. Tests get a fresh instance
 via :func:`reset_metrics` so cross-test pollution can't accumulate.
 """
 
@@ -119,7 +119,7 @@ class Metrics:
             )
 
 
-# Module-level singleton — the server's AuditedFastMCP records into it.
+# Module-level singleton — the server's AuditedMCPServer records into it.
 _metrics = Metrics()
 
 

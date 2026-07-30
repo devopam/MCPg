@@ -1,6 +1,6 @@
 """HTTP-transport extensions: bearer-token auth + Prometheus /metrics.
 
-FastMCP's ``streamable_http_app()`` / ``sse_app()`` return Starlette
+MCPServer's ``streamable_http_app()`` / ``sse_app()`` return Starlette
 applications. We don't need to fork that surface — we wrap the
 returned app with two pieces of middleware-style infrastructure:
 
@@ -528,10 +528,10 @@ class _RequestTimeoutMiddleware:
 
 
 def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlette:
-    """Wrap a FastMCP HTTP app with metrics + optional auth.
+    """Wrap an MCPServer HTTP app with metrics + optional auth.
 
     Args:
-        server: A ``FastMCP`` instance.
+        server: A ``MCPServer`` instance.
         settings: Active server settings.
         kind: ``"streamable-http"`` or ``"sse"``.
 
@@ -614,7 +614,7 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
     if settings.http_ip_allowlist:
         app.add_middleware(_IPAllowlistMiddleware, allowlist=settings.http_ip_allowlist)
 
-    # FastMCP types streamable_http_app() / sse_app() as Starlette already,
+    # MCPServer types streamable_http_app() / sse_app() as Starlette already,
     # but mypy under strict mode loses the type through the .add_middleware
     # call (returns None). Cast through Any to settle the return type
     # without hiding real type errors.

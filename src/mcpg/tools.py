@@ -11,8 +11,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from typing import Annotated, Any, TypeVar, cast
 
-from mcp.server.fastmcp import Context, FastMCP
-from mcp.server.session import ServerSession
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -98,8 +97,8 @@ from mcpg.context import AppContext
 from mcpg.policy import Capability, is_permitted
 from mcpg.sql import SqlDriver
 
-# The MCP request context FastMCP injects into every tool.
-_Ctx = Context[ServerSession, AppContext, Any]
+# The MCP request context the MCP SDK injects into every tool.
+_Ctx = Context[AppContext, Any]
 
 
 def _with_example(description: str, example: str) -> str:
@@ -274,7 +273,7 @@ _DATABASE_PARAM_DESC = (
 _DatabaseArg = Annotated[str | None, Field(description=_DATABASE_PARAM_DESC)]
 
 
-def _register_server_info(server: FastMCP[AppContext]) -> None:
+def _register_server_info(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_server_info",
         description=(
@@ -311,9 +310,9 @@ def _register_server_info(server: FastMCP[AppContext]) -> None:
     )
     async def describe_self(ctx: _Ctx) -> dict[str, Any]:
         del ctx  # purely-static response; no per-request state
-        # Pull the live tool list off the FastMCP instance so the per-bucket
+        # Pull the live tool list off the MCPServer instance so the per-bucket
         # counts stay accurate even if a stricter flag profile hides some
-        # tools. The protected attribute access is intentional — FastMCP
+        # tools. The protected attribute access is intentional — MCPServer
         # doesn't expose a public iterator yet.
         registered_tools = list(await server.list_tools())
         names = [t.name for t in registered_tools]
@@ -374,7 +373,7 @@ def _register_server_info(server: FastMCP[AppContext]) -> None:
         return render_prometheus()
 
 
-def _register_introspection(server: FastMCP[AppContext]) -> None:
+def _register_introspection(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="list_schemas",
         description=_with_example(
@@ -1010,7 +1009,7 @@ def _register_introspection(server: FastMCP[AppContext]) -> None:
         return await migration_history.read_migration_history(_driver(ctx, database), schema=schema)
 
 
-def _register_diagrams(server: FastMCP[AppContext]) -> None:
+def _register_diagrams(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="generate_schema_diagram",
         description=_with_example(
@@ -1082,7 +1081,7 @@ def _register_diagrams(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "generate_schema_docs", _run, schema, include_samples, database=database)
 
 
-def _register_schema_diff(server: FastMCP[AppContext]) -> None:
+def _register_schema_diff(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="compare_schemas",
         description=_with_example(
@@ -1100,7 +1099,7 @@ def _register_schema_diff(server: FastMCP[AppContext]) -> None:
         return diff
 
 
-def _register_rag_efficiency(server: FastMCP[AppContext]) -> None:
+def _register_rag_efficiency(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="analyze_vector_search_efficiency",
         description=(
@@ -1148,7 +1147,7 @@ def _register_rag_efficiency(server: FastMCP[AppContext]) -> None:
         return report
 
 
-def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
+def _register_rag_analytics(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="analyze_reranker_lift",
         description=(
@@ -1280,7 +1279,7 @@ def _register_rag_analytics(server: FastMCP[AppContext]) -> None:
         return report
 
 
-def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
+def _register_vector_tuning(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="tune_vector_index",
         description=(
@@ -1775,7 +1774,7 @@ def _register_vector_tuning(server: FastMCP[AppContext]) -> None:
         return report
 
 
-def _register_prisma(server: FastMCP[AppContext]) -> None:
+def _register_prisma(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="generate_prisma_schema",
         description=(
@@ -1913,7 +1912,7 @@ def _register_prisma(server: FastMCP[AppContext]) -> None:
         return await sqlc.generate_sqlc_schema(_driver(ctx, database), schema)
 
 
-def _register_advisors(server: FastMCP[AppContext]) -> None:
+def _register_advisors(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="run_advisors",
         description=(
@@ -2320,7 +2319,7 @@ def _register_advisors(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "optimize_query", _run, sql, database=database)
 
 
-def _register_composite(server: FastMCP[AppContext]) -> None:
+def _register_composite(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="summarize_table",
         description=_with_example(
@@ -2362,7 +2361,7 @@ def _register_composite(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "why_is_this_slow", _run, sql, database=database)
 
 
-def _register_data_movement(server: FastMCP[AppContext]) -> None:
+def _register_data_movement(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="export_query",
         description=_with_example(
@@ -2403,7 +2402,7 @@ def _register_data_movement(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
+def _register_data_movement_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="import_csv",
         description=(
@@ -2503,7 +2502,7 @@ def _register_data_movement_writes(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_migrations(server: FastMCP[AppContext]) -> None:
+def _register_migrations(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="prepare_migration",
         description=_with_example(
@@ -2688,7 +2687,7 @@ def _register_migrations(server: FastMCP[AppContext]) -> None:
         ]
 
 
-def _register_timescaledb_reads(server: FastMCP[AppContext]) -> None:
+def _register_timescaledb_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="list_hypertables",
         description=(
@@ -2721,7 +2720,7 @@ def _register_timescaledb_reads(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
+def _register_timescaledb_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="create_hypertable",
         description=(
@@ -2788,7 +2787,7 @@ def _register_timescaledb_writes(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_listen(server: FastMCP[AppContext]) -> None:
+def _register_listen(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="subscribe_channel",
         description=(
@@ -2848,7 +2847,7 @@ def _register_listen(server: FastMCP[AppContext]) -> None:
         return [{"subscription_id": sub_id, "channel": ch} for sub_id, ch in manager.active_subscriptions()]
 
 
-def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
+def _register_data_movement_shell(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="dump_database",
         description=(
@@ -2945,7 +2944,7 @@ def _register_data_movement_shell(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_audit_trail(server: FastMCP[AppContext]) -> None:
+def _register_audit_trail(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="list_audit_events",
         description=(
@@ -2975,7 +2974,7 @@ def _register_audit_trail(server: FastMCP[AppContext]) -> None:
         return await vac(_driver(ctx, database))
 
 
-def _register_query(server: FastMCP[AppContext]) -> None:
+def _register_query(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="run_select",
         description=_with_example(
@@ -3227,7 +3226,7 @@ def _register_query(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_analytical(server: FastMCP[AppContext]) -> None:
+def _register_analytical(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="run_analytical_query",
         description=_with_example(
@@ -3258,7 +3257,7 @@ def _register_analytical(server: FastMCP[AppContext]) -> None:
         return await runner.run(sql, timeout_ms=timeout_ms, max_rows=max_rows, work_mem=work_mem)
 
 
-def _register_health(server: FastMCP[AppContext]) -> None:
+def _register_health(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="check_database_health",
         description=_with_example(
@@ -3755,7 +3754,7 @@ def _register_health(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_liveops(server: FastMCP[AppContext]) -> None:
+def _register_liveops(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="list_active_queries",
         description=(
@@ -3831,7 +3830,7 @@ def _register_liveops(server: FastMCP[AppContext]) -> None:
         return await cron.list_cron_jobs(_driver(ctx, database))
 
 
-def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
+def _register_turboquant_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="list_turboquant_indexes",
         description=(
@@ -4037,7 +4036,7 @@ def _register_turboquant_reads(server: FastMCP[AppContext]) -> None:
         return knobs
 
 
-def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
+def _register_pg_search_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="list_pg_search_indexes",
         description=(
@@ -4279,7 +4278,7 @@ def _register_pg_search_reads(server: FastMCP[AppContext]) -> None:
         return hits
 
 
-def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
+def _register_turboquant_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="maintain_turboquant_index",
         description=(
@@ -4301,7 +4300,7 @@ def _register_turboquant_writes(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
+def _register_rag_telemetry_write(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="log_rerank_event",
         description=(
@@ -4409,7 +4408,7 @@ def _register_rag_telemetry_write(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_rag_telemetry_ddl(server: FastMCP[AppContext]) -> None:
+def _register_rag_telemetry_ddl(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="setup_rag_telemetry",
         description=(
@@ -4448,7 +4447,7 @@ def _register_rag_telemetry_ddl(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_rag_telemetry_efficiency_read(server: FastMCP[AppContext]) -> None:
+def _register_rag_telemetry_efficiency_read(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="recommend_efficiency_thresholds",
         description=(
@@ -4489,7 +4488,7 @@ def _register_rag_telemetry_efficiency_read(server: FastMCP[AppContext]) -> None
         return result
 
 
-def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
+def _register_turboquant_ddl(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="create_turboquant_index",
         description=(
@@ -4560,7 +4559,7 @@ def _register_turboquant_ddl(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_pg_search_ddl(server: FastMCP[AppContext]) -> None:
+def _register_pg_search_ddl(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="create_pg_search_index",
         description=(
@@ -4654,7 +4653,7 @@ def _register_pg_search_ddl(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_redis_fdw_reads(server: FastMCP[AppContext]) -> None:
+def _register_redis_fdw_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="list_redis_foreign_servers",
         description=_with_example(
@@ -4774,7 +4773,7 @@ def _register_redis_fdw_reads(server: FastMCP[AppContext]) -> None:
         )
 
 
-def _register_redis_fdw_ddl(server: FastMCP[AppContext]) -> None:
+def _register_redis_fdw_ddl(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="enable_redis_fdw",
         description=_with_example(
@@ -4908,7 +4907,7 @@ def _register_redis_fdw_ddl(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_cron_write(server: FastMCP[AppContext]) -> None:
+def _register_cron_write(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="schedule_cron_job",
         description=(
@@ -4983,7 +4982,7 @@ def _register_cron_write(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_pgq_reads(server: FastMCP[AppContext]) -> None:
+def _register_pgq_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_pgq_status",
         description=_with_example(
@@ -5069,7 +5068,7 @@ def _register_pgq_reads(server: FastMCP[AppContext]) -> None:
         return await pgq.run_pgq(_driver(ctx, database), query, max_rows=max_rows)
 
 
-def _register_pgq_ddl(server: FastMCP[AppContext]) -> None:
+def _register_pgq_ddl(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="create_property_graph",
         description=_with_example(
@@ -5131,7 +5130,7 @@ def _register_pgq_ddl(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_pg_prewarm_reads(server: FastMCP[AppContext]) -> None:
+def _register_pg_prewarm_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_prewarm_extension_status",
         description=_with_example(
@@ -5249,7 +5248,7 @@ def _register_pg_prewarm_reads(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "list_autowarm_jobs", _run, database=database)
 
 
-def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
+def _register_pg_prewarm_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="prewarm_relation",
         description=_with_example(
@@ -5357,7 +5356,7 @@ def _register_pg_prewarm_writes(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_pg19_runtime_reads(server: FastMCP[AppContext]) -> None:
+def _register_pg19_runtime_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_data_checksums_status",
         description=_with_example(
@@ -5402,7 +5401,7 @@ def _register_pg19_runtime_reads(server: FastMCP[AppContext]) -> None:
         return await pg19_runtime.get_logical_replication_status(_driver(ctx, database))
 
 
-def _register_pg19_runtime_writes(server: FastMCP[AppContext]) -> None:
+def _register_pg19_runtime_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="enable_data_checksums",
         description=_with_example(
@@ -5467,7 +5466,7 @@ def _register_pg19_runtime_writes(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_pg19_ddl_reads(server: FastMCP[AppContext]) -> None:
+def _register_pg19_ddl_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_pg19_ddl_status",
         description=_with_example(
@@ -5487,7 +5486,7 @@ def _register_pg19_ddl_reads(server: FastMCP[AppContext]) -> None:
     async def get_pg19_ddl_status(ctx: _Ctx, database: _DatabaseArg = None) -> pg19_ddl.Pg19DdlStatus:
         # Catalog probe — never cache: an extension install / build flip
         # mid-session needs to be visible on the next call.
-        # Returns the dataclass directly — FastMCP auto-derives the
+        # Returns the dataclass directly — the MCP SDK auto-derives the
         # outputSchema from the type annotation (PR-13: structured
         # tool outputs so LangChain / LangGraph clients can validate
         # responses against a Pydantic model).
@@ -5545,7 +5544,7 @@ def _register_pg19_ddl_reads(server: FastMCP[AppContext]) -> None:
         return await pg19_ddl.get_tablespace_ddl(_driver(ctx, database), tablespace_name)
 
 
-def _register_pg19_ddl_writes(server: FastMCP[AppContext]) -> None:
+def _register_pg19_ddl_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="validate_check_constraint",
         description=_with_example(
@@ -5584,7 +5583,7 @@ def _register_pg19_ddl_writes(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_pg19_skip_scan_reads(server: FastMCP[AppContext]) -> None:
+def _register_pg19_skip_scan_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_skip_scan_status",
         description=_with_example(
@@ -5634,7 +5633,7 @@ def _register_pg19_skip_scan_reads(server: FastMCP[AppContext]) -> None:
         return await pg19_skip_scan.recommend_skip_scan_indexes(_driver(ctx, database), max_leading_ndv=max_leading_ndv)
 
 
-def _register_pg19_partitions_reads(server: FastMCP[AppContext]) -> None:
+def _register_pg19_partitions_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_pg19_partitions_status",
         description=_with_example(
@@ -5657,7 +5656,7 @@ def _register_pg19_partitions_reads(server: FastMCP[AppContext]) -> None:
         return await pg19_partitions.get_pg19_partitions_status(_driver(ctx, database))
 
 
-def _register_pg19_partitions_writes(server: FastMCP[AppContext]) -> None:
+def _register_pg19_partitions_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="merge_partitions",
         description=_with_example(
@@ -5751,7 +5750,7 @@ def _register_pg19_partitions_writes(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_wait_for_lsn_reads(server: FastMCP[AppContext]) -> None:
+def _register_wait_for_lsn_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_wait_for_lsn_status",
         description=_with_example(
@@ -5815,7 +5814,7 @@ def _register_wait_for_lsn_reads(server: FastMCP[AppContext]) -> None:
         return await wait_for_lsn.recommend_read_your_writes(_driver(ctx, database))
 
 
-def _register_wait_for_lsn_writes(server: FastMCP[AppContext]) -> None:
+def _register_wait_for_lsn_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="wait_for_lsn",
         description=_with_example(
@@ -5839,7 +5838,7 @@ def _register_wait_for_lsn_writes(server: FastMCP[AppContext]) -> None:
         return await wait_for_lsn.wait_for_lsn(_driver(ctx, database), lsn=lsn, timeout_ms=timeout_ms)
 
 
-def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
+def _register_pg19_stats_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_pg19_stats_status",
         description=_with_example(
@@ -5921,7 +5920,7 @@ def _register_pg19_stats_reads(server: FastMCP[AppContext]) -> None:
         return await pg19_stats.analyze_lock_hotspots(_driver(ctx, database))
 
 
-def _register_aio_reads(server: FastMCP[AppContext]) -> None:
+def _register_aio_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_aio_status",
         description=_with_example(
@@ -5972,7 +5971,7 @@ def _register_aio_reads(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "recommend_io_method", _run, database=database)
 
 
-def _register_repack_reads(server: FastMCP[AppContext]) -> None:
+def _register_repack_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_repack_status",
         description=_with_example(
@@ -5995,7 +5994,7 @@ def _register_repack_reads(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "get_repack_status", _run, database=database)
 
 
-def _register_repack_writes(server: FastMCP[AppContext]) -> None:
+def _register_repack_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="repack_table",
         description=_with_example(
@@ -6030,7 +6029,7 @@ def _register_repack_writes(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_partman(server: FastMCP[AppContext]) -> None:
+def _register_partman(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="partman_create_parent",
         description=(
@@ -6100,7 +6099,7 @@ def _register_partman(server: FastMCP[AppContext]) -> None:
         return {"parent_table": parent_table, "dropped": dropped}
 
 
-def _register_write(server: FastMCP[AppContext]) -> None:
+def _register_write(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="run_write",
         description=(
@@ -6145,7 +6144,7 @@ def _register_write(server: FastMCP[AppContext]) -> None:
         return result
 
 
-def _register_maintenance(server: FastMCP[AppContext]) -> None:
+def _register_maintenance(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="run_maintenance",
         description=(
@@ -6203,7 +6202,7 @@ def _register_maintenance(server: FastMCP[AppContext]) -> None:
         }
 
 
-def _register_backend_control(server: FastMCP[AppContext]) -> None:
+def _register_backend_control(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="cancel_query",
         description=(
@@ -6227,7 +6226,7 @@ def _register_backend_control(server: FastMCP[AppContext]) -> None:
         return await liveops.terminate_backend(_driver(ctx), pid)
 
 
-def _register_ddl(server: FastMCP[AppContext]) -> None:
+def _register_ddl(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="run_ddl",
         description=(
@@ -6291,7 +6290,7 @@ def _register_ddl(server: FastMCP[AppContext]) -> None:
         return await ddl_dryrun.dry_run_ddl(database, ddl_sql, lock_timeout_ms=lock_timeout_ms)
 
 
-def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
+def _register_graphs_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="list_graphs",
         description=(
@@ -6354,7 +6353,7 @@ def _register_graphs_reads(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "generate_graph_diagram", _run, graph_name, limit)
 
 
-def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
+def _register_graphs_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="create_graph",
         description=(
@@ -6384,7 +6383,7 @@ def _register_graphs_writes(server: FastMCP[AppContext]) -> None:
         return dict(res)
 
 
-def _register_resources(server: FastMCP[AppContext]) -> None:
+def _register_resources(server: MCPServer[AppContext]) -> None:
     """Register the MCP **resources** primitive — `mcpg://…` URIs.
 
     Resources are MCP's preload-on-connect surface (separate from tools
@@ -6482,7 +6481,7 @@ def _register_resources(server: FastMCP[AppContext]) -> None:
         return await mcpg_resources._build_schema_payload(database.driver(), schema_name)
 
 
-def _register_prompts(server: FastMCP[AppContext]) -> None:
+def _register_prompts(server: MCPServer[AppContext]) -> None:
     """Register the MCP **prompts** primitive — pre-built investigation playbooks.
 
     Companion to :func:`_register_resources` (preload context) and
@@ -6563,7 +6562,7 @@ def _register_prompts(server: FastMCP[AppContext]) -> None:
         return mcpg_prompts._build_review_rls_policy(schema, table)
 
 
-def _register_warehousepg_reads(server: FastMCP[AppContext]) -> None:
+def _register_warehousepg_reads(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="get_warehousepg_status",
         description=_with_example(
@@ -6710,7 +6709,7 @@ def _register_warehousepg_reads(server: FastMCP[AppContext]) -> None:
         return await _cached_call(ctx, "recommend_redistribute", _run, schema, table, database=database)
 
 
-def _register_logical_replication_writes(server: FastMCP[AppContext]) -> None:
+def _register_logical_replication_writes(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="create_publication",
         description=_with_example(
@@ -6980,7 +6979,7 @@ def _humanize_tool_name(name: str) -> str:
     return title[0].upper() + title[1:]
 
 
-def _apply_tool_wire_metadata(server: FastMCP[AppContext], read_only_names: set[str]) -> None:
+def _apply_tool_wire_metadata(server: MCPServer[AppContext], read_only_names: set[str]) -> None:
     """Stamp titles + MCP ``ToolAnnotations`` derived from the gates.
 
     MCPg already classifies every tool as READ / WRITE / DDL / SHELL /
@@ -7028,7 +7027,7 @@ def _apply_tool_wire_metadata(server: FastMCP[AppContext], read_only_names: set[
 
 
 def register_tools(
-    server: FastMCP[AppContext], settings: Settings, *, analytical_available: bool | None = None
+    server: MCPServer[AppContext], settings: Settings, *, analytical_available: bool | None = None
 ) -> None:
     """Register the MCP tools permitted by the configured access mode.
 
