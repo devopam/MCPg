@@ -37,7 +37,7 @@ plumbing:
 | `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config — 22 built-in providers + custom (`MCPG_NL2SQL_CUSTOM_PROVIDERS`). |
 
 <!-- BEGIN generated: tool-index (python tools/generate_doc_tables.py --tools) -->
-## Tool index (252 tools)
+## Tool index (254 tools)
 
 Grouped by feature area. The **Gate** column shows the capability
 each tool needs — plain `read` tools are available in every access
@@ -51,7 +51,7 @@ need `unrestricted` **plus** the matching `MCPG_ALLOW_*` opt-in (see
 | **Catalog — schemas / tables / columns** | read | `list_schemas`, `list_tables`, `describe_table`, `list_indexes`, `list_constraints`, `list_foreign_keys`, `list_views`, `list_functions`, `list_triggers`, `list_partitions`, `list_roles`, `list_grants`, `list_policies`, `list_sequences`, `list_enums`, `list_domains`, `list_composite_types`, `list_foreign_data_wrappers`, `list_foreign_servers`, `list_foreign_tables`, `list_user_mappings`, `list_publications`, `list_subscriptions`, `list_extensions`, `list_available_extensions`, `list_generated_columns` |
 | **Catalog — compact** | read | `get_compact_schema` |
 | **Visualisation & structural diff** | read | `generate_schema_diagram`, `generate_fk_cascade_graph`, `generate_schema_docs`, `compare_schemas` |
-| **Query & cursors** | read | `run_select`, `run_select_tuned`, `run_select_parallel`, `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql` |
+| **Query & cursors** | read | `run_select`, `run_select_tuned`, `run_select_parallel`, `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql`, `run_analytical_query` |
 | **Health, tuning & advisors** | read | `check_database_health`, `analyze_table_bloat`, `list_databases`, `audit_database`, `analyze_workload`, `detect_n_plus_one`, `read_autovacuum_priority`, `recommend_indexes`, `recommend_index_drops`, `run_advisors`, `find_unused_objects`, `find_sensitive_columns`, `lint_naming_conventions`, `test_rls_for_role`, `analyze_session_cost`, `recommend_headline_tools`, `audit_sequences`, `audit_settings`, `recommend_postgres_conf`, `optimize_query`, `summarize_table`, `why_is_this_slow` |
 | **Search** | read | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `mmr_search`, `hybrid_search`, `geo_search` |
 | **Test-data factory** | read / **WRITE** (`seed_table_with_sample_data`) | `generate_test_data`, `generate_test_row_for`, `seed_table_with_sample_data` |
@@ -85,7 +85,7 @@ need `unrestricted` **plus** the matching `MCPG_ALLOW_*` opt-in (see
 | **PG 19 — stats status** | read | `get_pg19_stats_status` |
 | **WarehousePG (MPP)** | read | `get_warehousepg_status`, `list_distribution_policies`, `check_segment_health`, `describe_ao_table`, `list_resource_groups`, `analyze_mpp_query_plan`, `recommend_redistribute` |
 | **Logical replication pub/sub** | **DDL** | `create_publication`, `drop_publication`, `create_subscription`, `drop_subscription` |
-| **Write & DDL core** | **WRITE** / **DDL** | `run_write`, `run_maintenance`, `cancel_query`, `terminate_backend`, `run_ddl`, `enable_extension`, `dry_run_ddl` |
+| **Write & DDL core** | **WRITE** / **DDL** | `run_write`, `run_maintenance`, `clear_cache`, `cancel_query`, `terminate_backend`, `run_ddl`, `enable_extension`, `dry_run_ddl` |
 <!-- END generated: tool-index -->
 
 > The reference sections below describe the v0.4.0-era tools in

@@ -6,7 +6,7 @@
 > (`turboquant_approx_candidates`, `turboquant_rerank_candidates`,
 > `recommend_turboquant_query_knobs`), `maintain_turboquant_index`
 > (write), and `create_turboquant_index` / `reindex_turboquant_index`
-> (DDL) — see the [tool index](../tools.md#tool-index-252-tools). Kept
+> (DDL) — see the [tool index](../tools.md#tool-index-254-tools). Kept
 > for design rationale; no longer a live roadmap. Current gaps live in
 > [feature-shortlist.md](../feature-shortlist.md).
 

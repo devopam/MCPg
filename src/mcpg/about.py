@@ -99,6 +99,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         detail=(
             "Read-only by default via `run_select`; `run_write` and `run_ddl` "
             "are gated behind `MCPG_ACCESS_MODE` and `MCPG_ALLOW_DDL`. "
+            "`run_analytical_query` runs long-running reads on an isolated pool "
+            "with an elevated, bounded timeout. "
             "`translate_nl_to_sql` lets an agent describe what it wants in plain "
             "language and get back vetted SQL. `explain_query` and "
             "`analyze_query_plan` surface the planner's view."
@@ -644,6 +646,7 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     # run_advisors / run_maintenance are ops not query.
     "run_advisors": "advisors",
     "run_maintenance": "operations_and_health",
+    "clear_cache": "operations_and_health",
     # tune_vector_index / migrate_vector_to_halfvec are vector_search.
     "tune_vector_index": "vector_search",
     # recommend_hnsw_ef_search — HNSW ef_search recall/speed advisor.
@@ -666,6 +669,7 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     # explain_query / why_is_this_slow / optimize_query are query/ops.
     "explain_query": "query_execution",
     "why_is_this_slow": "query_execution",
+    "run_analytical_query": "query_execution",
     "optimize_query": "operations_and_health",
     # compare_schemas / summarize_table / get_compact_schema are introspection.
     "compare_schemas": "schema_introspection",

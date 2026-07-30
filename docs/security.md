@@ -117,6 +117,16 @@ and every call is validated and audited.
   tool with a separate quota for heavy tools.
 - **Connection-pool ceiling** (`MCPG_POOL_MAX_SIZE`) bounds
   concurrent DB load.
+- **Bounded analytical path.** `run_analytical_query` deliberately
+  grants a longer timeout, so it is the one read path that could hold
+  a connection open — a DoS lever. It is fenced on every axis:
+  opt-out via `MCPG_ENABLE_ANALYTICAL_QUERIES=false`, a hard timeout
+  ceiling (`MCPG_ANALYTICAL_MAX_TIMEOUT_MS`, default 10 min) that
+  clamps any per-call `timeout_ms`, and a **dedicated pool** sized to
+  `MCPG_ANALYTICAL_MAX_CONCURRENCY` (default 2) so at most that many
+  long queries can run and they consume **zero** slots of the main
+  pool — the fast-path tools can never be starved by an analytical
+  query. It is read-only and passes the same SafeSQL allowlist.
 
 ### T4 — Credential disclosure
 

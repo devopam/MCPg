@@ -64,7 +64,7 @@ flowchart TD
 ---
 
 <!-- BEGIN generated: module-map (python tools/generate_doc_tables.py --modules) -->
-## Module map (103 modules)
+## Module map (104 modules)
 
 Every `mcpg.*` module and what it owns, alphabetical. The layered
 request path through these lives in the [Overview](#overview) diagram;
@@ -76,6 +76,7 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.about` | MCPg self-description. |
 | `mcpg.advisors` | Schema advisors — codified lint rules over the PG catalog. |
 | `mcpg.aio` | `AIO` — PG 19 asynchronous-I/O subsystem coverage. |
+| `mcpg.analytical` | Long-running analytical read path — an isolated pool, capped concurrency. |
 | `mcpg.audit` | Audit logging of tool invocations and DBA database performance checks. |
 | `mcpg.audit_integrity` | Audit trail verification utility. |
 | `mcpg.audit_nl2sql` | NL→SQL audit table — partitioned, compressed, RLS-gated. |
@@ -83,7 +84,7 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.autovacuum` | Autovacuum priority advisor — `read_autovacuum_priority`. |
 | `mcpg.cache` | Thread-safe, async-safe caching manager for PostgreSQL introspections and summaries. |
 | `mcpg.composite` | Composite tools — agent UX wins built on top of existing primitives. |
-| `mcpg.config` | Env-driven, validated `Settings` (frozen dataclass); redacts secrets in `__repr__`. |
+| `mcpg.config` | Env-driven, typed configuration for the MCPg server. |
 | `mcpg.config_advisor` | Configuration & sizing advisors — pghero / pgtune coverage. |
 | `mcpg.context` | `AppContext` — per-server state (settings, DB, cursor/listen managers) shared with tool wrappers. |
 | `mcpg.cron` | pg_cron job-scheduling wrappers. |
@@ -147,7 +148,7 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.replicas` | Read-replica routing — distribute read-only queries across replicas. |
 | `mcpg.resources` | MCP resources — preload-on-connect surface (`mcpg://…`). |
 | `mcpg.rls` | Row-Level Security tester — see what an RLS-bound role would read. |
-| `mcpg.schema_diff` | Structural schema diff powering `compare_schemas`. |
+| `mcpg.schema_diff` | Structural diff between two PostgreSQL schemas. |
 | `mcpg.schema_docs` | Schema documentation generator. |
 | `mcpg.secrets` | Pluggable secrets backend. |
 | `mcpg.server` | MCP server bootstrap for MCPg. |

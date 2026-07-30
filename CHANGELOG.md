@@ -6,6 +6,83 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Capped `mcp[cli]` below 2.0** (`>=1.28.1,<2`). The upstream `mcp` SDK
+  published a `2.0.0` release that renames `mcp.server.fastmcp.FastMCP` to
+  `mcp.server.mcpserver.MCPServer` (and restructures the module tree around
+  it) with no back-compat shim — since MCPg's dependency spec had no upper
+  bound, a fresh `pip install mcpg` started resolving `mcp==2.0.0` and
+  crashing at import (`ModuleNotFoundError: No module named
+  'mcp.server.fastmcp'`) before `src/mcpg/server.py` could even start. Pins
+  the resolved SDK to the last compatible 1.x line until MCPg migrates to
+  the new `MCPServer` API (tracked separately). `uv.lock` regenerated
+  (resolves `mcp==1.28.1`); full unit + contract suite green.
+- **`asyncio.WindowsSelectorEventLoopPolicy` forward-compat for CPython
+  3.14.** CPython 3.14 privatized the class to
+  `_WindowsSelectorEventLoopPolicy` (confirmed against typeshed's
+  `windows_events.pyi`); the two Windows-only call sites that pin the
+  selector policy for psycopg (`__main__.py`, `http_runtime.run_http`) now
+  fall back to the private name when the public one is gone, instead of
+  raising `AttributeError` at startup on 3.14. Surfaced by `mypy --strict`
+  run on Windows (the repo's `python_version = "3.14"` target). Hardened
+  per review feedback (#290): the public-name lookup now uses
+  `try`/`except (AttributeError, NameError)` rather than
+  `getattr(..., default)`, since CPython 3.14's own deprecation shim can
+  raise `NameError` reading the removed name — a bare `getattr` with a
+  default only swallows `AttributeError` and would have re-raised
+  uncaught. Covered by
+  `test_run_http_falls_back_to_private_policy_name_when_public_name_raises`.
+- **Two Windows-only test bugs**, surfaced while verifying the above on a
+  Windows dev box: `test_subprocess_hardening_parses_allowlist_and_limits`
+  (and the adjacent relative-path-rejection test) hardcoded POSIX
+  `/usr/bin`-style paths that `os.path.isabs` doesn't accept on Windows —
+  now anchored via `abspath()` so the assertion holds on either platform.
+  `test_run_http_builds_app_and_serves_via_uvicorn`'s fake `uvicorn.run`
+  didn't accept the `loop` kwarg that `run_http` has always passed on
+  `win32` — now accepts `**kwargs`.
+
+## [0.6.12] - 2026-07-28
+
+### Added
+
+- **`run_analytical_query` — long-running reads on an isolated pool.**
+  `run_select` is bounded to a short (~30s) timeout on the shared 5-connection
+  pool so an agent can't pin a connection with a runaway query — which made
+  genuine analytical queries (large aggregations / joins / window functions)
+  infeasible, and `MCPG_STATEMENT_TIMEOUT_MS` didn't help (it moves Postgres's
+  `statement_timeout` but not the client-side asyncio cap). The new tool runs a
+  read-only SELECT through the **same** allowlist + tenancy/RLS + read-only
+  transaction, but on a **dedicated connection pool** isolated from the main
+  one, with an **elevated, bounded** timeout — so a slow query can never starve
+  the fast-path tools. A per-call `timeout_ms` (clamped to the max) and optional
+  `work_mem` are exposed; a `run_select` timeout now points the agent at the
+  tool. Boot-time knobs: `MCPG_ENABLE_ANALYTICAL_QUERIES` (default true, gates
+  the tool — it's a READ tool, so set false to withdraw it from an anonymous
+  read-only deployment), `MCPG_ANALYTICAL_TIMEOUT_MS` (default 120000),
+  `MCPG_ANALYTICAL_MAX_TIMEOUT_MS` (600000), `MCPG_ANALYTICAL_MAX_CONCURRENCY`
+  (2 — the isolated pool size, which is also the concurrency cap). Primary
+  database only for now. Tool surface **253 → 254**.
+
+- **Cache-freshness controls for out-of-band schema changes.** MCPg's read
+  cache is invalidated automatically by MCPg's own write/DDL tools, but it
+  could serve stale introspection/advisor results for up to
+  `MCPG_CACHE_TTL_SECONDS` (default 300s) after a schema change made *outside*
+  MCPg (a direct `psql`/migration change, another connection, or a second
+  process) — e.g. re-running index/constraint validation after altering a
+  foreign key returned the pre-change answer. Two escape hatches:
+  - a per-call **`fresh: bool = False`** argument on the introspection/advisor
+    reads (`describe_table`, `list_indexes`, `list_constraints`,
+    `list_foreign_keys`, `get_compact_schema`, `recommend_indexes`,
+    `audit_database`) — bypasses the cache read, re-queries live, and refreshes
+    the entry;
+  - a new **`clear_cache`** tool — a full flush for a known out-of-band change,
+    gated to write-capable modes (not exposed on the read-only surface).
+
+  Tool surface **252 → 253**. `docs/user-guide.md` caching section corrected
+  (automatic invalidation covers through-MCPg mutations, not arbitrary
+  out-of-band DDL).
+
 ### Security
 
 - **Bumped `mcp` SDK ≥ 1.28.1** (from `≥ 1.25.0`) to clear three advisories in
@@ -18,6 +95,24 @@ adheres to [Semantic Versioning](https://semver.org/).
   passes. `pip-audit --strict` on the resolved runtime deps is clean.
 
 ### Changed
+
+- **`run_analytical_query` hardening (follow-up to the feature above).**
+  Query timeouts now raise a typed `QueryTimeoutError` (a `QueryError`
+  subclass) covering **both** the client-side asyncio wall-clock cap and the
+  server-side `statement_timeout` (SQLSTATE 57014) — the `run_select` "retry
+  with `run_analytical_query`" hint branches on the type instead of matching
+  message text, so it fires reliably (and locale-independently) for the
+  Postgres-side timeout it previously missed. The hint is now shown only when
+  a runner is actually wired up. `AnalyticalRunner` is injectable via
+  `create_server(..., analytical_runner=...)`, and `run_analytical_query` is
+  registered only when a runner will back it, so an injected-database setup no
+  longer advertises a non-functional tool. `MCPG_ENABLE_ANALYTICAL_QUERIES` is
+  the authoritative off-switch — it wins even over an injected runner. Timeout
+  detection walks the full `__cause__`/`__context__` exception chain (not just
+  the immediate cause), so extra wrapping layers can't hide a timeout. Also
+  documents the analytical env vars in the README env-var table, the T3 (DoS)
+  threat model, and the scaling pool-overhead budget. No tool-surface change
+  (still 254).
 
 - **Bumped `pglast` 7.15 → 8.2** (the SQL-safety kernel's parser). pglast 8
   tracks `libpg_query` 18-latest (PostgreSQL 18 grammar) and now ships type

@@ -38,7 +38,7 @@ first time, skim it as a reference after.
 ## What MCPg is
 
 MCPg is an MCP server that exposes a PostgreSQL database to an AI
-agent through a fixed, audited set of **252 tools** (read-only mode exposes ~185). The agent never
+agent through a fixed, audited set of **254 tools** (read-only mode exposes ~186). The agent never
 gets a raw database connection — it can only call the tools MCPg
 registers, every call is validated, and every call is logged. MCPg
 runs as a single async process and ships as both a PyPI package
@@ -149,6 +149,26 @@ validated against the SafeSQL allowlist, executed under a forced
 read-only transaction, and capped with a `truncated` flag.
 `run_select_parallel(statements)` fans out concurrently with
 per-statement error isolation.
+
+**Long-running analytical queries.** `run_select` is bounded to a short
+timeout (~30 s) on the shared pool so an agent can't pin a connection with a
+runaway query. For genuine analytical work that needs more time (large
+aggregations, multi-table joins, window functions), use
+`run_analytical_query(sql, timeout_ms=…, work_mem=…)`. It validates SQL through
+the same allowlist and applies the same tenancy/RLS, but runs on a **dedicated,
+isolated connection pool** with an elevated, bounded timeout — so a slow query
+can never starve the fast-path tools. Boot-time knobs (all optional):
+
+```bash
+export MCPG_ENABLE_ANALYTICAL_QUERIES=true   # gate the tool (default true; set false to withdraw it)
+export MCPG_ANALYTICAL_TIMEOUT_MS=120000     # default per-call budget (2 min)
+export MCPG_ANALYTICAL_MAX_TIMEOUT_MS=600000 # hard ceiling; a per-call timeout_ms is clamped to this (10 min)
+export MCPG_ANALYTICAL_MAX_CONCURRENCY=2     # max simultaneous analytical queries (isolated pool size)
+```
+
+If a `run_select` call times out, the error points the agent at
+`run_analytical_query` — so it needn't predict a query's duration up front. The
+analytical path targets the **primary** database.
 
 `explain_query(sql)` returns a query plan; `analyze_query_plan(sql)`
 summarises it (cost, node types, sequential scans);
@@ -662,7 +682,8 @@ export MCPG_REDIS_URL=redis://localhost:6379/0  # optional Redis connection stri
 
 MCPg provides a high-performance caching layer to save context window tokens and prevent database connection pool saturation from duplicate schema reads:
 * **Adaptive Caching**: Wraps all schema introspection, diagram generators, property graphs, and DBA performance advisors.
-* **Automatic Invalidation**: Any write or DDL statement executed on the database automatically clears the entire cache to prevent serving stale metadata.
+* **Automatic Invalidation**: A write or DDL statement executed **through MCPg's own tools** (e.g. `run_ddl`, `enable_extension`, `complete_migration`) clears the entire cache, so a change you make via MCPg is reflected immediately.
+* **Freshness after out-of-band changes**: The cache **cannot see** schema changes made outside MCPg — a direct `psql`/migration-tool change, another connection, or a second MCPg process — until the entry's TTL (`MCPG_CACHE_TTL_SECONDS`, default 300s) expires. When you've changed the schema out-of-band and want a live answer now, either pass **`fresh=true`** to the read tool (`describe_table`, `list_indexes`, `list_constraints`, `list_foreign_keys`, `get_compact_schema`, `recommend_indexes`, `audit_database` — re-reads live and refreshes the entry), or call the **`clear_cache`** tool (a full flush; available when writes are permitted). In a dev/iterative-schema workflow, `MCPG_CACHE_ENABLED=false` sidesteps caching entirely.
 * **Optional Redis Backend**: Soft-dependency Redis async support. If `redis` is configured but the library is not installed, the server logs a warning and falls back to a thread-safe, memory-bounded in-memory LRU cache rather than crashing.
 
 ---

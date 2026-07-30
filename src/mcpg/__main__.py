@@ -6,13 +6,29 @@ import asyncio
 import sys
 
 if sys.platform == "win32":
-    # Python 3.14 renamed this to the private ``_WindowsSelectorEventLoopPolicy``
-    # (per typeshed); getattr keeps this working across 3.12-3.14 without a
-    # static attribute reference mypy can only resolve for one target version.
-    _selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None) or getattr(  # noqa: B009
-        asyncio, "_WindowsSelectorEventLoopPolicy"
-    )
-    asyncio.set_event_loop_policy(_selector_policy())
+    # CPython 3.14 privatized WindowsSelectorEventLoopPolicy to
+    # _WindowsSelectorEventLoopPolicy; fall back to it when the public
+    # name is gone so this keeps working on 3.12-3.14. Reading the removed
+    # public name can raise NameError (not AttributeError) via asyncio's
+    # own deprecation shim, which a bare getattr(..., default) would NOT
+    # catch — a plain try/except is used instead, and a missing private
+    # name too fails with the clear RuntimeError below rather than an
+    # obscure AttributeError/NameError.
+    try:
+        # mypy's python_version=3.14 target sheds the public name from
+        # typeshed entirely (see pyproject.toml's [tool.mypy]) — this is
+        # exactly the removed-on-3.14 case the except branch below handles
+        # at runtime; ignore is scoped to this one attribute reference.
+        _selector_policy_cls = asyncio.WindowsSelectorEventLoopPolicy  # type: ignore[attr-defined]
+    except (AttributeError, NameError):
+        _selector_policy_cls = getattr(asyncio, "_WindowsSelectorEventLoopPolicy", None)
+    if _selector_policy_cls is None:
+        raise RuntimeError(
+            "mcpg: this Python's asyncio module exposes neither WindowsSelectorEventLoopPolicy "
+            "nor _WindowsSelectorEventLoopPolicy; the Windows selector-loop policy mcpg needs for "
+            "psycopg can't be set. Please file a bug with your Python version."
+        )
+    asyncio.set_event_loop_policy(_selector_policy_cls())
 
 from mcpg import __version__
 from mcpg.config import ConfigError, load_settings

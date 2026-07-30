@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 252
+    "tool_count": 254
   },
   "tools": [
     {
@@ -668,7 +668,7 @@
       "name": "analyze_workload"
     },
     {
-      "description": "Run a deep, comprehensive DBA-level database performance, logs, and health audit over the specified schema. Scans memory, checkpoints, temp file spills, contention locks, dead tuple cleanliness, and optionally scans custom logging tables. Returns an object with `timestamp`, `database`, `version`, `overall_health` ('GOOD' / 'WARNING' / 'CRITICAL'), `health_score` (int), `categories` (per-area results), `top_issues`, `recommendations`, and `raw_stats_snapshot`.",
+      "description": "Run a deep, comprehensive DBA-level database performance, logs, and health audit over the specified schema. Scans memory, checkpoints, temp file spills, contention locks, dead tuple cleanliness, and optionally scans custom logging tables. Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). Returns an object with `timestamp`, `database`, `version`, `overall_health` ('GOOD' / 'WARNING' / 'CRITICAL'), `health_score` (int), `categories` (per-area results), `top_issues`, `recommendations`, and `raw_stats_snapshot`.",
       "inputSchema": {
         "properties": {
           "database": {
@@ -683,6 +683,11 @@
             "default": null,
             "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
             "title": "Database"
+          },
+          "fresh": {
+            "default": false,
+            "title": "Fresh",
+            "type": "boolean"
           },
           "log_table": {
             "anyOf": [
@@ -879,6 +884,15 @@
         "type": "object"
       },
       "name": "check_segment_health"
+    },
+    {
+      "description": "Flush MCPg's server-side result cache — the cache that speeds up schema introspection and advisor reads. MCPg clears this cache automatically after its own write / DDL tools, but it cannot observe schema changes made out-of-band (another connection, or a change made outside MCPg) until each entry's TTL (MCPG_CACHE_TTL_SECONDS, default 300s) expires — call this after such a change so the next read is live. For a single tool, prefer its `fresh=true` argument. Touches no database data. Available when writes are permitted (restricted or unrestricted mode). Returns an object with `status` ('cleared') and `detail`.",
+      "inputSchema": {
+        "properties": {},
+        "title": "clear_cacheArguments",
+        "type": "object"
+      },
+      "name": "clear_cache"
     },
     {
       "description": "Close a server-side cursor and release its dedicated connection. Idempotent — returns closed=false when the cursor was not open (already closed, expired, or never existed).",
@@ -1871,7 +1885,7 @@
       "name": "describe_self"
     },
     {
-      "description": "Describe the columns of a table, in ordinal order. Returns a list of objects with `name`, `data_type`, `nullable`, `default`, and `vector_dimension` (set only for pgvector `vector(N)` columns).\n\nExample: `describe_table(schema='public', table='users')`",
+      "description": "Describe the columns of a table, in ordinal order. Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). Returns a list of objects with `name`, `data_type`, `nullable`, `default`, and `vector_dimension` (set only for pgvector `vector(N)` columns).\n\nExample: `describe_table(schema='public', table='users')`",
       "inputSchema": {
         "properties": {
           "database": {
@@ -1886,6 +1900,11 @@
             "default": null,
             "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
             "title": "Database"
+          },
+          "fresh": {
+            "default": false,
+            "title": "Fresh",
+            "type": "boolean"
           },
           "schema": {
             "title": "Schema",
@@ -3225,7 +3244,7 @@
       "name": "get_aio_status"
     },
     {
-      "description": "Return a highly condensed, token-efficient text summary of a schema's tables, columns, primary keys, nullability, and relations to save context window tokens.",
+      "description": "Return a highly condensed, token-efficient text summary of a schema's tables, columns, primary keys, nullability, and relations to save context window tokens. Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change).",
       "inputSchema": {
         "properties": {
           "database": {
@@ -3240,6 +3259,11 @@
             "default": null,
             "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
             "title": "Database"
+          },
+          "fresh": {
+            "default": false,
+            "title": "Fresh",
+            "type": "boolean"
           },
           "schema": {
             "title": "Schema",
@@ -4355,7 +4379,7 @@
       "name": "list_composite_types"
     },
     {
-      "description": "List a table's constraints — primary/foreign keys, unique, check, exclusion. Returns a list of objects with `name`, `type`, and `definition` (the constraint SQL).\n\nExample: `list_constraints(schema='public', table='orders')`",
+      "description": "List a table's constraints — primary/foreign keys, unique, check, exclusion. Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). Returns a list of objects with `name`, `type`, and `definition` (the constraint SQL).\n\nExample: `list_constraints(schema='public', table='orders')`",
       "inputSchema": {
         "properties": {
           "database": {
@@ -4370,6 +4394,11 @@
             "default": null,
             "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
             "title": "Database"
+          },
+          "fresh": {
+            "default": false,
+            "title": "Fresh",
+            "type": "boolean"
           },
           "schema": {
             "title": "Schema",
@@ -4572,7 +4601,7 @@
       "name": "list_foreign_data_wrappers"
     },
     {
-      "description": "List foreign keys in a schema, resolved to columns and referenced table. Returns a list of objects with `name`, `from_table`, `from_columns`, `to_schema`, `to_table`, `to_columns`.\n\nExample: `list_foreign_keys(schema='public')`",
+      "description": "List foreign keys in a schema, resolved to columns and referenced table. Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). Returns a list of objects with `name`, `from_table`, `from_columns`, `to_schema`, `to_table`, `to_columns`.\n\nExample: `list_foreign_keys(schema='public')`",
       "inputSchema": {
         "properties": {
           "database": {
@@ -4587,6 +4616,11 @@
             "default": null,
             "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
             "title": "Database"
+          },
+          "fresh": {
+            "default": false,
+            "title": "Fresh",
+            "type": "boolean"
           },
           "schema": {
             "title": "Schema",
@@ -4782,7 +4816,7 @@
       "name": "list_hypertables"
     },
     {
-      "description": "List the indexes defined on a table. Returns a list of objects with `name`, `method` (btree / gin / gist / brin / hash / spgist / hnsw / ivfflat / …), `definition` (the CREATE INDEX statement), and `partitioned`.\n\nExample: `list_indexes(schema='public', table='users')`",
+      "description": "List the indexes defined on a table. Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). Returns a list of objects with `name`, `method` (btree / gin / gist / brin / hash / spgist / hnsw / ivfflat / …), `definition` (the CREATE INDEX statement), and `partitioned`.\n\nExample: `list_indexes(schema='public', table='users')`",
       "inputSchema": {
         "properties": {
           "database": {
@@ -4797,6 +4831,11 @@
             "default": null,
             "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
             "title": "Database"
+          },
+          "fresh": {
+            "default": false,
+            "title": "Fresh",
+            "type": "boolean"
           },
           "schema": {
             "title": "Schema",
@@ -6814,7 +6853,7 @@
       "name": "recommend_index_drops"
     },
     {
-      "description": "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan. Returns a list of objects with `schema`, `table`, `live_tuples`, `sequential_scans`, `index_scans`, and a `reason` explaining why the table is a candidate.\n\nExample: `recommend_indexes(min_live_tuples=10000)`",
+      "description": "Recommend tables that may benefit from indexing — large tables read mostly by sequential scan. Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change). Returns a list of objects with `schema`, `table`, `live_tuples`, `sequential_scans`, `index_scans`, and a `reason` explaining why the table is a candidate.\n\nExample: `recommend_indexes(min_live_tuples=10000)`",
       "inputSchema": {
         "properties": {
           "database": {
@@ -6829,6 +6868,11 @@
             "default": null,
             "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
             "title": "Database"
+          },
+          "fresh": {
+            "default": false,
+            "title": "Fresh",
+            "type": "boolean"
           },
           "min_live_tuples": {
             "default": 10000,
@@ -7692,6 +7736,52 @@
         "type": "object"
       },
       "name": "run_advisors"
+    },
+    {
+      "description": "Run a read-only SELECT that may take longer than the standard limit — for genuine analytical work (large aggregations, multi-table joins, window functions, DISTINCT/GROUP BY over millions of rows). Validated by the same allowlist as run_select, but executed on a DEDICATED connection pool (isolated from the fast-path tools) with an elevated, bounded timeout. Prefer run_select for ordinary queries; reach for this only when a query legitimately needs more time. `timeout_ms` overrides the per-call budget (clamped to the server's configured maximum, MCPG_ANALYTICAL_MAX_TIMEOUT_MS); `work_mem` (e.g. '256MB') elevates sort/hash memory for this statement. Runs against the primary database. Returns an object with `columns`, `rows`, `row_count`, and `truncated` (true when more rows than `max_rows` were produced) — same shape as run_select.\n\nExample: `run_analytical_query(sql='SELECT c, count(*) FROM big GROUP BY c', timeout_ms=180000)`",
+      "inputSchema": {
+        "properties": {
+          "max_rows": {
+            "default": 1000,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "sql": {
+            "title": "Sql",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timeout Ms"
+          },
+          "work_mem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Work Mem"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "title": "run_analytical_queryArguments",
+        "type": "object"
+      },
+      "name": "run_analytical_query"
     },
     {
       "description": "Execute an openCypher query on a specific graph database. Supports read queries (MATCH) and write/modifying queries (CREATE, SET, DELETE, MERGE, REMOVE). Returns an object with `columns` (list of result column names) and `rows` (list of result rows as dicts keyed by column).",

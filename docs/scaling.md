@@ -55,6 +55,18 @@ identically to the primary (`MCPG_POOL_MIN_SIZE` /
 `MCPG_POOL_MAX_SIZE`). Plan for `(1 + N_replicas) ×
 MCPG_POOL_MAX_SIZE` peak connections across the database fleet.
 
+### Analytical pool overhead
+
+When `run_analytical_query` is enabled (`MCPG_ENABLE_ANALYTICAL_QUERIES`,
+default on), the runner owns a **separate primary-only pool** sized to
+`MCPG_ANALYTICAL_MAX_CONCURRENCY` (default 2), with an elevated
+`statement_timeout` ceiling (`MCPG_ANALYTICAL_MAX_TIMEOUT_MS`). This pool
+is deliberately isolated so long analytical reads can't starve the main
+fast-path pool — the trade is up to `MCPG_ANALYTICAL_MAX_CONCURRENCY`
+extra connections against the primary's `max_connections`. Include it in
+the peak-connection budget: `(1 + N_replicas) × MCPG_POOL_MAX_SIZE +
+MCPG_ANALYTICAL_MAX_CONCURRENCY`.
+
 ---
 
 ## Read-replica routing

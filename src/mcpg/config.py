@@ -200,6 +200,18 @@ class Settings:
     statement_timeout_ms: int = 30000
     lock_timeout_ms: int = 5000
     slow_call_threshold_ms: int = 1000
+    # Analytical-query path (`run_analytical_query`): a read-only SELECT that
+    # runs on a DEDICATED connection outside the main pool, so a long query can
+    # never starve the fast-path tools. `analytical_timeout_ms` is the default
+    # budget when the caller omits one; a per-call `timeout_ms` is clamped to
+    # `analytical_max_timeout_ms`. `analytical_max_concurrency` caps how many
+    # may run at once (dedicated connections open simultaneously).
+    # `enable_analytical_queries` gates the tool (a long read is a DoS lever on
+    # an anonymous read-only deployment; set false to withdraw it).
+    enable_analytical_queries: bool = True
+    analytical_timeout_ms: int = 120000
+    analytical_max_timeout_ms: int = 600000
+    analytical_max_concurrency: int = 2
     # OpenTelemetry tracing — one span per `call_tool` invocation,
     # behind the ``mcpg[otel]`` extra. Disabled by default so the
     # baseline runtime has no OTel cost. ``otel_service_name`` only
@@ -1014,6 +1026,30 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         except ValueError:
             raise ConfigError(f"MCPG_STATEMENT_TIMEOUT_MS must be a non-negative integer (got {raw!r})") from None
 
+    enable_analytical_queries = True
+    if (raw := env.get("MCPG_ENABLE_ANALYTICAL_QUERIES")) is not None:
+        enable_analytical_queries = _parse_bool("MCPG_ENABLE_ANALYTICAL_QUERIES", raw)
+
+    def _positive_int(var: str, default: int) -> int:
+        if (v := env.get(var)) is None:
+            return default
+        try:
+            parsed = int(v)
+        except ValueError:
+            raise ConfigError(f"{var} must be a positive integer (got {v!r})") from None
+        if parsed < 1:
+            raise ConfigError(f"{var} must be a positive integer (got {v!r})")
+        return parsed
+
+    analytical_timeout_ms = _positive_int("MCPG_ANALYTICAL_TIMEOUT_MS", 120000)
+    analytical_max_timeout_ms = _positive_int("MCPG_ANALYTICAL_MAX_TIMEOUT_MS", 600000)
+    analytical_max_concurrency = _positive_int("MCPG_ANALYTICAL_MAX_CONCURRENCY", 2)
+    if analytical_timeout_ms > analytical_max_timeout_ms:
+        raise ConfigError(
+            f"MCPG_ANALYTICAL_TIMEOUT_MS ({analytical_timeout_ms}) must not exceed "
+            f"MCPG_ANALYTICAL_MAX_TIMEOUT_MS ({analytical_max_timeout_ms})"
+        )
+
     lock_timeout_ms = 5000
     if (raw := env.get("MCPG_LOCK_TIMEOUT_MS")) is not None:
         try:
@@ -1246,6 +1282,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         rate_limit_heavy_window=rate_limit_heavy_window,
         allow_insecure_tls=allow_insecure_tls,
         statement_timeout_ms=statement_timeout_ms,
+        enable_analytical_queries=enable_analytical_queries,
+        analytical_timeout_ms=analytical_timeout_ms,
+        analytical_max_timeout_ms=analytical_max_timeout_ms,
+        analytical_max_concurrency=analytical_max_concurrency,
         lock_timeout_ms=lock_timeout_ms,
         slow_call_threshold_ms=slow_call_threshold_ms,
         otel_enabled=otel_enabled,
