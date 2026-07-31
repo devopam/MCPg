@@ -1,0 +1,246 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - benchmarks/perf/paths.py
+  - benchmarks/perf/runner.py
+
+Unified diff (only + lines are new):
+
+=== DIFF: benchmarks/perf/paths.py ===
+@@ -28,7 +28,7 @@ import psycopg
+ from psycopg.rows import dict_row
+ 
+ from mcpg.database import Database
+-from mcpg.query import run_select
++from mcpg.query import DEFAULT_TIMEOUT_SECONDS, run_select
+ 
+ 
+ class PathRunner(Protocol):
+@@ -96,13 +96,22 @@ class NativeRunner:
+ 
+ 
+ class ServerSideRunner:
+-    """MCPg in-process: real ``run_select`` over the real driver + pool."""
++    """MCPg in-process: real ``run_select`` over the real driver + pool.
+ 
+-    def __init__(self, database: Database) -> None:
++    ``timeout`` defaults to ``run_select``'s own product default (30s); the
++    runner CLI can raise it for heavy-tier queries at large scale factors
++    (e.g. SF10 TPC-H Q1) whose native runtime approaches that ceiling on
++    slower hardware. This affects only the in-process path measured here —
++    the e2e paths call the real, unmodified server tool, which is not
++    configurable this way, so they still enforce the product's 30s default.
++    """
++
++    def __init__(self, database: Database, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> None:
+         self._database = database
++        self._timeout = timeout
+ 
+     async def run_once(self, sql: str, *, max_rows: int) -> int:
+         driver = self._database.driver()
+         start = time.perf_counter_ns()
+-        await run_select(driver, sql, max_rows=max_rows)
++        await run_select(driver, sql, max_rows=max_rows, timeout=self._timeout)
+         return time.perf_counter_ns() - start
+
+
+=== DIFF: benchmarks/perf/runner.py ===
+@@ -43,6 +43,7 @@ from benchmarks.perf.schema import Assertion, Decomposition, LatencyBlock, PerfR
+ from mcpg import __version__
+ from mcpg.config import load_settings
+ from mcpg.database import Database
++from mcpg.query import DEFAULT_TIMEOUT_SECONDS
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -131,7 +132,7 @@ def _conc_row(path: str, query: BenchQuery, cr: ConcurrencyResult) -> ResultRow:
+     )
+ 
+ 
+-async def _run_concurrency(database_url: str, iterations: int) -> list[ResultRow]:
++async def _run_concurrency(database_url: str, iterations: int, timeout: float) -> list[ResultRow]:
+     """Sweep the **ultralight** queries across the concurrency levels.
+ 
+     Throughput-under-load exists to expose the *pool + per-call* overhead, so it
+@@ -155,7 +156,12 @@ async def _run_concurrency(database_url: str, iterations: int) -> list[ResultRow
+     """
+     max_c = max(CONCURRENCY_LEVELS)
+     conc_settings = load_settings(
+-        {"MCPG_DATABASE_URL": database_url, "MCPG_POOL_MIN_SIZE": "1", "MCPG_POOL_MAX_SIZE": str(max_c)}
++        {
++            "MCPG_DATABASE_URL": database_url,
++            "MCPG_POOL_MIN_SIZE": "1",
++            "MCPG_POOL_MAX_SIZE": str(max_c),
++            "MCPG_STATEMENT_TIMEOUT_MS": str(int(timeout * 1000)),
++        }
+     )
+     conc_db = Database(conc_settings)
+     await conc_db.connect()
+@@ -206,9 +212,66 @@ def _row(
+     )
+ 
+ 
++def _checkpoint(
++    args: argparse.Namespace,
++    pg_meta: dict[str, Any],
++    results: list[ResultRow],
++    native_db_ns_by_query: dict[str, float],
++    e2e_failures: list[dict[str, str]],
++    *,
++    complete: bool,
++) -> PerfRun:
++    """Write the run so far to ``args.output``, overwriting the prior checkpoint.
++
++    Heavy TPC-H queries at large scale factors can each take minutes across
++    every path x iteration x decomposition sample, and this environment has
++    seen the run process killed externally (outside any Python exception) more
++    than once over a multi-hour run. Checkpointing after every query means a
++    kill loses at most one query's worth of measurement, not the whole run —
++    the file is always a valid, loadable ``PerfRun`` JSON, just possibly
++    ``metadata.complete: false`` if interrupted before the final query.
++    """
++    metadata: dict[str, Any] = {
++        "timestamp": args.timestamp,
++        "git_sha": args.git_sha,
++        "mcpg_version": __version__,
++        "postgres": pg_meta,
++        "scale_factor": args.scale_factor,
++        "host": {
++            "python": platform.python_version(),
++            "os": platform.platform(),
++            "machine": platform.machine(),
++        },
++        "iterations": args.iterations,
++        "server_side_timeout_seconds": args.timeout,
++        "warmup_discarded": _WARMUP,
++        "concurrency_levels": list(CONCURRENCY_LEVELS) if args.concurrency else [],
++        "e2e_failures": e2e_failures,
++        "complete": complete,
++    }
++    run = PerfRun(metadata=metadata, results=results, assertions=_assertions(results, native_db_ns_by_query))
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    args.output.write_text(json.dumps(run.to_dict(), indent=2) + "\n")
++    return run
++
++
+ async def _run(args: argparse.Namespace) -> PerfRun:
++    # MCPG_STATEMENT_TIMEOUT_MS sets Postgres's own statement_timeout GUC — a
++    # second, independent ceiling from the asyncio guard --timeout controls
++    # (mcpg.query.run_select's own `timeout` kwarg). Both must be raised
++    # together for heavy queries at large scale factors; deriving this one
++    # from --timeout keeps the single flag authoritative rather than needing
++    # two flags kept in sync by hand. Applies to server_side and e2e_inmemory
++    # (both share this Settings/Database) — not native (raw psycopg, no
++    # MCPg settings) or e2e_stdio (a real subprocess with its own env, which
++    # inherits MCPG_STATEMENT_TIMEOUT_MS from the shell if set there).
+     settings = load_settings(
+-        {"MCPG_DATABASE_URL": args.database_url, "MCPG_POOL_MIN_SIZE": "1", "MCPG_POOL_MAX_SIZE": "4"}
++        {
++            "MCPG_DATABASE_URL": args.database_url,
++            "MCPG_POOL_MIN_SIZE": "1",
++            "MCPG_POOL_MAX_SIZE": "4",
++            "MCPG_STATEMENT_TIMEOUT_MS": str(int(args.timeout * 1000)),
++        }
+     )
+     database = Database(settings)
+     await database.connect()
+@@ -249,14 +312,30 @@ async def _run(args: argparse.Namespace) -> PerfRun:
+ 
+         paths: list[tuple[str, PathRunner]] = [
+             ("native", native),
+-            ("server_side", ServerSideRunner(database)),
++            ("server_side", ServerSideRunner(database, timeout=args.timeout)),
+             *e2e_paths,
+         ]
+         decomposer = DecompositionRunner(database)
+         native_db_ns_by_query: dict[str, float] = {}
++        e2e_failures: list[dict[str, str]] = []
+         for query in all_queries():
+             for label, runner in paths:
+-                warm, cold = await _sample_path(runner, query, args.iterations)
++                # e2e paths call the real, unmodified server tool, which enforces
++                # the product's fixed 30s query timeout with no override (unlike
++                # the server-side path here, which accepts --timeout). A heavy
++                # query at a large scale factor can genuinely exceed that on
++                # slower hardware — a real product limit, not a harness bug — so
++                # it must not discard every other path/query already measured.
++                # native/server_side failures are not caught: those would be a
++                # real harness or product regression, not an expected ceiling.
++                try:
++                    warm, cold = await _sample_path(runner, query, args.iterations)
++                except Exception as exc:
++                    if not label.startswith("e2e"):
++                        raise
++                    logger.warning("e2e path %r timed out/failed on query %r: %s", label, query.id, exc)
++                    e2e_failures.append({"path": label, "query_id": query.id, "error": str(exc)})
++                    continue
+                 # Attach the overhead waterfall to the server-side warm row —
+                 # the one the report reads t_db from for the native comparison.
+                 decomposition = (
+@@ -266,6 +345,7 @@ async def _run(args: argparse.Namespace) -> PerfRun:
+                 results.append(_row(label, query, "cold", [cold]))
+             # The native DB segment (execute + fetch only) anchors t_db == native.
+             native_db_ns_by_query[query.id] = await _sample_native_db(native, query, args.iterations)
++            _ = _checkpoint(args, pg_meta, results, native_db_ns_by_query, e2e_failures, complete=False)
+ 
+         # Throughput-under-concurrency sweep (opt-in; owns its own pool sized to
+         # the sweep ceiling so the server-side path isn't starved). It runs last
+@@ -274,9 +354,10 @@ async def _run(args: argparse.Namespace) -> PerfRun:
+         # core + e2e results already collected — log and carry on.
+         if args.concurrency:
+             try:
+-                results.extend(await _run_concurrency(args.database_url, args.iterations))
++                results.extend(await _run_concurrency(args.database_url, args.iterations, args.timeout))
+             except Exception as exc:
+                 logger.warning("Concurrency sweep failed; writing results without it: %s", exc)
++            _ = _checkpoint(args, pg_meta, results, native_db_ns_by_query, e2e_failures, complete=False)
+     finally:
+         # Close e2e runners in REVERSE start order. Each one opens an internal
+         # anyio task-group / cancel scope when started (in-memory, then stdio,
+@@ -289,26 +370,7 @@ async def _run(args: argparse.Namespace) -> PerfRun:
+         await native.close()
+         await database.close()
+ 
+-    metadata: dict[str, Any] = {
+-        "timestamp": args.timestamp,
+-        "git_sha": args.git_sha,
+-        "mcpg_version": __version__,
+-        "postgres": pg_meta,
+-        "scale_factor": args.scale_factor,
+-        "host": {
+-            "python": platform.python_version(),
+-            "os": platform.platform(),
+-            "machine": platform.machine(),
+-        },
+-        "iterations": args.iterations,
+-        "warmup_discarded": _WARMUP,
+-        "concurrency_levels": list(CONCURRENCY_LEVELS) if args.concurrency else [],
+-    }
+-    return PerfRun(
+-        metadata=metadata,
+-        results=results,
+-        assertions=_assertions(results, native_db_ns_by_query),
+-    )
++    return _checkpoint(args, pg_meta, results, native_db_ns_by_query, e2e_failures, complete=True)
+ 
+ 
+ def _assertions(results: list[ResultRow], native_db_ns_by_query: dict[str, float]) -> list[Assertion]:
+@@ -377,6 +439,15 @@ def main(argv: list[str] | None = None) -> int:
+         "--iterations", type=int, default=50, help=f"Warm iterations per pathxquery (>= {_WARMUP + 1})."
+     )
+     parser.add_argument("--scale-factor", type=int, default=1, help="TPC-H scale factor the DB was loaded at.")
++    parser.add_argument(
++        "--timeout",
++        type=float,
++        default=DEFAULT_TIMEOUT_SECONDS,
++        help="Per-query timeout (seconds) for the in-process server-side path. Defaults to run_select's own "
++        "product default; raise it for heavy-tier queries at large scale factors whose native runtime "
++        "approaches that ceiling on slower hardware. Only affects the server-side path — the e2e paths call "
++        "the real, unmodified server tool, which always enforces the product default.",
++    )
+     parser.add_argument("--output", type=Path, required=True, help="Path to write the result JSON.")
+     parser.add_argument(
+         "--e2e",
+
+
+Investigate per the method in your instructions, then return the findings list.
