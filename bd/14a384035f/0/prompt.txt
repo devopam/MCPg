@@ -1,0 +1,9 @@
+<task-notification>
+<task-id>a003b551c9e30668c</task-id>
+<tool-use-id>toolu_01KXJ1yDfEKnx8gAoVG3JaPo</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\a003b551c9e30668c.output</output-file>
+<status>failed</status>
+<summary>Agent "Implement Task 6: elicitation confirmation gate" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 16 tests pass. Now let's add the config test.</result>
+</task-notification>
