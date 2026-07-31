@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bl1la97kl</task-id>
+<tool-use-id>toolu_01M4forbnMgdR8SKcuCcfxn5</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\abfe81ad-87d9-4907-8001-dbc64cd87ee3\tasks\bl1la97kl.output</output-file>
+<status>completed</status>
+<summary>Background command "Relaunch SF10 perf harness with MCPG_STATEMENT_TIMEOUT_MS raised to match --timeout" completed (exit code 0)</summary>
+</task-notification>
