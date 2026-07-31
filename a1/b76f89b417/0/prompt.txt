@@ -1,0 +1,97 @@
+<task-notification>
+<task-id>a38610d829a1b30d2</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\a38610d829a1b30d2.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 5 (spec + quality) - security-sensitive" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>### Spec Compliance
+
+✅ **Spec compliant** (with one deliberate, correct deviation and three Minor doc nits).
+
+Verified item by item:
+
+| Brief step | Status | Evidence |
+|---|---|---|
+| Step 1 — delete `_role_from_request`, simplify `resolve_role` | ✅ | diff lines 164–215; `resolve_role` body is the brief's replacement verbatim (`src/mcpg/tenancy.py:79-93`) |
+| Step 2 — add `TenantRoleContextMiddleware` | ✅ w/ deviation | `src/mcpg/tenancy.py:95-142` — see below |
+| Step 3 — register in `create_server` | ✅ | `src/mcpg/server.py:28,50`; confirmed at runtime: `['OpenTelemetryMiddleware', 'RequestStateBoundary', 'TenantRoleContextMiddleware']` |
+| Step 4 — tighten types, mypy clean | ✅ | `uv run mypy src/mcpg/tenancy.py src/mcpg/server.py` → *Success: no issues found in 2 source files*. No `# type: ignore` in the middleware; `CallNext`/`HandlerResult` imported and used |
+| Step 5/6/7 — rewrite tests, run suites | ✅ | `uv run pytest tests/unit/test_tenancy.py tests/unit/test_server.py tests/unit/test_http_runtime.py tests/unit/test_oidc.py -q` → **102 passed** |
+| Controller add-on — module docstring rewrite | ✅ (done, but see Minor #1) | diff lines 66–107; no remaining `request_ctx` / `FastMCP` / "session-frozen" references |
+| Scope | ✅ | `git show --stat c16ce5a` = exactly the three in-scope files |
+
+**Extra (judged reasonable):** the `TYPE_CHECKING`-only `_tenant_role_middleware_matches_protocol: ServerMiddleware[Any] = TenantRoleContextMiddleware()` (`tenancy.py:268-273`). Not itemized in the brief, but it is load-bearing twice over: it keeps the brief-mandated `ServerMiddleware` import from being an `F401`, and it gives mypy a standing structural check that the class's `__call__` still matches the protocol the SDK will call it through. Since registration is structural (no inheritance), without this nothing would catch a signature drift at type-check time. Counted as a strength.
+
+**SDK claims — independently verified, not taken from the report:**
+- `uv run python -c "from mcp.server.lowlevel.server import request_ctx"` → `ImportError: cannot import name 'request_ctx' from 'mcp.server.lowlevel.server'`. Confirmed removed.
+- `.venv/Lib/site-packages/mcp/shared/dispatcher.py:266` — *"Each inbound request is dispatched to `on_request` in its own task."* Confirmed verbatim; production impl spawns via `self._tg.start_soon` at `jsonrpc_dispatcher.py:684-686`.
+- `ctx.request` is non-`None` for **every** inbound HTTP/SSE message: `runner.py:336` reads it from `ServerMessageMetadata.request_context`, and every construction site in both transports passes the Starlette `Request` (`streamable_http.py:234` — the single site, reached from :312/:319/:587/:609; `sse.py:257`). So the middleware can never silently no-op on a transport MCPg serves.
+
+**`--no-verify` justified:** the bypassed pre-commit hooks are ruff-check, ruff-format, mypy-over-`src/mcpg`, bandit. `uv run mypy src/mcpg` → 8 errors, **all in `src/mcpg/tools.py`** (`inputSchema`/`ToolAnnotations` camelCase renames — Task 7's territory), **zero** in `tenancy.py`/`server.py`. `ruff check` and `ruff format --check` both clean on all three changed files. The four test files run green.
+
+---
+
+### The deviation: **correct — approved**, but the stated rationale is over-specified
+
+**Empirically confirmed the load-bearing test discriminates.** I ran the brief's *literal* Step 2 snippet against `test_middleware_clears_a_stale_inherited_role_when_request_carries_none`'s exact setup (scratchpad only, working tree untouched):
+
+```
+brief snippet result: 'tenant_FIRST' (expected 'static_default')
+=&gt; brief snippet FAILS the load-bearing test (stale role leaked)
+```
+
+The committed implementation returns `'static_default'`. The report's claim #1 is true as stated.
+
+**The contextvars mechanism claim is correct.** `contextvars.Context` is copied from whatever context is current *in the creating code at task-creation time*; it is not re-derived per logical request. The implementer's description of this is accurate.
+
+**But the *specific scenario* they describe is not the live path**, and a reviewer restating it would be wrong in detail. On MCPg's actual streamable-HTTP/SSE path the dispatch task inherits **this request's ASGI context**, not a long-lived session task's:
+- `jsonrpc_dispatcher.py:684-685` — `sender_ctx.run(self._tg.start_soon, fn, *args)`, with `sender_ctx = self._read_stream.last_context` (`:501-505`)
+- `_context_streams.py:37` — `ContextSendStream.send` snapshots `contextvars.copy_context()` at send time, i.e. in the ASGI POST task
+- both server transports use context streams (`streamable_http.py:158-160`, `sse.py:138`)
+
+and for a role-less request that ASGI context has `current_role is None`, because both ASGI setters are header/claim-conditional (`http_runtime.py:240-244`, `:176-190`). On that path the brief's early-return would *not* leak.
+
+**The real justification — which does hold, and which I verified:**
+1. The SDK has explicit `None`-fallback branches that land on a **long-lived task's** context: `jsonrpc_dispatcher.py:686` (`self._tg.start_soon` from the read-loop task when `sender_ctx is None`) and `runner.py:657-659` (`_sender_context` → `contextvars.copy_context()` of the relay task when the stream isn't context-aware).
+2. Those long-lived tasks *can* carry a stale role: `_TenantRoleMiddleware`/`_OIDCAuthMiddleware` hold `current_role` **set across `await self._app(...)`** (`http_runtime.py:190-194`, `:261-265`) — precisely the window in which a stateful session's serving/relay tasks are created. That is the pre-existing "session-frozen" bug the old code's own comment documented, relocated rather than removed.
+3. So the unconditional set makes MCPg's tenancy **independent of SDK context-propagation internals**, and reproduces the deleted `_role_from_request`'s `has_request ⇒ authoritative` contract exactly.
+
+**No new bug introduced.** The unconditional set can only clobber a value *this* middleware did not set (it always resets its own in `finally`). A repo-wide grep finds exactly two other `current_role.set` sites — `http_runtime.py:190` and `:261`, both pre-existing, both unchanged — and **both stash the role on `scope` before setting the ContextVar**, so a legitimate per-request role is always re-derived identically by the new middleware. Clobber-to-`None` falls through to `settings.default_role` — the configured static default, fail-closed, identical to the old mechanism. There is no "request-scoped-but-not-HTTP default" that the unconditional set could destroy. stdio (`ctx.request is None`) is genuinely untouched, preserving the ContextVar path that `test_resolve_role_prefers_contextvar_over_default` covers.
+
+---
+
+### Strengths
+
+- The deviation is right, and it was caught rather than copied. Committing the brief's snippet verbatim would have left a live-if-narrow cross-tenant leak vector dependent on SDK internals.
+- `finally: current_role.reset(token)` (`tenancy.py:139-142`) is correct — it fires on the exception path, and `test_middleware_resets_role_even_when_call_next_raises` (diff 443-462) verifies it with a real `RuntimeError` propagating through, asserting the role is set *inside* `call_next` and `None` after.
+- Fail-closed by construction: every non-`str` scope value (`isinstance(scope, dict)` / `isinstance(raw_role, str)` guards) resolves to `None` → static default, never to another tenant's role.
+- `resolve_role`'s `str | None` contract is genuinely unchanged for both callers: `tenancy.py:178` (`role is None` → upstream path) and `tools.py:226` (`resolve_role(...) or "none"` as a cache-key salt). Neither depended on the removed two-tuple/`has_request` semantics. The cache-key salt is now *more* accurate per-request.
+- New code is fully unit-covered — the only uncovered lines in `tenancy.py` under `test_tenancy.py` alone are `178-181, 200-246` (the driver/`_execute_with_role`, covered by integration tests). The 51% figure from a single-file coverage run is an artifact, not a gap.
+- The report's caveat on the concurrent test is honestly stated and accurate.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+
+1. **Module docstring is internally incoherent after the rewrite** (`tenancy.py:11-13`, diff line 76). The new heading reads *"The role for a request is set once, by `TenantRoleContextMiddleware`:"* — and the first bullet under it is **"Static: `MCPG_DEFAULT_ROLE`"**, which the middleware does *not* set. The old heading ("Two ways to set the role for a request") made the two bullets parallel; the new one doesn't. Given the repo's hard verify-docs-against-code rule, worth a one-line reword (e.g. "The role for a request resolves from two sources, wired up by …").
+
+2. **Absolute overclaim in a security-sensitive docstring** (`tenancy.py:24-27` and `:98-99`): *"a plain `ContextVar` set inside one task is invisible to sibling tasks … can't leak into any other request's task."* This SDK **deliberately propagates contexts across task boundaries** (`jsonrpc_dispatcher._spawn`, `_context_streams`). The isolation is real but comes from the middleware's own unconditional set + reset, not from asyncio alone. Same nit applies to the middleware docstring's framing at `:110-120`, which asserts the long-lived-parent-task inheritance as the live mechanism when it is in fact the SDK's `None`-fallback branches (`jsonrpc_dispatcher.py:686`, `runner.py:657-659`) — stating that precisely would make the rationale durable against a future SDK change.
+
+3. **A new load-bearing invariant is undocumented:** *"always stash the role on `scope` before calling `current_role.set()`."* The new middleware is unconditionally authoritative on HTTP, so a future `current_role.set()` added anywhere without the matching scope stash will be silently clobbered. Worth one line near `_ROLE_SCOPE_KEY` (`tenancy.py:62-65`). Relatedly, the report's flagged follow-up — `http_runtime.py:186-188` / `:257-259` comments still claim "the ContextVar alone doesn't reach it," describing a mechanism that no longer exists — is correctly deferred (out of file scope) and should become a real follow-up task.
+
+4. **Concurrent test is executable documentation, not a regression guard** (diff 486-521). It would pass against a middleware that never resets anything, since each `gather` task gets its own context copy regardless; and the mid-flight overlap relies on `gather`'s creation-order scheduling (`release_after_both_started`'s single `sleep(0)` happens to land after both tasks reach `barrier.wait()` in CPython, but that isn't a spec guarantee). The report says as much, honestly. No change requested — its stated value holds.
+
+### Assessment
+
+**Task quality:** Approved
+
+**Reasoning:** Every brief step is implemented and independently verified (both SDK behavior claims checked against installed `mcp==2.0.0` source, mypy/ruff/102 tests green, `--no-verify` justified with the 8 out-of-scope `tools.py` errors); the deviation from the brief's snippet is correct — I reproduced the leak against the brief's literal code (`'tenant_FIRST'` vs `'static_default'`) and confirmed the fix introduces no new bug, since both other `current_role.set` sites stash on `scope` first and the clobber direction is fail-closed to the static default. The only defects are docstring precision nits, including one where the implementer's stated leak scenario is over-specified relative to the live path even though the conclusion is right.</result>
+<usage><subagent_tokens>95207</subagent_tokens><tool_uses>29</tool_uses><duration_ms>899345</duration_ms></usage>
+</task-notification>
