@@ -1,0 +1,443 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - src/mcpg/nl2sql.py
+  - tests/contract/test_tool_output_schemas.py
+  - tests/contract/tool_return_shapes.snapshot.json
+  - tests/unit/test_nl2sql.py
+
+Unified diff (only + lines are new):
+
+=== DIFF: src/mcpg/nl2sql.py ===
+@@ -320,15 +320,37 @@ class TranslationResult:
+     # sentinel. When refused, ``sql`` is empty and nothing is executed.
+     refused: bool = False
+     refusal_reason: str | None = None
++    # The internal translation LLM call's cost — this call never goes
++    # through a caller's own model loop, so without this a caller driving
++    # MCPg over MCP (e.g. an agent, or the Tier-B benchmark) has no way to
++    # see it at all.
++    tokens_in: int = 0
++    tokens_out: int = 0
++
++
++@dataclass(frozen=True)
++class ProviderCompletion:
++    """One provider call's raw text plus the tokens it actually cost.
++
++    Token counts come straight off each vendor's response body (discarded
++    before this existed) — needed so callers like the Tier-B benchmark can
++    account for this internal call's cost, which is otherwise invisible to
++    anyone driving MCPg over MCP (this call never goes through the agent's
++    own model loop).
++    """
++
++    text: str
++    tokens_in: int
++    tokens_out: int
+ 
+ 
+ @runtime_checkable
+ class LLMProvider(Protocol):
+     """Common interface for the NL→SQL chat completion call.
+ 
+-    Each provider's :meth:`complete` returns the raw text from the
+-    LLM. The caller does JSON parsing — that way provider-specific
+-    JSON-mode quirks don't leak into this module.
++    Each provider's :meth:`complete` returns the raw text from the LLM plus
++    its token usage. The caller does JSON parsing of the text — that way
++    provider-specific JSON-mode quirks don't leak into this module.
+     """
+ 
+     name: str
+@@ -341,8 +363,8 @@ class LLMProvider(Protocol):
+         model: str,
+         max_tokens: int,
+         timeout: float,
+-    ) -> str:
+-        """Send the prompt; return the completion text. Raises on transport error."""
++    ) -> ProviderCompletion:
++        """Send the prompt; return the completion text + usage. Raises on transport error."""
+         ...
+ 
+ 
+@@ -363,7 +385,7 @@ class AnthropicProvider:
+         model: str,
+         max_tokens: int,
+         timeout: float,
+-    ) -> str:
++    ) -> ProviderCompletion:
+         async with httpx.AsyncClient(timeout=timeout) as client:
+             response = await client.post(
+                 f"{self._base_url}/v1/messages",
+@@ -381,13 +403,15 @@ class AnthropicProvider:
+             )
+         response.raise_for_status()
+         body = response.json()
++        usage = body.get("usage") or {}
++        tokens_in, tokens_out = int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)
+         # content is a list of blocks; for plain text we want the first
+         # text block. JSON-mode isn't strictly supported, so we ask for
+         # JSON in the prompt and trust the model to comply.
+         for block in body.get("content", []):
+             if block.get("type") == "text":
+-                return str(block.get("text", ""))
+-        return ""
++                return ProviderCompletion(str(block.get("text", "")), tokens_in, tokens_out)
++        return ProviderCompletion("", tokens_in, tokens_out)
+ 
+ 
+ class OpenAIProvider:
+@@ -412,7 +436,7 @@ class OpenAIProvider:
+         model: str,
+         max_tokens: int,
+         timeout: float,
+-    ) -> str:
++    ) -> ProviderCompletion:
+         async with httpx.AsyncClient(timeout=timeout) as client:
+             response = await client.post(
+                 f"{self._base_url}/chat/completions",
+@@ -432,10 +456,14 @@ class OpenAIProvider:
+             )
+         response.raise_for_status()
+         body = response.json()
++        usage = body.get("usage") or {}
++        tokens_in = int(usage.get("prompt_tokens") or 0)
++        tokens_out = int(usage.get("completion_tokens") or 0)
+         choices = body.get("choices", [])
+         if not choices:
+-            return ""
+-        return str(choices[0].get("message", {}).get("content", ""))
++            return ProviderCompletion("", tokens_in, tokens_out)
++        text = str(choices[0].get("message", {}).get("content", ""))
++        return ProviderCompletion(text, tokens_in, tokens_out)
+ 
+ 
+ class GeminiProvider:
+@@ -455,7 +483,7 @@ class GeminiProvider:
+         model: str,
+         max_tokens: int,
+         timeout: float,
+-    ) -> str:
++    ) -> ProviderCompletion:
+         # Gemini accepts the API key as a query string or `x-goog-api-key`
+         # header — we use the header to avoid logging-route leakage.
+         async with httpx.AsyncClient(timeout=timeout) as client:
+@@ -476,11 +504,15 @@ class GeminiProvider:
+             )
+         response.raise_for_status()
+         body = response.json()
++        usage = body.get("usageMetadata") or {}
++        tokens_in = int(usage.get("promptTokenCount") or 0)
++        tokens_out = int(usage.get("candidatesTokenCount") or 0)
+         candidates = body.get("candidates", [])
+         if not candidates:
+-            return ""
++            return ProviderCompletion("", tokens_in, tokens_out)
+         parts = candidates[0].get("content", {}).get("parts", [])
+-        return "".join(str(p.get("text", "")) for p in parts)
++        text = "".join(str(p.get("text", "")) for p in parts)
++        return ProviderCompletion(text, tokens_in, tokens_out)
+ 
+ 
+ def is_valid_provider(name: str) -> bool:
+@@ -1149,7 +1181,7 @@ async def translate_nl_to_sql(
+     system_prompt = _build_system_prompt(server_version_num)
+ 
+     try:
+-        raw = await provider.complete(
++        completion = await provider.complete(
+             system_prompt=system_prompt,
+             user_prompt=user_prompt,
+             model=model,
+@@ -1159,6 +1191,9 @@ async def translate_nl_to_sql(
+     except httpx.HTTPError as exc:
+         raise NL2SQLError(f"NL→SQL provider request failed: {exc}") from exc
+ 
++    raw = completion.text
++    tokens_in, tokens_out = completion.tokens_in, completion.tokens_out
++
+     sql, explanation = _parse_response(raw)
+ 
+     refusal_reason = _detect_refusal(sql, raw)
+@@ -1186,6 +1221,8 @@ async def translate_nl_to_sql(
+             error=None,
+             refused=True,
+             refusal_reason=refusal_reason,
++            tokens_in=tokens_in,
++            tokens_out=tokens_out,
+         )
+     elif preflight_error is not None:
+         # EXPLAIN rejected the generated SQL — return it with the planner
+@@ -1200,6 +1237,8 @@ async def translate_nl_to_sql(
+             columns=[],
+             row_count=0,
+             error=preflight_error,
++            tokens_in=tokens_in,
++            tokens_out=tokens_out,
+         )
+     elif not execute or not sql:
+         translation = TranslationResult(
+@@ -1212,6 +1251,8 @@ async def translate_nl_to_sql(
+             columns=[],
+             row_count=0,
+             error=None if sql else "model returned no SQL",
++            tokens_in=tokens_in,
++            tokens_out=tokens_out,
+         )
+     else:
+         # Execution path: assert single-statement first (defence-in-
+@@ -1231,6 +1272,8 @@ async def translate_nl_to_sql(
+                 columns=exec_result.columns,
+                 row_count=exec_result.row_count,
+                 error=None,
++                tokens_in=tokens_in,
++                tokens_out=tokens_out,
+             )
+         except (QueryError, NL2SQLError) as exc:
+             # psycopg / libpq error messages routinely embed DSN
+@@ -1248,6 +1291,8 @@ async def translate_nl_to_sql(
+                 columns=[],
+                 row_count=0,
+                 error=obfuscate_password(str(exc)),
++                tokens_in=tokens_in,
++                tokens_out=tokens_out,
+             )
+ 
+     if audit_persist:
+@@ -1270,6 +1315,8 @@ async def translate_nl_to_sql(
+                 row_count=translation.row_count if translation.executed else None,
+                 error=translation.error,
+                 duration_ms=duration_ms,
++                prompt_tokens=translation.tokens_in,
++                completion_tokens=translation.tokens_out,
+                 env=env,
+             )
+         except Exception as exc:  # pragma: no cover - swallowed on purpose
+
+
+=== DIFF: tests/contract/test_tool_output_schemas.py ===
+@@ -642,7 +642,19 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
+         }
+     ),
+     "translate_nl_to_sql": frozenset(
+-        {"sql", "explanation", "model", "provider", "executed", "rows", "columns", "row_count", "error"}
++        {
++            "sql",
++            "explanation",
++            "model",
++            "provider",
++            "executed",
++            "rows",
++            "columns",
++            "row_count",
++            "error",
++            "tokens_in",
++            "tokens_out",
++        }
+     ),
+     "analyze_query_plan": frozenset(
+         {
+
+
+=== DIFF: tests/contract/tool_return_shapes.snapshot.json ===
+@@ -2222,7 +2222,9 @@
+         "refused",
+         "row_count",
+         "rows",
+-        "sql"
++        "sql",
++        "tokens_in",
++        "tokens_out"
+       ],
+       "kind": "scalar"
+     },
+
+
+=== DIFF: tests/unit/test_nl2sql.py ===
+@@ -3,7 +3,10 @@
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
++from typing import Any
++from unittest.mock import patch
+ 
++import httpx
+ import pytest
+ from _fakes import FakeRoutingDriver
+ 
+@@ -24,6 +27,7 @@ from mcpg.nl2sql import (
+     NL2SQLError,
+     OpenAIProvider,
+     ProviderCallParams,
++    ProviderCompletion,
+     _assert_single_statement,
+     _parse_response,
+     _reset_egress_notice_cache,
+@@ -46,6 +50,8 @@ class _StubProvider:
+ 
+     name: str = "stub"
+     response: str = ""
++    tokens_in: int = 111
++    tokens_out: int = 222
+     captured_system: str = ""
+     captured_user: str = ""
+     captured_model: str = ""
+@@ -59,13 +65,13 @@ class _StubProvider:
+         model: str,
+         max_tokens: int,
+         timeout: float,
+-    ) -> str:
++    ) -> ProviderCompletion:
+         _ = timeout
+         self.captured_system = system_prompt
+         self.captured_user = user_prompt
+         self.captured_model = model
+         self.captured_max_tokens = max_tokens
+-        return self.response
++        return ProviderCompletion(self.response, self.tokens_in, self.tokens_out)
+ 
+ 
+ def _routes_for_simple_schema() -> dict[str, list[dict[str, object]]]:
+@@ -443,6 +449,10 @@ async def test_translate_nl_to_sql_surfaces_refusal_from_sentinel_in_sql_field()
+     assert result.sql == ""
+     assert result.executed is False
+     assert result.error is None
++    # The refusal branch is a distinct TranslationResult construction site —
++    # token usage must still carry through it, not just the happy path.
++    assert result.tokens_in == provider.tokens_in
++    assert result.tokens_out == provider.tokens_out
+ 
+ 
+ async def test_translate_nl_to_sql_detects_bare_refusal_sentinel() -> None:
+@@ -525,6 +535,27 @@ async def test_translate_nl_to_sql_records_provider_and_model_on_the_result() ->
+     assert result.provider == "stub"
+ 
+ 
++async def test_translate_nl_to_sql_reports_the_providers_token_usage() -> None:
++    """The internal provider call's tokens never go through a caller's own
++    model loop — TranslationResult is the only place they're visible, so
++    they must survive end-to-end regardless of which branch handles the
++    result (this one takes the no-execute generation-only path)."""
++    provider = _StubProvider(response='{"sql": "SELECT 1", "explanation": "smoke"}', tokens_in=555, tokens_out=777)
++
++    result = await translate_nl_to_sql(
++        FakeRoutingDriver(_routes_for_simple_schema()),  # type: ignore[arg-type]
++        provider=provider,  # type: ignore[arg-type]
++        model="m",
++        question="smoke",
++        schema="public",
++        execute=False,
++        explain_preflight=False,
++    )
++
++    assert result.tokens_in == 555
++    assert result.tokens_out == 777
++
++
+ async def test_translate_nl_to_sql_reports_error_when_model_returns_no_sql() -> None:
+     provider = _StubProvider(response='{"sql": "", "explanation": "out of scope"}')
+ 
+@@ -1214,3 +1245,99 @@ def test_parse_response_extracts_fence_body_over_outer_garbage() -> None:
+     sql, explanation = _parse_response(raw)
+     assert sql == "SELECT 2"
+     assert explanation == "ok"
++
++
++# --- provider token-usage parsing (real HTTP response shapes) -------------
++#
++# No existing nl2sql test mocks httpx — _StubProvider bypasses the real
++# providers' HTTP/JSON-parsing code entirely. These reuse the idiomatic
++# fake-AsyncClient pattern from tests/unit/test_oidc.py's
++# _mock_httpx_responses, applied to POST instead of GET, so the three real
++# provider classes' usage-block parsing is actually exercised.
++
++
++def _mock_post_response(body: dict[str, Any]):
++    """Patch ``mcpg.nl2sql.httpx`` so any POST returns ``body`` as JSON."""
++
++    class _AsyncResponse:
++        def __init__(self, body: dict[str, Any]) -> None:
++            self._body = body
++            self.status_code = 200
++
++        def raise_for_status(self) -> None:
++            return None
++
++        def json(self) -> dict[str, Any]:
++            return self._body
++
++    class _AsyncClient:
++        def __init__(self, *args: Any, **kwargs: Any) -> None:
++            pass
++
++        async def __aenter__(self) -> _AsyncClient:
++            return self
++
++        async def __aexit__(self, *exc_info: object) -> None:
++            return None
++
++        async def post(self, url: str, **_kwargs: Any) -> _AsyncResponse:
++            return _AsyncResponse(body)
++
++    return patch.multiple(
++        "mcpg.nl2sql",
++        httpx=type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
++    )
++
++
++async def test_anthropic_provider_parses_usage_from_the_real_response_shape() -> None:
++    body = {
++        "content": [{"type": "text", "text": '{"sql": "SELECT 1", "explanation": "x"}'}],
++        "usage": {"input_tokens": 123, "output_tokens": 45},
++    }
++    with _mock_post_response(body):
++        result = await AnthropicProvider(api_key="k").complete(
++            system_prompt="sys", user_prompt="user", model="m", max_tokens=100, timeout=5
++        )
++    assert result.text == '{"sql": "SELECT 1", "explanation": "x"}'
++    assert result.tokens_in == 123
++    assert result.tokens_out == 45
++
++
++async def test_openai_provider_parses_usage_from_the_real_response_shape() -> None:
++    body = {
++        "choices": [{"message": {"content": '{"sql": "SELECT 1", "explanation": "x"}'}}],
++        "usage": {"prompt_tokens": 88, "completion_tokens": 33},
++    }
++    with _mock_post_response(body):
++        result = await OpenAIProvider(api_key="k").complete(
++            system_prompt="sys", user_prompt="user", model="m", max_tokens=100, timeout=5
++        )
++    assert result.text == '{"sql": "SELECT 1", "explanation": "x"}'
++    assert result.tokens_in == 88
++    assert result.tokens_out == 33
++
++
++async def test_gemini_provider_parses_usage_from_the_real_response_shape() -> None:
++    body = {
++        "candidates": [{"content": {"parts": [{"text": '{"sql": "SELECT 1", "explanation": "x"}'}]}}],
++        "usageMetadata": {"promptTokenCount": 61, "candidatesTokenCount": 19},
++    }
++    with _mock_post_response(body):
++        result = await GeminiProvider(api_key="k").complete(
++            system_prompt="sys", user_prompt="user", model="m", max_tokens=100, timeout=5
++        )
++    assert result.text == '{"sql": "SELECT 1", "explanation": "x"}'
++    assert result.tokens_in == 61
++    assert result.tokens_out == 19
++
++
++async def test_provider_usage_missing_or_malformed_defaults_to_zero_not_a_crash() -> None:
++    """A vendor quirk (missing/null usage block) must not break translation
++    — the token count is a nice-to-have, not load-bearing for correctness."""
++    body = {"content": [{"type": "text", "text": "no usage block here"}]}
++    with _mock_post_response(body):
++        result = await AnthropicProvider(api_key="k").complete(
++            system_prompt="sys", user_prompt="user", model="m", max_tokens=100, timeout=5
++        )
++    assert result.tokens_in == 0
++    assert result.tokens_out == 0
+
+
+Investigate per the method in your instructions, then return the findings list.
