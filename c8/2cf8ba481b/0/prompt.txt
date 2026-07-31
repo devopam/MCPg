@@ -1,0 +1,790 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - benchmarks/results/real-harness-comparison-dba-audit-v2.json
+  - benchmarks/results/real-harness-comparison-dba-audit-v3.json
+  - benchmarks/results/real-harness-comparison-dba-audit.json
+  - benchmarks/tokens/tier_b/experiments/real_harness_comparison.py
+  - benchmarks/tokens/tier_b/tasks.py
+
+Unified diff (only + lines are new):
+
+=== DIFF: benchmarks/results/real-harness-comparison-dba-audit-v2.json ===
+@@ -0,0 +1,205 @@
++{
++  "metadata": {
++    "kind": "real_harness_comparison",
++    "model": "claude-sonnet-5",
++    "trials_per_arm": 1,
++    "max_budget_usd": 1.0,
++    "mcpg_system_prompt_hint": null,
++    "task_set": "audit",
++    "host": {
++      "python": "3.13.7",
++      "os": "Windows-11-10.0.26200-SP0"
++    },
++    "complete": true,
++    "known_limitation": "translate_nl_to_sql's internal LLM call, if it fires in the mcpg arm, is not included in these token/cost numbers \u2014 see module docstring."
++  },
++  "trials": [
++    {
++      "task_id": "missing_index",
++      "arm": "baseline",
++      "trial": 0,
++      "tokens_in": 77375,
++      "tokens_out": 766,
++      "turns": 2,
++      "tool_calls": 1,
++      "passed": true,
++      "final_answer": "The table and column that most need a new index:\n\n**`mcpg_demo.orders.customer_id`**\n\nThis is a foreign key column with no supporting index \u2014 it's the only FK column in the database lacking one. Any query filtering or joining on `customer_id` (e.g. \"orders for customer X\", or joins from `customers` to `orders`) is forced into a sequential scan on `orders`.\n\nFix:\n```sql\nCREATE INDEX idx_orders_customer_id ON mcpg_demo.orders (customer_id);\n```",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.09322949999999999,
++      "tool_names": [
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "missing_index",
++      "arm": "mcpg",
++      "trial": 0,
++      "tokens_in": 211701,
++      "tokens_out": 1438,
++      "turns": 5,
++      "tool_calls": 4,
++      "passed": true,
++      "final_answer": "Comparing all foreign-key columns against existing indexes in `mcpg_demo`:\n\n| FK column | Indexed? |\n|---|---|\n| `order_items.order_id` \u2192 orders | \u2705 |\n| `order_items.product_id` \u2192 products | \u2705 |\n| `reviews.customer_id` \u2192 customers | \u2705 |\n| `reviews.product_id` \u2192 products | \u2705 |\n| **`orders.customer_id` \u2192 customers** | \u274c **missing** |\n\n**Table: `orders`, Column: `customer_id`**\n\nIt's the only FK column in the schema without a supporting index, so every join or lookup from `customers` to their `orders` (3,000 rows) forces a sequential scan on `orders`. Fix:\n\n```sql\nCREATE INDEX orders_customer_id_idx ON mcpg_demo.orders (customer_id);\n```",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.2178033,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "Bash",
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "pii_columns",
++      "arm": "baseline",
++      "trial": 0,
++      "tokens_in": 77904,
++      "tokens_out": 626,
++      "turns": 2,
++      "tool_calls": 1,
++      "passed": true,
++      "final_answer": "Based on the schema in the `mcpg_demo` schema, the PII-bearing columns are:\n\n- **`customers.full_name`** \u2014 full name\n- **`customers.email`** \u2014 email address\n- **`customers.phone`** \u2014 phone number\n- **`customers.country`** \u2014 location data (weaker/indirect PII, only meaningful combined with other identifiers)\n\nNo other tables (`orders`, `order_items`, `products`, `reviews`) contain direct personal identifiers \u2014 they reference customers only via `customer_id` (a non-identifying foreign key), and `reviews.review_text` could incidentally contain PII if a reviewer types personal info, but that's not a structured PII column.",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.0940755,
++      "tool_names": [
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "pii_columns",
++      "arm": "mcpg",
++      "trial": 0,
++      "tokens_in": 258086,
++      "tokens_out": 1686,
++      "turns": 6,
++      "tool_calls": 5,
++      "passed": true,
++      "final_answer": "I confirmed this against the full column list (30 columns across 5 tables). Only the `customers` table has real PII:\n\n**PII columns (table.column):**\n- `mcpg_demo.customers.full_name` \u2014 personal name\n- `mcpg_demo.customers.email` \u2014 email address\n- `mcpg_demo.customers.phone` \u2014 phone number\n\n**Borderline / worth flagging but not counted as direct PII:**\n- `mcpg_demo.customers.customer_id` \u2014 an internal integer key; only PII in combination with the row it's attached to (i.e., it's a pseudonymous identifier, not identifying on its own).\n- `mcpg_demo.customers.country` \u2014 coarse location, not individually identifying.\n- `mcpg_demo.reviews.review_text` \u2014 free text; could incidentally contain PII (e.g., a customer typing their name/email into a review) but has no structural guarantee of it.\n\nNo other tables (`orders`, `order_items`, `products`, `reviews` apart from the free-text field) contain columns holding personal data \u2014 they're transactional/product data keyed by the numeric `customer_id`/`product_id` foreign keys only.",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.2022531,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "ToolSearch",
++        "mcp__mcpg__find_sensitive_columns",
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "naming_violation",
++      "arm": "baseline",
++      "trial": 0,
++      "tokens_in": 355699,
++      "tokens_out": 1766,
++      "turns": 9,
++      "tool_calls": 8,
++      "passed": true,
++      "final_answer": "The offending column is **`reviews.reviewSource`** \u2014 every other column in the database uses `snake_case`, but this one is `camelCase` (should be `review_source`).",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.20236079999999998,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "Bash",
++        "Bash",
++        "Bash",
++        "Bash",
++        "Bash",
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "naming_violation",
++      "arm": "mcpg",
++      "trial": 0,
++      "tokens_in": 255244,
++      "tokens_out": 989,
++      "turns": 6,
++      "tool_calls": 5,
++      "passed": false,
++      "final_answer": "The tool call needs your approval to proceed \u2014 please grant permission for `mcp__mcpg__lint_naming_conventions` when prompted, or let me know if you'd rather I query the schema directly via `docker exec`/psql instead.",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.18342719999999998,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "ToolSearch",
++        "mcp__mcpg__lint_naming_conventions",
++        "mcp__mcpg__lint_naming_conventions"
++      ]
++    }
++  ],
++  "aggregate": {
++    "mcpg": {
++      "trials": 3,
++      "mean_total_tokens": 243048.0,
++      "mean_tool_calls": 4.666666666666667,
++      "mean_turns": 5.666666666666667,
++      "correctness": 0.6666666666666666
++    },
++    "baseline": {
++      "trials": 3,
++      "mean_total_tokens": 171378.66666666666,
++      "mean_tool_calls": 3.3333333333333335,
++      "mean_turns": 4.333333333333333,
++      "correctness": 1.0
++    },
++    "token_ratio": 0.7051227192433868,
++    "errored": 0,
++    "per_task": [
++      {
++        "task_id": "missing_index",
++        "mcpg": {
++          "mean_total_tokens": 213139.0,
++          "mean_tool_calls": 4.0,
++          "correctness": 1.0
++        },
++        "baseline": {
++          "mean_total_tokens": 78141.0,
++          "mean_tool_calls": 1.0,
++          "correctness": 1.0
++        }
++      },
++      {
++        "task_id": "pii_columns",
++        "mcpg": {
++          "mean_total_tokens": 259772.0,
++          "mean_tool_calls": 5.0,
++          "correctness": 1.0
++        },
++        "baseline": {
++          "mean_total_tokens": 78530.0,
++          "mean_tool_calls": 1.0,
++          "correctness": 1.0
++        }
++      },
++      {
++        "task_id": "naming_violation",
++        "mcpg": {
++          "mean_total_tokens": 256233.0,
++          "mean_tool_calls": 5.0,
++          "correctness": 0.0
++        },
++        "baseline": {
++          "mean_total_tokens": 357465.0,
++          "mean_tool_calls": 8.0,
++          "correctness": 1.0
++        }
++      }
++    ]
++  },
++  "schema_version": 1,
++  "kind": "tokens_tier_b"
++}
+
+
+=== DIFF: benchmarks/results/real-harness-comparison-dba-audit-v3.json ===
+@@ -0,0 +1,216 @@
++{
++  "metadata": {
++    "kind": "real_harness_comparison",
++    "model": "claude-sonnet-5",
++    "trials_per_arm": 1,
++    "max_budget_usd": 1.0,
++    "mcpg_system_prompt_hint": null,
++    "task_set": "audit",
++    "host": {
++      "python": "3.13.7",
++      "os": "Windows-11-10.0.26200-SP0"
++    },
++    "complete": true,
++    "known_limitation": "translate_nl_to_sql's internal LLM call, if it fires in the mcpg arm, is not included in these token/cost numbers \u2014 see module docstring."
++  },
++  "trials": [
++    {
++      "task_id": "missing_index",
++      "arm": "baseline",
++      "trial": 0,
++      "tokens_in": 199530,
++      "tokens_out": 1879,
++      "turns": 5,
++      "tool_calls": 4,
++      "passed": true,
++      "final_answer": "**`mcpg_demo.orders.customer_id`** is the missing index.\n\nAll 5 foreign-key columns in the schema were checked against `pg_indexes`:\n\n| Table | FK column | References | Indexed? |\n|---|---|---|---|\n| order_items | order_id | orders | \u2705 |\n| order_items | product_id | products | \u2705 |\n| reviews | customer_id | customers | \u2705 |\n| reviews | product_id | products | \u2705 |\n| **orders** | **customer_id** | **customers** | \u274c |\n\n`orders` has 3,000 rows and is the largest FK-source table without coverage \u2014 every \"find a customer's orders\" join or `WHERE customer_id = ...` lookup on it is doing a sequential scan, and it also blocks index-assisted locking when rows in `customers` are updated/deleted. Fix:\n\n```sql\nCREATE INDEX orders_customer_id_idx ON mcpg_demo.orders (customer_id);\n```",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.16095120000000002,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "Bash",
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "missing_index",
++      "arm": "mcpg",
++      "trial": 0,
++      "tokens_in": 355582,
++      "tokens_out": 2159,
++      "turns": 12,
++      "tool_calls": 11,
++      "passed": true,
++      "final_answer": "**Table: `orders`, Column: `customer_id`**\n\nThe `orders.customer_id` foreign key (referencing `customers.customer_id`) has no supporting index \u2014 `orders` only has its primary-key index on `order_id`. This is the clear outlier: every other FK column in the schema (`order_items.order_id`, `order_items.product_id`, `reviews.customer_id`, `reviews.product_id`) already has a dedicated btree index, but `orders.customer_id` does not.\n\nIt's also the highest-impact fix: `orders` is the largest table by row count (3,000 rows) with the second-highest scan volume in the schema, and any lookup, join, or `ON DELETE`/`ON UPDATE` cascade check from `customers` to `orders` (e.g., \"get all orders for a customer\") is forced into a sequential scan without it.\n\n**Recommended fix:**\n```sql\nCREATE INDEX orders_customer_id_idx ON mcpg_demo.orders USING btree (customer_id);\n```",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.29032949999999996,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "Bash",
++        "ToolSearch",
++        "mcp__mcpg__list_foreign_keys",
++        "mcp__mcpg__list_tables",
++        "mcp__mcpg__recommend_indexes",
++        "mcp__mcpg__list_indexes",
++        "mcp__mcpg__list_indexes",
++        "mcp__mcpg__list_indexes",
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "pii_columns",
++      "arm": "baseline",
++      "trial": 0,
++      "tokens_in": 196821,
++      "tokens_out": 1279,
++      "turns": 5,
++      "tool_calls": 4,
++      "passed": true,
++      "final_answer": "Based on the `mcpg_demo` schema (the only application schema in this database), here are the columns containing PII:\n\n**Direct PII**\n- `customers.full_name` \u2014 full legal name\n- `customers.email` \u2014 email address\n- `customers.phone` \u2014 phone number\n\n**Quasi-identifiers / indirect PII** (not identifying alone, but personal attributes tied to an individual)\n- `customers.country` \u2014 geographic location\n- `customers.signup_date` \u2014 behavioral/account metadata\n- `customers.marketing_opt_in` \u2014 consent/preference record tied to the individual\n\n**Linking keys** (not PII themselves, but they join other tables back to a specific person, extending PII exposure to those tables)\n- `orders.customer_id`, `reviews.customer_id` \u2014 foreign keys to `customers.customer_id`\n\nAll other columns (`products.*`, `order_items.*`, `orders.status`/`order_date`/`total_cents`, `reviews.review_text`/`rating`/`reviewSource`/`created_at`) are transactional/product data with no PII \u2014 I checked sample `review_text` values and they don't embed names or contact details.\n\n**Summary list:**\n- `customers.full_name`\n- `customers.email`\n- `customers.phone`\n- `customers.country`\n- `customers.signup_date`\n- `customers.marketing_opt_in`",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.146037,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "Bash",
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "pii_columns",
++      "arm": "mcpg",
++      "trial": 0,
++      "tokens_in": 259773,
++      "tokens_out": 2076,
++      "turns": 10,
++      "tool_calls": 9,
++      "passed": true,
++      "final_answer": "I've reviewed the full schema across all 5 tables (`customers`, `orders`, `order_items`, `products`, `reviews`). Only `customers` holds direct personal data.\n\n## PII columns\n\n| Column | Why it's PII |\n|---|---|\n| **`mcpg_demo.customers.full_name`** | Direct identifier \u2014 a person's name |\n| **`mcpg_demo.customers.email`** | Direct identifier / contact info |\n| **`mcpg_demo.customers.phone`** | Direct identifier / contact info |\n\n## Borderline \u2014 worth flagging but arguably not PII on its own\n\n- **`mcpg_demo.customers.country`** \u2014 coarse geographic data; not identifying by itself, but combined with the other fields in the same row it contributes to a fuller profile. I wouldn't classify it as PII in isolation.\n- **`mcpg_demo.customers.signup_date`** and **`marketing_opt_in`** \u2014 behavioral/account metadata tied to a person, not identifying on their own.\n\nNo other table contains personal data: `orders`, `order_items`, and `products` are transactional/catalog data keyed only by numeric IDs, and `reviews.review_text` / `reviewSource` are free-text/attribution fields that *could* incidentally contain PII if a reviewer wrote personal details in their review, but the column itself isn't designed to hold PII (I didn't sample row content \u2014 this is schema-only heuristic).\n\nIf you want certainty on that last point (e.g., checking whether `review_text` actually contains emails/names in the data), I can sample rows \u2014 just say so.",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.2160306,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "ToolSearch",
++        "mcp__mcpg__find_sensitive_columns",
++        "mcp__mcpg__describe_table",
++        "mcp__mcpg__describe_table",
++        "mcp__mcpg__describe_table",
++        "mcp__mcpg__describe_table",
++        "mcp__mcpg__describe_table"
++      ]
++    },
++    {
++      "task_id": "naming_violation",
++      "arm": "baseline",
++      "trial": 0,
++      "tokens_in": 116681,
++      "tokens_out": 438,
++      "turns": 3,
++      "tool_calls": 2,
++      "passed": true,
++      "final_answer": "The offending column is `mcpg_demo.reviews.reviewSource` \u2014 it's camelCase, while every other column in the schema uses snake_case.",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.10307639999999998,
++      "tool_names": [
++        "Bash",
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "naming_violation",
++      "arm": "mcpg",
++      "trial": 0,
++      "tokens_in": 257340,
++      "tokens_out": 895,
++      "turns": 6,
++      "tool_calls": 5,
++      "passed": true,
++      "final_answer": "The offending column is **`reviewSource`** on `mcpg_demo.reviews` \u2014 it's camelCase while the rest of the schema uses snake_case.",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.18834030000000002,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "ToolSearch",
++        "mcp__mcpg__list_schemas",
++        "mcp__mcpg__lint_naming_conventions"
++      ]
++    }
++  ],
++  "aggregate": {
++    "mcpg": {
++      "trials": 3,
++      "mean_total_tokens": 292608.3333333333,
++      "mean_tool_calls": 8.333333333333334,
++      "mean_turns": 9.333333333333334,
++      "correctness": 1.0
++    },
++    "baseline": {
++      "trials": 3,
++      "mean_total_tokens": 172209.33333333334,
++      "mean_tool_calls": 3.3333333333333335,
++      "mean_turns": 4.333333333333333,
++      "correctness": 1.0
++    },
++    "token_ratio": 0.5885318827784582,
++    "errored": 0,
++    "per_task": [
++      {
++        "task_id": "missing_index",
++        "mcpg": {
++          "mean_total_tokens": 357741.0,
++          "mean_tool_calls": 11.0,
++          "correctness": 1.0
++        },
++        "baseline": {
++          "mean_total_tokens": 201409.0,
++          "mean_tool_calls": 4.0,
++          "correctness": 1.0
++        }
++      },
++      {
++        "task_id": "pii_columns",
++        "mcpg": {
++          "mean_total_tokens": 261849.0,
++          "mean_tool_calls": 9.0,
++          "correctness": 1.0
++        },
++        "baseline": {
++          "mean_total_tokens": 198100.0,
++          "mean_tool_calls": 4.0,
++          "correctness": 1.0
++        }
++      },
++      {
++        "task_id": "naming_violation",
++        "mcpg": {
++          "mean_total_tokens": 258235.0,
++          "mean_tool_calls": 5.0,
++          "correctness": 1.0
++        },
++        "baseline": {
++          "mean_total_tokens": 117119.0,
++          "mean_tool_calls": 2.0,
++          "correctness": 1.0
++        }
++      }
++    ]
++  },
++  "schema_version": 1,
++  "kind": "tokens_tier_b"
++}
+
+
+=== DIFF: benchmarks/results/real-harness-comparison-dba-audit.json ===
+@@ -0,0 +1,223 @@
++{
++  "metadata": {
++    "kind": "real_harness_comparison",
++    "model": "claude-sonnet-5",
++    "trials_per_arm": 1,
++    "max_budget_usd": 1.0,
++    "mcpg_system_prompt_hint": null,
++    "task_set": "audit",
++    "host": {
++      "python": "3.13.7",
++      "os": "Windows-11-10.0.26200-SP0"
++    },
++    "complete": true,
++    "known_limitation": "translate_nl_to_sql's internal LLM call, if it fires in the mcpg arm, is not included in these token/cost numbers \u2014 see module docstring."
++  },
++  "trials": [
++    {
++      "task_id": "missing_index",
++      "arm": "baseline",
++      "trial": 0,
++      "tokens_in": 156583,
++      "tokens_out": 1252,
++      "turns": 4,
++      "tool_calls": 3,
++      "passed": true,
++      "final_answer": "The table/column that most needs a new index is:\n\n**`mcpg_demo.orders.customer_id`** (constraint `orders_customer_id_fkey`)\n\nIt's the only foreign-key column in the schema with no supporting index \u2014 every join or lookup from `customers` to their `orders` (3,000 rows) forces a sequential scan on `orders` instead of an index lookup. Fix:\n\n```sql\nCREATE INDEX orders_customer_id_idx ON mcpg_demo.orders (customer_id);\n```",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.1663758,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "missing_index",
++      "arm": "mcpg",
++      "trial": 0,
++      "tokens_in": 399304,
++      "tokens_out": 2775,
++      "turns": 10,
++      "tool_calls": 9,
++      "passed": false,
++      "final_answer": "I'm blocked on tool approvals for both `docker exec` and the `mcpg` MCP tools \u2014 these need your permission to run. Could you approve the pending permission prompt (or let me know if you'd like me to use a different approach)?",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.3078123,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "ToolSearch",
++        "mcp__mcpg__list_foreign_keys",
++        "mcp__mcpg__recommend_indexes",
++        "mcp__mcpg__list_foreign_keys",
++        "mcp__mcpg__list_foreign_keys",
++        "Bash",
++        "PowerShell"
++      ]
++    },
++    {
++      "task_id": "pii_columns",
++      "arm": "baseline",
++      "trial": 0,
++      "tokens_in": 197282,
++      "tokens_out": 1579,
++      "turns": 5,
++      "tool_calls": 4,
++      "passed": true,
++      "final_answer": "Confirmed via schema and sample data. Here's the full PII inventory for this database (`mcpg_demo` schema):\n\n**Direct/identifying PII**\n- `customers.full_name` \u2014 person's full name\n- `customers.email` \u2014 email address\n- `customers.phone` \u2014 phone number\n\n**Indirect/quasi-identifier PII**\n- `customers.country` \u2014 geolocation attribute, PII when combined with other fields\n- `customers.customer_id` \u2014 identifier that links to the above (PII by association wherever it appears as a foreign key: `orders.customer_id`, `reviews.customer_id`)\n\n**Behavioral data tied to an identifiable person**\n- `customers.signup_date` \u2014 account creation timestamp for a named individual\n- `customers.marketing_opt_in` \u2014 consent/preference record tied to a named individual\n\nNo PII found in `order_items`, `orders` (beyond the `customer_id` FK), `products`, or `reviews` (`review_text` sampled \u2014 no embedded names/PII; `reviewSource` and `rating` are non-personal).\n\n**Summary \u2014 table.column list:**\n- `customers.full_name`\n- `customers.email`\n- `customers.phone`\n- `customers.country`\n- `customers.customer_id`\n- `customers.signup_date`\n- `customers.marketing_opt_in`\n- `orders.customer_id` (FK reference to PII)\n- `reviews.customer_id` (FK reference to PII)",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.1518666,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "Bash",
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "pii_columns",
++      "arm": "mcpg",
++      "trial": 0,
++      "tokens_in": 594642,
++      "tokens_out": 3941,
++      "turns": 18,
++      "tool_calls": 17,
++      "passed": true,
++      "final_answer": "Data confirms no hidden PII in free-text fields (reviews/product descriptions are generic template text with no names, emails, or identifiers embedded). The PII is confined to the `customers` table plus foreign-key links to it elsewhere.\n\n## PII columns found\n\n**Direct PII:**\n- `customers.full_name` \u2014 personal name\n- `customers.email` \u2014 email address\n- `customers.phone` \u2014 phone number\n\n**Indirect identifiers** (link records back to a specific individual, though not directly identifying on their own):\n- `customers.customer_id` \u2014 primary key tied to a named person\n- `orders.customer_id` \u2014 foreign key referencing the customer\n- `reviews.customer_id` \u2014 foreign key referencing the customer\n- `customers.country` \u2014 coarse location data (low sensitivity, but a data point about the individual)\n\n**Not PII:** `customers.signup_date`, `customers.marketing_opt_in`, and everything in `products`, `order_items`, `reviews.review_text`/`reviewSource` \u2014 verified by sampling that free-text fields contain only generic templated content, no embedded personal data.",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.37104329999999996,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "ToolSearch",
++        "mcp__mcpg__find_sensitive_columns",
++        "mcp__mcpg__list_tables",
++        "mcp__mcpg__list_tables",
++        "ToolSearch",
++        "mcp__mcpg__list_schemas",
++        "mcp__mcpg__find_sensitive_columns",
++        "ToolSearch",
++        "mcp__mcpg__get_compact_schema",
++        "mcp__mcpg__run_select",
++        "mcp__mcpg__run_select",
++        "mcp__mcpg__run_select",
++        "mcp__mcpg__run_select",
++        "mcp__mcpg__run_select",
++        "mcp__mcpg__run_select"
++      ]
++    },
++    {
++      "task_id": "naming_violation",
++      "arm": "baseline",
++      "trial": 0,
++      "tokens_in": 116604,
++      "tokens_out": 479,
++      "turns": 3,
++      "tool_calls": 2,
++      "passed": true,
++      "final_answer": "The offending column is `reviewSource` in `mcpg_demo.reviews` \u2014 it's camelCase, while every other column in the database uses snake_case.",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.10387919999999999,
++      "tool_names": [
++        "Bash",
++        "Bash"
++      ]
++    },
++    {
++      "task_id": "naming_violation",
++      "arm": "mcpg",
++      "trial": 0,
++      "tokens_in": 344698,
++      "tokens_out": 1240,
++      "turns": 8,
++      "tool_calls": 7,
++      "passed": false,
++      "final_answer": "I need your approval to run either the `lint_naming_conventions` MCP tool or a `docker exec ... psql` command against the local database. Could you approve one of these when the permission prompt appears?",
++      "error": null,
++      "hidden_tokens_in": 0,
++      "hidden_tokens_out": 0,
++      "cost_usd": 0.21609119999999998,
++      "tool_names": [
++        "Bash",
++        "Bash",
++        "ToolSearch",
++        "mcp__mcpg__lint_naming_conventions",
++        "mcp__mcpg__lint_naming_conventions",
++        "mcp__mcpg__lint_naming_conventions",
++        "Bash"
++      ]
++    }
++  ],
++  "aggregate": {
++    "mcpg": {
++      "trials": 3,
++      "mean_total_tokens": 448866.6666666667,
++      "mean_tool_calls": 11.0,
++      "mean_turns": 12.0,
++      "correctness": 0.3333333333333333
++    },
++    "baseline": {
++      "trials": 3,
++      "mean_total_tokens": 157926.33333333334,
++      "mean_tool_calls": 3.0,
++      "mean_turns": 4.0,
++      "correctness": 1.0
++    },
++    "token_ratio": 0.35183350660923807,
++    "errored": 0,
++    "per_task": [
++      {
++        "task_id": "missing_index",
++        "mcpg": {
++          "mean_total_tokens": 402079.0,
++          "mean_tool_calls": 9.0,
++          "correctness": 0.0
++        },
++        "baseline": {
++          "mean_total_tokens": 157835.0,
++          "mean_tool_calls": 3.0,
++          "correctness": 1.0
++        }
++      },
++      {
++        "task_id": "pii_columns",
++        "mcpg": {
++          "mean_total_tokens": 598583.0,
++          "mean_tool_calls": 17.0,
++          "correctness": 1.0
++        },
++        "baseline": {
++          "mean_total_tokens": 198861.0,
++          "mean_tool_calls": 4.0,
++          "correctness": 1.0
++        }
++      },
++      {
++        "task_id": "naming_violation",
++        "mcpg": {
++          "mean_total_tokens": 345938.0,
++          "mean_tool_calls": 7.0,
++          "correctness": 0.0
++        },
++        "baseline": {
++          "mean_total_tokens": 117083.0,
++          "mean_tool_calls": 2.0,
++          "correctness": 1.0
++        }
++      }
++    ]
++  },
++  "schema_version": 1,
++  "kind": "tokens_tier_b"
++}
+
+
+=== DIFF: benchmarks/tokens/tier_b/experiments/real_harness_comparison.py ===
+@@ -68,26 +68,24 @@ from pathlib import Path
+ from typing import Any, cast
+ 
+ from benchmarks.tokens.tier_b.schema import ARM_BASELINE, ARM_MCPG, TierBReport, TrialResult, aggregate
+-from benchmarks.tokens.tier_b.tasks import real_harness_tasks
+-
+-# Same tool surface as runner.py's _DEFAULT_MCPG_TOOLS, given to the "on" arm
+-# in full — this is the free-choice comparison the synthetic harness was
+-# supposed to be (and the discrepancy investigation showed it wasn't).
+-_MCPG_TOOLS = [
+-    "run_select",
+-    "get_compact_schema",
+-    "describe_table",
+-    "list_schemas",
+-    "analyze_query_plan",
+-    "recommend_indexes",
+-    "find_sensitive_columns",
+-    "audit_database",
+-    "translate_nl_to_sql",
+-]
++from benchmarks.tokens.tier_b.tasks import audit_tasks, real_harness_tasks
++
++_TASK_SETS = {"analytical": real_harness_tasks, "audit": audit_tasks}
++
+ _MCP_SERVER_NAME = "mcpg"
+ # Claude Code's naming convention for a configured MCP server's tools,
+ # confirmed against this session's own tool list (mcp__<server>__<tool>).
+-_MCPG_ALLOWED_TOOLS = [f"mcp__{_MCP_SERVER_NAME}__{name}" for name in _MCPG_TOOLS]
++# Wildcard, not a curated tool-name list: an earlier enumerated allowlist bit
++# twice in back-to-back runs of this same diagnostic — once for "Bash"
++# (missing entirely) and once for "lint_naming_conventions" (a real MCPg
++# tool the 9-name _MCPG_TOOLS curation never anticipated) — both times the
++# model correctly reached for the tool it needed and got stuck at a
++# permission wall it can't clear in headless mode, burning huge token
++# budgets or failing outright, not because the approach was wrong. "Bash"
++# alongside the wildcard: the mcpg arm must be genuine free choice (mcpg's
++# full tool surface *added* to the agent's normal means of double-checking,
++# not substituted for it).
++_MCPG_ALLOWED_TOOLS = [f"mcp__{_MCP_SERVER_NAME}__*", "Bash"]
+ _BASELINE_ALLOWED_TOOLS = ["Bash"]
+ 
+ # Both arms get this so the "off" arm isn't handicapped by not knowing how to
+@@ -98,7 +96,7 @@ _DB_HINT_TEMPLATE = (
+     "if no local client is installed.)"
+ )
+ 
+-_RESUME_KEYS = ("model", "trials_per_arm", "max_budget_usd", "mcpg_system_prompt_hint")
++_RESUME_KEYS = ("model", "trials_per_arm", "max_budget_usd", "mcpg_system_prompt_hint", "task_set")
+ 
+ 
+ def _build_mcp_config(database_url: str, worktree_dir: Path, nl2sql_api_key: str) -> dict[str, Any]:
+@@ -247,6 +245,7 @@ def _checkpoint(args: argparse.Namespace, trials: list[TrialResult], *, complete
+         "trials_per_arm": args.trials,
+         "max_budget_usd": args.max_budget_usd,
+         "mcpg_system_prompt_hint": args.mcpg_system_prompt_hint,
++        "task_set": args.task_set,
+         "host": {"python": platform.python_version(), "os": platform.platform()},
+         "complete": complete,
+         "known_limitation": (
+@@ -276,6 +275,7 @@ def _load_resumable(args: argparse.Namespace) -> list[TrialResult]:
+         "trials_per_arm": args.trials,
+         "max_budget_usd": args.max_budget_usd,
+         "mcpg_system_prompt_hint": args.mcpg_system_prompt_hint,
++        "task_set": args.task_set,
+     }
+     if any(meta.get(k) != this_run[k] for k in _RESUME_KEYS):
+         print(f"note: {args.output} exists but its config differs from this run; starting fresh, not resuming.")
+@@ -296,7 +296,7 @@ async def _run(args: argparse.Namespace) -> TierBReport:
+     if not shutil.which("claude"):
+         raise SystemExit("`claude` CLI not found on PATH — this experiment drives it via subprocess.")
+ 
+-    tasks = real_harness_tasks()
++    tasks = _TASK_SETS[args.task_set]()
+     trials: list[TrialResult] = list(_load_resumable(args))
+     done = {(t.task_id, t.arm, t.trial) for t in trials}
+ 
+@@ -366,6 +366,17 @@ def main(argv: list[str] | None = None) -> int:
+         "--worktree-dir", type=Path, required=True, help="Path to the MCPg checkout to run via `uv run --directory`."
+     )
+     parser.add_argument("--trials", type=int, default=1, help="Trials per (task, arm). Default 1.")
++    parser.add_argument(
++        "--task-set",
++        choices=sorted(_TASK_SETS),
++        default="analytical",
++        help=(
++            "'analytical' (default): the two NL->SQL business-question tasks. "
++            "'audit': the three planted-flaw DBA tasks (missing_index/pii_columns/naming_violation) "
++            "that the synthetic harness measured costing the mcpg advisor arm 2.66x more, unexplained — "
++            "use this to re-diagnose that result with real tool-trace capture."
++        ),
++    )
+     parser.add_argument(
+         "--model", default="claude-sonnet-5", help="Model id for both the CLI session and MCPg's nl2sql provider."
+     )
+
+
+=== DIFF: benchmarks/tokens/tier_b/tasks.py ===
+@@ -120,6 +120,21 @@ def default_tasks() -> list[Task]:
+     ]
+ 
+ 
++def audit_tasks() -> list[Task]:
++    """The three planted-flaw DBA tasks from ``default_tasks()``, isolated for the real-harness diagnostic.
++
++    The synthetic Tier-B harness measured these three costing MCPg's
++    advisor arm 2.66x more tokens than bare SQL — the opposite of what the
++    tool descriptions promise (one advisor call vs. many exploratory
++    queries) — and that number was never explained, only recorded. This
++    subset lets ``real_harness_comparison`` re-run just these three through
++    real Claude Code with tool-trace capture, to see *why*: whether the
++    advisor tool gets called and then the agent explores anyway, whether
++    its output isn't trusted, or something else.
++    """
++    return default_tasks()[:3]
++
++
+ def real_harness_tasks() -> list[Task]:
+     """Tasks for the real-harness (Claude Code on/off) comparison.
+ 
+
+
+Investigate per the method in your instructions, then return the findings list.
