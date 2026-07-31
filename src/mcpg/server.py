@@ -27,6 +27,7 @@ from mcpg.listen import ListenManager
 from mcpg.middleware.rate_limit import RateLimiter
 from mcpg.observability import get_metrics
 from mcpg.otel_tracing import TracerHandle, setup_tracing, tool_span
+from mcpg.tenancy import TenantRoleContextMiddleware
 from mcpg.tools import register_tools
 
 SERVER_NAME = "mcpg"
@@ -232,6 +233,7 @@ def create_server(
         instructions=SERVER_INSTRUCTIONS,
         version=__version__,
         lifespan=make_lifespan(settings, db, lm, cm, ar),
+        middleware=[TenantRoleContextMiddleware()],
     )
     server.mcpg_settings = settings
     server.otel_tracer = setup_tracing(settings)

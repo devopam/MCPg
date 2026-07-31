@@ -7,21 +7,26 @@ state leaks into the next pool checkout — and because the role name
 is validated against ``[A-Za-z_][A-Za-z0-9_]*`` (rejected at the
 config / middleware boundary), it's safe to interpolate into SQL.
 
-Two ways to set the role for a request:
+The role for a request is set once, by :class:`TenantRoleContextMiddleware`:
 
 * **Static**: ``MCPG_DEFAULT_ROLE`` — applies to every query when
   no per-request override is present. The HTTP bearer-token /
   stdio paths use this.
 * **Per-request**: the streamable-http / sse transports parse
   ``X-MCPG-Role: <role>`` (or the OIDC role claim), validate it, and
-  stash it on the request's ASGI ``scope``. FastMCP dispatches tool
-  calls in a long-lived *per-session* task, so a plain ContextVar set
-  in the request's ASGI task never reaches it — but the MCP SDK threads
-  the *per-message* request into that task via its ``request_ctx``, so
-  :func:`resolve_role` reads the authoritative role from the request's
-  scope at query time. The :class:`TenantSqlDriver` then issues
-  ``SET LOCAL ROLE`` and falls back to the static default when the
-  request carried no role.
+  stash it on the request's ASGI ``scope``. The MCP SDK dispatches
+  every inbound request to its own asyncio task
+  (``mcp.shared.dispatcher.Dispatcher.run``), and
+  :class:`TenantRoleContextMiddleware` runs inside that task, at the
+  top of the request's dispatch. It reads the role stashed on the
+  request's scope and sets :data:`current_role` for the lifetime of
+  the request via a ``ContextVar.set()`` / ``.reset()`` pair. Because
+  a plain ``ContextVar`` set inside one task is invisible to sibling
+  tasks, this is reliably visible to everything that request awaits —
+  including several calls deep into the SQL driver — and can't leak
+  into any other request's task. :func:`resolve_role` simply reads it
+  back. The :class:`TenantSqlDriver` then issues ``SET LOCAL ROLE`` and
+  falls back to the static default when the request carried no role.
 
 When neither is configured, the driver is identical to the vendored
 :class:`SqlDriver` and zero overhead is added.
@@ -33,8 +38,9 @@ import asyncio
 import logging
 import re
 from contextvars import ContextVar
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from mcp.server.context import CallNext, HandlerResult, ServerMiddleware, ServerRequestContext
 from psycopg.rows import dict_row
 
 from mcpg.sql import SqlDriver
@@ -45,19 +51,17 @@ logger = logging.getLogger(__name__)
 # module has no import-cycle on Settings.
 _ROLE_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
-# Per-request override for the stdio path (and a legacy fallback). ``None``
-# means "no override, use the static default". IMPORTANT: on the HTTP/SSE
-# transports this ContextVar is NOT authoritative — FastMCP dispatches tool
-# calls in a long-lived per-session task whose context is copied once at
-# session creation, so a role set in a *later* request's ASGI task never
-# reaches it. The per-message request path (see :func:`_role_from_request`)
-# is authoritative there.
+# Per-request override, set once per inbound request by
+# TenantRoleContextMiddleware (stdio: never set, so it stays at its default
+# of None and resolve_role falls back to the static default). ``None`` means
+# "no override, use the static default". The MCP SDK dispatches every
+# inbound request to its own asyncio task, so a ``.set()`` here is scoped to
+# that one request and can't leak into any other request's task.
 current_role: ContextVar[str | None] = ContextVar("mcpg_current_role", default=None)
 
 # Key under which the HTTP/SSE middlewares stash the validated per-request
-# role on the ASGI ``scope``. The MCP SDK threads that same request (and its
-# scope) into the tool-dispatch task via its ``request_ctx``, so the driver
-# reads the authoritative per-message role at query time.
+# role on the ASGI ``scope``. TenantRoleContextMiddleware reads it from the
+# request object it's handed and sets current_role for that request's task.
 _ROLE_SCOPE_KEY = "mcpg.tenant_role"
 
 
@@ -72,52 +76,78 @@ def validate_role(role: str) -> str:
     return role
 
 
-def _role_from_request() -> tuple[bool, str | None]:
-    """Read the per-message request's role from the MCP SDK's request context.
-
-    Returns ``(has_http_request, role)``:
-
-    * ``has_http_request`` is ``True`` when the current tool call is being
-      dispatched for an HTTP/SSE message (the SDK set ``request_ctx`` with a
-      Starlette request). In that case the request's scope is authoritative:
-      ``role`` is the value the tenant middleware stashed (or ``None`` when the
-      request carried no ``X-MCPG-Role`` / role claim) — and the caller must
-      NOT consult :data:`current_role`, which on these transports is frozen to
-      the session's first request.
-    * ``(False, None)`` when there is no HTTP request (stdio, or any path
-      without an SDK request context) — the caller uses the ContextVar path.
-    """
-    try:
-        from mcp.server.lowlevel.server import request_ctx
-    except Exception:  # SDK internals moved — fail safe to the ContextVar path
-        return (False, None)
-    try:
-        ctx = request_ctx.get()
-    except LookupError:
-        return (False, None)
-    scope = getattr(getattr(ctx, "request", None), "scope", None)
-    if not isinstance(scope, dict):
-        return (False, None)
-    role = scope.get(_ROLE_SCOPE_KEY)
-    return (True, role if isinstance(role, str) else None)
-
-
 def resolve_role(default: str | None) -> str | None:
     """Return the role for the current request.
 
-    On HTTP/SSE the per-message request is authoritative: its stashed role, or
-    the static ``default`` when the request carried no role — never the
-    session-frozen :data:`current_role`. On stdio (no request context) the
-    :data:`current_role` ContextVar wins, falling back to ``default``. ``None``
-    means "do nothing — use the role the pool was opened with".
+    :data:`current_role` is set once per inbound request by
+    :class:`TenantRoleContextMiddleware`, which runs inside that request's own
+    asyncio task (the MCP SDK dispatches every request to its own task — see
+    the middleware's docstring) — so the ContextVar is reliably scoped to this
+    request on every transport, not just stdio. ``None`` means "do nothing —
+    use the role the pool was opened with".
     """
-    has_request, request_role = _role_from_request()
-    if has_request:
-        return request_role if request_role is not None else default
     override = current_role.get()
     if override is not None:
         return override
     return default
+
+
+class TenantRoleContextMiddleware:
+    """Sets :data:`current_role` from the request's stashed tenant role.
+
+    HTTP/SSE middlewares (:class:`mcpg.http_runtime._TenantRoleMiddleware`,
+    :class:`mcpg.http_runtime._OIDCAuthMiddleware`) validate ``X-MCPG-Role`` /
+    the OIDC role claim and stash it on the ASGI request's ``scope`` under
+    :data:`_ROLE_SCOPE_KEY`. This middleware runs inside the MCP SDK's
+    per-request dispatch — each inbound request gets its own asyncio task
+    (``mcp.shared.dispatcher.Dispatcher.run``), so setting a plain
+    :class:`~contextvars.ContextVar` here is reliably visible to everything
+    that request's tool call awaits, including the SQL driver several calls
+    deep — unlike a naive set from the ASGI middleware layer, which would be
+    invisible by the time a tool function runs in the SDK's own task.
+
+    Whenever ``ctx.request`` is present (HTTP/SSE) this middleware is
+    **authoritative** for the request: it always calls ``current_role.set(...)``
+    with the scope's role or ``None``, never leaving the prior value in place.
+    This matters because asyncio tasks copy their context from whichever task
+    *spawned* them, not from the ASGI task that stashed the scope value — a
+    per-request dispatch task can in principle inherit a non-``None``
+    :data:`current_role` from a long-lived parent task's context. Always
+    setting (instead of only setting when a role is present) means a request
+    that carries no role can never observe a stale value some earlier
+    request's task left behind; it deterministically resolves to the static
+    default via :func:`resolve_role`, exactly like the old
+    ``_role_from_request`` mechanism this middleware replaces.
+
+    A true no-op only on stdio (``ctx.request`` is ``None`` there — there is
+    no per-message scope to read, so :data:`current_role` is left untouched
+    for stdio's own, non-HTTP path).
+    """
+
+    async def __call__(
+        self,
+        ctx: ServerRequestContext[object, object],
+        call_next: CallNext,
+    ) -> HandlerResult:
+        request = getattr(ctx, "request", None)
+        if request is None:
+            return await call_next(ctx)
+        scope = getattr(request, "scope", None)
+        raw_role = scope.get(_ROLE_SCOPE_KEY) if isinstance(scope, dict) else None
+        role = raw_role if isinstance(raw_role, str) else None
+        token = current_role.set(role)
+        try:
+            return await call_next(ctx)
+        finally:
+            current_role.reset(token)
+
+
+# Static structural-conformance check: TenantRoleContextMiddleware must match
+# the ServerMiddleware Protocol's call signature (registered directly as
+# AuditedMCPServer(..., middleware=[TenantRoleContextMiddleware()])). Never
+# evaluated at runtime — mypy checks the assignment, nothing constructs this.
+if TYPE_CHECKING:
+    _tenant_role_middleware_matches_protocol: ServerMiddleware[Any] = TenantRoleContextMiddleware()
 
 
 class TenantSqlDriver(SqlDriver):
