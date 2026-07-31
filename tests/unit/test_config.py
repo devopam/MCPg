@@ -119,6 +119,18 @@ def test_allow_listen_defaults_to_false_and_parses_booleans() -> None:
         load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_LISTEN": "maybe"})
 
 
+def test_elicit_confirm_writes_defaults_to_false_and_parses() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).elicit_confirm_writes is False
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_ELICIT_CONFIRM_WRITES": "true",
+        }
+    )
+    assert settings.elicit_confirm_writes is True
+
+
 def test_listen_queue_max_defaults_and_parses() -> None:
     assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).listen_queue_max == 1000
     assert load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_LISTEN_QUEUE_MAX": "50"}).listen_queue_max == 50

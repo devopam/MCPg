@@ -15,7 +15,8 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
 from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import CallToolResult, InputRequiredResult
+from mcp.types import CallToolResult, InputRequiredResult, TextContent
+from pydantic import BaseModel, Field
 
 from mcpg import __version__, about, audit
 from mcpg.analytical import AnalyticalRunner
@@ -36,6 +37,17 @@ SERVER_INSTRUCTIONS = (
 )
 
 __all__ = ["SERVER_NAME", "AppContext", "AuditedMCPServer", "create_server", "make_lifespan", "run"]
+
+
+class _ConfirmMutation(BaseModel):
+    """Elicitation schema for the write-tier confirmation gate.
+
+    Elicitation schemas must contain only primitive types per the MCP
+    spec (see ``Context.elicit``'s docstring) — a single boolean field
+    is all this gate needs.
+    """
+
+    confirm: bool = Field(description="Set true to proceed with this write/DDL operation.")
 
 
 class AuditedMCPServer(MCPServer[AppContext]):
@@ -77,6 +89,40 @@ class AuditedMCPServer(MCPServer[AppContext]):
                 allowed = await self.rate_limiter.consume(name)
                 if not allowed:
                     raise RuntimeError(f"Rate limit exceeded for tool {name!r}. Please try again later.")
+
+            # Opt-in interactive confirmation gate for write-tier tools
+            # (MCPG_ELICIT_CONFIRM_WRITES). Centralized here rather than in
+            # any of the 254 individual tool bodies: reuses the
+            # readOnlyHint annotation tools.py already stamps on every
+            # registered tool, and skips the elicit round-trip entirely
+            # for clients that didn't declare elicitation support during
+            # initialize, so non-interactive/automated clients are
+            # unaffected unless they opt in.
+            if (
+                getattr(self, "mcpg_settings", None) is not None
+                and self.mcpg_settings.elicit_confirm_writes
+                and context is not None
+            ):
+                tool = self._tool_manager.get_tool(name)
+                is_read_only = tool is not None and tool.annotations is not None and tool.annotations.read_only_hint
+                if tool is not None and not is_read_only:
+                    capabilities = context.client_capabilities
+                    supports_elicitation = capabilities is not None and capabilities.elicitation is not None
+                    if supports_elicitation:
+                        confirmation = await context.elicit(
+                            f"{name!r} will modify the database. Proceed?",
+                            _ConfirmMutation,
+                        )
+                        if confirmation.action != "accept" or not confirmation.data.confirm:
+                            return CallToolResult(
+                                content=[
+                                    TextContent(
+                                        type="text",
+                                        text=f"{name!r} was not confirmed; no changes made.",
+                                    )
+                                ],
+                                is_error=True,
+                            )
 
             metrics = get_metrics()
             # Resolve the capability bucket once per call so both the
