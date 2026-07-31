@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bnqvnz07c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\abfe81ad-87d9-4907-8001-dbc64cd87ee3\tasks\bnqvnz07c.output</output-file>
+<status>killed</status>
+<summary>Background command "Rerun SF10 perf harness with a benchmark-only 60s server-side timeout" was stopped</summary>
+</task-notification>
