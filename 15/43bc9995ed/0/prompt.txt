@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>abe248f43fbe562fc</task-id>
+<tool-use-id>toolu_01KWv3QR49ZzWnso2TT31Lon</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\abe248f43fbe562fc.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 3: AuditedFastMCP rename" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Committed as `e431ab9`. Task complete.
+
+**Status:** DONE
+
+**Commit:** `e431ab9` — "refactor(server): AuditedFastMCP -&gt; AuditedMCPServer, fix call_tool signature for mcp 2.0" (only `src/mcpg/server.py` and `tests/unit/test_server.py` touched)
+
+**Verification summary:** `import mcpg.server` and `import mcpg` both succeed (confirmed live, printing `mcpg.server.AuditedMCPServer` and version `0.6.12`) — package importability restored. `uv run pytest tests/unit/test_server.py -v` → 8/8 passed. `ruff check`/`ruff format --check`/`mypy --strict` on the two files are clean; `mypy --strict src/mcpg` (whole package) shows 9 errors but all in `tenancy.py`/`tools.py` (explicitly out of scope), zero in `server.py`. Full suite (`pytest tests/unit tests/contract -q --continue-on-collection-errors`) → 1422 passed, 3 skipped, 4 failed, 56 collection errors — all 60 non-passing results traced to other files still importing the removed `mcp.server.fastmcp` module or the removed `mcp.shared.memory.create_connected_server_and_client_session` helper (Task 7 territory), none touching `server.py`/`test_server.py`. Committed with `--no-verify` per the brief's authorization, since the local hook's `mypy src/mcpg` and `pytest tests/unit` steps hit exactly that pre-existing, out-of-scope breakage.
+
+**Verification actually performed (not trusted blindly):**
+- Version forwarding: ran the brief's exact snippet (`MCPServer('x', version='9.9.9').version == '9.9.9'`) — confirmed true. Went further and discovered `_mcp_server` was renamed to `_lowlevel_server` in this SDK version (not mentioned in the brief) — used that to keep the version-handshake test asserting the actual wire value (`server._lowlevel_server.create_initialization_options().server_version`) rather than the weaker tautological form the brief's "e.g." suggested.
+- Exception-propagation claim: traced `MCPServer.call_tool` → `ToolManager.call_tool` → `Tool.run` in the installed SDK source and confirmed tool exceptions still propagate as real Python exceptions (wrapped as `ToolError`, or re-raised as-is for `MCPError`) — no layer converts them to `CallToolResult(isError=True)` before reaching `AuditedMCPServer.call_tool`'s `except Exception` block, so the audit-trail error-path logic is unaffected.
+
+**Concerns:** None blocking. Flagged in the report (not fixed, out of scope): `tests/unit/test_slow_call.py` mocks `mcp.server.fastmcp.FastMCP.call_tool` and needs its patch target updated to `mcp.server.mcpserver.MCPServer.call_tool` (Task 7) — it's the test most directly exercising this task's `call_tool` logic, so it's currently blind to regressions there until fixed. Also flagged stale `AuditedFastMCP` prose in `docs/architecture.md`, `docs/PROGRESS.md`, `docs/security.md` for whichever task owns docs cleanup. Full details in `C:\Users\devop\OneDrive\Documents\GitHub\MCPg\.superpowers\sdd\2026-07-30-mcp-2.0-migration\task-3-report.md`.</result>
+<usage><subagent_tokens>103804</subagent_tokens><tool_uses>57</tool_uses><duration_ms>562000</duration_ms></usage>
+</task-notification>
