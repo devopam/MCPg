@@ -1,0 +1,1 @@
+i will go with your recommendation, and you may add more memory or available cores to the docker if needed, i will not run any other activity here
