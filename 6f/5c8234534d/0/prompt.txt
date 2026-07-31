@@ -1,0 +1,2682 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - benchmarks/results/perf-sf10.html
+  - benchmarks/results/perf-sf10.json
+
+Unified diff (only + lines are new):
+
+=== DIFF: benchmarks/results/perf-sf10.html ===
+@@ -0,0 +1,117 @@
++<!doctype html>
++<html lang="en">
++<head>
++<meta charset="utf-8">
++<meta name="viewport" content="width=device-width, initial-scale=1">
++<title>MCPg performance benchmark</title>
++<style>
++:root {
++  --surface-1:#fcfcfb; --plane:#f9f9f7; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
++  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10);
++  --series-1:#2a78d6; --series-2:#008300; --series-3:#e87ba4; --series-4:#eda100;
++  --series-5:#1baf7a; --series-6:#eb6834; --series-7:#4a3aa7; --series-8:#e34948;
++  --good:#0ca30c; --warning:#fab219; --critical:#d03b3b;
++  color-scheme:light;
++}
++@media (prefers-color-scheme:dark) {
++  :root:where(:not([data-theme="light"])) {
++    --surface-1:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
++    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
++    --series-1:#3987e5; --series-2:#008300; --series-3:#d55181; --series-4:#c98500;
++    --series-5:#199e70; --series-6:#d95926; --series-7:#9085e9; --series-8:#e66767;
++    color-scheme:dark;
++  }
++}
++:root[data-theme="dark"] {
++  --surface-1:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
++  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
++  --series-1:#3987e5; --series-2:#008300; --series-3:#d55181; --series-4:#c98500;
++  --series-5:#199e70; --series-6:#d95926; --series-7:#9085e9; --series-8:#e66767;
++  color-scheme:dark;
++}
++* { box-sizing:border-box; }
++body { margin:0; background:var(--plane); color:var(--ink);
++  font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
++.wrap { max-width:900px; margin:0 auto; padding:32px 20px 64px; }
++header { display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap; }
++h1 { font-size:22px; margin:0; }
++.sub { color:var(--muted); font-size:13px; }
++.toggle { margin-left:auto; background:var(--surface-1); color:var(--ink-2); border:1px solid var(--border);
++  border-radius:8px; padding:6px 12px; cursor:pointer; font:inherit; font-size:13px; }
++section { background:var(--surface-1); border:1px solid var(--border); border-radius:14px;
++  padding:20px 22px; margin-top:20px; overflow-x:auto; }
++h2 { font-size:16px; margin:0 0 4px; }
++.tag { font-size:11px; font-weight:600; color:var(--muted); border:1px solid var(--border);
++  border-radius:20px; padding:1px 8px; margin-left:6px; vertical-align:middle; }
++.note, .lede { color:var(--ink-2); font-size:13.5px; margin:4px 0 14px; }
++.hero { display:grid; gap:16px; }
++.verdict { display:flex; align-items:center; gap:16px; }
++.verdict .big { font-size:40px; font-weight:700; line-height:1; }
++.verdict.good .big { color:var(--good); } .verdict.warning .big { color:var(--warning); }
++.verdict.critical .big { color:var(--critical); } .verdict.muted .big { color:var(--muted); }
++.verdict .cap { color:var(--ink-2); font-size:13px; }
++code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.92em;
++  background:var(--plane); padding:1px 5px; border-radius:5px; }
++.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; }
++.tile { background:var(--plane); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
++.tile .k { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
++.tile .v { font-size:15px; font-weight:600; margin-top:2px; word-break:break-word; }
++.legend { display:flex; flex-wrap:wrap; gap:14px; margin:2px 0 12px; font-size:12.5px; color:var(--ink-2); }
++.chip { display:inline-flex; align-items:center; gap:6px; }
++.sw { width:11px; height:11px; border-radius:3px; display:inline-block; }
++svg text.tick { fill:var(--muted); } svg text.cat { fill:var(--ink-2); font-size:11.5px; }
++svg text.axis-title { fill:var(--muted); } svg line.grid { stroke:var(--grid); stroke-width:1; }
++table.data { border-collapse:collapse; width:100%; margin-top:14px; font-size:13px;
++  font-variant-numeric:tabular-nums; }
++table.data th, table.data td { text-align:right; padding:6px 10px; border-bottom:1px solid var(--border); }
++table.data thead th { color:var(--muted); font-weight:600; font-size:11.5px; }
++table.data th[scope=row] { text-align:left; color:var(--ink-2); font-weight:600; }
++.badge { display:inline-block; padding:1px 8px; border-radius:20px; font-size:12px; font-weight:600; }
++.badge.good { color:var(--good); background:color-mix(in srgb,var(--good) 14%,transparent); }
++.badge.critical { color:var(--critical); background:color-mix(in srgb,var(--critical) 14%,transparent); }
++footer { color:var(--muted); font-size:12px; margin-top:24px; text-align:center; }
++</style>
++</head>
++<body>
++<div class="wrap">
++<header>
++  <div><h1>MCPg performance benchmark</h1><div class="sub">run 2026-07-23T12:11:54Z</div></div>
++  <button class="toggle" onclick="toggleTheme()">theme</button>
++</header>
++<section class="hero">
++      <div class="verdict good">
++        <div class="big">11 / 11</div>
++        <div class="cap">queries where <code>t_db</code> matches native</div>
++      </div>
++      <p class="lede">MCPg does not make queries faster — the same SQL runs on the same PostgreSQL.
++      This dashboard shows the added latency is small and predictable, and <strong>decomposes exactly
++      where it goes</strong>: the DB-execution segment (<code>t_db</code>) is identical to native;
++      the fixed-cost overhead lives in parse + serialize.</p>
++      <div class="tiles"><div class="tile"><div class="k">MCPg</div><div class="v">0.6.11</div></div><div class="tile"><div class="k">PostgreSQL</div><div class="v">17.10</div></div><div class="tile"><div class="k">TPC-H scale</div><div class="v">SF10</div></div><div class="tile"><div class="k">iterations</div><div class="v">20</div></div><div class="tile"><div class="k">host</div><div class="v">AMD64</div></div><div class="tile"><div class="k">commit</div><div class="v">fc48f4d779</div></div></div>
++    </section>
++<section><h2>Warm latency (p50) by query</h2>
++      <p class="note">Lower is better. Native vs MCPg on identical SQL — the bars sit on top of each other
++      because the database does identical work.</p>
++      <div class="legend"><span class="chip"><span class="sw" style="background:var(--series-1)"></span>Native (psycopg)</span><span class="chip"><span class="sw" style="background:var(--series-2)"></span>MCPg server-side</span></div><svg viewBox="0 0 760 440" width="100%" role="img" aria-label="Warm p50 latency by query and path" preserveAspectRatio="xMidYMid meet" style="max-width:100%;height:auto;font:12px system-ui,-apple-system,sans-serif"><line x1="150.0" y1="8" x2="150.0" y2="404.0" class="grid"/><text x="150.0" y="420.0" text-anchor="middle" class="tick">0</text><line x1="285.0" y1="8" x2="285.0" y2="404.0" class="grid"/><text x="285.0" y="420.0" text-anchor="middle" class="tick">12,500 ms</text><line x1="420.0" y1="8" x2="420.0" y2="404.0" class="grid"/><text x="420.0" y="420.0" text-anchor="middle" class="tick">25,000 ms</text><line x1="555.0" y1="8" x2="555.0" y2="404.0" class="grid"/><text x="555.0" y="420.0" text-anchor="middle" class="tick">37,500 ms</text><line x1="690.0" y1="8" x2="690.0" y2="404.0" class="grid"/><text x="690.0" y="420.0" text-anchor="middle" class="tick">50,000 ms</text><text x="140" y="26.0" text-anchor="end" dominant-baseline="middle" class="cat">select_1</text><rect x="150" y="14.0" width="0.5" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · select_1: 1.67 ms</title></rect><rect x="150" y="27.0" width="0.5" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · select_1: 2.35 ms</title></rect><text x="140" y="62.0" text-anchor="end" dominant-baseline="middle" class="cat">pk_lookup_orders</text><rect x="150" y="50.0" width="0.5" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · pk_lookup_orders: 1.85 ms</title></rect><rect x="150" y="63.0" width="0.5" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · pk_lookup_orders: 2.49 ms</title></rect><text x="140" y="98.0" text-anchor="end" dominant-baseline="middle" class="cat">pk_lookup_customer</text><rect x="150" y="86.0" width="0.5" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · pk_lookup_customer: 1.85 ms</title></rect><rect x="150" y="99.0" width="0.5" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · pk_lookup_customer: 2.68 ms</title></rect><text x="140" y="134.0" text-anchor="end" dominant-baseline="middle" class="cat">orders_status_counts</text><rect x="150" y="122.0" width="4.9" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · orders_status_counts: 456 ms</title></rect><rect x="150" y="135.0" width="5.3" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · orders_status_counts: 495 ms</title></rect><text x="140" y="170.0" text-anchor="end" dominant-baseline="middle" class="cat">tpch_q1</text><rect x="150" y="158.0" width="328.1" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · tpch_q1: 30,376 ms</title></rect><rect x="150" y="171.0" width="328.0" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · tpch_q1: 30,367 ms</title></rect><text x="140" y="206.0" text-anchor="end" dominant-baseline="middle" class="cat">tpch_q6</text><rect x="150" y="194.0" width="524.8" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · tpch_q6: 48,596 ms</title></rect><rect x="150" y="207.0" width="534.8" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · tpch_q6: 49,521 ms</title></rect><text x="140" y="242.0" text-anchor="end" dominant-baseline="middle" class="cat">tpch_q3</text><rect x="150" y="230.0" width="133.9" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · tpch_q3: 12,400 ms</title></rect><rect x="150" y="243.0" width="130.5" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · tpch_q3: 12,087 ms</title></rect><text x="140" y="278.0" text-anchor="end" dominant-baseline="middle" class="cat">tpch_q5</text><rect x="150" y="266.0" width="248.2" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · tpch_q5: 22,978 ms</title></rect><rect x="150" y="279.0" width="251.5" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · tpch_q5: 23,289 ms</title></rect><text x="140" y="314.0" text-anchor="end" dominant-baseline="middle" class="cat">rows_1</text><rect x="150" y="302.0" width="5.2" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · rows_1: 478 ms</title></rect><rect x="150" y="315.0" width="5.1" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · rows_1: 473 ms</title></rect><text x="140" y="350.0" text-anchor="end" dominant-baseline="middle" class="cat">rows_100</text><rect x="150" y="338.0" width="0.5" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · rows_100: 2.00 ms</title></rect><rect x="150" y="351.0" width="0.5" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · rows_100: 2.53 ms</title></rect><text x="140" y="386.0" text-anchor="end" dominant-baseline="middle" class="cat">rows_100k</text><rect x="150" y="374.0" width="3.3" height="11.0" rx="3" fill="var(--series-1)"><title>Native (psycopg) · rows_100k: 302 ms</title></rect><rect x="150" y="387.0" width="4.1" height="11.0" rx="3" fill="var(--series-2)"><title>MCPg server-side · rows_100k: 376 ms</title></rect></svg>
++      <table class="data"><thead><tr><th scope="col">query</th><th>Native (psycopg) p50 / p95</th><th>MCPg server-side p50 / p95</th></tr></thead><tbody><tr><th scope="row">select_1</th><td>1.67 ms / 2.57 ms</td><td>2.35 ms / 4.33 ms</td></tr><tr><th scope="row">pk_lookup_orders</th><td>1.85 ms / 2.64 ms</td><td>2.49 ms / 3.96 ms</td></tr><tr><th scope="row">pk_lookup_customer</th><td>1.85 ms / 2.63 ms</td><td>2.68 ms / 3.69 ms</td></tr><tr><th scope="row">orders_status_counts</th><td>456 ms / 518 ms</td><td>495 ms / 569 ms</td></tr><tr><th scope="row">tpch_q1</th><td>30,376 ms / 31,080 ms</td><td>30,367 ms / 31,067 ms</td></tr><tr><th scope="row">tpch_q6</th><td>48,596 ms / 49,991 ms</td><td>49,521 ms / 51,040 ms</td></tr><tr><th scope="row">tpch_q3</th><td>12,400 ms / 13,029 ms</td><td>12,087 ms / 12,407 ms</td></tr><tr><th scope="row">tpch_q5</th><td>22,978 ms / 23,496 ms</td><td>23,289 ms / 24,290 ms</td></tr><tr><th scope="row">rows_1</th><td>478 ms / 504 ms</td><td>473 ms / 586 ms</td></tr><tr><th scope="row">rows_100</th><td>2.00 ms / 2.90 ms</td><td>2.53 ms / 3.93 ms</td></tr><tr><th scope="row">rows_100k</th><td>302 ms / 345 ms</td><td>376 ms / 386 ms</td></tr></tbody></table></section>
++<section><h2>Overhead decomposition</h2>
++      <p class="note">Each bar is one query's server-side latency split by segment, as a share of its own total
++      (absolute total at right). <code>t_db</code> is the actual database work and equals native; the other bands
++      are MCPg's fixed-cost overhead — a visible share of a sub-millisecond query, a negligible sliver of a heavy
++      one, where <code>t_db</code> fills almost the whole bar.</p>
++      <div class="legend"><span class="chip"><span class="sw" style="background:var(--series-1)"></span>parse + validate</span><span class="chip"><span class="sw" style="background:var(--series-2)"></span>pool checkout</span><span class="chip"><span class="sw" style="background:var(--series-3)"></span>txn (begin/rollback)</span><span class="chip"><span class="sw" style="background:var(--series-4)"></span>DB execute + fetch</span><span class="chip"><span class="sw" style="background:var(--series-5)"></span>serialize</span></div><svg viewBox="0 0 760 374" width="100%" role="img" aria-label="Overhead decomposition (normalized)" preserveAspectRatio="xMidYMid meet" style="max-width:100%;height:auto;font:12px system-ui,-apple-system,sans-serif"><line x1="150.0" y1="8" x2="150.0" y2="338.0" class="grid"/><text x="150.0" y="354.0" text-anchor="middle" class="tick">0%</text><line x1="278.5" y1="8" x2="278.5" y2="338.0" class="grid"/><text x="278.5" y="354.0" text-anchor="middle" class="tick">25%</text><line x1="407.0" y1="8" x2="407.0" y2="338.0" class="grid"/><text x="407.0" y="354.0" text-anchor="middle" class="tick">50%</text><line x1="535.5" y1="8" x2="535.5" y2="338.0" class="grid"/><text x="535.5" y="354.0" text-anchor="middle" class="tick">75%</text><line x1="664.0" y1="8" x2="664.0" y2="338.0" class="grid"/><text x="664.0" y="354.0" text-anchor="middle" class="tick">100%</text><text x="140" y="23.0" text-anchor="end" dominant-baseline="middle" class="cat">select_1</text><rect x="150.0" y="14.0" width="19.2" height="18.0" fill="var(--series-1)"><title>select_1 · parse + validate: 97 µs (4%)</title></rect><rect x="171.2" y="14.0" width="1.9" height="18.0" fill="var(--series-2)"><title>select_1 · pool checkout: 18 µs (1%)</title></rect><rect x="175.1" y="14.0" width="368.5" height="18.0" fill="var(--series-3)"><title>select_1 · txn (begin/rollback): 1.70 ms (72%)</title></rect><rect x="545.7" y="14.0" width="115.6" height="18.0" fill="var(--series-4)"><title>select_1 · DB execute + fetch: 540 µs (23%)</title></rect><rect x="663.3" y="14.0" width="0.5" height="18.0" fill="var(--series-5)"><title>select_1 · serialize: 3 µs (0%)</title></rect><text x="672" y="23.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">2.36 ms</text><text x="140" y="53.0" text-anchor="end" dominant-baseline="middle" class="cat">pk_lookup_orders</text><rect x="150.0" y="44.0" width="28.3" height="18.0" fill="var(--series-1)"><title>pk_lookup_orders · parse + validate: 164 µs (6%)</title></rect><rect x="180.3" y="44.0" width="1.7" height="18.0" fill="var(--series-2)"><title>pk_lookup_orders · pool checkout: 20 µs (1%)</title></rect><rect x="184.0" y="44.0" width="353.7" height="18.0" fill="var(--series-3)"><title>pk_lookup_orders · txn (begin/rollback): 1.93 ms (69%)</title></rect><rect x="539.7" y="44.0" width="121.6" height="18.0" fill="var(--series-4)"><title>pk_lookup_orders · DB execute + fetch: 670 µs (24%)</title></rect><rect x="663.3" y="44.0" width="0.5" height="18.0" fill="var(--series-5)"><title>pk_lookup_orders · serialize: 4 µs (0%)</title></rect><text x="672" y="53.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">2.79 ms</text><text x="140" y="83.0" text-anchor="end" dominant-baseline="middle" class="cat">pk_lookup_customer</text><rect x="150.0" y="74.0" width="31.0" height="18.0" fill="var(--series-1)"><title>pk_lookup_customer · parse + validate: 153 µs (6%)</title></rect><rect x="183.0" y="74.0" width="1.9" height="18.0" fill="var(--series-2)"><title>pk_lookup_customer · pool checkout: 18 µs (1%)</title></rect><rect x="186.9" y="74.0" width="349.7" height="18.0" fill="var(--series-3)"><title>pk_lookup_customer · txn (begin/rollback): 1.63 ms (68%)</title></rect><rect x="538.6" y="74.0" width="122.6" height="18.0" fill="var(--series-4)"><title>pk_lookup_customer · DB execute + fetch: 578 µs (24%)</title></rect><rect x="663.2" y="74.0" width="0.5" height="18.0" fill="var(--series-5)"><title>pk_lookup_customer · serialize: 4 µs (0%)</title></rect><text x="672" y="83.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">2.38 ms</text><text x="140" y="113.0" text-anchor="end" dominant-baseline="middle" class="cat">orders_status_counts</text><rect x="150.0" y="104.0" width="0.5" height="18.0" fill="var(--series-1)"><title>orders_status_counts · parse + validate: 306 µs (0%)</title></rect><rect x="150.3" y="104.0" width="0.5" height="18.0" fill="var(--series-2)"><title>orders_status_counts · pool checkout: 24 µs (0%)</title></rect><rect x="150.3" y="104.0" width="0.5" height="18.0" fill="var(--series-3)"><title>orders_status_counts · txn (begin/rollback): 2.33 ms (0%)</title></rect><rect x="152.7" y="104.0" width="509.3" height="18.0" fill="var(--series-4)"><title>orders_status_counts · DB execute + fetch: 500 ms (99%)</title></rect><rect x="664.0" y="104.0" width="0.5" height="18.0" fill="var(--series-5)"><title>orders_status_counts · serialize: 7 µs (0%)</title></rect><text x="672" y="113.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">503 ms</text><text x="140" y="143.0" text-anchor="end" dominant-baseline="middle" class="cat">tpch_q1</text><rect x="150.0" y="134.0" width="0.5" height="18.0" fill="var(--series-1)"><title>tpch_q1 · parse + validate: 901 µs (0%)</title></rect><rect x="150.0" y="134.0" width="0.5" height="18.0" fill="var(--series-2)"><title>tpch_q1 · pool checkout: 26 µs (0%)</title></rect><rect x="150.0" y="134.0" width="0.5" height="18.0" fill="var(--series-3)"><title>tpch_q1 · txn (begin/rollback): 2.69 ms (0%)</title></rect><rect x="150.1" y="134.0" width="511.9" height="18.0" fill="var(--series-4)"><title>tpch_q1 · DB execute + fetch: 30,490 ms (100%)</title></rect><rect x="664.0" y="134.0" width="0.5" height="18.0" fill="var(--series-5)"><title>tpch_q1 · serialize: 8 µs (0%)</title></rect><text x="672" y="143.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">30,494 ms</text><text x="140" y="173.0" text-anchor="end" dominant-baseline="middle" class="cat">tpch_q6</text><rect x="150.0" y="164.0" width="0.5" height="18.0" fill="var(--series-1)"><title>tpch_q6 · parse + validate: 553 µs (0%)</title></rect><rect x="150.0" y="164.0" width="0.5" height="18.0" fill="var(--series-2)"><title>tpch_q6 · pool checkout: 24 µs (0%)</title></rect><rect x="150.0" y="164.0" width="0.5" height="18.0" fill="var(--series-3)"><title>tpch_q6 · txn (begin/rollback): 2.68 ms (0%)</title></rect><rect x="150.0" y="164.0" width="512.0" height="18.0" fill="var(--series-4)"><title>tpch_q6 · DB execute + fetch: 50,205 ms (100%)</title></rect><rect x="664.0" y="164.0" width="0.5" height="18.0" fill="var(--series-5)"><title>tpch_q6 · serialize: 5 µs (0%)</title></rect><text x="672" y="173.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">50,209 ms</text><text x="140" y="203.0" text-anchor="end" dominant-baseline="middle" class="cat">tpch_q3</text><rect x="150.0" y="194.0" width="0.5" height="18.0" fill="var(--series-1)"><title>tpch_q3 · parse + validate: 677 µs (0%)</title></rect><rect x="150.0" y="194.0" width="0.5" height="18.0" fill="var(--series-2)"><title>tpch_q3 · pool checkout: 25 µs (0%)</title></rect><rect x="150.0" y="194.0" width="0.5" height="18.0" fill="var(--series-3)"><title>tpch_q3 · txn (begin/rollback): 5.91 ms (0%)</title></rect><rect x="150.3" y="194.0" width="511.7" height="18.0" fill="var(--series-4)"><title>tpch_q3 · DB execute + fetch: 12,166 ms (100%)</title></rect><rect x="664.0" y="194.0" width="0.5" height="18.0" fill="var(--series-5)"><title>tpch_q3 · serialize: 12 µs (0%)</title></rect><text x="672" y="203.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">12,173 ms</text><text x="140" y="233.0" text-anchor="end" dominant-baseline="middle" class="cat">tpch_q5</text><rect x="150.0" y="224.0" width="0.5" height="18.0" fill="var(--series-1)"><title>tpch_q5 · parse + validate: 870 µs (0%)</title></rect><rect x="150.0" y="224.0" width="0.5" height="18.0" fill="var(--series-2)"><title>tpch_q5 · pool checkout: 27 µs (0%)</title></rect><rect x="150.0" y="224.0" width="0.5" height="18.0" fill="var(--series-3)"><title>tpch_q5 · txn (begin/rollback): 2.65 ms (0%)</title></rect><rect x="150.1" y="224.0" width="511.9" height="18.0" fill="var(--series-4)"><title>tpch_q5 · DB execute + fetch: 23,179 ms (100%)</title></rect><rect x="664.0" y="224.0" width="0.5" height="18.0" fill="var(--series-5)"><title>tpch_q5 · serialize: 9 µs (0%)</title></rect><text x="672" y="233.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">23,183 ms</text><text x="140" y="263.0" text-anchor="end" dominant-baseline="middle" class="cat">rows_1</text><rect x="150.0" y="254.0" width="0.5" height="18.0" fill="var(--series-1)"><title>rows_1 · parse + validate: 268 µs (0%)</title></rect><rect x="150.3" y="254.0" width="0.5" height="18.0" fill="var(--series-2)"><title>rows_1 · pool checkout: 25 µs (0%)</title></rect><rect x="150.3" y="254.0" width="0.8" height="18.0" fill="var(--series-3)"><title>rows_1 · txn (begin/rollback): 2.60 ms (1%)</title></rect><rect x="153.2" y="254.0" width="508.8" height="18.0" fill="var(--series-4)"><title>rows_1 · DB execute + fetch: 470 ms (99%)</title></rect><rect x="664.0" y="254.0" width="0.5" height="18.0" fill="var(--series-5)"><title>rows_1 · serialize: 5 µs (0%)</title></rect><text x="672" y="263.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">473 ms</text><text x="140" y="293.0" text-anchor="end" dominant-baseline="middle" class="cat">rows_100</text><rect x="150.0" y="284.0" width="37.6" height="18.0" fill="var(--series-1)"><title>rows_100 · parse + validate: 210 µs (8%)</title></rect><rect x="189.6" y="284.0" width="1.2" height="18.0" fill="var(--series-2)"><title>rows_100 · pool checkout: 17 µs (1%)</title></rect><rect x="192.9" y="284.0" width="307.4" height="18.0" fill="var(--series-3)"><title>rows_100 · txn (begin/rollback): 1.64 ms (60%)</title></rect><rect x="502.3" y="284.0" width="149.2" height="18.0" fill="var(--series-4)"><title>rows_100 · DB execute + fetch: 802 µs (29%)</title></rect><rect x="653.5" y="284.0" width="8.5" height="18.0" fill="var(--series-5)"><title>rows_100 · serialize: 56 µs (2%)</title></rect><text x="672" y="293.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">2.73 ms</text><text x="140" y="323.0" text-anchor="end" dominant-baseline="middle" class="cat">rows_100k</text><rect x="150.0" y="314.0" width="0.5" height="18.0" fill="var(--series-1)"><title>rows_100k · parse + validate: 248 µs (0%)</title></rect><rect x="150.4" y="314.0" width="0.5" height="18.0" fill="var(--series-2)"><title>rows_100k · pool checkout: 29 µs (0%)</title></rect><rect x="150.4" y="314.0" width="4.2" height="18.0" fill="var(--series-3)"><title>rows_100k · txn (begin/rollback): 4.24 ms (1%)</title></rect><rect x="156.6" y="314.0" width="399.1" height="18.0" fill="var(--series-4)"><title>rows_100k · DB execute + fetch: 273 ms (78%)</title></rect><rect x="557.7" y="314.0" width="104.3" height="18.0" fill="var(--series-5)"><title>rows_100k · serialize: 72.24 ms (21%)</title></rect><text x="672" y="323.0" dominant-baseline="middle" class="cat" style="fill:var(--ink-2)">349 ms</text></svg></section>
++<section><h2>Throughput under concurrency</h2>
++      <p class="note">Aggregate queries/sec as concurrent clients rise. Pool + serialization costs surface here.</p>
++      <div class="legend"><span class="chip"><span class="sw" style="background:var(--series-1)"></span>Native (psycopg)</span><span class="chip"><span class="sw" style="background:var(--series-2)"></span>MCPg server-side</span></div><svg viewBox="0 0 760 240" width="100%" role="img" aria-label="Throughput vs concurrency" preserveAspectRatio="xMidYMid meet" style="max-width:100%;height:auto;font:12px system-ui,-apple-system,sans-serif"><line x1="70" y1="12.0" x2="730" y2="12.0" class="grid"/><text x="62" y="16.0" text-anchor="end" class="tick">2,000/s</text><line x1="70" y1="60.5" x2="730" y2="60.5" class="grid"/><text x="62" y="64.5" text-anchor="end" class="tick">1,500/s</text><line x1="70" y1="109.0" x2="730" y2="109.0" class="grid"/><text x="62" y="113.0" text-anchor="end" class="tick">1,000/s</text><line x1="70" y1="157.5" x2="730" y2="157.5" class="grid"/><text x="62" y="161.5" text-anchor="end" class="tick">500/s</text><line x1="70" y1="206.0" x2="730" y2="206.0" class="grid"/><text x="62" y="210.0" text-anchor="end" class="tick">0/s</text><text x="70.0" y="226.0" text-anchor="middle" class="tick">1</text><text x="290.0" y="226.0" text-anchor="middle" class="tick">4</text><text x="510.0" y="226.0" text-anchor="middle" class="tick">16</text><text x="730.0" y="226.0" text-anchor="middle" class="tick">64</text><text x="400.0" y="238" text-anchor="middle" class="axis-title">concurrent clients</text><path d="M70.0,143.7 L290.0,35.2 L510.0,16.5 L730.0,20.4" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="70.0" cy="143.7" r="4" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"><title>Native (psycopg) @ 1: 642/s</title></circle><circle cx="290.0" cy="35.2" r="4" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"><title>Native (psycopg) @ 4: 1,761/s</title></circle><circle cx="510.0" cy="16.5" r="4" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"><title>Native (psycopg) @ 16: 1,954/s</title></circle><circle cx="730.0" cy="20.4" r="4" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"><title>Native (psycopg) @ 64: 1,914/s</title></circle><path d="M70.0,172.5 L290.0,107.9 L510.0,112.2 L730.0,107.7" fill="none" stroke="var(--series-2)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="70.0" cy="172.5" r="4" fill="var(--series-2)" stroke="var(--surface-1)" stroke-width="2"><title>MCPg server-side @ 1: 346/s</title></circle><circle cx="290.0" cy="107.9" r="4" fill="var(--series-2)" stroke="var(--surface-1)" stroke-width="2"><title>MCPg server-side @ 4: 1,011/s</title></circle><circle cx="510.0" cy="112.2" r="4" fill="var(--series-2)" stroke="var(--surface-1)" stroke-width="2"><title>MCPg server-side @ 16: 967/s</title></circle><circle cx="730.0" cy="107.7" r="4" fill="var(--series-2)" stroke="var(--surface-1)" stroke-width="2"><title>MCPg server-side @ 64: 1,014/s</title></circle></svg></section>
++<section><h2>The <code>t_db == native</code> gate</h2><table class="data"><thead><tr><th scope="col">query</th><th scope="col">native t_db</th><th scope="col">server t_db</th><th scope="col">Δ</th><th scope="col">verdict</th></tr></thead><tbody><tr><th scope="row">orders_status_counts</th><td>514 ms</td><td>500 ms</td><td>-13934 µs</td><td><span class="badge good">✓ match</span></td></tr><tr><th scope="row">pk_lookup_customer</th><td>650 µs</td><td>578 µs</td><td>-72 µs</td><td><span class="badge good">✓ match</span></td></tr><tr><th scope="row">pk_lookup_orders</th><td>703 µs</td><td>670 µs</td><td>-33 µs</td><td><span class="badge good">✓ match</span></td></tr><tr><th scope="row">rows_1</th><td>468 ms</td><td>470 ms</td><td>1.72 ms</td><td><span class="badge good">✓ match</span></td></tr><tr><th scope="row">rows_100</th><td>796 µs</td><td>802 µs</td><td>6 µs</td><td><span class="badge good">✓ match</span></td></tr><tr><th scope="row">rows_100k</th><td>281 ms</td><td>273 ms</td><td>-8942 µs</td><td><span class="badge good">✓ match</span></td></tr><tr><th scope="row">select_1</th><td>645 µs</td><td>540 µs</td><td>-106 µs</td><td><span class="badge good">✓ match</span></td></tr><tr><th scope="row">tpch_q1</th><td>30,396 ms</td><td>30,490 ms</td><td>94.12 ms</td><td><span class="badge good">✓ match</span></td></tr><tr><th scope="row">tpch_q3</th><td>12,243 ms</td><td>12,166 ms</td><td>-77231 µs</td><td><span class="badge good">✓ match</span></td></tr><tr><th scope="row">tpch_q5</th><td>23,506 ms</td><td>23,179 ms</td><td>-327025 µs</td><td><span class="badge good">✓ match</span></td></tr><tr><th scope="row">tpch_q6</th><td>49,966 ms</td><td>50,205 ms</td><td>240 ms</td><td><span class="badge good">✓ match</span></td></tr></tbody></table></section>
++<footer>Generated from the run JSON by <code>benchmarks.dashboard.generate</code>
++— self-contained, reproducible.</footer>
++</div>
++<script>
++function toggleTheme() {
++  var r = document.documentElement;
++  r.setAttribute('data-theme', r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
++}
++</script>
++</body>
++</html>
+
+
+=== DIFF: benchmarks/results/perf-sf10.json ===
+@@ -0,0 +1,2548 @@
++{
++  "metadata": {
++    "timestamp": "2026-07-23T12:11:54Z",
++    "git_sha": "fc48f4d7793af014a902b414d8ae0ecbc22c58c8",
++    "mcpg_version": "0.6.11",
++    "postgres": {
++      "version_string": "17.10 (Debian 17.10-1.pgdg12+1)",
++      "server_version_num": 170010
++    },
++    "scale_factor": 10,
++    "host": {
++      "python": "3.13.7",
++      "os": "Windows-11-10.0.26200-SP0",
++      "machine": "AMD64"
++    },
++    "iterations": 20,
++    "server_side_timeout_seconds": 60.0,
++    "warmup_discarded": 5,
++    "concurrency_levels": [
++      1,
++      4,
++      16,
++      64
++    ],
++    "e2e_failures": [],
++    "complete": true
++  },
++  "results": [
++    {
++      "path": "native",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 1.6723999999999999,
++        "p95": 2.5734999999999997,
++        "p99": 2.651,
++        "mean": 1.83941,
++        "stdev": 0.44949419632106014,
++        "min": 1.2872999999999999,
++        "max": 2.651,
++        "median_ci95": [
++          1.4648999999999999,
++          1.98945
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        1287300,
++        1382600,
++        1340300,
++        2538600,
++        2169500,
++        2512100,
++        1929200,
++        1672400,
++        1473200,
++        1404900,
++        1380700,
++        2651000,
++        2049700,
++        1903900,
++        1877900,
++        1858800,
++        1667400,
++        1658600,
++        1456600,
++        2573500
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 2.8733,
++        "p95": 2.8733,
++        "p99": 2.8733,
++        "mean": 2.8733,
++        "stdev": 0.0,
++        "min": 2.8733,
++        "max": 2.8733,
++        "median_ci95": [
++          2.8733,
++          2.8733
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        2873300
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 2.3541,
++        "p95": 4.3325,
++        "p99": 4.6251999999999995,
++        "mean": 2.72525,
++        "stdev": 0.7672671959623975,
++        "min": 1.9733999999999998,
++        "max": 4.6251999999999995,
++        "median_ci95": [
++          2.1771,
++          2.9621999999999997
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        2396600,
++        2307200,
++        3047000,
++        4625200,
++        4332500,
++        2949100,
++        2221800,
++        2115800,
++        1973400,
++        2677200,
++        2724900,
++        3521700,
++        2975300,
++        2354100,
++        2175300,
++        2141100,
++        2178900,
++        2137200,
++        2044100,
++        3606600
++      ],
++      "decomposition_ns": {
++        "t_parse": 97200.0,
++        "t_pool": 18000.0,
++        "t_txn": 1699600.0,
++        "t_db": 539500.0,
++        "t_serialize": 3300.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 4.2436,
++        "p95": 4.2436,
++        "p99": 4.2436,
++        "mean": 4.2436,
++        "stdev": 0.0,
++        "min": 4.2436,
++        "max": 4.2436,
++        "median_ci95": [
++          4.2436,
++          4.2436
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        4243600
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 1.8517,
++        "p95": 2.6420999999999997,
++        "p99": 2.7274,
++        "mean": 1.9352349999999998,
++        "stdev": 0.424196936978693,
++        "min": 1.4063999999999999,
++        "max": 2.7274,
++        "median_ci95": [
++          1.6008499999999999,
++          2.1696999999999997
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        1861300,
++        1730600,
++        1611000,
++        2579400,
++        2175000,
++        2125300,
++        1851700,
++        1590700,
++        1457900,
++        1407300,
++        1406400,
++        2642100,
++        2164400,
++        2217100,
++        2370800,
++        2045100,
++        1636600,
++        1588200,
++        1516400,
++        2727400
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 16.8747,
++        "p95": 16.8747,
++        "p99": 16.8747,
++        "mean": 16.8747,
++        "stdev": 0.0,
++        "min": 16.8747,
++        "max": 16.8747,
++        "median_ci95": [
++          16.8747,
++          16.8747
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        16874700
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 2.487,
++        "p95": 3.9621,
++        "p99": 4.0679,
++        "mean": 2.759165,
++        "stdev": 0.6301162108983088,
++        "min": 2.163,
++        "max": 4.0679,
++        "median_ci95": [
++          2.3381499999999997,
++          2.9431
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        2503000,
++        2412700,
++        2498700,
++        3685100,
++        3962100,
++        3386900,
++        2280100,
++        2163000,
++        2316900,
++        2331600,
++        2630400,
++        4067900,
++        3255800,
++        2504200,
++        2369400,
++        2344700,
++        2197000,
++        2246200,
++        2487000,
++        3540600
++      ],
++      "decomposition_ns": {
++        "t_parse": 164200.0,
++        "t_pool": 19800.0,
++        "t_txn": 1927800.0,
++        "t_db": 669900.0,
++        "t_serialize": 3900.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 4.3091,
++        "p95": 4.3091,
++        "p99": 4.3091,
++        "mean": 4.3091,
++        "stdev": 0.0,
++        "min": 4.3091,
++        "max": 4.3091,
++        "median_ci95": [
++          4.3091,
++          4.3091
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        4309100
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 1.849,
++        "p95": 2.6319,
++        "p99": 2.6872,
++        "mean": 1.91359,
++        "stdev": 0.41026380845294624,
++        "min": 1.3801999999999999,
++        "max": 2.6872,
++        "median_ci95": [
++          1.56525,
++          2.1181
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        1520500,
++        1522600,
++        1545800,
++        2563900,
++        2196200,
++        2266100,
++        1907300,
++        1800700,
++        1587500,
++        1484500,
++        1380200,
++        2631900,
++        2261600,
++        2040000,
++        1849000,
++        2032300,
++        1899200,
++        1584700,
++        1510600,
++        2687200
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 8.2635,
++        "p95": 8.2635,
++        "p99": 8.2635,
++        "mean": 8.2635,
++        "stdev": 0.0,
++        "min": 8.2635,
++        "max": 8.2635,
++        "median_ci95": [
++          8.2635,
++          8.2635
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        8263500
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 2.6780999999999997,
++        "p95": 3.6889,
++        "p99": 3.9133999999999998,
++        "mean": 2.8177499999999998,
++        "stdev": 0.5278744502844951,
++        "min": 2.1221,
++        "max": 3.9133999999999998,
++        "median_ci95": [
++          2.40215,
++          3.0938499999999998
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        3042000,
++        2540000,
++        2401900,
++        3688900,
++        3913400,
++        3190000,
++        2402300,
++        2678100,
++        2676300,
++        2680700,
++        2402000,
++        3645700,
++        3145700,
++        2759200,
++        2769700,
++        2392900,
++        2122100,
++        2219400,
++        2263600,
++        3421100
++      ],
++      "decomposition_ns": {
++        "t_parse": 152700.0,
++        "t_pool": 18100.0,
++        "t_txn": 1629900.0,
++        "t_db": 577600.0,
++        "t_serialize": 3500.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 4.2017,
++        "p95": 4.2017,
++        "p99": 4.2017,
++        "mean": 4.2017,
++        "stdev": 0.0,
++        "min": 4.2017,
++        "max": 4.2017,
++        "median_ci95": [
++          4.2017,
++          4.2017
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        4201700
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "orders_status_counts",
++      "compute_class": "light",
++      "result_size": "~100",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 456.3529,
++        "p95": 517.8158999999999,
++        "p99": 559.1365999999999,
++        "mean": 463.465405,
++        "stdev": 30.707537065446374,
++        "min": 435.6855,
++        "max": 559.1365999999999,
++        "median_ci95": [
++          443.93719999999996,
++          464.15
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        443612700,
++        477457200,
++        450685900,
++        437544100,
++        444261700,
++        458508000,
++        485540900,
++        438197400,
++        435685500,
++        437562500,
++        488723900,
++        440567700,
++        456352900,
++        456388900,
++        451202600,
++        461763700,
++        465732400,
++        559136600,
++        462567600,
++        517815900
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "orders_status_counts",
++      "compute_class": "light",
++      "result_size": "~100",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 12576.404499999999,
++        "p95": 12576.404499999999,
++        "p99": 12576.404499999999,
++        "mean": 12576.404499999999,
++        "stdev": 0.0,
++        "min": 12576.404499999999,
++        "max": 12576.404499999999,
++        "median_ci95": [
++          12576.404499999999,
++          12576.404499999999
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        12576404500
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "orders_status_counts",
++      "compute_class": "light",
++      "result_size": "~100",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 494.60569999999996,
++        "p95": 569.2581,
++        "p99": 584.9117,
++        "mean": 506.35222,
++        "stdev": 30.16964094313145,
++        "min": 479.3793,
++        "max": 584.9117,
++        "median_ci95": [
++          487.0247,
++          509.1031
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        584911700,
++        569258100,
++        511976300,
++        491051200,
++        536636300,
++        494605700,
++        488715000,
++        485334400,
++        504450100,
++        489910800,
++        480166200,
++        479379300,
++        499659500,
++        484299900,
++        494824800,
++        516698700,
++        544590200,
++        483145800,
++        481200500,
++        506229900
++      ],
++      "decomposition_ns": {
++        "t_parse": 306500.0,
++        "t_pool": 23500.0,
++        "t_txn": 2334500.0,
++        "t_db": 500402800.0,
++        "t_serialize": 6800.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "orders_status_counts",
++      "compute_class": "light",
++      "result_size": "~100",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 547.5799,
++        "p95": 547.5799,
++        "p99": 547.5799,
++        "mean": 547.5799,
++        "stdev": 0.0,
++        "min": 547.5799,
++        "max": 547.5799,
++        "median_ci95": [
++          547.5799,
++          547.5799
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        547579900
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "tpch_q1",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 30375.939899999998,
++        "p95": 31079.6376,
++        "p99": 31116.3488,
++        "mean": 30483.64734,
++        "stdev": 284.72361710785873,
++        "min": 30140.299,
++        "max": 31116.3488,
++        "median_ci95": [
++          30320.4489,
++          30506.970999999998
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        30204013800,
++        30243928200,
++        30556854600,
++        30568450500,
++        30375939900,
++        31116348800,
++        30325480000,
++        30799611000,
++        31079637600,
++        30412157500,
++        30315417800,
++        30371844800,
++        30382590800,
++        30426731200,
++        30140299000,
++        30964801100,
++        30293009600,
++        30306645500,
++        30332097700,
++        30457087400
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "tpch_q1",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 30872.0375,
++        "p95": 30872.0375,
++        "p99": 30872.0375,
++        "mean": 30872.0375,
++        "stdev": 0.0,
++        "min": 30872.0375,
++        "max": 30872.0375,
++        "median_ci95": [
++          30872.0375,
++          30872.0375
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        30872037500
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "tpch_q1",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 30367.481799999998,
++        "p95": 31067.421599999998,
++        "p99": 31133.066899999998,
++        "mean": 30492.25304,
++        "stdev": 270.67435729678914,
++        "min": 30138.4768,
++        "max": 31133.066899999998,
++        "median_ci95": [
++          30350.2201,
++          30557.50635
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        31133066900,
++        30361437700,
++        30582273200,
++        30367481800,
++        30839805500,
++        30400045300,
++        30282243200,
++        30138476800,
++        30647982900,
++        31067421600,
++        30208737900,
++        30390712900,
++        30313476600,
++        30532739500,
++        30361641500,
++        30339002500,
++        30763153100,
++        30326201800,
++        30362197900,
++        30426962200
++      ],
++      "decomposition_ns": {
++        "t_parse": 901400.0,
++        "t_pool": 26400.0,
++        "t_txn": 2692800.0,
++        "t_db": 30490188700.0,
++        "t_serialize": 8400.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "tpch_q1",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 30544.1793,
++        "p95": 30544.1793,
++        "p99": 30544.1793,
++        "mean": 30544.1793,
++        "stdev": 0.0,
++        "min": 30544.1793,
++        "max": 30544.1793,
++        "median_ci95": [
++          30544.1793,
++          30544.1793
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        30544179300
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "tpch_q6",
++      "compute_class": "heavy",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 48595.6098,
++        "p95": 49991.487499999996,
++        "p99": 50020.605899999995,
++        "mean": 48123.85172,
++        "stdev": 1940.5610059516016,
++        "min": 42945.2805,
++        "max": 50020.605899999995,
++        "median_ci95": [
++          48255.5539,
++          49249.615699999995
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        49273707900,
++        45259087100,
++        42945280500,
++        43782901000,
++        48160320500,
++        47578513100,
++        49392025700,
++        49003439400,
++        48878856800,
++        49635964800,
++        49991487500,
++        48427196700,
++        50020605900,
++        48350787300,
++        47510816100,
++        49287292200,
++        48660076800,
++        48497541800,
++        48595609800,
++        49225523500
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "tpch_q6",
++      "compute_class": "heavy",
++      "result_size": "1",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 62487.238999999994,
++        "p95": 62487.238999999994,
++        "p99": 62487.238999999994,
++        "mean": 62487.238999999994,
++        "stdev": 0.0,
++        "min": 62487.238999999994,
++        "max": 62487.238999999994,
++        "median_ci95": [
++          62487.238999999994,
++          62487.238999999994
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        62487239000
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "tpch_q6",
++      "compute_class": "heavy",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 49521.051699999996,
++        "p95": 51040.2095,
++        "p99": 51479.427599999995,
++        "mean": 49736.163174999994,
++        "stdev": 803.6263453252152,
++        "min": 48207.3071,
++        "max": 51479.427599999995,
++        "median_ci95": [
++          49386.1875,
++          50020.353599999995
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        48730724900,
++        49977150400,
++        48207307100,
++        49080700500,
++        51479427600,
++        50063556800,
++        49521051700,
++        49900829000,
++        49479128100,
++        50301649200,
++        49410243700,
++        49211197000,
++        49845528200,
++        51040209500,
++        49362131300,
++        50310483100,
++        49616817500,
++        50904494900,
++        48843897700,
++        49436735300
++      ],
++      "decomposition_ns": {
++        "t_parse": 552800.0,
++        "t_pool": 24200.0,
++        "t_txn": 2675700.0,
++        "t_db": 50205271000.0,
++        "t_serialize": 5100.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "tpch_q6",
++      "compute_class": "heavy",
++      "result_size": "1",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 48575.8086,
++        "p95": 48575.8086,
++        "p99": 48575.8086,
++        "mean": 48575.8086,
++        "stdev": 0.0,
++        "min": 48575.8086,
++        "max": 48575.8086,
++        "median_ci95": [
++          48575.8086,
++          48575.8086
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        48575808600
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "tpch_q3",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 12399.8714,
++        "p95": 13028.7822,
++        "p99": 13178.964399999999,
++        "mean": 12448.39238,
++        "stdev": 327.65559522068867,
++        "min": 12015.5484,
++        "max": 13178.964399999999,
++        "median_ci95": [
++          12253.94675,
++          12566.229949999999
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        12237705400,
++        12835560000,
++        12297726200,
++        12089724300,
++        12015548400,
++        12603123800,
++        12529336100,
++        12475657400,
++        12295899200,
++        12399871400,
++        12023257000,
++        13028782200,
++        12811808900,
++        12413886400,
++        12137399600,
++        12657551200,
++        13178964400,
++        12150581900,
++        12270188100,
++        12515275700
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "tpch_q3",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 13346.0829,
++        "p95": 13346.0829,
++        "p99": 13346.0829,
++        "mean": 13346.0829,
++        "stdev": 0.0,
++        "min": 13346.0829,
++        "max": 13346.0829,
++        "median_ci95": [
++          13346.0829,
++          13346.0829
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        13346082900
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "tpch_q3",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 12087.026399999999,
++        "p95": 12407.4301,
++        "p99": 13430.7645,
++        "mean": 12185.470865,
++        "stdev": 336.3872150738448,
++        "min": 11835.2248,
++        "max": 13430.7645,
++        "median_ci95": [
++          12019.477149999999,
++          12281.0078
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        12060739000,
++        12076236300,
++        13430764500,
++        11835224800,
++        11863650200,
++        12298179200,
++        11993224600,
++        12323460000,
++        12278365300,
++        12339171400,
++        11985732500,
++        12178004000,
++        12407430100,
++        11928289800,
++        12125901100,
++        12198988700,
++        12045729700,
++        11969649400,
++        12087026400,
++        12283650300
++      ],
++      "decomposition_ns": {
++        "t_parse": 676800.0,
++        "t_pool": 24600.0,
++        "t_txn": 5905600.0,
++        "t_db": 12166127200.0,
++        "t_serialize": 12500.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "tpch_q3",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 12895.408099999999,
++        "p95": 12895.408099999999,
++        "p99": 12895.408099999999,
++        "mean": 12895.408099999999,
++        "stdev": 0.0,
++        "min": 12895.408099999999,
++        "max": 12895.408099999999,
++        "median_ci95": [
++          12895.408099999999,
++          12895.408099999999
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        12895408100
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "tpch_q5",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 22977.9994,
++        "p95": 23496.100599999998,
++        "p99": 23976.8799,
++        "mean": 23000.394415,
++        "stdev": 374.0281069951932,
++        "min": 22253.7136,
++        "max": 23976.8799,
++        "median_ci95": [
++          22839.1782,
++          23094.459749999998
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        23044991900,
++        22838235600,
++        23027462900,
++        23026763900,
++        22907318900,
++        22840120800,
++        22908081800,
++        22720904800,
++        23976879900,
++        23496100600,
++        22441300800,
++        23384567400,
++        23269595700,
++        23242751800,
++        23143927600,
++        23009957400,
++        22977999400,
++        22673794700,
++        22823418800,
++        22253713600
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "tpch_q5",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 23499.3288,
++        "p95": 23499.3288,
++        "p99": 23499.3288,
++        "mean": 23499.3288,
++        "stdev": 0.0,
++        "min": 23499.3288,
++        "max": 23499.3288,
++        "median_ci95": [
++          23499.3288,
++          23499.3288
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        23499328800
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "tpch_q5",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 23288.9223,
++        "p95": 24289.9699,
++        "p99": 26213.1219,
++        "mean": 23551.16518,
++        "stdev": 722.8471135582461,
++        "min": 22882.3464,
++        "max": 26213.1219,
++        "median_ci95": [
++          23219.701549999998,
++          23688.577999999998
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        26213121900,
++        23945198200,
++        23715079100,
++        23662076900,
++        23428692600,
++        23737630000,
++        23079610300,
++        24289969900,
++        23196986000,
++        23276273200,
++        23588828800,
++        23740017400,
++        22918586600,
++        23428036000,
++        23288922300,
++        23017847100,
++        23242417100,
++        22882346400,
++        23105047400,
++        23266616400
++      ],
++      "decomposition_ns": {
++        "t_parse": 870100.0,
++        "t_pool": 26800.0,
++        "t_txn": 2655000.0,
++        "t_db": 23179095800.0,
++        "t_serialize": 9300.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "tpch_q5",
++      "compute_class": "heavy",
++      "result_size": "~100",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 23064.689599999998,
++        "p95": 23064.689599999998,
++        "p99": 23064.689599999998,
++        "mean": 23064.689599999998,
++        "stdev": 0.0,
++        "min": 23064.689599999998,
++        "max": 23064.689599999998,
++        "median_ci95": [
++          23064.689599999998,
++          23064.689599999998
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        23064689600
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "rows_1",
++      "compute_class": "light",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 478.0845,
++        "p95": 504.265,
++        "p99": 568.5156,
++        "mean": 481.178565,
++        "stdev": 24.759525197562056,
++        "min": 453.4998,
++        "max": 568.5156,
++        "median_ci95": [
++          467.75975,
++          484.10945
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        464638300,
++        481555500,
++        454054500,
++        485938200,
++        453499800,
++        473036300,
++        478084500,
++        458444100,
++        568515600,
++        466976500,
++        468543000,
++        482280700,
++        494484000,
++        482206400,
++        476688500,
++        481682800,
++        504265000,
++        492413500,
++        492098300,
++        464165800
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "rows_1",
++      "compute_class": "light",
++      "result_size": "1",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 661.3009,
++        "p95": 661.3009,
++        "p99": 661.3009,
++        "mean": 661.3009,
++        "stdev": 0.0,
++        "min": 661.3009,
++        "max": 661.3009,
++        "median_ci95": [
++          661.3009,
++          661.3009
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        661300900
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "rows_1",
++      "compute_class": "light",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 473.46389999999997,
++        "p95": 585.5024,
++        "p99": 1015.2654,
++        "mean": 507.81318999999996,
++        "stdev": 124.34475389080617,
++        "min": 446.837,
++        "max": 1015.2654,
++        "median_ci95": [
++          462.53905,
++          488.19415
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        474388400,
++        448687800,
++        559166100,
++        467824600,
++        492975800,
++        459975100,
++        585502400,
++        457126500,
++        466224700,
++        494335600,
++        446837000,
++        479850200,
++        454842200,
++        465833200,
++        483412500,
++        458853400,
++        495433800,
++        476265200,
++        473463900,
++        1015265400
++      ],
++      "decomposition_ns": {
++        "t_parse": 268200.0,
++        "t_pool": 25300.0,
++        "t_txn": 2603800.0,
++        "t_db": 469709600.0,
++        "t_serialize": 5400.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "rows_1",
++      "compute_class": "light",
++      "result_size": "1",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 643.7259,
++        "p95": 643.7259,
++        "p99": 643.7259,
++        "mean": 643.7259,
++        "stdev": 0.0,
++        "min": 643.7259,
++        "max": 643.7259,
++        "median_ci95": [
++          643.7259,
++          643.7259
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        643725900
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "rows_100",
++      "compute_class": "light",
++      "result_size": "~100",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 2.0018,
++        "p95": 2.9002999999999997,
++        "p99": 3.0036,
++        "mean": 2.23612,
++        "stdev": 0.41065780939981233,
++        "min": 1.7254999999999998,
++        "max": 3.0036,
++        "median_ci95": [
++          1.9679,
++          2.48485
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        1995500,
++        1995900,
++        1908700,
++        2900300,
++        2728000,
++        2590700,
++        2731900,
++        2161000,
++        1983400,
++        1952400,
++        1927300,
++        2824500,
++        2379000,
++        2219800,
++        2001800,
++        2107800,
++        1796700,
++        1788600,
++        1725500,
++        3003600
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "rows_100",
++      "compute_class": "light",
++      "result_size": "~100",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 3.4949,
++        "p95": 3.4949,
++        "p99": 3.4949,
++        "mean": 3.4949,
++        "stdev": 0.0,
++        "min": 3.4949,
++        "max": 3.4949,
++        "median_ci95": [
++          3.4949,
++          3.4949
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        3494900
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "rows_100",
++      "compute_class": "light",
++      "result_size": "~100",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 2.5315,
++        "p95": 3.9265999999999996,
++        "p99": 4.0808,
++        "mean": 2.85366,
++        "stdev": 0.5677560321123853,
++        "min": 2.3399,
++        "max": 4.0808,
++        "median_ci95": [
++          2.4768499999999998,
++          3.0189
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        2573500,
++        2512900,
++        2531500,
++        4080800,
++        3360300,
++        2922500,
++        2684300,
++        2499400,
++        2470000,
++        2459900,
++        2356300,
++        3926600,
++        3248400,
++        3115300,
++        2813500,
++        2483700,
++        2339900,
++        2411800,
++        2361400,
++        3921200
++      ],
++      "decomposition_ns": {
++        "t_parse": 210200.0,
++        "t_pool": 17100.0,
++        "t_txn": 1640800.0,
++        "t_db": 801900.0,
++        "t_serialize": 55500.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "rows_100",
++      "compute_class": "light",
++      "result_size": "~100",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 7.1993,
++        "p95": 7.1993,
++        "p99": 7.1993,
++        "mean": 7.1993,
++        "stdev": 0.0,
++        "min": 7.1993,
++        "max": 7.1993,
++        "median_ci95": [
++          7.1993,
++          7.1993
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        7199300
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "rows_100k",
++      "compute_class": "light",
++      "result_size": "large",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 301.9384,
++        "p95": 345.2188,
++        "p99": 354.3861,
++        "mean": 305.79569,
++        "stdev": 17.210043429190748,
++        "min": 281.0299,
++        "max": 354.3861,
++        "median_ci95": [
++          297.5675,
++          309.68215
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        291058900,
++        294278900,
++        313513800,
++        281029900,
++        303374800,
++        302008500,
++        298043100,
++        291782300,
++        309236900,
++        354386100,
++        303567100,
++        297091900,
++        299467300,
++        301343400,
++        310979700,
++        301938400,
++        345218800,
++        310127400,
++        313517300,
++        293949300
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "rows_100k",
++      "compute_class": "light",
++      "result_size": "large",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 382.2983,
++        "p95": 382.2983,
++        "p99": 382.2983,
++        "mean": 382.2983,
++        "stdev": 0.0,
++        "min": 382.2983,
++        "max": 382.2983,
++        "median_ci95": [
++          382.2983,
++          382.2983
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        382298300
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "rows_100k",
++      "compute_class": "light",
++      "result_size": "large",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 375.8141,
++        "p95": 386.3422,
++        "p99": 437.57529999999997,
++        "mean": 377.171525,
++        "stdev": 16.406955578876808,
++        "min": 358.8922,
++        "max": 437.57529999999997,
++        "median_ci95": [
++          372.51599999999996,
++          379.7672
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        358892200,
++        361718100,
++        360381100,
++        361132700,
++        379549000,
++        375045600,
++        375814100,
++        379985400,
++        368096900,
++        386342200,
++        437575300,
++        376604100,
++        372175000,
++        384536400,
++        380441900,
++        377720300,
++        377422000,
++        383783800,
++        372857000,
++        373357400
++      ],
++      "decomposition_ns": {
++        "t_parse": 248000.0,
++        "t_pool": 29400.0,
++        "t_txn": 4237600.0,
++        "t_db": 272544800.0,
++        "t_serialize": 72236000.0,
++        "t_protocol": null,
++        "t_cache": null
++      }
++    },
++    {
++      "path": "server_side",
++      "query_id": "rows_100k",
++      "compute_class": "light",
++      "result_size": "large",
++      "temperature": "cold",
++      "concurrency": 1,
++      "n": 1,
++      "latency_ms": {
++        "p50": 610.9331,
++        "p95": 610.9331,
++        "p99": 610.9331,
++        "mean": 610.9331,
++        "stdev": 0.0,
++        "min": 610.9331,
++        "max": 610.9331,
++        "median_ci95": [
++          610.9331,
++          610.9331
++        ]
++      },
++      "throughput_rps": null,
++      "samples_ns": [
++        610933100
++      ],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 1.3939,
++        "p95": 1.6910999999999998,
++        "p99": 3.0393999999999997,
++        "mean": 1.50431,
++        "stdev": 0.37411582628069107,
++        "min": 1.3157999999999999,
++        "max": 3.0393999999999997,
++        "median_ci95": [
++          1.3694499999999998,
++          1.44015
++        ]
++      },
++      "throughput_rps": 660.9516381686352,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 2.2607,
++        "p95": 3.6664,
++        "p99": 3.6805999999999996,
++        "mean": 2.4455649999999998,
++        "stdev": 0.4522525997423168,
++        "min": 2.0997,
++        "max": 3.6805999999999996,
++        "median_ci95": [
++          2.2012,
++          2.4112999999999998
++        ]
++      },
++      "throughput_rps": 407.0401667236523,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 4,
++      "n": 80,
++      "latency_ms": {
++        "p50": 2.0393,
++        "p95": 2.8750999999999998,
++        "p99": 4.353,
++        "mean": 2.15052375,
++        "stdev": 0.473713222878635,
++        "min": 1.6429,
++        "max": 4.353,
++        "median_ci95": [
++          2.00725,
++          2.0906
++        ]
++      },
++      "throughput_rps": 1825.8587241812165,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 4,
++      "n": 80,
++      "latency_ms": {
++        "p50": 3.6767999999999996,
++        "p95": 5.22,
++        "p99": 6.0796,
++        "mean": 3.7914325,
++        "stdev": 0.7835414662352763,
++        "min": 2.4581,
++        "max": 6.0796,
++        "median_ci95": [
++          3.3798,
++          3.9435
++        ]
++      },
++      "throughput_rps": 1000.954660507459,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 16,
++      "n": 320,
++      "latency_ms": {
++        "p50": 6.71,
++        "p95": 10.404,
++        "p99": 15.3964,
++        "mean": 7.189442812499999,
++        "stdev": 2.314201119084511,
++        "min": 1.9306999999999999,
++        "max": 16.1532,
++        "median_ci95": [
++          6.4802,
++          6.9205
++        ]
++      },
++      "throughput_rps": 2019.0318994421164,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 16,
++      "n": 320,
++      "latency_ms": {
++        "p50": 16.752499999999998,
++        "p95": 37.274699999999996,
++        "p99": 48.1988,
++        "mean": 18.922133125,
++        "stdev": 9.633370541377957,
++        "min": 2.3504,
++        "max": 60.912499999999994,
++        "median_ci95": [
++          15.358699999999999,
++          17.2827
++        ]
++      },
++      "throughput_rps": 812.3283004518069,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 64,
++      "n": 1280,
++      "latency_ms": {
++        "p50": 31.569899999999997,
++        "p95": 50.7694,
++        "p99": 59.949999999999996,
++        "mean": 32.249347109375,
++        "stdev": 8.637653644557531,
++        "min": 2.3723,
++        "max": 79.57339999999999,
++        "median_ci95": [
++          31.318099999999998,
++          31.729049999999997
++        ]
++      },
++      "throughput_rps": 1895.1628485304418,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "select_1",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 64,
++      "n": 1280,
++      "latency_ms": {
++        "p50": 59.636399999999995,
++        "p95": 83.9885,
++        "p99": 91.726,
++        "mean": 62.264287187499995,
++        "stdev": 11.194855073006593,
++        "min": 12.0594,
++        "max": 118.3202,
++        "median_ci95": [
++          59.1558,
++          60.2504
++        ]
++      },
++      "throughput_rps": 1009.3661291108604,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 1.5581,
++        "p95": 1.6268,
++        "p99": 2.052,
++        "mean": 1.5797949999999998,
++        "stdev": 0.1173481167296689,
++        "min": 1.4650999999999998,
++        "max": 2.052,
++        "median_ci95": [
++          1.5393999999999999,
++          1.5759999999999998
++        ]
++      },
++      "throughput_rps": 629.0732492891472,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 3.5246999999999997,
++        "p95": 3.8207999999999998,
++        "p99": 4.1818,
++        "mean": 3.5572649999999997,
++        "stdev": 0.20045307437481666,
++        "min": 3.3468999999999998,
++        "max": 4.1818,
++        "median_ci95": [
++          3.41015,
++          3.6199999999999997
++        ]
++      },
++      "throughput_rps": 280.1198913134822,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 4,
++      "n": 80,
++      "latency_ms": {
++        "p50": 2.1485,
++        "p95": 2.5986,
++        "p99": 3.7639,
++        "mean": 2.23429,
++        "stdev": 0.3212274321876533,
++        "min": 1.8145,
++        "max": 3.7639,
++        "median_ci95": [
++          2.1391,
++          2.2062
++        ]
++      },
++      "throughput_rps": 1762.3319175933595,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 4,
++      "n": 80,
++      "latency_ms": {
++        "p50": 3.7895,
++        "p95": 4.5889999999999995,
++        "p99": 5.0586,
++        "mean": 3.79709875,
++        "stdev": 0.44014293089707907,
++        "min": 2.8661,
++        "max": 5.0586,
++        "median_ci95": [
++          3.7018,
++          3.8716999999999997
++        ]
++      },
++      "throughput_rps": 1034.5514314312243,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 16,
++      "n": 320,
++      "latency_ms": {
++        "p50": 7.1826,
++        "p95": 10.776399999999999,
++        "p99": 12.1573,
++        "mean": 7.636883125,
++        "stdev": 2.18583471802206,
++        "min": 2.3878,
++        "max": 13.006599999999999,
++        "median_ci95": [
++          7.0291999999999994,
++          7.5211
++        ]
++      },
++      "throughput_rps": 1913.6947585096623,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 16,
++      "n": 320,
++      "latency_ms": {
++        "p50": 14.2906,
++        "p95": 20.5273,
++        "p99": 24.9026,
++        "mean": 14.884797812499999,
++        "stdev": 3.451467120493979,
++        "min": 2.3989,
++        "max": 28.6532,
++        "median_ci95": [
++          13.970799999999999,
++          14.57255
++        ]
++      },
++      "throughput_rps": 1035.2800804671442,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 64,
++      "n": 1280,
++      "latency_ms": {
++        "p50": 32.2232,
++        "p95": 43.059,
++        "p99": 51.849199999999996,
++        "mean": 32.410464921875,
++        "stdev": 6.32884236786438,
++        "min": 2.0463999999999998,
++        "max": 54.767599999999995,
++        "median_ci95": [
++          32.179249999999996,
++          32.26585
++        ]
++      },
++      "throughput_rps": 1906.411007021401,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_orders",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 64,
++      "n": 1280,
++      "latency_ms": {
++        "p50": 60.8379,
++        "p95": 101.9523,
++        "p99": 108.73519999999999,
++        "mean": 66.2720503125,
++        "stdev": 16.688739063625864,
++        "min": 17.25,
++        "max": 120.28569999999999,
++        "median_ci95": [
++          60.6487,
++          61.08045
++        ]
++      },
++      "throughput_rps": 947.9732295322395,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 1.5045,
++        "p95": 1.6069,
++        "p99": 2.3493,
++        "mean": 1.56115,
++        "stdev": 0.19035434962472653,
++        "min": 1.4671999999999998,
++        "max": 2.3493,
++        "median_ci95": [
++          1.49375,
++          1.5385
++        ]
++      },
++      "throughput_rps": 636.6790819087638,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 1,
++      "n": 20,
++      "latency_ms": {
++        "p50": 2.832,
++        "p95": 3.0055,
++        "p99": 3.3133999999999997,
++        "mean": 2.84426,
++        "stdev": 0.13897973877322436,
++        "min": 2.5983,
++        "max": 3.3133999999999997,
++        "median_ci95": [
++          2.7839,
++          2.85725
++        ]
++      },
++      "throughput_rps": 350.0824444156599,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 4,
++      "n": 80,
++      "latency_ms": {
++        "p50": 2.2157999999999998,
++        "p95": 2.8066999999999998,
++        "p99": 3.9078,
++        "mean": 2.32264,
++        "stdev": 0.36298148001715325,
++        "min": 1.8613,
++        "max": 3.9078,
++        "median_ci95": [
++          2.1736,
++          2.2917
++        ]
++      },
++      "throughput_rps": 1693.892459002509,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 4,
++      "n": 80,
++      "latency_ms": {
++        "p50": 3.9046,
++        "p95": 4.9883,
++        "p99": 5.3445,
++        "mean": 3.9555162499999996,
++        "stdev": 0.5219416184054824,
++        "min": 2.959,
++        "max": 5.3445,
++        "median_ci95": [
++          3.7156,
++          4.0298
++        ]
++      },
++      "throughput_rps": 998.6817401030639,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 16,
++      "n": 320,
++      "latency_ms": {
++        "p50": 6.8999999999999995,
++        "p95": 10.6345,
++        "p99": 14.4065,
++        "mean": 7.510303437499999,
++        "stdev": 2.3190857715663653,
++        "min": 2.0913,
++        "max": 17.8221,
++        "median_ci95": [
++          6.7946,
++          7.15135
++        ]
++      },
++      "throughput_rps": 1929.2042333975396,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 16,
++      "n": 320,
++      "latency_ms": {
++        "p50": 14.152299999999999,
++        "p95": 19.4374,
++        "p99": 21.096799999999998,
++        "mean": 14.670713749999999,
++        "stdev": 2.9939106262323145,
++        "min": 3.0332,
++        "max": 23.8418,
++        "median_ci95": [
++          13.9043,
++          14.640799999999999
++        ]
++      },
++      "throughput_rps": 1052.0515663075225,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "native",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 64,
++      "n": 1280,
++      "latency_ms": {
++        "p50": 31.656499999999998,
++        "p95": 42.5338,
++        "p99": 52.0517,
++        "mean": 31.781848671875,
++        "stdev": 6.496169716583742,
++        "min": 1.7849,
++        "max": 52.9203,
++        "median_ci95": [
++          31.612099999999998,
++          31.71895
++        ]
++      },
++      "throughput_rps": 1939.654029366059,
++      "samples_ns": [],
++      "decomposition_ns": null
++    },
++    {
++      "path": "server_side",
++      "query_id": "pk_lookup_customer",
++      "compute_class": "ultralight",
++      "result_size": "1",
++      "temperature": "warm",
++      "concurrency": 64,
++      "n": 1280,
++      "latency_ms": {
++        "p50": 58.831599999999995,
++        "p95": 66.12599999999999,
++        "p99": 70.96,
++        "mean": 57.882715624999996,
++        "stdev": 6.477857637629228,
++        "min": 24.3955,
++        "max": 73.3346,
++        "median_ci95": [
++          58.580799999999996,
++          58.980149999999995
++        ]
++      },
++      "throughput_rps": 1083.402802305989,
++      "samples_ns": [],
++      "decomposition_ns": null
++    }
++  ],
++  "assertions": [
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "orders_status_counts",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 456.3529,
++        "server_side_p50_ms": 494.60569999999996,
++        "overhead_p50_ms": 38.25279999999998
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "orders_status_counts",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 514.3364,
++        "server_t_db_ms": 500.4028,
++        "delta_ms": -13.9336
++      }
++    },
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "pk_lookup_customer",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 1.849,
++        "server_side_p50_ms": 2.6780999999999997,
++        "overhead_p50_ms": 0.8290999999999997
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "pk_lookup_customer",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 0.6496,
++        "server_t_db_ms": 0.5776,
++        "delta_ms": -0.072
++      }
++    },
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "pk_lookup_orders",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 1.8517,
++        "server_side_p50_ms": 2.487,
++        "overhead_p50_ms": 0.6353000000000002
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "pk_lookup_orders",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 0.7031,
++        "server_t_db_ms": 0.6699,
++        "delta_ms": -0.0332
++      }
++    },
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "rows_1",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 478.0845,
++        "server_side_p50_ms": 473.46389999999997,
++        "overhead_p50_ms": -4.6206000000000245
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "rows_1",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 467.994,
++        "server_t_db_ms": 469.7096,
++        "delta_ms": 1.7156
++      }
++    },
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "rows_100",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 2.0018,
++        "server_side_p50_ms": 2.5315,
++        "overhead_p50_ms": 0.5297000000000001
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "rows_100",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 0.7964,
++        "server_t_db_ms": 0.8019,
++        "delta_ms": 0.0055
++      }
++    },
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "rows_100k",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 301.9384,
++        "server_side_p50_ms": 375.8141,
++        "overhead_p50_ms": 73.8757
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "rows_100k",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 281.4866,
++        "server_t_db_ms": 272.5448,
++        "delta_ms": -8.9418
++      }
++    },
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "select_1",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 1.6723999999999999,
++        "server_side_p50_ms": 2.3541,
++        "overhead_p50_ms": 0.6817
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "select_1",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 0.6454,
++        "server_t_db_ms": 0.5395,
++        "delta_ms": -0.1059
++      }
++    },
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "tpch_q1",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 30375.939899999998,
++        "server_side_p50_ms": 30367.481799999998,
++        "overhead_p50_ms": -8.458099999999831
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "tpch_q1",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 30396.0691,
++        "server_t_db_ms": 30490.1887,
++        "delta_ms": 94.1196
++      }
++    },
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "tpch_q3",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 12399.8714,
++        "server_side_p50_ms": 12087.026399999999,
++        "overhead_p50_ms": -312.84500000000116
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "tpch_q3",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 12243.3586,
++        "server_t_db_ms": 12166.1272,
++        "delta_ms": -77.2314
++      }
++    },
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "tpch_q5",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 22977.9994,
++        "server_side_p50_ms": 23288.9223,
++        "overhead_p50_ms": 310.92289999999775
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "tpch_q5",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 23506.1207,
++        "server_t_db_ms": 23179.0958,
++        "delta_ms": -327.0249
++      }
++    },
++    {
++      "name": "server_side_overhead_p50_ms",
++      "query_id": "tpch_q6",
++      "passed": true,
++      "detail": {
++        "native_p50_ms": 48595.6098,
++        "server_side_p50_ms": 49521.051699999996,
++        "overhead_p50_ms": 925.441899999998
++      }
++    },
++    {
++      "name": "t_db_matches_native",
++      "query_id": "tpch_q6",
++      "passed": true,
++      "detail": {
++        "native_t_db_ms": 49965.59,
++        "server_t_db_ms": 50205.271,
++        "delta_ms": 239.681
++      }
++    }
++  ],
++  "schema_version": 1,
++  "kind": "performance"
++}
+
+
+Investigate per the method in your instructions, then return the findings list.
