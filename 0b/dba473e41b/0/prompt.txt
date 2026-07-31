@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bbuii1vpw</task-id>
+<tool-use-id>toolu_01LsxnhWKJY5mJJjdzrurs8B</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\bbuii1vpw.output</output-file>
+<status>failed</status>
+<summary>Background command "Commit pin fix and windows event-loop-policy fix together" failed with exit code 1</summary>
+</task-notification>
