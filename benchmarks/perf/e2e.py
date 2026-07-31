@@ -35,7 +35,6 @@ from contextlib import AsyncExitStack
 from datetime import timedelta
 from typing import Any, Protocol
 
-from _mcp_test_helpers import create_connected_server_and_client_session
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
@@ -43,6 +42,7 @@ from mcp.types import CallToolResult
 
 from mcpg.config import Settings
 from mcpg.server import create_server
+from tests._mcp_test_helpers import create_connected_server_and_client_session
 
 # Generous per-call ceiling so a heavy TPC-H query over the protocol doesn't
 # trip the client's default read timeout mid-measurement.

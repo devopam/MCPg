@@ -30,8 +30,6 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from _mcp_test_helpers import create_connected_server_and_client_session
-
 from benchmarks.tokens.tier_b.agent import run_trial
 from benchmarks.tokens.tier_b.model import DEFAULT_MODEL, AnthropicClient
 from benchmarks.tokens.tier_b.schema import ARM_BASELINE, ARM_MCPG, TierBReport, TrialResult, aggregate
@@ -39,6 +37,7 @@ from benchmarks.tokens.tier_b.tasks import default_tasks
 from mcpg import __version__
 from mcpg.config import load_settings
 from mcpg.server import create_server
+from tests._mcp_test_helpers import create_connected_server_and_client_session
 
 # The baseline agent gets a lone SQL runner. The MCPg agent gets a focused,
 # task-relevant surface (as an operator would expose via session-intent — the
