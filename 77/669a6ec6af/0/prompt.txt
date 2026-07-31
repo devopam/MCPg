@@ -1,0 +1,22 @@
+<task-notification>
+<task-id>a3a2a6de3b4a3efe4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\a3a2a6de3b4a3efe4.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 2: mechanical fastmcp rename" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Report is finalized and durable. The commit already exists (`41632fd`), work is complete.
+
+## Summary
+
+**Status:** DONE_WITH_CONCERNS
+
+**Commit:** `41632fd` — "refactor: mechanical FastMCP -&gt; MCPServer rename (imports, type refs, prose)" (created with `--no-verify` as authorized)
+
+**Verification summary:** Confirmed the 63 `FastMCP[AppContext]` occurrences in `tools.py` before/after the sed (63 → 0); ran `grep -rn "fastmcp|FastMCP" src/` (recursive, repo-wide — broader than the brief's own top-level-only command) confirming zero hits outside `server.py` (expected, Task 3's scope) and `tenancy.py` (flagged below); `uv run ruff check` and `uv run ruff format --check` both pass cleanly on all 9 changed files; `uv run mypy src/mcpg` still fails with 12 errors as expected, but all are either `server.py`'s known FastMCP import (Task 3) or unrelated SDK-shape drift (`ToolAnnotations`/`Tool` camelCase attributes in `tools.py`, and a `tenancy.py` `request_ctx` attribute error) — nothing indicating a regression from this task's edits, and mypy's clean pass over the `_Ctx = Context[AppContext, Any]` definition/use-sites is positive evidence that one semantic (non-string) edit is correct.
+
+**Concern:** `src/mcpg/tenancy.py` has 2 leftover prose-only "FastMCP" mentions that were not in this task's 9-file list and that the brief's own Step 6 incorrectly predicted wouldn't exist. Left untouched per the controller's explicit scope instruction (more specific/recent than the brief's inventory); flagged in the report for whoever does the final cleanup sweep (or Task 3, if convenient there).
+
+Full details in `C:\Users\devop\OneDrive\Documents\GitHub\MCPg\.superpowers\sdd\2026-07-30-mcp-2.0-migration\task-2-report.md`.</result>
+<usage><subagent_tokens>79719</subagent_tokens><tool_uses>37</tool_uses><duration_ms>459897</duration_ms></usage>
+</task-notification>
