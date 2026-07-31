@@ -1,0 +1,117 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - pyproject.toml
+  - src/mcpg/__main__.py
+  - src/mcpg/http_runtime.py
+  - tests/unit/test_config.py
+  - tests/unit/test_http_runtime.py
+
+Unified diff (only + lines are new):
+
+=== DIFF: pyproject.toml ===
+@@ -50,7 +50,7 @@ classifiers = [
+ ]
+ 
+ dependencies = [
+-    "mcp[cli]>=1.28.1",
++    "mcp[cli]>=1.28.1,<2",
+     "psycopg[binary]>=3.3.2",
+     "psycopg-pool>=3.3.0",
+     "pglast==8.4",
+
+
+=== DIFF: src/mcpg/__main__.py ===
+@@ -6,7 +6,13 @@ import asyncio
+ import sys
+ 
+ if sys.platform == "win32":
+-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
++    # CPython 3.14 privatized WindowsSelectorEventLoopPolicy to
++    # _WindowsSelectorEventLoopPolicy; fall back to it when the public
++    # name is gone so this keeps working on 3.12-3.14.
++    _selector_policy_cls = (
++        getattr(asyncio, "WindowsSelectorEventLoopPolicy", None) or asyncio._WindowsSelectorEventLoopPolicy
++    )
++    asyncio.set_event_loop_policy(_selector_policy_cls())
+ 
+ from mcpg import __version__
+ from mcpg.config import ConfigError, load_settings
+
+
+=== DIFF: src/mcpg/http_runtime.py ===
+@@ -650,7 +650,13 @@ def run_http(server: object, settings: Settings, *, kind: str) -> None:
+     # tell uvicorn to leave the loop alone (``loop="none"``) so it runs on
+     # the loop our policy creates. No-op off Windows.
+     if sys.platform == "win32":
+-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
++        # CPython 3.14 privatized WindowsSelectorEventLoopPolicy to
++        # _WindowsSelectorEventLoopPolicy; fall back to it when the public
++        # name is gone so this keeps working on 3.12-3.14.
++        selector_policy_cls = (
++            getattr(asyncio, "WindowsSelectorEventLoopPolicy", None) or asyncio._WindowsSelectorEventLoopPolicy
++        )
++        asyncio.set_event_loop_policy(selector_policy_cls())
+         tls_kwargs["loop"] = "none"
+     # mypy can't reason about ``**dict[str, object]`` against the
+     # large, overloaded ``uvicorn.run`` signature; the dict's contents
+
+
+=== DIFF: tests/unit/test_config.py ===
+@@ -1,5 +1,7 @@
+ """Tests for the env-driven configuration loader."""
+ 
++from os.path import abspath
++
+ import pytest
+ 
+ from mcpg.config import AccessMode, ConfigError, Transport, load_settings
+@@ -986,15 +988,19 @@ def test_subprocess_hardening_defaults_to_open() -> None:
+ 
+ 
+ def test_subprocess_hardening_parses_allowlist_and_limits() -> None:
++    # "/usr/bin"-style paths are absolute on POSIX but not per Windows'
++    # isabs (no drive letter) — abspath() anchors them to something
++    # isabs() accepts on either platform without changing what's asserted.
++    bin_dir, local_bin_dir = abspath("/usr/bin"), abspath("/usr/local/bin")
+     settings = load_settings(
+         {
+             "MCPG_DATABASE_URL": _DB_URL,
+-            "MCPG_SUBPROCESS_BIN_ALLOWLIST": "/usr/bin, /usr/local/bin",
++            "MCPG_SUBPROCESS_BIN_ALLOWLIST": f"{bin_dir}, {local_bin_dir}",
+             "MCPG_SUBPROCESS_CPU_SECONDS": "30",
+             "MCPG_SUBPROCESS_MEMORY_MB": "512",
+         }
+     )
+-    assert settings.subprocess_bin_allowlist == ("/usr/bin", "/usr/local/bin")
++    assert settings.subprocess_bin_allowlist == (bin_dir, local_bin_dir)
+     assert settings.subprocess_cpu_seconds == 30
+     assert settings.subprocess_memory_mb == 512
+ 
+@@ -1004,7 +1010,7 @@ def test_subprocess_bin_allowlist_rejects_relative_paths() -> None:
+         load_settings(
+             {
+                 "MCPG_DATABASE_URL": _DB_URL,
+-                "MCPG_SUBPROCESS_BIN_ALLOWLIST": "/usr/bin, relative/dir",
++                "MCPG_SUBPROCESS_BIN_ALLOWLIST": f"{abspath('/usr/bin')}, relative/dir",
+             }
+         )
+ 
+
+
+=== DIFF: tests/unit/test_http_runtime.py ===
+@@ -822,7 +822,10 @@ def test_run_http_builds_app_and_serves_via_uvicorn(monkeypatch: pytest.MonkeyPa
+ 
+     captured: dict[str, object] = {}
+ 
+-    def _fake_run(app: object, *, host: str, port: int) -> None:
++    def _fake_run(app: object, *, host: str, port: int, **kwargs: object) -> None:
++        # **kwargs swallows the win32-only ``loop="none"`` kwarg
++        # (see http_runtime.run_http) without coupling this test to
++        # the host platform.
+         captured["app"] = app
+         captured["host"] = host
+         captured["port"] = port
+
+
+Investigate per the method in your instructions, then return the findings list.
