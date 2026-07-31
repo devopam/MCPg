@@ -1,0 +1,52 @@
+<task-notification>
+<task-id>a61b19feafe4eae4b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\a61b19feafe4eae4b.output</output-file>
+<status>completed</status>
+<summary>Agent "Research mcp 2.0 API for migration" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Task**: Research-only comparison of `mcp` 1.x `FastMCP`/old lowlevel API vs `mcp` 2.0.0's `MCPServer` API, scoped to what MCPg (`src/mcpg/`) actually uses, to produce a migration-readiness verdict. No code changed.
+
+## 1. Decorator/registration compatibility
+
+`server.tool()`, `.resource()`, `.prompt()`, `.add_tool()` on `MCPServer` (`mcp/server/mcpserver/server.py`) are signature-compatible with old `FastMCP` — same decorator shape, same kwargs (`name`, `title`, `description`, `annotations`, `meta`, `structured_output`). MCPg's `tools.py` has ~254 `@server.tool(...)` call sites; **these need zero changes** beyond the type import and the class name at the top (`FastMCP` → `MCPServer`). This part is a mechanical rename.
+
+## 2. Context class
+
+Old: `Context[ServerSessionT, LifespanContextT, RequestT]` (3 type params). New: `Context[LifespanContextT, RequestT]` (2 params — session type param dropped). MCPg has **exactly one** spelled-out generic usage: `tools.py:102`, `_Ctx = Context[ServerSession, AppContext, Any]` → becomes `Context[AppContext, Any]`. Every tool body just uses the `_Ctx` alias, so this is a one-line fix, not a per-tool one.
+
+`ctx.request_context.lifespan_context.{database,settings,cache,...}` — the core pattern threading `AppContext` into every tool — is **unchanged**: `ServerRequestContext` (new) still carries `lifespan_context: LifespanContextT` exactly like old `RequestContext` did. No changes needed at the ~254 call sites that read from it.
+
+`ctx.info/debug/warning/error/log` are now `@deprecated` (SEP-2577, logging capability deprecated 2026-07-28) — **irrelevant to mcpg**: grep confirms zero uses of `ctx.info/debug/warning/error/log` anywhere in `src/mcpg/`.
+
+## 3. Transport/run()
+
+`MCPServer` still has `run(transport="stdio"|"sse"|"streamable-http")`, `streamable_http_app()`, `sse_app()`, `run_stdio_async()` — same names, same purpose. **SSE is still fully supported** in 2.0 (not removed); `_streamable_http_modern.py` is an additional/internal variant, not a replacement. `http_runtime.py`'s pattern (build the Starlette app via `streamable_http_app()`/`sse_app()`, wrap with auth/metrics middleware, serve via uvicorn) carries over structurally.
+
+**Breaking change found here**: `MCPServer.__init__` has **no `host`/`port` constructor kwargs** — old `FastMCP` accepted them at construction. `server.py:238-245`'s `AuditedFastMCP(SERVER_NAME, ..., host=settings.http_host, port=settings.http_port)` will raise `TypeError` unchanged. Fix is small (drop those two kwargs at construction; mcpg's `http_runtime.py` already builds/serves the app itself and doesn't rely on `server.run()`'s host/port defaults) but it is a real call-site change, not a no-op rename.
+
+## 4. Tenancy/auth — real architectural break
+
+`tenancy.py` does `from mcp.server.lowlevel.server import request_ctx; ctx = request_ctx.get()` — a `ContextVar` read. **`request_ctx` does not exist anywhere in the mcp 2.0 tree** (grepped the whole extracted wheel — zero matches, no renamed equivalent). The new `ServerRequestContext` is instead **built explicitly per-message by `ServerRunner._make_context`** and handed to handlers as an argument — there is no global/task-local contextvar to `.get()` from arbitrary code (e.g. deep inside the SQL driver) the way tenancy.py currently does.
+
+The new sanctioned mechanism is `ServerMiddleware` (an `async (ctx, call_next)` chain, `MCPServer.middleware`) plus `mcp.server.request_state` (`RequestStateSecurity`, `RequestStateBoundary`, `RequestStateCodec`, `AESGCMRequestStateCodec`, `authenticated_principal`) — these seal/carry per-request state (including an authenticated-principal claim) across the wire in an HMAC/AEAD-sealed opaque token, verified by a `RequestStateBoundary` middleware installed automatically on every `MCPServer` (`server.py:231`). This is concretely relevant: it looks like the intended replacement path for "get the authenticated role for this request from wherever the driver is currently running," but it's a **different mechanism** (explicit context passing / middleware interception vs. contextvar read), not a drop-in rename. `tenancy.py` is called out in this repo's own CLAUDE.md as security-sensitive-adjacent; re-deriving its per-request role plumbing on the new middleware model needs its own design pass, not a mechanical edit.
+
+## 5. Elicitation/Sampling (resolve.py)
+
+`ctx.elicit(message, schema)` (structured, schema-validated user input mid-tool-call) and `ctx.elicit_url(...)` (out-of-band URL flow for credentials/OAuth) are real, usable APIs — the client returns accept/decline/cancel plus validated data. `Sample`/`ListRoots` (from `resolve.py`'s `Elicit`/`Sample`/`ListRoots` — the "Resolve" family) let a tool ask the *client's* LLM to fill in a value or list filesystem roots. **Concrete, load-bearing candidate for mcpg**: `run_ddl`/destructive-operation tools could `ctx.elicit(...)` a structured confirmation ("this will drop table X — confirm?") before executing, replacing today's fire-and-forget policy-gate-only check with an interactive one. This is genuinely new capability, not currently possible under 1.x FastMCP's Context. Everything else here is speculative until a concrete tool is chosen — don't over-scope.
+
+## 6. Extension/Bindings (extension.py)
+
+`Extension`/`ToolBinding`/`ResourceBinding`/`MethodBinding` are a **plugin system**: a bundle that contributes tools/resources/custom JSON-RPC methods to a server at construction, with an identifier advertised in `ServerCapabilities.extensions`, and an opt-in `intercept_tool_call` hook wrapping every `tools/call`. mcpg's own tool metadata (access-mode bucketing, read-only/write classification via `about.classify_tool`) is a different concern — it's *decoration of already-registered tools*, not new methods/tools bundled as a unit. There's no forced adoption here; `Extension` is only relevant if mcpg wants to ship an *optional* add-on module (e.g. an audit/compliance bundle) as a discrete unit — not a fit for the existing 254-tool core surface.
+
+## 7. Verdict: **plan-first**, not incremental-commits-directly
+
+Roughly 60% of the `fastmcp` touch points (~150 of 234 grepped occurrences, concentrated in `tools.py`'s decorators and docs prose) are mechanical rename/no-op. But three items are real, non-mechanical breaks concentrated in exactly the seams this repo's architecture depends on most:
+
+- `AuditedFastMCP`'s `call_tool()` override (return type `Sequence[ContentBlock]|dict` → `CallToolResult|InputRequiredResult`, plus a new optional `context` param) — this wraps **every one of 254 tool calls** for audit/metrics/OTel/rate-limiting.
+- `AuditedFastMCP.__init__`'s `self._mcp_server.version = version` hack — `_mcp_server` is renamed `_lowlevel_server`; needs verifying `.version` is still settable there.
+- `tenancy.py`'s `request_ctx` contextvar has **no direct replacement** — needs re-architecture onto `ServerMiddleware`/`RequestStateSecurity`, a security-sensitive redesign, not a rename.
+
+Combined with the user's explicit ask to "use newer features of mcp 2.0 extensively" (elicitation for destructive ops, possibly `RequestStateSecurity` for tenancy) — which is new design work, not migration — this squarely matches the repo's own "Roadmap 18.1" precedent (plan-first, then large-size PRs, to avoid repeated doc/regression-testing churn). **Recommend a written plan before touching `tools.py`, `server.py`, or `tenancy.py`.**</result>
+<usage><subagent_tokens>229523</subagent_tokens><tool_uses>11</tool_uses><duration_ms>136471</duration_ms></usage>
+</task-notification>
