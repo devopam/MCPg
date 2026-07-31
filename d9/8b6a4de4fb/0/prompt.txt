@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b3ou2d0to</task-id>
+<tool-use-id>toolu_01RkiMEQAu4vKp7i7RvSDjKP</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\b3ou2d0to.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 290's CI checks until they complete" completed (exit code 0)</summary>
+</task-notification>
