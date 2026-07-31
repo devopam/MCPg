@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakePool
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg import __version__
 from mcpg.config import AccessMode, load_settings
@@ -185,12 +185,12 @@ async def test_get_server_info_is_callable_from_an_mcp_client() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("get_server_info", {})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["mcpg_version"] == __version__
-    assert result.structuredContent["access_mode"] == "read-only"
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["mcpg_version"] == __version__
+    assert result.structured_content["access_mode"] == "read-only"
     # The lifespan connected the (fake) database before the tool ran.
-    assert result.structuredContent["database_connected"] is True
+    assert result.structured_content["database_connected"] is True
 
 
 async def test_list_databases_primary_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -209,8 +209,8 @@ async def test_list_databases_primary_only(monkeypatch: pytest.MonkeyPatch) -> N
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("list_databases", {})
 
-    assert result.isError is False
-    content = result.structuredContent
+    assert result.is_error is False
+    content = result.structured_content
     assert content is not None
     # The primary is advertised under its real DB name ("db"), not "primary".
     assert content["primary_id"] == "db"
@@ -245,7 +245,7 @@ async def test_list_databases_lists_secondaries(monkeypatch: pytest.MonkeyPatch)
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("list_databases", {})
 
-    content = result.structuredContent
+    content = result.structured_content
     assert content is not None
     assert content["database_ids"] == ["db", "analytics"]
     secondary = next(d for d in content["databases"] if d["id"] == "analytics")
@@ -285,7 +285,7 @@ async def test_list_databases_surfaces_unreachable_secondary(monkeypatch: pytest
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("list_databases", {})
 
-    content = result.structuredContent
+    content = result.structured_content
     assert content is not None
     secondary = next(d for d in content["databases"] if d["id"] == "analytics")
     assert secondary["reachable"] is False
@@ -398,7 +398,7 @@ async def test_heavy_diagnostics_gating() -> None:
 
         # A gated tool like run_advisors should fail with the friendly error message
         result = await client.call_tool("run_advisors", {"schema": "public"})
-        assert result.isError is True
+        assert result.is_error is True
         assert "disabled by the server administrator" in result.content[0].text
 
 
@@ -436,11 +436,11 @@ async def test_heavy_diagnostics_caching(monkeypatch: pytest.MonkeyPatch) -> Non
     async with create_connected_server_and_client_session(server) as client:
         # First call should invoke the underlying implementation
         first = await client.call_tool("run_advisors", {"schema": "public"})
-        assert first.isError is False
+        assert first.is_error is False
 
         # Second call with the same arguments should be served from cache
         second = await client.call_tool("run_advisors", {"schema": "public"})
-        assert second.isError is False
+        assert second.is_error is False
 
         # The cached response should be identical and the underlying function
         # should only have been invoked once.

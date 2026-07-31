@@ -30,7 +30,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from benchmarks.tokens.tier_b.agent import run_trial
 from benchmarks.tokens.tier_b.model import DEFAULT_MODEL, AnthropicClient

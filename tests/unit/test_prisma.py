@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeParamRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.introspection import ColumnInfo
@@ -529,7 +529,7 @@ async def test_generate_prisma_schema_tool_is_registered_and_callable() -> None:
 
         result = await client.call_tool("generate_prisma_schema", {"schema": "public"})
 
-    assert result.isError is False
+    assert result.is_error is False
     # Empty FakeDriver returns no tables / enums, but the preamble is
     # always present.
     assert 'provider = "postgresql"' in result.content[0].text  # type: ignore[union-attr]

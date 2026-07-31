@@ -63,11 +63,11 @@ async def analyze_plan_vs_raw_explain(driver: SqlDriver) -> tuple[str, str]:
 
 
 def _tool_to_dict(tool: Any) -> dict[str, Any]:
-    """Serialize a FastMCP Tool to the JSON shape sent in a tools/list response."""
+    """Serialize an MCPServer Tool to the JSON shape sent in a tools/list response."""
     return {
         "name": tool.name,
         "description": tool.description or "",
-        "inputSchema": tool.inputSchema,
+        "inputSchema": tool.input_schema,
     }
 
 

@@ -13,7 +13,7 @@ across every PG version — that's the gap fakes cannot close.
 from collections.abc import AsyncIterator
 
 import pytest
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.database import Database
@@ -117,37 +117,37 @@ async def test_every_registered_introspection_tool_runs_against_real_postgres(
         # No-argument tools — every one must reach the real catalog cleanly.
         for tool in ("list_schemas", "list_roles", "list_extensions", "list_available_extensions", "list_publications"):
             result = await client.call_tool(tool, {})
-            assert result.isError is False, tool
+            assert result.is_error is False, tool
 
         for tool in _SCHEMA_ONLY_TOOLS:
             result = await client.call_tool(tool, {"schema": schema})
-            assert result.isError is False, tool
+            assert result.is_error is False, tool
 
         for tool in _SCHEMA_TABLE_TOOLS:
             result = await client.call_tool(tool, {"schema": schema, "table": "widget"})
-            assert result.isError is False, tool
+            assert result.is_error is False, tool
 
         # list_partitions also needs schema + table — exercise it on the
         # partitioned parent specifically so the partitioned branch runs.
         partitioned = await client.call_tool("list_partitions", {"schema": schema, "table": "event"})
-        assert partitioned.isError is False
+        assert partitioned.is_error is False
 
         # The diagram + diff tools share the introspection surface; smoke
         # them through the same client.
         diagram = await client.call_tool("generate_schema_diagram", {"schema": schema})
-        assert diagram.isError is False
+        assert diagram.is_error is False
         assert diagram.content[0].text.startswith("erDiagram\n")  # type: ignore[union-attr]
 
         diff = await client.call_tool("compare_schemas", {"left_schema": schema, "right_schema": schema})
-        assert diff.isError is False
-        assert diff.structuredContent is not None
-        assert diff.structuredContent["tables_added"] == []
-        assert diff.structuredContent["tables_removed"] == []
+        assert diff.is_error is False
+        assert diff.structured_content is not None
+        assert diff.structured_content["tables_added"] == []
+        assert diff.structured_content["tables_removed"] == []
 
         # subscriptions require superuser; we don't assert content, only
         # that the call succeeds — the empty/limited result is valid.
         subs = await client.call_tool("list_subscriptions", {})
-        assert subs.isError is False
+        assert subs.is_error is False
 
         if has_fdw:
             for tool, args in (
@@ -157,4 +157,4 @@ async def test_every_registered_introspection_tool_runs_against_real_postgres(
                 ("list_foreign_tables", {"schema": schema}),
             ):
                 result = await client.call_tool(tool, args)
-                assert result.isError is False, tool
+                assert result.is_error is False, tool

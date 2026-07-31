@@ -347,8 +347,8 @@ def _register_server_info(server: MCPServer[AppContext]) -> None:
                 return build_tool_descriptor(
                     name=tool.name,
                     description=tool.description,
-                    input_schema=tool.inputSchema,
-                    output_schema=tool.outputSchema,
+                    input_schema=tool.input_schema,
+                    output_schema=tool.output_schema,
                 )
         return build_missing_tool_descriptor(
             name,
@@ -7008,20 +7008,20 @@ def _apply_tool_wire_metadata(server: MCPServer[AppContext], read_only_names: se
         existing = tool.annotations
         if existing is None:
             tool.annotations = ToolAnnotations(
-                readOnlyHint=read_only,
+                read_only_hint=read_only,
                 # None (not False) for reads: the hint is only meaningful
                 # on write-capable tools per the MCP spec.
-                destructiveHint=None if read_only else tool.name not in _NON_DESTRUCTIVE_WRITE_TOOLS,
-                openWorldHint=tool.name in _OPEN_WORLD_TOOLS,
+                destructive_hint=None if read_only else tool.name not in _NON_DESTRUCTIVE_WRITE_TOOLS,
+                open_world_hint=tool.name in _OPEN_WORLD_TOOLS,
             )
             continue
         derived: dict[str, bool] = {}
-        if existing.readOnlyHint is None:
-            derived["readOnlyHint"] = read_only
-        if not read_only and existing.destructiveHint is None:
-            derived["destructiveHint"] = tool.name not in _NON_DESTRUCTIVE_WRITE_TOOLS
-        if existing.openWorldHint is None:
-            derived["openWorldHint"] = tool.name in _OPEN_WORLD_TOOLS
+        if existing.read_only_hint is None:
+            derived["read_only_hint"] = read_only
+        if not read_only and existing.destructive_hint is None:
+            derived["destructive_hint"] = tool.name not in _NON_DESTRUCTIVE_WRITE_TOOLS
+        if existing.open_world_hint is None:
+            derived["open_world_hint"] = tool.name in _OPEN_WORLD_TOOLS
         if derived:
             tool.annotations = existing.model_copy(update=derived)
 

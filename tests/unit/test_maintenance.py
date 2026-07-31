@@ -2,7 +2,7 @@
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.maintenance import MaintenanceError, MaintenanceResult, run_maintenance
@@ -83,4 +83,4 @@ async def test_run_maintenance_tool_is_callable_in_unrestricted_mode() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("run_maintenance", {"operation": "analyze", "schema": "app", "table": "w"})
 
-    assert result.isError is False
+    assert result.is_error is False

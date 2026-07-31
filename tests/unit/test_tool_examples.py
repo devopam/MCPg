@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.server import create_server
@@ -115,7 +115,7 @@ async def test_every_examples_kwargs_exist_on_the_real_tool_signature() -> None:
         call = match["call"]
         # The tool's input schema lists every accepted parameter
         # (required + optional). ``ctx`` is hidden by the MCP machinery.
-        schema = tool.inputSchema or {}
+        schema = tool.input_schema or {}
         properties = set((schema.get("properties") or {}).keys())
         # Tokens that look like ``foo=`` *inside* a quoted SQL
         # literal aren't kwargs — strip every ``'...'`` block before

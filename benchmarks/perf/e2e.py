@@ -10,7 +10,7 @@ Three transports, cheapest first:
 
 * :class:`E2EInMemoryRunner` — client and server share in-memory streams
   (``create_connected_server_and_client_session``). Isolates the protocol
-  (serialize/deserialize + FastMCP dispatch) with **no** OS transport, so it is
+  (serialize/deserialize + MCPServer dispatch) with **no** OS transport, so it is
   the cleanest attribution of MCPg's own protocol overhead. The server runs its
   real lifespan, so the tool executes against the real database.
 * :class:`E2EStdioRunner` — spawns ``python -m mcpg`` as a subprocess and talks
@@ -35,10 +35,10 @@ from contextlib import AsyncExitStack
 from datetime import timedelta
 from typing import Any, Protocol
 
+from _mcp_test_helpers import create_connected_server_and_client_session
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from mcp.client.streamable_http import streamablehttp_client
-from mcp.shared.memory import create_connected_server_and_client_session
+from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult
 
 from mcpg.config import Settings
@@ -55,7 +55,7 @@ def _check(result: CallToolResult) -> CallToolResult:
     A silent error path would otherwise report suspiciously fast timings (an
     immediate error round-trip) as if they were real query latencies.
     """
-    if result.isError:
+    if result.is_error:
         text = result.content[0].text if result.content and hasattr(result.content[0], "text") else str(result.content)
         raise RuntimeError(f"run_select failed over the MCP protocol: {text}")
     return result
@@ -77,11 +77,11 @@ class E2ERunner(Protocol):
 def row_count_of(result: CallToolResult) -> int | None:
     """Best-effort row count from a ``run_select`` CallToolResult.
 
-    Reads ``structuredContent['row_count']`` when present (typed-output tools
+    Reads ``structured_content['row_count']`` when present (typed-output tools
     carry it); returns ``None`` when the shape doesn't expose it. Pure — unit
     tested — so the sanity check doesn't depend on a live server.
     """
-    sc: Any = result.structuredContent
+    sc: Any = result.structured_content
     if isinstance(sc, dict):
         count = sc.get("row_count")
         if isinstance(count, int):
@@ -156,9 +156,9 @@ class E2EHttpRunner(_SessionRunner):
         self._stack = AsyncExitStack()
 
     async def start(self) -> None:
-        # streamablehttp_client yields (read, write, get_session_id); we only
+        # streamable_http_client yields (read, write, get_session_id); we only
         # need the two streams for a ClientSession.
-        read, write, _ = await self._stack.enter_async_context(streamablehttp_client(self._url))
+        read, write, _ = await self._stack.enter_async_context(streamable_http_client(self._url))
         session = await self._stack.enter_async_context(ClientSession(read, write, read_timeout_seconds=_READ_TIMEOUT))
         await session.initialize()
         self._session = session

@@ -1,7 +1,7 @@
 """Tests for live-operations introspection and the list_active_queries tool."""
 
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.liveops import (
@@ -75,7 +75,7 @@ async def test_list_active_queries_tool_is_callable_from_a_client() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("list_active_queries", {})
 
-    assert result.isError is False
+    assert result.is_error is False
 
 
 async def test_cancel_query_reports_the_signal_outcome() -> None:
@@ -128,8 +128,8 @@ async def test_backend_control_tools_are_callable_in_unrestricted_mode() -> None
         cancelled = await client.call_tool("cancel_query", {"pid": 100})
         terminated = await client.call_tool("terminate_backend", {"pid": 100})
 
-    assert cancelled.isError is False
-    assert terminated.isError is False
+    assert cancelled.is_error is False
+    assert terminated.is_error is False
 
 
 # --- verify_connection_encryption -----------------------------------------
@@ -183,9 +183,9 @@ async def test_verify_connection_encryption_tool_is_registered_in_read_mode() ->
         assert "verify_connection_encryption" in listed
         result = await client.call_tool("verify_connection_encryption", {})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["ssl"] is True
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["ssl"] is True
 
 
 # --- monitor_index_build --------------------------------------------------
@@ -308,7 +308,7 @@ async def test_monitor_index_build_tool_is_listed_and_callable_in_read_mode() ->
         assert "monitor_index_build" in listed
         result = await client.call_tool("monitor_index_build", {})
 
-    assert result.isError is False
-    payload = result.structuredContent
+    assert result.is_error is False
+    payload = result.structured_content
     assert payload is not None
     assert payload["result"] == []

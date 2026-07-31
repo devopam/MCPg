@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.audit_integrity import verify_audit_chain
 from mcpg.audit_trail import _reset_audit_init_cache

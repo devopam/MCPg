@@ -73,7 +73,7 @@ def test_resolve_combines_preset_and_raw_bucket() -> None:
 
 
 # ---------------------------------------------------------------------------
-# filter_server_tools — uses a fake FastMCP with the minimum surface.
+# filter_server_tools — uses a fake MCPServer with the minimum surface.
 # ---------------------------------------------------------------------------
 
 
@@ -91,7 +91,7 @@ class _FakeToolManager:
 
 
 class _FakeServer:
-    """Just enough of the FastMCP surface for filter_server_tools."""
+    """Just enough of the MCPServer surface for filter_server_tools."""
 
     def __init__(self, tool_names: list[str]) -> None:
         self._tool_manager = _FakeToolManager(tool_names)

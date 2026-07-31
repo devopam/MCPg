@@ -3,7 +3,7 @@
 from typing import Any
 
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.diagrams import _parse_pk_columns, _sanitize, generate_schema_diagram
@@ -176,7 +176,7 @@ async def test_generate_schema_diagram_tool_is_registered_and_callable() -> None
 
         result = await client.call_tool("generate_schema_diagram", {"schema": "app"})
 
-    assert result.isError is False
+    assert result.is_error is False
     # The wiring should hand the raw Mermaid string straight through; an empty
     # schema still produces the ``erDiagram`` preamble.
     assert result.content[0].text.startswith("erDiagram\n")  # type: ignore[union-attr]
