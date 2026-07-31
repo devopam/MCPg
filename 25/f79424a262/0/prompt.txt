@@ -1,0 +1,81 @@
+<task-notification>
+<task-id>adf67ad640e07a151</task-id>
+<tool-use-id>toolu_01S9FZj9aaNedmZVUbbF8CjE</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\adf67ad640e07a151.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 3 (spec + quality) - high risk" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>### Spec Compliance
+
+✅ **Spec compliant.** All 8 brief steps present and correct; both load-bearing SDK claims independently verified against the installed SDK (source + live execution), not taken on trust.
+
+| Step | Status | Evidence |
+|---|---|---|
+| 1 imports | ✅ | `src/mcpg/server.py:17-18` — `Context, MCPServer` + `CallToolResult, InputRequiredResult`. `ContentBlock`/`Sequence` correctly dropped (grep confirms zero remaining uses in the file) |
+| 2 rename + `__init__` deletion | ✅ | `server.py:40`, old `__init__` gone |
+| 3 `call_tool` signature + `context` passthrough | ✅ | `server.py:69-71`, `server.py:90` |
+| 4 all other refs | ✅ | `__all__:37`, lifespan `:117,:129`, `create_server -&gt; MCPServer[AppContext]`, ctor `:230`. `grep -n FastMCP src/mcpg/server.py` → no matches |
+| 5 drop `host=`/`port=` | ✅ | `server.py:230-234`; empirically `inspect.signature(MCPServer.__init__)` → `has host: False has port: False` |
+| 6 test updates | ✅ | import, isinstance, monkeypatch target, version-handshake comment + assertion |
+| 7 tests pass | ✅ | re-ran: `uv run pytest tests/unit/test_server.py -q` → **8 passed** |
+| 8 commit scoped | ✅ | `git show --stat e431ab9` → exactly `src/mcpg/server.py` + `tests/unit/test_server.py` |
+
+**Extra (judged in-scope, not creep):** two stale docstring `FastMCP`→`MCPServer` fixes (module docstring line 3, `create_server` docstring `:189`) and the `ContentBlock`/`Sequence` import removals. The import removals are *required* by Step 1/3 (the brief explicitly says drop them if unused); the docstrings are same-file, same-symbol, and leaving them would violate the repo's "verify before you write" rule. Correct call.
+
+**Misunderstood:** none.
+
+### Strengths
+
+**1. Exception-propagation claim — verified twice, holds.** This was the silent-failure risk, and it is genuinely safe.
+
+Source chain in the installed SDK:
+- `mcp/server/mcpserver/server.py:498-504` — `MCPServer.call_tool` → `self._tool_manager.call_tool(...)`, no `try`
+- `tools/tool_manager.py:75-87` — no `try`; raises `ToolError` for unknown tools
+- `tools/base.py:173-181` — `Tool.run` re-raises `MCPError` as-is, wraps everything else as `ToolError(...) from e`
+- The `isError` conversion is at `server.py:419-424`, in `_handle_call_tool`, **one layer above** the overridden method — and that layer calls `await self.call_tool(...)` **polymorphically** (`server.py:420`), which also rules out the other silent-failure mode (override bypassed entirely → zero audit events).
+
+Empirical probe (built an `AuditedMCPServer`, registered a raising tool, called through the override):
+```
+INFO     tool=fine status=ok arguments={'x': 1}
+WARNING  tool=boom status=error arguments={'x': 1} error=Error executing tool boom: kaboom
+WARNING  tool=nosuchtool status=error arguments={} error=Unknown tool: nosuchtool
+OK RESULT: CallToolResult False
+RAISED: ToolError Error executing tool boom: kaboom
+in_flight: 0
+```
+Failed calls audit `status="error"`, the exception still propagates, and `finally: in_flight_calls -= 1` balances to 0 on both paths. Rate-limit check, try/except placement, metrics, and `finally` are byte-identical to the pre-image apart from the `context` argument — semantics unchanged.
+
+**2. Version forwarding — verified end-to-end.** `MCPServer.__init__(..., version: str = "")` at `server.py:156` is forwarded to `Server(..., version=version)` at `server.py:199-206`. Live:
+```
+version attr: 9.9.9
+wire: 9.9.9        # _lowlevel_server.create_initialization_options().server_version
+```
+The deleted `__init__` did nothing but `super().__init__()` + the version patch, so its removal is safe; nothing else in `server.py` or at the call site depended on it.
+
+**3. The test-assertion deviation was the right call.** `server._lowlevel_server.create_initialization_options().server_version == __version__` is exactly the payload `run()` feeds the lowlevel server (`SDK server.py:1021-1024`, `1114-1115`), so it traces mcpg's version to the real `initialize` handshake rather than reading back a constructor kwarg. The brief said "e.g.", so no mandate was broken. `MCPServer.version` is merely a property proxying `_lowlevel_server.version` (`SDK server.py:297`) — the weaker form would have tested one hop less. The private-attribute reach is exact parity with the prior test's `_mcp_server`, and there is no public accessor for `create_initialization_options` on `MCPServer`, so no added fragility.
+
+**4. `--no-verify` bypass is justified.** 100% of remaining breakage is outside this diff: `test_server.py` 8/8 pass, `mypy --strict src/mcpg/server.py` → *Success: no issues found*, `ruff check` on both files → *All checks passed*. Every failing/uncollectable test file is broken by its own `from mcp.server.fastmcp import FastMCP` or `mcp.server.fastmcp.FastMCP.call_tool` patch target (`tests/unit/test_about.py:22`, `tests/contract/test_describe_tool.py:18`, `test_mcp_prompts.py:15`, `test_mcp_resources.py:16`, `test_tool_annotations.py:25`, `test_tool_output_schemas.py:35`, `test_tool_surface_snapshot.py:48`, `tests/unit/test_slow_call.py:55,87,115,143`) — none is `server.py`/`test_server.py`.
+
+**5. `host`/`port` drop is fully self-contained.** The one consumer reads them off its own settings param, not off the server object: `src/mcpg/http_runtime.py:680` → `uvicorn.run(app, host=settings.http_host, port=settings.http_port, ...)`, and `server.py:257-277` passes `settings` into `run_http`. No FastMCP-1.x-style `server.settings.host` reads anywhere. Nothing was orphaned by removing the kwargs.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None in this diff. One cross-task tracking item, already flagged by the implementer and confirmed accurate:
+
+- **`tests/unit/test_slow_call.py` is the only automated coverage of this method's error-audit and slow-call paths, and it is currently dead** (`patch("mcp.server.fastmcp.FastMCP.call_tool", ...)` at lines 55/87/115/143 → `AttributeError: module 'mcp.server' has no attribute 'fastmcp'`). Out of this task's file scope (Task 7 owns it), so not a defect here — but it means the highest-risk method in the migration currently has no regression net beyond `test_server.py`'s 8 tests, which don't touch `call_tool`. Patch target should become `mcp.server.mcpserver.MCPServer.call_tool`. My manual probe covers the behavior for now.
+
+#### Minor (Nice to Have)
+- **`InputRequiredResult` is audited as a completed success — new surface created by exactly this return-type change.** `Tool.run` can return an `InputRequiredResult` (`base.py:146-149`) and `convert_result` passes it through unchanged (`func_metadata.py:124-125`), so `super().call_tool` can now return "this call is *not* finished." The wrapper unconditionally records `status="ok"` + `metrics.record_call(name, "ok", duration)` (`server.py:99-100`), then records a *second* event when the client retries with answers. This type did not exist in mcp 1.x. It matters more than ordinary telemetry drift because this repo ships `verify_audit_chain` / `list_audit_events` / `prune_audit_events` — the audit log is a tamper-evident product artifact, so an incomplete call logged as a completed success plus double-counting corrupts that record. **Unreachable at HEAD** — `grep -rn "InputRequiredResult\|Resolve(" src/mcpg/` returns only `server.py:18` and `server.py:71` (the import and the annotation), no producers — hence Minor today. The brief mandated leaving the body unchanged, so this is not a defect of the implementation. **Flagging it as a named blocking prerequisite for Task 6 (the elicitation gate):** the moment any tool returns `InputRequiredResult`, `call_tool` must branch on it before auditing.
+- `test_create_server_returns_named_fastmcp` (`tests/unit/test_server.py:21`) retains "fastmcp" in its name. Cosmetic; implementer flagged it deliberately to keep the diff tight.
+- Report hygiene: the report's `--stat` quotes `tests/unit/test_server.py | 15 +++--` but the committed diff is 12 — stale intermediate figure, no code impact.
+
+### Assessment
+**Task quality:** Approved
+
+**Reasoning:** Every brief step is implemented correctly, and both factual SDK claims the plan rested on — exception propagation through `MCPServer.call_tool`/`ToolManager.call_tool`/`Tool.run` with `isError` conversion happening only in the un-overridden `_handle_call_tool`, and automatic `version` forwarding to the wire-level `create_initialization_options()` — are confirmed by SDK source *and* live execution, including a probe showing failed calls audit `status="error"` with `in_flight_calls` balancing to 0. The only new-behavior gap (`InputRequiredResult` audited as `ok`) is unreachable at HEAD and belongs to Task 6's elicitation gate.</result>
+<usage><subagent_tokens>76580</subagent_tokens><tool_uses>24</tool_uses><duration_ms>364052</duration_ms></usage>
+</task-notification>
