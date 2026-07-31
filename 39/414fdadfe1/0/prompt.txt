@@ -1,0 +1,256 @@
+Review this change for security vulnerabilities.
+
+Changed files (you may Read these and any other file in the repo):
+  - benchmarks/tokens/tier_b/agent.py
+  - benchmarks/tokens/tier_b/runner.py
+  - benchmarks/tokens/tier_b/schema.py
+  - benchmarks/tokens/tier_b/tasks.py
+  - tests/unit/test_bench_tier_b.py
+
+Unified diff (only + lines are new):
+
+=== DIFF: benchmarks/tokens/tier_b/agent.py ===
+@@ -59,6 +59,22 @@ def _tool_result_text(result: Any) -> str:
+     return "\n".join(getattr(b, "text", "") for b in blocks) or "(no output)"
+ 
+ 
++# Tools that make their own internal LLM call, separate from the outer agent
++# loop this file drives — that internal call's tokens are otherwise invisible
++# to this study (they never pass through model.complete()). translate_nl_to_sql
++# is the only one today; it reports usage via TranslationResult.tokens_in/out
++# (see src/mcpg/nl2sql.py), surfaced here in the tool result's structuredContent.
++_TOOLS_WITH_HIDDEN_LLM_COST = {"translate_nl_to_sql"}
++
++
++def _hidden_tokens(tool_name: str, result: Any) -> tuple[int, int]:
++    """The tokens ``tool_name``'s own internal LLM call spent, or (0, 0)."""
++    if tool_name not in _TOOLS_WITH_HIDDEN_LLM_COST:
++        return 0, 0
++    structured = getattr(result, "structuredContent", None) or {}
++    return int(structured.get("tokens_in") or 0), int(structured.get("tokens_out") or 0)
++
++
+ async def run_trial(
+     task: Task,
+     *,
+@@ -74,6 +90,7 @@ async def run_trial(
+     tools = _anthropic_tools(listed.tools, allowed_tools)
+     messages: list[dict[str, Any]] = [{"role": "user", "content": task.prompt}]
+     tokens_in = tokens_out = turns = tool_calls = 0
++    hidden_tokens_in = hidden_tokens_out = 0
+     final = ""
+     try:
+         for _ in range(max_turns):
+@@ -88,6 +105,9 @@ async def run_trial(
+                 for tu in tool_uses:
+                     tool_calls += 1
+                     out = await session.call_tool(tu["name"], tu.get("input") or {})
++                    hin, hout = _hidden_tokens(tu["name"], out)
++                    hidden_tokens_in += hin
++                    hidden_tokens_out += hout
+                     results.append({"type": "tool_result", "tool_use_id": tu["id"], "content": _tool_result_text(out)})
+                 messages.append({"role": "user", "content": results})
+             else:
+@@ -103,6 +123,8 @@ async def run_trial(
+             tool_calls=tool_calls,
+             passed=task.grade(final),
+             final_answer=final,
++            hidden_tokens_in=hidden_tokens_in,
++            hidden_tokens_out=hidden_tokens_out,
+         )
+     except Exception as exc:
+         return TrialResult(
+@@ -116,4 +138,6 @@ async def run_trial(
+             passed=False,
+             final_answer=final,
+             error=str(exc),
++            hidden_tokens_in=hidden_tokens_in,
++            hidden_tokens_out=hidden_tokens_out,
+         )
+
+
+=== DIFF: benchmarks/tokens/tier_b/runner.py ===
+@@ -54,6 +54,7 @@ _DEFAULT_MCPG_TOOLS = [
+     "recommend_indexes",
+     "find_sensitive_columns",
+     "audit_database",
++    "translate_nl_to_sql",
+ ]
+ _READ_TIMEOUT = timedelta(seconds=60)
+ 
+
+
+=== DIFF: benchmarks/tokens/tier_b/schema.py ===
+@@ -31,10 +31,17 @@ class TrialResult:
+     passed: bool
+     final_answer: str
+     error: str | None = None
++    # translate_nl_to_sql makes its own internal LLM call, invisible to the
++    # outer agent loop's own tokens_in/tokens_out above — this is that call's
++    # cost, folded in separately so the writeup can show both the outer-loop
++    # total and the internal-call breakdown. 0 for any trial that never calls
++    # it (including every baseline-arm trial, which doesn't have the tool).
++    hidden_tokens_in: int = 0
++    hidden_tokens_out: int = 0
+ 
+     @property
+     def total_tokens(self) -> int:
+-        return self.tokens_in + self.tokens_out
++        return self.tokens_in + self.tokens_out + self.hidden_tokens_in + self.hidden_tokens_out
+ 
+ 
+ @dataclass(frozen=True)
+
+
+=== DIFF: benchmarks/tokens/tier_b/tasks.py ===
+@@ -1,23 +1,35 @@
+ """The Tier-B task set — database questions with **known-correct answers**.
+ 
+-Each task is a question an agent answers by exploring the database, graded
+-deterministically against the flaws the demo dataset (``mcpg --demo``) plants on
+-purpose. That makes correctness checkable without a human or an LLM judge:
++Two kinds of task, both graded deterministically (no human or LLM judge):
++
++**Planted-flaw audit tasks** (``missing_index``, ``pii_columns``,
++``naming_violation``) — the demo dataset (``mcpg --demo``) plants these on
++purpose:
+ 
+ - ``orders.customer_id`` is a foreign key with **no covering index** (the other
+   FKs are indexed, so this one is a real finding).
+ - ``customers.email`` / ``customers.phone`` are **PII**.
+ - ``reviews."reviewSource"`` is a deliberate **camelCase naming** violation.
+ 
+-The point of the study: MCPg's purpose-built advisors (index / sensitive-column
+-/ naming) answer these in roughly one tool call, while a bare ``run_select``
+-agent must run many exploratory queries and interpret raw rows itself — so the
+-two arms diverge on tokens, tool-calls, and turns while (ideally) both reaching
+-the same correct answer.
+-
+-Graders are pure and case-insensitive, matching on the identifying tokens of the
+-planted finding. They are intentionally lenient about prose and strict about the
+-identifiers that constitute a correct answer.
++MCPg's purpose-built advisors (index / sensitive-column / naming) answer these
++in roughly one tool call, while a bare ``run_select`` agent must run many
++exploratory queries and interpret raw rows itself.
++
++**Analytical NL→SQL tasks** (``top_revenue_category``,
++``top_customer_lifetime_spend``) — plain-English business questions requiring
++a real multi-table join + aggregation to answer correctly, not a lookup.
++Ground truth was computed directly against the live demo dataset (not
++asserted from memory) and each has a clear, unambiguous margin over the
++runner-up so an approximately-right answer still passes and a wrong one still
++fails. These exercise MCPg's actual NL→SQL tool (``translate_nl_to_sql``) and
++are more likely than the audit tasks to provoke a wrong first SQL attempt —
++the baseline arm has no tool for this beyond raw ``run_select``.
++
++Across both kinds, the two arms diverge on tokens, tool-calls, and turns while
++(ideally) both reaching the same correct answer. Graders are pure and
++case-insensitive, matching on the identifying tokens of the correct answer.
++They are intentionally lenient about prose and strict about the identifiers
++that constitute a correct answer.
+ """
+ 
+ from __future__ import annotations
+@@ -85,4 +97,22 @@ def default_tasks() -> list[Task]:
+             grade=lambda a: "reviewsource" in _norm(a),
+             ideal_tools=("audit_database",),
+         ),
++        Task(
++            id="top_revenue_category",
++            prompt="Which product category generated the most revenue overall? Name the category.",
++            # Verified against the live demo dataset: "Home" leads at 95.6M
++            # cents vs. the runner-up Computing's 80.4M — a clear margin, not
++            # a close call sensitive to rounding.
++            grade=lambda a: "home" in _norm(a),
++            ideal_tools=("translate_nl_to_sql", "run_select"),
++        ),
++        Task(
++            id="top_customer_lifetime_spend",
++            prompt="Who is our single highest-spending customer by total lifetime order value? Give their name.",
++            # Verified against the live demo dataset: Liam Okafor
++            # (customer_id 1) leads at 12.85M cents vs. the runner-up's
++            # 6.25M — more than double, not a close call.
++            grade=lambda a: "liam" in _norm(a) and "okafor" in _norm(a),
++            ideal_tools=("translate_nl_to_sql", "run_select"),
++        ),
+     ]
+
+
+=== DIFF: tests/unit/test_bench_tier_b.py ===
+@@ -9,6 +9,7 @@ from __future__ import annotations
+ 
+ import pytest
+ 
++from benchmarks.tokens.tier_b.agent import _hidden_tokens
+ from benchmarks.tokens.tier_b.schema import ARM_BASELINE, ARM_MCPG, TrialResult, aggregate
+ from benchmarks.tokens.tier_b.tasks import default_tasks
+ 
+@@ -90,3 +91,65 @@ def test_aggregate_empty_is_safe() -> None:
+     agg = aggregate([])
+     assert agg["token_ratio"] == 0.0
+     assert agg["mcpg"]["trials"] == 0
++
++
++def test_total_tokens_includes_hidden_tokens() -> None:
++    """translate_nl_to_sql's internal LLM call is invisible to the outer
++    agent loop's own tokens_in/tokens_out — total_tokens must still count it,
++    or the study would silently underweight MCPg's true cost."""
++    trial = TrialResult(
++        task_id="a",
++        arm=ARM_MCPG,
++        trial=0,
++        tokens_in=1000,
++        tokens_out=200,
++        turns=2,
++        tool_calls=1,
++        passed=True,
++        final_answer="",
++        hidden_tokens_in=300,
++        hidden_tokens_out=50,
++    )
++    assert trial.total_tokens == 1550
++
++
++def test_total_tokens_defaults_hidden_to_zero_when_unset() -> None:
++    """A trial that never calls translate_nl_to_sql (e.g. every baseline
++    trial, which doesn't have the tool at all) must not be penalized or
++    inflated — hidden tokens default to 0."""
++    trial = TrialResult(
++        task_id="a",
++        arm=ARM_BASELINE,
++        trial=0,
++        tokens_in=1000,
++        tokens_out=200,
++        turns=2,
++        tool_calls=1,
++        passed=True,
++        final_answer="",
++    )
++    assert trial.hidden_tokens_in == 0
++    assert trial.hidden_tokens_out == 0
++    assert trial.total_tokens == 1200
++
++
++class _FakeToolResult:
++    def __init__(self, structured: dict[str, object] | None) -> None:
++        self.structuredContent = structured
++
++
++def test_hidden_tokens_reads_translate_nl_to_sql_structured_content() -> None:
++    result = _FakeToolResult({"tokens_in": 42, "tokens_out": 17, "sql": "SELECT 1"})
++    assert _hidden_tokens("translate_nl_to_sql", result) == (42, 17)
++
++
++def test_hidden_tokens_ignores_other_tools() -> None:
++    """A tool that isn't known to make its own internal LLM call must never
++    contribute hidden tokens, even if its result happens to have similarly
++    named fields — only the documented allowlist counts."""
++    result = _FakeToolResult({"tokens_in": 999, "tokens_out": 999})
++    assert _hidden_tokens("run_select", result) == (0, 0)
++
++
++def test_hidden_tokens_defaults_to_zero_on_missing_structured_content() -> None:
++    assert _hidden_tokens("translate_nl_to_sql", _FakeToolResult(None)) == (0, 0)
+
+
+Investigate per the method in your instructions, then return the findings list.
