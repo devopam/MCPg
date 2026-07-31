@@ -1,0 +1,1 @@
+please let me know your thoughts - will it help if we use a local instance of postgresql instead of running it in a docker ?
