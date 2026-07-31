@@ -1,0 +1,40 @@
+<task-notification>
+<task-id>aedbe8d58c54b96f6</task-id>
+<tool-use-id>toolu_01UWYvgJYE9Zgabvn35bWZup</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\aedbe8d58c54b96f6.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 4 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Only one `port=` usage in the file, and it's the pre-existing, unchanged `uvicorn.run` call — no stray `port=` kwarg passed to either app-builder method. mypy confirms no type errors (which would have caught an invalid kwarg against the SDK's typed signature).
+
+All verifications are consistent with the report. I have enough evidence to write the final review.
+
+### Spec Compliance
+- ✅ Spec compliant: `host`/`port` passed correctly per the **actual** installed SDK signature (brief's own assumption was wrong; implementer's deviation is verified correct)
+- ⚠️ Cannot verify from diff (but independently confirmed via live checks, not just the diff): SDK signature and hook-failure scope — see evidence below
+
+### Strengths
+- Independently re-verified the load-bearing claim: `uv run python -c "import inspect; from mcp.server.mcpserver import MCPServer; print(inspect.signature(MCPServer.streamable_http_app)); print(inspect.signature(MCPServer.sse_app))"` on this checkout confirms both methods take `host: str = '127.0.0.1'` and **neither** takes `port`. `importlib.metadata.version('mcp')` confirms `2.0.0` is installed. The implementer's report and commit message state this accurately; the fix (`src/mcpg/http_runtime.py:39-46` in the diff, i.e. lines ~545-548 post-patch) correctly passes only `host=settings.http_host` to both `streamable_http_app()` and `sse_app()`.
+- `port` is not lost: `src/mcpg/http_runtime.py:692` (`uvicorn.run(app, host=settings.http_host, port=settings.http_port, **tls_kwargs)`), untouched by this diff, is the actual socket-bind path and is exercised by the pre-existing `test_run_http_builds_app_and_serves_via_uvicorn`, which still passes.
+- Stub-count claim verified exactly: `grep -c` on the diff finds 15 `streamable_http_app(self) -&gt; Starlette:` stub signatures and 2 `sse_app(self) -&gt; Starlette:` stub signatures changed, totaling 17 as claimed. This is not scope creep — `build_http_app` now unconditionally calls `server.streamable_http_app(host=...)` / `server.sse_app(host=...)`, so any zero-arg stub would hard-fail with `TypeError: ...() got an unexpected keyword argument 'host'`. Ran `uv run pytest tests/unit/test_http_runtime.py -q` myself: **61 passed**, confirming all 17 updated stubs plus the 2 new tests are consistent.
+- `--no-verify` bypass justified: `grep -c create_connected_server_and_client_session tests/unit/test_http_runtime.py` → no matches — this file is not among the 50 files with the mcp-1.x import breakage the report attributes to Task 7. `uv run mypy src/mcpg/http_runtime.py` → clean, independently confirming the file isn't part of the 9 pre-existing tenancy.py/tools.py errors either.
+- No stray/incorrect `port=` kwarg on either app-builder call: `grep port= src/mcpg/http_runtime.py` shows the only occurrence is the pre-existing `uvicorn.run` line; mypy (which type-checks against the SDK's actual typed signatures) reports zero issues, which would have caught a bad kwarg.
+- New tests are structurally sound as regression tests: pre-fix code (`server.streamable_http_app()`, `server.sse_app()`, no args) would raise `TypeError` against a stub whose `host` parameter has no default (as the new tests' stubs define it), which matches the report's stated `git stash` failure-mode evidence.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+- The report's Step 3 evidence (git stash / pop cycle) is asserted narratively rather than pasted as raw command transcript in the report; I did not re-run the stash cycle myself since it would mutate tracked state contrary to my read-only mandate, but the claimed failure mode (`TypeError: ..._Stub.sse_app() missing 1 required keyword-only argument: 'host'`) is exactly what the test/stub code in the diff implies would happen given a reverted `http_runtime.py`, so this is a low-risk gap, not a red flag.
+- The brief's suggested test name (`test_build_http_app_passes_configured_host_to_streamable_http_app`) was kept, but the brief's illustrative snippet asserting `port` was correctly dropped rather than left in place as dead/failing code — worth noting only because a less careful implementation might have left a `captured["port"]` assertion in the stub for symmetry and had it silently never execute (it wasn't left in, so this is not an actual issue, just a thing I checked for).
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** The brief's own premise about the SDK signature was wrong, and I independently reproduced the correct signature against the installed mcp 2.0.0 package myself — the implementer's deviation is accurate, not a rationalization. `port` demonstrably still reaches uvicorn via the untouched `run_http` call. The 17-stub update count is exactly verified against the diff and necessitated by the unconditional `host=` kwarg now being passed. The `--no-verify` bypass is justified: neither `http_runtime.py` nor `test_http_runtime.py` appears in the reported hook-failure scope, confirmed independently via grep and a clean `mypy`/`pytest` run on just this task's files.</result>
+<usage><subagent_tokens>62394</subagent_tokens><tool_uses>12</tool_uses><duration_ms>70418</duration_ms></usage>
+</task-notification>
