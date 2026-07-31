@@ -542,10 +542,22 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
     """
     from starlette.routing import Route
 
+    # NOTE: the actually-installed mcp 2.0.0 SDK's ``streamable_http_app``/
+    # ``sse_app`` only accept a ``host`` kwarg — NOT ``port`` — despite the
+    # migration plan's assumption that ``streamable_http_app`` took both
+    # (verified via ``inspect.signature`` against
+    # ``mcp.server.mcpserver.server.MCPServer`` before writing this; see
+    # task-4-report.md). ``host`` alone drives whether the SDK auto-enables
+    # DNS-rebinding protection scoped to localhost (``sse_app``/
+    # ``streamable_http_app`` treat ``127.0.0.1``/``localhost``/``::1``
+    # specially) — passing the configured host, rather than relying on the
+    # SDK's ``"127.0.0.1"`` default, is what actually fixes the regression:
+    # without it, binding to e.g. ``0.0.0.0`` would still get the
+    # localhost-only transport-security defaults baked in.
     if kind == "streamable-http":
-        app = server.streamable_http_app()  # type: ignore[attr-defined]
+        app = server.streamable_http_app(host=settings.http_host)  # type: ignore[attr-defined]
     elif kind == "sse":
-        app = server.sse_app()  # type: ignore[attr-defined]
+        app = server.sse_app(host=settings.http_host)  # type: ignore[attr-defined]
     else:
         raise ValueError(f"unknown HTTP transport kind: {kind!r}")
 

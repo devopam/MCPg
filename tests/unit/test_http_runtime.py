@@ -157,10 +157,10 @@ def test_build_http_app_rejects_unknown_kind() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
-        def sse_app(self) -> Starlette:
+        def sse_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     with pytest.raises(ValueError, match="unknown HTTP transport kind"):
@@ -174,7 +174,7 @@ def test_build_http_app_serves_metrics_with_observability_payload() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
@@ -190,7 +190,7 @@ def test_build_http_app_serves_healthz_unauthenticated() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
@@ -209,7 +209,7 @@ def test_build_http_app_with_token_blocks_unauthenticated_requests() -> None:
     )
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
@@ -390,7 +390,7 @@ def test_build_http_app_with_tenant_role_returns_403_for_unknown_role() -> None:
     )
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
@@ -424,7 +424,7 @@ def test_build_http_app_in_oidc_mode_installs_the_oidc_middleware() -> None:
     )
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
@@ -445,7 +445,7 @@ def test_build_http_app_in_oidc_mode_blocks_requests_without_a_valid_jwt() -> No
     )
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
@@ -512,7 +512,7 @@ def test_cors_middleware_integration() -> None:
     )
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
@@ -601,7 +601,7 @@ def test_cors_middleware_negative_and_default_config() -> None:
     )
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     wrapped_empty = build_http_app(_Stub(), settings_empty, kind="streamable-http")
@@ -796,11 +796,71 @@ async def test_oidc_middleware_returns_401_on_verification_failure() -> None:
 # --- build_http_app SSE branch + run_http -----------------------------------
 
 
+def test_build_http_app_passes_configured_host_to_streamable_http_app() -> None:
+    """Regression test: MCPServer.streamable_http_app() moved ``host`` off
+    the constructor and onto this method in mcp 2.0. If build_http_app ever
+    goes back to calling it with no arguments, the SDK silently falls back
+    to its own ``host="127.0.0.1"`` default, and the DNS-rebinding /
+    transport-security settings it auto-derives from that host would no
+    longer match MCPG_HTTP_HOST.
+
+    Note: the installed mcp 2.0.0 SDK's ``streamable_http_app`` takes only
+    ``host`` — no ``port`` — despite the migration plan text assuming both;
+    verified via ``inspect.signature`` against the installed
+    ``mcp.server.mcpserver.server.MCPServer`` (see task-4-report.md), so
+    this test (and the fix) only exercises ``host``.
+    """
+    from mcpg import http_runtime
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_HOST": "0.0.0.0",
+            "MCPG_HTTP_PORT": "9999",
+        }
+    )
+
+    captured: dict[str, object] = {}
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str) -> Starlette:
+            captured["host"] = host
+            return _bare_app()
+
+    http_runtime.build_http_app(_Stub(), settings, kind="streamable-http")
+
+    assert captured["host"] == "0.0.0.0"
+
+
+def test_build_http_app_passes_configured_host_to_sse_app() -> None:
+    """Same regression, ``sse`` transport kind."""
+    from mcpg import http_runtime
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_HOST": "0.0.0.0",
+            "MCPG_HTTP_PORT": "9999",
+        }
+    )
+
+    captured: dict[str, object] = {}
+
+    class _Stub:
+        def sse_app(self, *, host: str) -> Starlette:
+            captured["host"] = host
+            return _bare_app()
+
+    http_runtime.build_http_app(_Stub(), settings, kind="sse")
+
+    assert captured["host"] == "0.0.0.0"
+
+
 def test_build_http_app_supports_sse_kind() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
     class _Stub:
-        def sse_app(self) -> Starlette:
+        def sse_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     app = build_http_app(_Stub(), settings, kind="sse")
@@ -835,7 +895,7 @@ def test_run_http_builds_app_and_serves_via_uvicorn(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(uvicorn, "run", _fake_run)
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     http_runtime.run_http(_Stub(), settings, kind="streamable-http")
@@ -886,7 +946,7 @@ def test_run_http_falls_back_to_private_policy_name_when_public_name_raises(
     monkeypatch.setattr(asyncio, "set_event_loop_policy", lambda policy: policy_calls.append(policy))
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     http_runtime.run_http(_Stub(), settings, kind="streamable-http")
@@ -930,7 +990,7 @@ def test_run_http_pins_selector_loop_on_windows(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(asyncio, "set_event_loop_policy", lambda policy: policy_calls.append(policy))
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     http_runtime.run_http(_Stub(), settings, kind="streamable-http")
@@ -961,7 +1021,7 @@ def test_run_http_leaves_the_event_loop_alone_off_windows(monkeypatch: pytest.Mo
     monkeypatch.setattr(asyncio, "set_event_loop_policy", lambda policy: policy_calls.append(policy))
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     http_runtime.run_http(_Stub(), settings, kind="streamable-http")
@@ -1228,7 +1288,7 @@ def test_build_http_app_installs_request_timeout_only_when_positive() -> None:
     base = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"}
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     # Disabled (default 0): no timeout middleware in the stack.
@@ -1387,7 +1447,7 @@ def test_build_http_app_installs_ip_allowlist_only_when_configured() -> None:
     base = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"}
 
     class _Stub:
-        def streamable_http_app(self) -> Starlette:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
             return _bare_app()
 
     # No allowlist → no middleware.
