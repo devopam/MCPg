@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bb0obdwet</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\abfe81ad-87d9-4907-8001-dbc64cd87ee3\tasks\bb0obdwet.output</output-file>
+<status>completed</status>
+<summary>Background command "Run Tier-B agent-loop token study (costed, calls real model)" completed (exit code 0)</summary>
+</task-notification>
