@@ -1,0 +1,47 @@
+<task-notification>
+<task-id>a943bd9ed55c40240</task-id>
+<tool-use-id>toolu_01EWVmxqpN5EdEJQ7URuKUDK</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\a943bd9ed55c40240.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 2 (spec + quality)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: the plan's Task 3 spec (line 238) explicitly renames the class to `class AuditedMCPServer(MCPServer[AppContext]):`. The `observability.py:27` docstring's forward-reference to `mcpg.server.AuditedMCPServer` correctly anticipates that name — not a dangling/guessed reference.
+
+Also confirmed `MCPServer` is `Generic[LifespanResultT]` (single type param), matching all 63 `MCPServer[AppContext]` sites.
+
+### Spec Compliance
+- ✅ Spec compliant
+
+**Verification performed:**
+- `grep -c '^-.*FastMCP\[AppContext\]'` / `'^+.*MCPServer\[AppContext\]'` on the diff → 63/63, confirming the exact count and 1:1 conversion (not just implementer's self-report).
+- Diff stat confirms exactly the 9 named files touched, nothing else (`server.py`/`tenancy.py` absent from the file list).
+- tools.py:14-15 → single line `from mcp.server.mcpserver import Context, MCPServer` (diff line 385); `ServerSession` import (diff line 384) and its only use site (diff line 408, old `_Ctx`) both removed together — `grep -n 'ServerSession'` on the diff shows both occurrences only on `-` lines, none remaining.
+- tools.py:102 → `_Ctx = Context[AppContext, Any]` (diff line 410). Checked against the installed SDK (`mcp` 2.0.0, `.venv/Lib/site-packages/mcp/server/mcpserver/context.py:32`): `class Context(BaseModel, Generic[LifespanContextT, RequestT])` — exactly 2 type params, ordered lifespan-context-then-request-type. The rewrite's arity and parameter order are correct, not just plausible.
+- `MCPServer[AppContext]` arity checked against `.venv/Lib/site-packages/mcp/server/mcpserver/server.py:147`: `class MCPServer(Generic[LifespanResultT])` — single type param, matching all 63 rewritten sites.
+- `from mcp.server.mcpserver import Context, MCPServer` checked against the package's actual `__init__.py` exports (`__all__` includes `"MCPServer"`, `"Context"`) — the import is valid, not a guess.
+- `__init__.py:10`'s new module path `mcp.server.mcpserver.utilities.func_metadata` verified to exist on disk in the installed package.
+- Per-file line-count tally against the brief: session_intent.py (5 edits: import, `server: MCPServer` param, 3 prose spots matching brief's `44,152` + `10,19,166`), http_runtime.py (4, matching `3,531,534,617`), observability.py (2, matching `27,122`), multidb.py/prompts.py/pg_search.py/pg19_ddl.py/__init__.py (1 each) — all present and accounted for in the diff.
+
+### Strengths
+- Mechanical discipline: stat header shows 85 insertions / 86 deletions (net −1, exactly the two-import-lines-collapsing-to-one), and zero `FastMCP`/`fastmcp` remains in any `+` line or any unchanged context line across the whole diff — strong evidence no extra logic rode along with the rename.
+- The one genuinely semantic edit (`_Ctx` 3-param → 2-param) is correct by direct arity check against the installed SDK, not just asserted.
+- `observability.py:27`'s forward-reference to `mcpg.server.AuditedMCPServer` (a class that doesn't exist until Task 3 lands) is verified correct against the plan document (`docs/superpowers/plans/2026-07-30-mcp-2.0-migration.md:238`), which names the target class exactly that.
+- Correctly left `tenancy.py` untouched despite the brief's own inventory being wrong about it — flagged the gap for Task 5 rather than silently expanding scope or silently ignoring it.
+- The `--no-verify` bypass is justified: the 8 tools.py mypy errors (`ToolAnnotations`/`Tool` camelCase-vs-snake_case) are all in code this task's diff never touches as `+`/`-` lines — diff lines 1890-1897 (`derived["readOnlyHint"]`, `existing.destructiveHint`, `existing.openWorldHint`) appear only as unchanged context, proving those errors pre-date this commit and aren't a new regression introduced here.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+- `http_runtime.py:534` (diff line 80): "A ``MCPServer`` instance." should be "An ``MCPServer``..." — the line above (diff line 76) correctly changed "Wrap a FastMCP" → "Wrap an MCPServer", so the article usage is inconsistent between the two adjacent lines. Purely cosmetic docstring nit.
+
+### Assessment
+**Task quality:** Approved
+**Reasoning:** All 63 `FastMCP[AppContext]` → `MCPServer[AppContext]` rewrites verified by direct diff count, the `_Ctx` alias change verified correct against the installed SDK's actual generic arity, scope held exactly to the 9 named files, prose rewordings stayed factually accurate (including a correct forward-reference to a not-yet-created Task 3 class), and the `--no-verify` bypass introduced no new code-quality regression. Only a one-word grammar nit remains.</result>
+<usage><subagent_tokens>103744</subagent_tokens><tool_uses>19</tool_uses><duration_ms>189228</duration_ms></usage>
+</task-notification>
