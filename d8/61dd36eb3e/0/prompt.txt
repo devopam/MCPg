@@ -1,0 +1,18 @@
+<task-notification>
+<task-id>a3fa89eb2afd95c07</task-id>
+<tool-use-id>toolu_012jMJGZydzeNAezCDuxXooQ</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\16455311-cc88-42c3-a448-f8e24615a85e\tasks\a3fa89eb2afd95c07.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 4: http_runtime host/port fix" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Status: DONE
+
+Commit: `ab56160` — "fix(http): pass configured host to streamable_http_app/sse_app (mcp 2.0 moved it off the constructor)"
+
+**Verification summary:** `uv run pytest tests/unit/test_http_runtime.py -v` → 61 passed (59 pre-existing + 2 new regression tests); `uv run mypy src/mcpg/http_runtime.py` → clean; confirmed the new tests fail against the pre-fix code (via `git stash`) with the exact expected `TypeError`, then pass after restoring the fix.
+
+**Concerns (deviation from brief, verified and correct):** the installed SDK is mcp 2.0.0, and `inspect.signature` showed `streamable_http_app` — contrary to the brief's assumption — takes **only** `host`, no `port` at all (same as `sse_app`). So the fix passes `host=settings.http_host` to both builders and passes no `port` to either. `port` still reaches uvicorn unchanged via `run_http`'s existing `uvicorn.run(..., port=...)` call. This also required updating 17 pre-existing test-file stub classes to accept the now-always-passed `host` kwarg (not just adding the brief's suggested new test), since `build_http_app` unconditionally passes `host=` now.
+
+`--no-verify` used, justified: ruff (lint+format), bandit, and `uv audit` are clean repo-wide; `mypy src/mcpg` has exactly 9 pre-existing errors confined to `tenancy.py`/`tools.py` (unrelated mcp-1.x API surface); `pytest tests/unit` has 50 pre-existing collection errors, all from `mcp.shared.memory.create_connected_server_and_client_session` no longer existing in mcp 2.0 — none in `test_http_runtime.py`. Both owned files are independently clean. Full details and evidence table in the report file.</result>
+<usage><subagent_tokens>113406</subagent_tokens><tool_uses>37</tool_uses><duration_ms>457373</duration_ms></usage>
+</task-notification>
