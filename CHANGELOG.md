@@ -51,7 +51,7 @@ adheres to [Semantic Versioning](https://semver.org/).
   simplification that makes `current_role` reliably authoritative on every
   transport (previously only guaranteed on stdio). Zero changes to any of
   the 254 tool registration call sites. See
-  `docs/superpowers/plans/2026-07-30-mcp-2.0-migration.md` for the full
+  `docs/plans/mcp-2.0-migration.md` for the full
   rationale.
 
 ### Added

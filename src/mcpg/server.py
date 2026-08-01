@@ -84,6 +84,14 @@ class AuditedMCPServer(MCPServer[AppContext]):
     ) -> CallToolResult | InputRequiredResult:
         self.in_flight_calls += 1
         try:
+            metrics = get_metrics()
+            # Resolve the capability bucket once per call so both the
+            # OTel span attribute and the Prometheus counter carry the
+            # same label. `classify_tool` returns None for tools that
+            # don't match any override / pattern — defensively use
+            # "unknown" so the label dimension stays cardinality-stable.
+            bucket = about.classify_tool(name) or "unknown"
+
             # Enforce rate limiting if configured
             if hasattr(self, "rate_limiter"):
                 allowed = await self.rate_limiter.consume(name)
@@ -109,11 +117,32 @@ class AuditedMCPServer(MCPServer[AppContext]):
                     capabilities = context.client_capabilities
                     supports_elicitation = capabilities is not None and capabilities.elicitation is not None
                     if supports_elicitation:
+                        # Timestamp taken here (not shared with the tool-body
+                        # `start` timer below, which is never set on this
+                        # path) so a denied call's duration includes the
+                        # elicitation round-trip. Scoped to this branch only —
+                        # it must not add an extra `time.monotonic()` call to
+                        # every invocation, since other tests (test_slow_call.py)
+                        # patch `time.monotonic` with a fixed-length side_effect
+                        # list sized to the normal (non-gated) call path.
+                        gate_start = time.monotonic()
                         confirmation = await context.elicit(
                             f"{name!r} will modify the database. Proceed?",
                             _ConfirmMutation,
                         )
                         if confirmation.action != "accept" or not confirmation.data.confirm:
+                            # Declined/cancelled writes never reach the
+                            # normal audit.record()/metrics.record_call()
+                            # calls below (the tool body never runs) — record
+                            # an equivalent event here so a denied write is
+                            # never invisible to the audit log or
+                            # render_prometheus(). Deliberately does not call
+                            # `self._log_if_slow` — the tool body never ran,
+                            # so a "slow call" warning here would be
+                            # measuring user think-time, not tool latency.
+                            denied_duration = time.monotonic() - gate_start
+                            audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="denied"))
+                            metrics.record_call(name, "denied", denied_duration, bucket=bucket)
                             return CallToolResult(
                                 content=[
                                     TextContent(
@@ -124,13 +153,6 @@ class AuditedMCPServer(MCPServer[AppContext]):
                                 is_error=True,
                             )
 
-            metrics = get_metrics()
-            # Resolve the capability bucket once per call so both the
-            # OTel span attribute and the Prometheus counter carry the
-            # same label. `classify_tool` returns None for tools that
-            # don't match any override / pattern — defensively use
-            # "unknown" so the label dimension stays cardinality-stable.
-            bucket = about.classify_tool(name) or "unknown"
             start = time.monotonic()
             try:
                 with tool_span(self.otel_tracer, name, arguments, bucket=bucket):

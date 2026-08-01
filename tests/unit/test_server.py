@@ -8,10 +8,12 @@ from mcp.server.elicitation import AcceptedElicitation, CancelledElicitation, De
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ClientCapabilities, ElicitationCapability, ToolAnnotations
 
+import mcpg.server as server_mod
 from mcpg.config import Settings, Transport, load_settings
 from mcpg.cursors import CursorManager
 from mcpg.database import Database
 from mcpg.listen import ListenManager
+from mcpg.observability import get_metrics
 from mcpg.server import SERVER_NAME, AppContext, _ConfirmMutation, create_server, make_lifespan, run
 
 _DB_URL = "postgresql://u:p@localhost/db"
@@ -22,11 +24,27 @@ def _settings_with(transport: Transport) -> Settings:
     return load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_TRANSPORT": transport.value})
 
 
-def test_create_server_returns_named_fastmcp() -> None:
+def test_create_server_returns_named_mcpserver() -> None:
     server = create_server(_SETTINGS)
 
     assert isinstance(server, MCPServer)
     assert server.name == SERVER_NAME
+
+
+def test_create_server_registers_tenant_role_context_middleware() -> None:
+    # Guards against silently regressing multi-tenancy to static-default-only
+    # if the `middleware=[TenantRoleContextMiddleware()]` kwarg is ever
+    # dropped from `AuditedMCPServer(...)` in `create_server` — that would
+    # otherwise fail with zero test breakage. `_lowlevel_server.middleware`
+    # is a real, populated attribute on the installed SDK's low-level
+    # server (alongside SDK-internal middleware like
+    # `OpenTelemetryMiddleware`/`RequestStateBoundary`) — verified directly
+    # against the installed `mcp` package before writing this assertion.
+    from mcpg.tenancy import TenantRoleContextMiddleware
+
+    server = create_server(_SETTINGS)
+
+    assert any(isinstance(m, TenantRoleContextMiddleware) for m in server._lowlevel_server.middleware)
 
 
 def test_create_server_reports_mcpg_version_in_serverinfo() -> None:
@@ -203,8 +221,8 @@ def _elicit_settings(*, elicit_confirm_writes: bool) -> Settings:
 
 def _server_with_fake_tools(settings: Settings) -> Any:
     server = create_server(settings)
-    server.add_tool(_fake_write_tool, name="fake_write_tool", annotations=ToolAnnotations(readOnlyHint=False))
-    server.add_tool(_fake_read_tool, name="fake_read_tool", annotations=ToolAnnotations(readOnlyHint=True))
+    server.add_tool(_fake_write_tool, name="fake_write_tool", annotations=ToolAnnotations(read_only_hint=False))
+    server.add_tool(_fake_read_tool, name="fake_read_tool", annotations=ToolAnnotations(read_only_hint=True))
     return server
 
 
@@ -239,31 +257,57 @@ async def test_elicit_gate_accepted_confirmation_runs_tool() -> None:
     assert result.is_error is False
 
 
-async def test_elicit_gate_declined_confirmation_blocks_tool() -> None:
+async def test_elicit_gate_declined_confirmation_blocks_tool(monkeypatch: pytest.MonkeyPatch) -> None:
     # (c) same but client declines -> tool does NOT run, is_error=True.
+    recorded: list[Any] = []
+    monkeypatch.setattr(server_mod.audit, "record", lambda event: recorded.append(event))
+
     server = _server_with_fake_tools(_elicit_settings(elicit_confirm_writes=True))
     ctx = _FakeElicitContext(
         client_capabilities=_ELICITING_CAPS,
         elicit_result=DeclinedElicitation(),
     )
 
+    calls_before = get_metrics().snapshot()[0].get(("fake_write_tool", "unknown", "denied"), 0)
     result = await server.call_tool("fake_write_tool", {}, context=ctx)
+    calls_after = get_metrics().snapshot()[0].get(("fake_write_tool", "unknown", "denied"), 0)
 
     assert len(ctx.elicit_calls) == 1
     assert result.is_error is True
     assert any("not confirmed" in block.text for block in result.content)
 
+    # A declined write must still leave an audit trail (the elicitation gate
+    # returns early, before the normal audit.record()/metrics.record_call()
+    # calls at the bottom of `call_tool` — see server.py's early-return path
+    # for the confirmation gate) and be counted, so it isn't invisible to
+    # `render_prometheus()`.
+    assert len(recorded) == 1
+    assert recorded[0].tool == "fake_write_tool"
+    assert recorded[0].status == "denied"
+    assert calls_after - calls_before == 1
 
-async def test_elicit_gate_cancelled_confirmation_blocks_tool() -> None:
+
+async def test_elicit_gate_cancelled_confirmation_blocks_tool(monkeypatch: pytest.MonkeyPatch) -> None:
     # Cancelling the elicitation prompt must be treated the same as a
-    # decline — no partial/ambiguous state where the tool still runs.
+    # decline — no partial/ambiguous state where the tool still runs, and
+    # (like a decline) it must still produce an audit event + metrics count.
+    recorded: list[Any] = []
+    monkeypatch.setattr(server_mod.audit, "record", lambda event: recorded.append(event))
+
     server = _server_with_fake_tools(_elicit_settings(elicit_confirm_writes=True))
     ctx = _FakeElicitContext(
         client_capabilities=_ELICITING_CAPS,
         elicit_result=CancelledElicitation(),
     )
 
+    calls_before = get_metrics().snapshot()[0].get(("fake_write_tool", "unknown", "denied"), 0)
     result = await server.call_tool("fake_write_tool", {}, context=ctx)
+    calls_after = get_metrics().snapshot()[0].get(("fake_write_tool", "unknown", "denied"), 0)
+
+    assert len(recorded) == 1
+    assert recorded[0].tool == "fake_write_tool"
+    assert recorded[0].status == "denied"
+    assert calls_after - calls_before == 1
 
     assert len(ctx.elicit_calls) == 1
     assert result.is_error is True

@@ -361,6 +361,7 @@ falls back to the env var, so partial files work.
 | `MCPG_CACHE_MAXSIZE` | `1024` | Maximum LRU capacity bound for the memory cache. |
 | `MCPG_REDIS_URL` | — | Optional Redis backend connection string for external, multi-node caching. |
 | `MCPG_ENABLE_HEAVY_DIAGNOSTICS` | `true` | Toggle computationally heavy diagnostic, diagram, and advisor tools. |
+| `MCPG_ELICIT_CONFIRM_WRITES` | `false` | When true, every write/DDL/shell/listen/migrate-tier tool call (any tool whose `readOnlyHint` annotation isn't true) requires an accepted interactive confirmation (`ctx.elicit()`) before running. **Best-effort, not an enforcement boundary**: it only engages for clients that both pass a request `context` and declare the `elicitation` capability during `initialize` — a client that omits either silently bypasses the gate and the tool runs as normal. |
 
 #### Natural-language SQL
 

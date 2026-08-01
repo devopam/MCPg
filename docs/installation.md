@@ -283,6 +283,7 @@ the minimum set per common scenario.
 | **NL→SQL** — multi-provider routing | Set all the vendor keys you want active; callers pass `provider="anthropic"\|"openai"\|"gemini"` per call. |
 | **Audit persistence** | `MCPG_AUDIT_PERSIST=true` |
 | **Prometheus metrics** | (always on for HTTP transports — `GET /metrics`) |
+| **Interactive write confirmation** | `MCPG_ELICIT_CONFIRM_WRITES=true` — best-effort UX safety net, not an enforcement boundary; see [user-guide.md](user-guide.md#feature-flags) |
 
 ### TLS enforcement (important)
 

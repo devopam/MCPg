@@ -183,9 +183,15 @@ class _OIDCAuthMiddleware:
             await _send_401(send, "role claim contains an invalid identifier")
             return
 
-        # Stash on the scope so the tool-dispatch task (a separate, session-
-        # scoped task on HTTP/SSE) reads the correct per-request role via the
-        # SDK request context; the ContextVar alone doesn't reach it.
+        # Stash on the scope: this is what mcpg.tenancy.TenantRoleContextMiddleware
+        # (a ServerMiddleware that runs inside the MCP SDK's own per-request
+        # dispatch task, later than this ASGI middleware) reads back to set
+        # current_role for that task. The `current_role.set()` call right below
+        # is redundant-but-harmless here — it runs in *this* ASGI middleware's
+        # task, which is not the tool-dispatch task, so it never reaches the
+        # tool call; TenantRoleContextMiddleware is what actually makes the role
+        # visible to the tool. Kept only so the ContextVar has a sane value if
+        # something reads it before TenantRoleContextMiddleware runs.
         scope[_ROLE_SCOPE_KEY] = verified.role
         reset_token = current_role.set(verified.role)
         try:
@@ -254,9 +260,15 @@ class _TenantRoleMiddleware:
             await _send_403(send, "X-MCPG-Role is not in the allowed-roles list")
             return
 
-        # Stash on the scope so the tool-dispatch task (a separate, session-
-        # scoped task on HTTP/SSE) reads the correct per-request role via the
-        # SDK request context; the ContextVar alone doesn't reach it.
+        # Stash on the scope: this is what mcpg.tenancy.TenantRoleContextMiddleware
+        # (a ServerMiddleware that runs inside the MCP SDK's own per-request
+        # dispatch task, later than this ASGI middleware) reads back to set
+        # current_role for that task. The `current_role.set()` call right below
+        # is redundant-but-harmless here — it runs in *this* ASGI middleware's
+        # task, which is not the tool-dispatch task, so it never reaches the
+        # tool call; TenantRoleContextMiddleware is what actually makes the role
+        # visible to the tool. Kept only so the ContextVar has a sane value if
+        # something reads it before TenantRoleContextMiddleware runs.
         scope[_ROLE_SCOPE_KEY] = role
         token = current_role.set(role)
         try:

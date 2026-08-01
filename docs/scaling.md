@@ -15,8 +15,8 @@ the bottlenecks to plan around.
 - Each `run_select` / `explain_query` / NL→SQL execution
   constructs a `SafeSqlDriver` and parses the SQL with `pglast`
   before execution — a small, bounded CPU cost per call.
-- For HTTP transports, Starlette + the FastMCP transport handler
-  share the same event loop; metrics / health endpoints are
+- For HTTP transports, Starlette + the MCPServer-provided transport
+  handler share the same event loop; metrics / health endpoints are
   separately cheap.
 
 ---

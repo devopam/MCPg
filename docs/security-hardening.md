@@ -38,9 +38,14 @@ Static (`MCPG_DEFAULT_ROLE`) plus per-request override
 (`X-MCPG-Role` HTTP header / `MCPG_OIDC_ROLE_CLAIM` from the JWT).
 Allowlist via `MCPG_ALLOWED_ROLES`. Role names identifier-validated.
 The per-request override is resolved **per message** on `streamable-http`
-/ `sse` — the middleware validates the role and stashes it on the request,
-and the tenancy driver reads it from the SDK's per-message request context
-at query time, so it can't be pinned to a session's first request.
+/ `sse` — an HTTP/SSE middleware validates the role and stashes it on the
+request's ASGI scope, then `TenantRoleContextMiddleware` (a `ServerMiddleware`
+that runs inside the MCP SDK's per-request dispatch task) reads it back off
+that request and sets a `ContextVar` (`current_role`) scoped to that task for
+the lifetime of the request; the tenancy driver's `resolve_role` reads the
+ContextVar back at query time. Because the SDK dispatches every inbound
+request to its own asyncio task, the ContextVar can't leak into or be pinned
+by any other request's task.
 
 > **Fixed in 0.6.11.** Releases up to 0.6.10 set the role only in a
 > ContextVar in the ASGI request task, which FastMCP's long-lived per-
