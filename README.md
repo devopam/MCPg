@@ -26,6 +26,7 @@ graph queries, data movement, live ops, and more.
 - **[mcpservers.org](https://mcpservers.org/servers/devopam/mcpg)**
 - **[Smithery](https://smithery.ai/servers/devopam/mcpg)**
 - **[Glama](https://glama.ai/mcp/servers/devopam/MCPg)**
+
 ---
 
 | Aspect              | MCPg                              |
