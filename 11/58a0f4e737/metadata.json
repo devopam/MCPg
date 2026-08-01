@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "1158a0f4e737",
+  "strategy": "manual-commit",
+  "branch": "feat/mcp-2.0-migration",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "CHANGELOG.md",
+    "README.md",
+    "docs/feature-shortlist.md",
+    "docs/installation.md",
+    "docs/plans/mcp-2.0-migration.md",
+    "docs/scaling.md",
+    "docs/security-hardening.md",
+    "docs/user-guide.md",
+    "src/mcpg/http_runtime.py",
+    "src/mcpg/observability.py",
+    "src/mcpg/server.py",
+    "tests/unit/test_server.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/11/58a0f4e737/0/metadata.json",
+      "transcript": "/11/58a0f4e737/0/full.jsonl",
+      "compact_transcript": "/11/58a0f4e737/0/transcript.jsonl",
+      "content_hash": "/11/58a0f4e737/0/content_hash.txt",
+      "prompt": "/11/58a0f4e737/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 850,
+    "cache_creation_tokens": 2894636,
+    "cache_read_tokens": 120547653,
+    "output_tokens": 313574,
+    "api_call_count": 427
+  }
+}

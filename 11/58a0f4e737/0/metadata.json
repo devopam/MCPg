@@ -1,0 +1,389 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "1158a0f4e737",
+  "session_id": "16455311-cc88-42c3-a448-f8e24615a85e",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-01T09:00:51.6431387Z",
+  "branch": "feat/mcp-2.0-migration",
+  "checkpoints_count": 6,
+  "save_step_count": 7,
+  "files_touched": [
+    "CHANGELOG.md",
+    "README.md",
+    "docs/feature-shortlist.md",
+    "docs/installation.md",
+    "docs/plans/mcp-2.0-migration.md",
+    "docs/scaling.md",
+    "docs/security-hardening.md",
+    "docs/user-guide.md",
+    "src/mcpg/http_runtime.py",
+    "src/mcpg/observability.py",
+    "src/mcpg/server.py",
+    "tests/unit/test_server.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "b94cb5b44db8",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 850,
+    "cache_creation_tokens": 2894636,
+    "cache_read_tokens": 120547653,
+    "output_tokens": 313574,
+    "api_call_count": 427
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Rgvzmz1cw75QGPA9SHM1en",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:writing-plans"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b94cb5b44db8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 611,
+        "end": 612,
+        "entry_ids": [
+          "0848c924-7817-479e-8ed8-51f2622bb56f"
+        ],
+        "tool_use_id": "toolu_01Rgvzmz1cw75QGPA9SHM1en"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Rgvzmz1cw75QGPA9SHM1en"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:writing-plans",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Ts2Mj3QbCf29ydFfaJ4gV6",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:subagent-driven-development"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b94cb5b44db8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 884,
+        "end": 885,
+        "entry_ids": [
+          "e6e1cb2f-1a34-4260-afea-62e6b5bc3c25"
+        ],
+        "tool_use_id": "toolu_01Ts2Mj3QbCf29ydFfaJ4gV6"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Ts2Mj3QbCf29ydFfaJ4gV6"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:subagent-driven-development",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01UcfZwJcrqvmL7eGnBXbKza",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:using-git-worktrees"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b94cb5b44db8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 896,
+        "end": 897,
+        "entry_ids": [
+          "7b27c80c-9ba5-4048-b712-49eeddd5fd4a"
+        ],
+        "tool_use_id": "toolu_01UcfZwJcrqvmL7eGnBXbKza"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01UcfZwJcrqvmL7eGnBXbKza"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:using-git-worktrees",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01KwgmvgbhDbgvcn5bEBqjZ3",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:requesting-code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b94cb5b44db8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2187,
+        "end": 2188,
+        "entry_ids": [
+          "0c4ad1a7-9e07-4d13-b34c-2e558724e274"
+        ],
+        "tool_use_id": "toolu_01KwgmvgbhDbgvcn5bEBqjZ3"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01KwgmvgbhDbgvcn5bEBqjZ3"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:requesting-code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_013w7UAUD3AZwwio7CTMVX2Q",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "browse"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b94cb5b44db8",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2304,
+        "end": 2305,
+        "entry_ids": [
+          "5f9651dc-8be3-477d-98dc-9ffba40d80f2"
+        ],
+        "tool_use_id": "toolu_013w7UAUD3AZwwio7CTMVX2Q"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_013w7UAUD3AZwwio7CTMVX2Q"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: browse",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-01T09:00:50.729574Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 2368,
+    "human_modified": 12167,
+    "human_removed": 0,
+    "total_committed": 5939,
+    "total_lines_changed": 14535,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 12139,
+      "user_lines_removed": 0,
+      "agent_lines_added": 666,
+      "agent_lines_removed": 642,
+      "user_added_per_file": {
+        ".claude/hooks/check-gstack.sh": 20,
+        ".claude/settings.json": 98,
+        ".claude/settings.local.json": 142,
+        ".gemini/settings.json": 141,
+        ".mcp.json": 8,
+        "demo.py": 753,
+        "docs/superpowers/plans/2026-07-30-mcp-2.0-migration.md": 1136,
+        "schema_details.txt": 716,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scratch/run_audit_db.py": 70,
+        "scratch/run_output.txt": 72
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 11004,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1802,
+      "agent_lines_removed": 642,
+      "user_added_per_file": {
+        ".claude/hooks/check-gstack.sh": 20,
+        ".claude/settings.json": 98,
+        ".claude/settings.local.json": 143,
+        ".gemini/settings.json": 141,
+        ".mcp.json": 8,
+        "demo.py": 753,
+        "schema_details.txt": 716,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scratch/run_audit_db.py": 70,
+        "scratch/run_output.txt": 72
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 11005,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1802,
+      "agent_lines_removed": 642,
+      "user_added_per_file": {
+        ".claude/hooks/check-gstack.sh": 20,
+        ".claude/settings.json": 98,
+        ".claude/settings.local.json": 144,
+        ".gemini/settings.json": 141,
+        ".mcp.json": 8,
+        "demo.py": 753,
+        "schema_details.txt": 716,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scratch/run_audit_db.py": 70,
+        "scratch/run_output.txt": 72
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 15929,
+      "user_lines_removed": 3682,
+      "agent_lines_added": 5375,
+      "agent_lines_removed": 5351,
+      "user_added_per_file": {
+        ".claude/hooks/check-gstack.sh": 20,
+        ".claude/settings.json": 98,
+        ".claude/settings.local.json": 154,
+        ".gemini/settings.json": 141,
+        ".mcp.json": 8,
+        "CHANGELOG.md": 1,
+        "README.md": 638,
+        "demo.py": 753,
+        "docs/feature-shortlist.md": 352,
+        "docs/installation.md": 455,
+        "docs/plans/mcp-2.0-migration.md": 1136,
+        "docs/scaling.md": 252,
+        "docs/security-hardening.md": 387,
+        "docs/user-guide.md": 788,
+        "schema_details.txt": 716,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scratch/run_audit_db.py": 70,
+        "scratch/run_output.txt": 72,
+        "src/mcpg/http_runtime.py": 18,
+        "src/mcpg/observability.py": 185,
+        "src/mcpg/server.py": 342,
+        "tests/unit/test_server.py": 360
+      },
+      "user_removed_per_file": {
+        "CHANGELOG.md": 1,
+        "README.md": 637,
+        "docs/feature-shortlist.md": 352,
+        "docs/installation.md": 454,
+        "docs/scaling.md": 252,
+        "docs/security-hardening.md": 382,
+        "docs/user-guide.md": 776,
+        "src/mcpg/http_runtime.py": 6,
+        "src/mcpg/observability.py": 181,
+        "src/mcpg/server.py": 325,
+        "tests/unit/test_server.py": 316
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 12154,
+      "user_lines_removed": 0,
+      "agent_lines_added": 9812,
+      "agent_lines_removed": 9026,
+      "user_added_per_file": {
+        ".claude/hooks/check-gstack.sh": 20,
+        ".claude/settings.json": 98,
+        ".claude/settings.local.json": 157,
+        ".gemini/settings.json": 141,
+        ".mcp.json": 8,
+        "demo.py": 753,
+        "docs/plans/mcp-2.0-migration.md": 1136,
+        "schema_details.txt": 716,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scratch/run_audit_db.py": 70,
+        "scratch/run_output.txt": 72
+      }
+    }
+  ]
+}
