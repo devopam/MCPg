@@ -1,0 +1,204 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "34257d8f85f7",
+  "session_id": "16455311-cc88-42c3-a448-f8e24615a85e",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-01T01:50:01.0315899Z",
+  "branch": "feat/mcp-2.0-migration",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "b2b27a301ac6",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 726,
+    "cache_creation_tokens": 2528185,
+    "cache_read_tokens": 112213282,
+    "output_tokens": 261097,
+    "api_call_count": 366
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Rgvzmz1cw75QGPA9SHM1en",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:writing-plans"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b2b27a301ac6",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 611,
+        "end": 612,
+        "entry_ids": [
+          "0848c924-7817-479e-8ed8-51f2622bb56f"
+        ],
+        "tool_use_id": "toolu_01Rgvzmz1cw75QGPA9SHM1en"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Rgvzmz1cw75QGPA9SHM1en"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:writing-plans",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Ts2Mj3QbCf29ydFfaJ4gV6",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:subagent-driven-development"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b2b27a301ac6",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 884,
+        "end": 885,
+        "entry_ids": [
+          "e6e1cb2f-1a34-4260-afea-62e6b5bc3c25"
+        ],
+        "tool_use_id": "toolu_01Ts2Mj3QbCf29ydFfaJ4gV6"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Ts2Mj3QbCf29ydFfaJ4gV6"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:subagent-driven-development",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01UcfZwJcrqvmL7eGnBXbKza",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:using-git-worktrees"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "b2b27a301ac6",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 896,
+        "end": 897,
+        "entry_ids": [
+          "7b27c80c-9ba5-4048-b712-49eeddd5fd4a"
+        ],
+        "tool_use_id": "toolu_01UcfZwJcrqvmL7eGnBXbKza"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01UcfZwJcrqvmL7eGnBXbKza"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:using-git-worktrees",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 12802,
+      "user_lines_removed": 642,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/hooks/check-gstack.sh": 20,
+        ".claude/settings.json": 98,
+        ".claude/settings.local.json": 139,
+        ".gemini/settings.json": 141,
+        ".mcp.json": 8,
+        "CLAUDE.md": 117,
+        "demo.py": 753,
+        "docs/superpowers/plans/2026-07-30-mcp-2.0-migration.md": 1136,
+        "schema_details.txt": 716,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scratch/run_audit_db.py": 70,
+        "scratch/run_output.txt": 72,
+        "scripts/benchmark_pg19.sh": 100,
+        "scripts/smoke_test_pg19.sh": 114,
+        "tools/generate_doc_tables.py": 335
+      },
+      "user_removed_per_file": {
+        "CLAUDE.md": 93,
+        "scripts/benchmark_pg19.sh": 100,
+        "scripts/smoke_test_pg19.sh": 114,
+        "tools/generate_doc_tables.py": 335
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 16190,
+      "user_lines_removed": 7031,
+      "agent_lines_added": 3131,
+      "agent_lines_removed": 93,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 140,
+        "CHANGELOG.md": 3957,
+        "docs/PROGRESS.md": 959,
+        "docs/architecture.md": 349,
+        "docs/contributing/adding-tools.md": 535,
+        "docs/feature-shortlist.md": 352,
+        "docs/security.md": 366,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scripts/benchmark_pg19.sh": 100,
+        "scripts/smoke_test_pg19.sh": 114,
+        "tools/generate_doc_tables.py": 335
+      },
+      "user_removed_per_file": {
+        "CHANGELOG.md": 3937,
+        "docs/PROGRESS.md": 959,
+        "docs/architecture.md": 349,
+        "docs/contributing/adding-tools.md": 535,
+        "docs/feature-shortlist.md": 336,
+        "docs/security.md": 366,
+        "scripts/benchmark_pg19.sh": 100,
+        "scripts/smoke_test_pg19.sh": 114,
+        "tools/generate_doc_tables.py": 335
+      }
+    }
+  ]
+}

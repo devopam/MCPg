@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "34257d8f85f7",
+  "strategy": "manual-commit",
+  "branch": "feat/mcp-2.0-migration",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/34/257d8f85f7/0/metadata.json",
+      "transcript": "/34/257d8f85f7/0/full.jsonl",
+      "compact_transcript": "/34/257d8f85f7/0/transcript.jsonl",
+      "content_hash": "/34/257d8f85f7/0/content_hash.txt",
+      "prompt": "/34/257d8f85f7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 726,
+    "cache_creation_tokens": 2528185,
+    "cache_read_tokens": 112213282,
+    "output_tokens": 261097,
+    "api_call_count": 366
+  }
+}
