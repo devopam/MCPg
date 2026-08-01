@@ -226,7 +226,7 @@ and every call is validated and audited.
 
 **Mitigation.**
 
-- `AuditedFastMCP` records **every** tool invocation — name,
+- `AuditedMCPServer` records **every** tool invocation — name,
   redacted arguments, redacted result (for persisted entries), and
   outcome (success / error code / error message) — to the
   `mcpg.audit` logger.

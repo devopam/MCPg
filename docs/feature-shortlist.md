@@ -303,6 +303,22 @@ self-contained static HTML.
 | 19.5 | 🔧 **Harness built (`benchmarks/tokens/tier_b/`), costed run pending.** **(v2) Token study — Tier B (agent-loop).** Fixed model at temp 0, N trials per task; total tokens + tool-calls + turns + correctness to completion (MCPg advisors arm vs bare `run_select` arm) over the demo dataset's planted-finding tasks. Pure graders + aggregation unit-tested; the model loop + runner call a real model, so they never run in CI — run it yourself with `ANTHROPIC_API_KEY`. Captures the round-trip savings. | L | High | Phase 5. The costed phase; task set has known-correct answers via the demo dataset. |
 | 19.6 | **(v2) Combined writeup** drawing performance + tokens together, with the honest-caveats section. | S-M | High | Phase 6. |
 
+## 20. Migrate to the mcp 2.0 SDK
+
+PR #290 capped `mcp[cli]<2` as a hotfix after upstream's `mcp` 2.0.0 renamed
+`mcp.server.fastmcp.FastMCP` to `mcp.server.mcpserver.MCPServer` with no
+back-compat shim, breaking fresh installs. This migrates MCPg onto the new
+API, redesigns per-request tenancy onto `mcp`'s new `ServerMiddleware` model
+(a simplification, not just a port — see the plan's rationale), and adds
+`ctx.elicit()` confirmation for write-tier tool calls (opt-in via
+`MCPG_ELICIT_CONFIRM_WRITES`).
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 20.1 | ✅ **Shipped.** **Core SDK migration.** `FastMCP` → `MCPServer`, `AuditedFastMCP` → `AuditedMCPServer`, `call_tool` signature/return-type fix, HTTP app host/port fix. Zero changes to the 254 `@server.tool(...)` registration call sites (decorator API unchanged). Plan: [`plans/2026-07-30-mcp-2.0-migration.md`](../superpowers/plans/2026-07-30-mcp-2.0-migration.md). | L | High | Unblocks the `<2` cap from #290; keeps MCPg on a maintained SDK line. |
+| 20.2 | ✅ **Shipped.** **Tenancy redesign onto `ServerMiddleware`.** Replaced the `mcp.server.lowlevel.server.request_ctx` ambient-contextvar hack (removed in mcp 2.0) with a `ServerMiddleware` that sets the existing `current_role` ContextVar per-request — reliable on every transport now that the SDK dispatches each request to its own asyncio task, not just stdio as before. | M | Medium-High | Security-sensitive seam; see `mcpg.tenancy.TenantRoleContextMiddleware`. |
+| 20.3 | ✅ **Shipped.** **Elicitation confirmation for write-tier tools.** `ctx.elicit()`-based confirmation before any non-read-only tool call, gated by `MCPG_ELICIT_CONFIRM_WRITES` (opt-in) and the connected client's declared elicitation capability. Centralized in `AuditedMCPServer.call_tool`; no per-tool changes. | S-M | Medium | First concrete use of an mcp 2.0-only capability (elicitation didn't exist in 1.x `FastMCP`). |
+
 ---
 
 ## Currently deferred (no commitments)

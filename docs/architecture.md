@@ -15,8 +15,8 @@ and gets typed results. Every call passes through the same layers:
 ```mermaid
 flowchart TD
     client["MCP client<br/>(Claude Desktop · Cursor · …)"]
-    client -->|"stdio · streamable-HTTP · SSE"| fastmcp["AuditedFastMCP<br/>rate-limit · audit · metrics"]
-    fastmcp -->|"capability gate<br/>(mcpg.policy)"| wrapper["Tool wrapper<br/>(mcpg.tools)"]
+    client -->|"stdio · streamable-HTTP · SSE"| mcpserver["AuditedMCPServer<br/>rate-limit · audit · metrics"]
+    mcpserver -->|"capability gate<br/>(mcpg.policy)"| wrapper["Tool wrapper<br/>(mcpg.tools)"]
     wrapper --> logic["Logic module<br/>query · health · search · migrations · …"]
     logic --> drivers["Driver stack (composable)<br/>SafeSqlDriver → parse + allowlist<br/>RoutedSqlDriver → replica fan-out<br/>TenantSqlDriver → SET LOCAL ROLE"]
     drivers --> pool["psycopg3 pool<br/>+ optional replica pools"]
@@ -35,8 +35,8 @@ flowchart TD
 
 ## Request lifecycle
 
-1. The client invokes a tool. `AuditedFastMCP.call_tool` (a
-   `FastMCP[AppContext]` subclass) wraps every invocation:
+1. The client invokes a tool. `AuditedMCPServer.call_tool` (a
+   `MCPServer[AppContext]` subclass) wraps every invocation:
    - Checks the rate limiter (`mcpg.middleware.rate_limit`) when
      `MCPG_RATE_LIMIT_ENABLED=true`.
    - Records an audit event on completion (success or failure)
@@ -255,7 +255,7 @@ first):
    OIDC role claim when `MCPG_OIDC_ROLE_CLAIM` is set), validates
    against `MCPG_ALLOWED_ROLES`, and stashes the value in the
    `current_role` ContextVar that the `TenantSqlDriver` reads.
-3. **The MCP transport handler** (FastMCP-provided).
+3. **The MCP transport handler** (MCPServer-provided).
 
 Plus three first-party endpoints under the same auth-exempt rules:
 

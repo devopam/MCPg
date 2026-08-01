@@ -42,6 +42,26 @@ adheres to [Semantic Versioning](https://semver.org/).
   didn't accept the `loop` kwarg that `run_http` has always passed on
   `win32` — now accepts `**kwargs`.
 
+### Changed
+
+- **Migrated to the `mcp` 2.0 SDK.** Lifts the `mcp[cli]<2` cap from the #290
+  hotfix. `FastMCP` → `MCPServer`, `AuditedFastMCP` → `AuditedMCPServer`.
+  Tenancy's per-request role propagation moved off the removed
+  `request_ctx` ambient contextvar onto a `ServerMiddleware` — a
+  simplification that makes `current_role` reliably authoritative on every
+  transport (previously only guaranteed on stdio). Zero changes to any of
+  the 254 tool registration call sites. See
+  `docs/superpowers/plans/2026-07-30-mcp-2.0-migration.md` for the full
+  rationale.
+
+### Added
+
+- **`MCPG_ELICIT_CONFIRM_WRITES`** (opt-in, default `false`): when set,
+  every write/DDL/shell/listen/migrate-tier tool call requires an accepted
+  `ctx.elicit()` confirmation before running, for clients that declare
+  elicitation support. Centralized in `AuditedMCPServer.call_tool`; no
+  per-tool changes.
+
 ## [0.6.12] - 2026-07-28
 
 ### Added

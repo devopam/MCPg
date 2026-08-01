@@ -99,7 +99,7 @@
   per user direction — DDL has the highest blast radius.
 - No dry-run/preview: writes execute directly (user direction — avoid the
   runtime cost of a rolled-back preview transaction).
-- Per-write auditing is already provided by `AuditedFastMCP` (every tool call
+- Per-write auditing is already provided by `AuditedMCPServer` (every tool call
   is audited); Task 4.3 verifies it for write tools rather than adding code.
 
 ## Phase 5 — Ops, health & tuning  ✅ COMPLETE
@@ -287,7 +287,7 @@ _All resolved as of 0.6.9:_
   183 tests, 100% coverage.
 - 2026-05-20 — Task 3.3: TDD'd audit logging (`mcpg/audit.py`): `AuditEvent`,
   `redact_arguments` (masks secret-named args, obfuscates embedded passwords),
-  `record`. `AuditedFastMCP` overrides `call_tool` so every tool invocation —
+  `record`. `AuditedMCPServer` overrides `call_tool` so every tool invocation —
   success or error — is logged to the `mcpg.audit` logger. 192 tests, 100% cov.
 - 2026-05-20 — Task 3.4: wrote the threat model and security documentation
   (`docs/security.md`) — trust boundaries, threats T1–T5 with mitigations,
@@ -946,7 +946,7 @@ _All resolved as of 0.6.9:_
   token. (2.1) In-process Prometheus metrics — new `mcpg.observability`
   emits `mcpg_tool_calls_total{tool,status}` and
   `mcpg_tool_duration_seconds_*` (histogram + sum + count) via a
-  zero-dep text-exposition renderer. `AuditedFastMCP.call_tool`
+  zero-dep text-exposition renderer. `AuditedMCPServer.call_tool`
   records every invocation; the same payload is exposed as the
   `get_metrics_exposition` MCP tool for stdio transports. (4.2)
   TimescaleDB hypertable wrappers — new `mcpg.timescaledb` adds five
