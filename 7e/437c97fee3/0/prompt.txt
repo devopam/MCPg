@@ -323,3 +323,31 @@ Check whether Task 12's background test run has finished and the merge commit (1
 ---
 
 next once we are done with this, please check https://github.com/devopam/MCPg/pull/288, and if it is good to go , then merge it. if we need any review related changes, let's do the same and still go ahead with merging it. then we will look at the pending issue https://github.com/devopam/MCPg/issues/287
+
+---
+
+<task-notification>
+<task-id>a193a3e2a7aee6d1c</task-id>
+<tool-use-id>toolu_01BeseC6izb8cbTuMcTfC3k9</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\a193a3e2a7aee6d1c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 12: resolve merge conflict" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Task 12 is complete. Summary:
+
+- **Merge commit:** `12ac7f41bfb618f328090d551a1e53ac27d5bb09` (`12ac7f4`), merging `origin/main` (`0c7f11b`) into `feat/mcp-2.0-migration` on top of `a194e67`. Real merge commit, no rebase, no force-push.
+- **CHANGELOG.md conflict:** resolved by keeping Task 11's `[0.7.0]` `### Fixed` section exactly as written, and populating the pre-existing empty `[Unreleased]` header above it with main's two genuinely-new fixes (`translate_nl_to_sql` token-usage reporting, `mcpg --demo` reviews.customer_id index fix). Main's duplicate/plainer wording of the already-superseded `mcp[cli]&lt;2` cap note was dropped as redundant.
+- **Auto-merged files** (`docs/feature-shortlist.md`, `tests/unit/test_config.py`, `tests/contract/test_tool_output_schemas.py`, `benchmarks/tokens/tier_b/agent.py`/`runner.py`, plus the wider main-only diffs) were all diffed against both parents and confirmed semantically correct — no numbering collisions, no clobbered content.
+- **Verification:** ruff check/format, mypy strict, full `tests/unit tests/contract` suite (2894 passed, 3 skipped), and `test_doc_tables.py` (3 passed) — all green. Pre-commit hook also ran clean at commit time, not bypassed.
+- **Push:** normal fast-forward, `a194e67..12ac7f4`.
+- **PR #293:** now `mergeable: MERGEABLE`, `mergeStateStatus: CLEAN` (was `CONFLICTING`/`DIRTY`).
+- **CI confirmed started:** a `pull_request`-triggered CI run (id `30793246367`) is queued as of `2026-08-03T07:19:45Z` — the first CI run this PR has ever had. Not waited to completion, per the brief.
+- Working tree hygiene preserved: only the pre-existing unrelated `CLAUDE.md` modification and untracked scratch/tooling noise remain, untouched.
+
+Full report written to `C:\Users\devop\OneDrive\Documents\GitHub\MCPg\.superpowers\sdd\2026-07-30-mcp-2.0-migration\task-12-report.md`.</result>
+<usage><subagent_tokens>105502</subagent_tokens><tool_uses>10</tool_uses><duration_ms>148361</duration_ms></usage>
+</task-notification>
+
+---
+
+continue
