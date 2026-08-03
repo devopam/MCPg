@@ -15,9 +15,9 @@ jobs:
     name: Lint & type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           python-version: "3.14"
           enable-cache: true
@@ -33,9 +33,9 @@ jobs:
     name: Security audit (SAST & Dependencies)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           python-version: "3.14"
           enable-cache: true
@@ -77,7 +77,7 @@ jobs:
           - postgres: "warehousepg-latest"
             experimental: true
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # The ubuntu-latest runner ships an older PostgreSQL client by
       # default; `pg_dump` refuses to dump from a newer server (PG 17 /
       # 18 in this matrix). Install the matching client tools from the
@@ -189,7 +189,7 @@ jobs:
             sleep "$sleep_secs"
           done
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           python-version: "3.14"
           enable-cache: true
