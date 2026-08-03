@@ -588,3 +588,31 @@ Invalid runid
 Empty credentials → auth token is `null` → the run-trigger API call returns no run ID → hard failure. This requires signing up for an APIsec.ai account (external SaaS, "Schedule a demo" per their own onboarding) and configuring a real project + secrets before this workflow can ever succeed — it isn't a config typo, it's an incomplete external-vendor setup. Recommend either completing that signup and reconfiguring `apisec-project`/secrets to point at MCPg's actual API, or removing the workflow until that's done (it fails every run currently, which itself is a Scorecard `Dangerous-Workflow`/hygiene minus and adds noise to the Actions tab).</result>
 <usage><subagent_tokens>518804</subagent_tokens><tool_uses>2</tool_uses><duration_ms>86534</duration_ms></usage>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>ae2a292c122d3da65</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\db14d885-55f8-4ae4-821b-5192ada9441d\tasks\ae2a292c122d3da65.output</output-file>
+<status>completed</status>
+<summary>Agent "Audit Claude Connectors Directory submission readiness" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Directive:** Investigate Claude Connectors Directory submission readiness for MCPg (repo: devopam/MCPg) against https://claude.com/docs/connectors/building/submission, report a gap list, no edits.
+
+**Critical scoping finding:** The web submission *portal* (with its Connection/Tools/Listing/Authentication/Data-handling steps) is explicitly **remote-MCP-servers-only** ("Local servers are distributed as desktop extensions or plugins instead"). MCPg is fundamentally local/stdio, distributed as an MCPB — so it goes through the **separate desktop-extension form** at `https://clau.de/desktop-extention-submission` (verbatim URL, including its typo), not the portal steps most of the page describes. `docs/release-process.md`'s existing §8b note already gets this right. I could not fetch that MCPB form's own field list (only its link) — worth opening directly before submitting to confirm exact asks.
+
+**Universal requirements (apply regardless of path) — already satisfied:**
+- **Tool annotations** (title + readOnlyHint/destructiveHint on every tool): confirmed via `tests/contract/test_tool_annotations.py`'s own docstring, which explicitly cites "the Claude connector directory" as the reason this exists, backed by a passing contract test across all 254 tools (centralized in `tools._apply_tool_wire_metadata`). My first check against `tests/contract/tool_surface.snapshot.json` wrongly flagged 254 "missing" — that snapshot only pins `name`/`description`/`inputSchema`, not annotations/title; false alarm, ignore it.
+- **Privacy Policy**: `PRIVACY.md` exists (data collection, storage, third-party sharing via NL2SQL, contact via GitHub issues + SECURITY.md). README.md has a `## Privacy Policy` section (line 576) linking it. `packaging/mcpb/manifest.json` has `privacy_policies: ["https://devopam.github.io/MCPg/PRIVACY/"]` (HTTPS ✓) at `manifest_version: "0.4"` (≥0.2 required ✓).
+- **Documentation**: extensive (installation/user-guide/security docs).
+- **.mcpb bundle**: exists, attached to the v0.7.0 GitHub release, confirmed downloadable; `icon.png` present in `packaging/mcpb/`.
+- **Authentication**: MCPg's DB-connection-string model matches the guide's supported "custom connection, user supplies credentials at connection time" mode — not a rejection reason, just the classification to select.
+
+**Gaps found:**
+1. **`packaging/mcpb/manifest.json`'s `description` and `long_description` both say "252 tools"** — stale, actual is 254. This is the same 252→254 drift already flagged (unfixed) as a follow-up during the 0.7.0 release cut — now directly user-facing since this text feeds the submission's detail-card description. Fix before submitting.
+2. PRIVACY.md's "data retention" coverage is implicit (only the optional audit trail is addressed) — one explicit sentence confirming MCPg itself is stateless between calls would remove any reviewer ambiguity, though likely already adequate.
+
+**Priority punch list:** (1) fix the 252→254 count in manifest.json, (2) open the actual MCPB submission form to confirm its fields before filling it out, (3) optionally tighten the retention sentence in PRIVACY.md.</result>
+<usage><subagent_tokens>525675</subagent_tokens><tool_uses>5</tool_uses><duration_ms>124954</duration_ms></usage>
+</task-notification>
