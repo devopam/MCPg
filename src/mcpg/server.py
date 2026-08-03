@@ -15,8 +15,9 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, InputRequiredResult, TextContent
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from mcpg import __version__, about, audit
 from mcpg.analytical import AnalyticalRunner
@@ -30,6 +31,25 @@ from mcpg.observability import get_metrics
 from mcpg.otel_tracing import TracerHandle, setup_tracing, tool_span
 from mcpg.tenancy import TenantRoleContextMiddleware
 from mcpg.tools import register_tools
+
+
+def _friendly_validation_error(tool_name: str, error: ValidationError) -> str:
+    """Build a short, actionable message from a pydantic ``ValidationError``.
+
+    The MCP SDK's tool-argument validation (a required argument missing, or
+    an argument of the wrong type) raises a raw ``pydantic``
+    ``ValidationError`` that the SDK stringifies verbatim into a
+    ``ToolError`` — a multi-line dump including a noisy
+    ``errors.pydantic.dev`` link (see GH #287). This collapses it into one
+    line per error using each error's already-human-readable ``msg`` (e.g.
+    "Field required"), keyed by its field path.
+    """
+    details = "; ".join(
+        f"{'.'.join(str(part) for part in err['loc'])}: {err['msg']}" if err["loc"] else err["msg"]
+        for err in error.errors()
+    )
+    return f"{tool_name}: {details}"
+
 
 SERVER_NAME = "mcpg"
 SERVER_INSTRUCTIONS = (
@@ -160,6 +180,24 @@ class AuditedMCPServer(MCPServer[AppContext]):
             except Exception as exc:
                 duration = time.monotonic() - start
                 self._log_if_slow(name, duration)
+                # The SDK's argument-validation failure surfaces here as a
+                # ToolError whose message is str(ValidationError). The known
+                # SDK path chains it via `raise ... from e` (__cause__), but
+                # an implicit `raise` inside an except block (no `from`)
+                # only sets __context__ -- check both defensively, plus the
+                # case where the ValidationError reaches us directly. Either
+                # way, replace it with a friendly message before it's used
+                # below, since both the audit log (`error=`) and the
+                # client-visible message (further up the call stack) read
+                # from this same exception object. See GH #287.
+                validation_error = exc if isinstance(exc, ValidationError) else (exc.__cause__ or exc.__context__)
+                if isinstance(validation_error, ValidationError):
+                    friendly_exc = ToolError(_friendly_validation_error(name, validation_error))
+                    audit.record(
+                        audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(friendly_exc))
+                    )
+                    metrics.record_call(name, "error", duration, bucket=bucket)
+                    raise friendly_exc from exc
                 audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(exc)))
                 metrics.record_call(name, "error", duration, bucket=bucket)
                 raise
