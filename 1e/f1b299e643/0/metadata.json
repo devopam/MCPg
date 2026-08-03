@@ -238,6 +238,37 @@
         "label": "Skill: superpowers:receiving-code-review",
         "default_collapsed": true
       }
+    },
+    {
+      "id": "claude-skill-toolu_01XALuyEuGfbGinywKRH2wBR",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:systematic-debugging"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "9e1c4c3993ff",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 3383,
+        "end": 3384,
+        "entry_ids": [
+          "afb30fbe-d1a3-4c98-9d95-04f894c87e69"
+        ],
+        "tool_use_id": "toolu_01XALuyEuGfbGinywKRH2wBR"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01XALuyEuGfbGinywKRH2wBR"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:systematic-debugging",
+        "default_collapsed": true
+      }
     }
   ],
   "session_metrics": {
