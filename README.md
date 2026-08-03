@@ -15,6 +15,7 @@ graph queries, data movement, live ops, and more.
 [![Python versions](https://img.shields.io/pypi/pyversions/mcpg.svg)](https://pypi.org/project/mcpg/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/devopam/MCPg/blob/main/LICENSE)
 [![CI](https://github.com/devopam/MCPg/actions/workflows/ci.yml/badge.svg)](https://github.com/devopam/MCPg/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/devopam/MCPg/badge)](https://scorecard.dev/viewer/?uri=github.com/devopam/MCPg)
 [![Stars](https://img.shields.io/github/stars/devopam/MCPg)](https://github.com/devopam/MCPg)
 [![smithery badge](https://smithery.ai/badge/devopam/mcpg)](https://smithery.ai/servers/devopam/mcpg)
 [![MCPg MCP server](https://glama.ai/mcp/servers/devopam/MCPg/badges/score.svg)](https://glama.ai/mcp/servers/devopam/MCPg)
