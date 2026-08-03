@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.audit_trail import (
     AUDIT_SCHEMA,
@@ -597,9 +597,9 @@ async def test_prune_audit_events_tool_is_registered_in_unrestricted_mode() -> N
         assert "prune_audit_events" in listed
         result = await client.call_tool("prune_audit_events", {"older_than_days": 90})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["deleted"] == 0
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["deleted"] == 0
 
 
 @pytest.mark.parametrize(
@@ -648,9 +648,9 @@ async def test_list_audit_events_tool_is_registered_in_read_mode() -> None:
 
         result = await client.call_tool("list_audit_events", {})
 
-    assert result.isError is False
+    assert result.is_error is False
     # Empty FakeDriver -> table-existence check fails -> empty list.
-    payload = result.structuredContent
+    payload = result.structured_content
     assert payload is not None
     assert payload["result"] == []
 

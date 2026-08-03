@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.listen import ListenError, ListenManager, Notification
@@ -373,25 +373,25 @@ async def test_listen_tools_registered_and_callable_with_allow_listen() -> None:
 
             # subscribe → list → poll → unsubscribe round-trip via the MCP wire.
             sub_result = await client.call_tool("subscribe_channel", {"channel": "orders"})
-            assert sub_result.isError is False
-            assert sub_result.structuredContent is not None
-            sub_id = sub_result.structuredContent["subscription_id"]
-            assert sub_result.structuredContent["channel"] == "orders"
+            assert sub_result.is_error is False
+            assert sub_result.structured_content is not None
+            sub_id = sub_result.structured_content["subscription_id"]
+            assert sub_result.structured_content["channel"] == "orders"
 
             listed_subs = await client.call_tool("list_notification_subscriptions", {})
-            assert listed_subs.isError is False
-            payload = listed_subs.structuredContent
+            assert listed_subs.is_error is False
+            payload = listed_subs.structured_content
             assert payload is not None
-            # Tool returns a list; FastMCP wraps it under "result".
+            # Tool returns a list; MCPServer wraps it under "result".
             entries = payload.get("result") if isinstance(payload, dict) else payload
             assert any(entry["subscription_id"] == sub_id for entry in entries)
 
             poll_result = await client.call_tool("poll_notifications", {"subscription_id": sub_id})
-            assert poll_result.isError is False
+            assert poll_result.is_error is False
 
             unsub = await client.call_tool("unsubscribe_channel", {"subscription_id": sub_id})
-            assert unsub.isError is False
-            assert unsub.structuredContent is not None
-            assert unsub.structuredContent["removed"] is True
+            assert unsub.is_error is False
+            assert unsub.structured_content is not None
+            assert unsub.structured_content["removed"] is True
     finally:
         await lm.close()

@@ -2,7 +2,7 @@
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.audit_trail import _reset_audit_init_cache
 from mcpg.config import load_settings
@@ -89,9 +89,9 @@ async def test_run_write_tool_is_callable_in_unrestricted_mode() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("run_write", {"sql": "INSERT INTO widget (id) VALUES (1) RETURNING id"})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["row_count"] == 1
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["row_count"] == 1
 
 
 async def test_run_ddl_executes_a_ddl_statement() -> None:
@@ -126,7 +126,7 @@ async def test_run_ddl_tool_is_callable_when_ddl_is_allowed() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("run_ddl", {"sql": "CREATE TABLE widget (id int)"})
 
-    assert result.isError is False
+    assert result.is_error is False
 
 
 # --- Phase 21: audit_persist + schema_diff capture -------------------------

@@ -4,7 +4,7 @@ import math
 
 import pytest
 from _fakes import FakeDatabase, FakeParamRoutingDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.server import create_server
@@ -337,10 +337,10 @@ async def test_analyze_distance_metric_tool_is_callable_from_a_client() -> None:
             {"schema": "app", "table": "docs", "column": "embedding"},
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is True
-    assert result.structuredContent["recommended_metric"] in {"cosine", "l2", "inner_product"}
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is True
+    assert result.structured_content["recommended_metric"] in {"cosine", "l2", "inner_product"}
 
 
 async def test_analyze_distance_metric_tool_reports_unavailable_via_client() -> None:
@@ -353,10 +353,10 @@ async def test_analyze_distance_metric_tool_reports_unavailable_via_client() -> 
             {"schema": "app", "table": "docs", "column": "embedding"},
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is False
-    assert "pgvector extension" in result.structuredContent["rationale"]
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is False
+    assert "pgvector extension" in result.structured_content["rationale"]
 
 
 # --- helper: _vector_literal ----------------------------------------------
@@ -634,10 +634,10 @@ async def test_cross_table_similarity_tool_is_listed_and_callable() -> None:
             },
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is True
-    assert result.structuredContent["source_embedding_found"] is True
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is True
+    assert result.structured_content["source_embedding_found"] is True
 
 
 # --- cluster_vectors helpers ----------------------------------------------
@@ -962,10 +962,10 @@ async def test_cluster_vectors_tool_is_callable_from_a_client() -> None:
             {"schema": "app", "table": "docs", "embedding_column": "embedding", "k": 2},
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is True
-    assert len(result.structuredContent["centroids"]) == 2
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is True
+    assert len(result.structured_content["centroids"]) == 2
 
 
 # --- detect_vector_outliers -----------------------------------------------
@@ -1288,10 +1288,10 @@ async def test_detect_vector_outliers_tool_is_callable_from_a_client() -> None:
             },
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is True
-    assert result.structuredContent["total_outliers"] >= 1
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is True
+    assert result.structured_content["total_outliers"] >= 1
 
 
 # --- monitor_embedding_drift ----------------------------------------------
@@ -1609,10 +1609,10 @@ async def test_monitor_embedding_drift_tool_is_callable_from_a_client() -> None:
             },
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is True
-    assert result.structuredContent["drift_detected"] is True
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is True
+    assert result.structured_content["drift_detected"] is True
 
 
 # Regression coverage for the probability-based sampling path (deep-

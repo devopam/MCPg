@@ -896,7 +896,7 @@ class HybridHit:
 
 
 # RRF defaults — both upstream sources (blog + documentation.rs)
-# converge on these literals. Exposed publicly so the FastMCP tool
+# converge on these literals. Exposed publicly so the MCPServer tool
 # wrapper can keep its signature in sync with the API without
 # re-typing the literals.
 RRF_DEFAULT_K = 60

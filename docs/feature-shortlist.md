@@ -303,6 +303,22 @@ self-contained static HTML.
 | 19.5 | **Descoped from the published claim.** Agent-loop (Tier B) token accounting is out of scope for this benchmark suite; the harness (`benchmarks/tokens/tier_b/`) remains in-tree for internal use but is not part of the public writeup. | — | — | Phase 5, closed. |
 | 19.6 | ✅ **Shipped.** **Combined writeup** — [`docs/token-efficiency.md`](token-efficiency.md) paired with [`docs/performance-benchmark.md`](performance-benchmark.md): the per-call token claim + the negligible-overhead perf result, honest-caveats section included. | S-M | High | Phase 6. Scope is Tier A + perf only, per 19.5. |
 
+## 20. Migrate to the mcp 2.0 SDK
+
+PR #290 capped `mcp[cli]<2` as a hotfix after upstream's `mcp` 2.0.0 renamed
+`mcp.server.fastmcp.FastMCP` to `mcp.server.mcpserver.MCPServer` with no
+back-compat shim, breaking fresh installs. This migrates MCPg onto the new
+API, redesigns per-request tenancy onto `mcp`'s new `ServerMiddleware` model
+(a simplification, not just a port — see the plan's rationale), and adds
+`ctx.elicit()` confirmation for write-tier tool calls (opt-in via
+`MCPG_ELICIT_CONFIRM_WRITES`).
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 20.1 | ✅ **Shipped.** **Core SDK migration.** `FastMCP` → `MCPServer`, `AuditedFastMCP` → `AuditedMCPServer`, `call_tool` signature/return-type fix, HTTP app host fix. Zero changes to the 254 `@server.tool(...)` registration call sites (decorator API unchanged). Plan: [`plans/mcp-2.0-migration.md`](plans/mcp-2.0-migration.md). | L | High | Unblocks the `<2` cap from #290; keeps MCPg on a maintained SDK line. |
+| 20.2 | ✅ **Shipped.** **Tenancy redesign onto `ServerMiddleware`.** Replaced the `mcp.server.lowlevel.server.request_ctx` ambient-contextvar hack (removed in mcp 2.0) with a `ServerMiddleware` that sets the existing `current_role` ContextVar per-request — reliable on every transport now that the SDK dispatches each request to its own asyncio task, not just stdio as before. | M | Medium-High | Security-sensitive seam; see `mcpg.tenancy.TenantRoleContextMiddleware`. |
+| 20.3 | ✅ **Shipped.** **Elicitation confirmation for write-tier tools.** `ctx.elicit()`-based confirmation before any non-read-only tool call, gated by `MCPG_ELICIT_CONFIRM_WRITES` (opt-in) and the connected client's declared elicitation capability. Centralized in `AuditedMCPServer.call_tool`; no per-tool changes. | S-M | Medium | First concrete use of an mcp 2.0-only capability (elicitation didn't exist in 1.x `FastMCP`). |
+
 ---
 
 ## Currently deferred (no commitments)

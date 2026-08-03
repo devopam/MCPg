@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from _fakes import FakeDatabase, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.migration_history import (
@@ -252,7 +252,7 @@ async def test_read_migration_history_tool() -> None:
         assert "read_migration_history" in names
 
         res = await client.call_tool("read_migration_history", {"schema": "public"})
-        assert res.isError is False
+        assert res.is_error is False
         assert res.content[0].text is not None
         data = json.loads(res.content[0].text)
         assert data["alembic"] == [{"version_num": "ae12d34199f"}]

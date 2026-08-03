@@ -12,7 +12,8 @@ Companion to `test_mcp_resources.py` — same shape, same fixture URL.
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
+from mcp.types import InputRequiredResult
 
 from mcpg.config import load_settings
 from mcpg.tools import register_tools
@@ -20,7 +21,7 @@ from mcpg.tools import register_tools
 _FIXTURE_DB_URL = "postgresql://snapshot:snapshot@127.0.0.1:5432/snapshot"
 
 # Prompt name → ordered tuple of (arg_name, required) pairs.
-# Order matters in the manifest because FastMCP keeps the function's
+# Order matters in the manifest because MCPServer keeps the function's
 # signature order; agents calling via `prompts/get` send arguments by
 # name so order doesn't bind on the wire, but the manifest order is
 # the canonical signature the docstring should reference.
@@ -38,7 +39,7 @@ _EXPECTED_PROMPTS: dict[str, tuple[tuple[str, bool], ...]] = {
 }
 
 
-def _build_maximal_server() -> FastMCP:
+def _build_maximal_server() -> MCPServer:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _FIXTURE_DB_URL,
@@ -48,7 +49,7 @@ def _build_maximal_server() -> FastMCP:
             "MCPG_ALLOW_LISTEN": "true",
         }
     )
-    server: FastMCP = FastMCP("mcpg-prompts-fixture")
+    server: MCPServer = MCPServer("mcpg-prompts-fixture")
     register_tools(server, settings)
     return server
 
@@ -166,7 +167,11 @@ async def test_every_tool_name_in_every_prompt_body_is_actually_registered() -> 
         if prompt.name not in _EXPECTED_PROMPTS:
             continue
         render_args = _PROMPT_RENDER_ARGS[prompt.name]
-        messages = await prompt.render(arguments=render_args)
+        result = await server.get_prompt(prompt.name, render_args)
+        assert not isinstance(result, InputRequiredResult), (
+            f"{prompt.name}: expected a complete render for the sample args, got an input-required result"
+        )
+        messages = result.messages
         for message in messages:
             body = getattr(message.content, "text", "") or ""
             referenced = _extract_tool_names_from_body(body)

@@ -1,6 +1,6 @@
 """HTTP-transport extensions: bearer-token auth + Prometheus /metrics.
 
-FastMCP's ``streamable_http_app()`` / ``sse_app()`` return Starlette
+MCPServer's ``streamable_http_app()`` / ``sse_app()`` return Starlette
 applications. We don't need to fork that surface — we wrap the
 returned app with two pieces of middleware-style infrastructure:
 
@@ -183,9 +183,15 @@ class _OIDCAuthMiddleware:
             await _send_401(send, "role claim contains an invalid identifier")
             return
 
-        # Stash on the scope so the tool-dispatch task (a separate, session-
-        # scoped task on HTTP/SSE) reads the correct per-request role via the
-        # SDK request context; the ContextVar alone doesn't reach it.
+        # Stash on the scope: this is what mcpg.tenancy.TenantRoleContextMiddleware
+        # (a ServerMiddleware that runs inside the MCP SDK's own per-request
+        # dispatch task, later than this ASGI middleware) reads back to set
+        # current_role for that task. The `current_role.set()` call right below
+        # is redundant-but-harmless here — it runs in *this* ASGI middleware's
+        # task, which is not the tool-dispatch task, so it never reaches the
+        # tool call; TenantRoleContextMiddleware is what actually makes the role
+        # visible to the tool. Kept only so the ContextVar has a sane value if
+        # something reads it before TenantRoleContextMiddleware runs.
         scope[_ROLE_SCOPE_KEY] = verified.role
         reset_token = current_role.set(verified.role)
         try:
@@ -254,9 +260,15 @@ class _TenantRoleMiddleware:
             await _send_403(send, "X-MCPG-Role is not in the allowed-roles list")
             return
 
-        # Stash on the scope so the tool-dispatch task (a separate, session-
-        # scoped task on HTTP/SSE) reads the correct per-request role via the
-        # SDK request context; the ContextVar alone doesn't reach it.
+        # Stash on the scope: this is what mcpg.tenancy.TenantRoleContextMiddleware
+        # (a ServerMiddleware that runs inside the MCP SDK's own per-request
+        # dispatch task, later than this ASGI middleware) reads back to set
+        # current_role for that task. The `current_role.set()` call right below
+        # is redundant-but-harmless here — it runs in *this* ASGI middleware's
+        # task, which is not the tool-dispatch task, so it never reaches the
+        # tool call; TenantRoleContextMiddleware is what actually makes the role
+        # visible to the tool. Kept only so the ContextVar has a sane value if
+        # something reads it before TenantRoleContextMiddleware runs.
         scope[_ROLE_SCOPE_KEY] = role
         token = current_role.set(role)
         try:
@@ -528,10 +540,10 @@ class _RequestTimeoutMiddleware:
 
 
 def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlette:
-    """Wrap a FastMCP HTTP app with metrics + optional auth.
+    """Wrap an MCPServer HTTP app with metrics + optional auth.
 
     Args:
-        server: A ``FastMCP`` instance.
+        server: A ``MCPServer`` instance.
         settings: Active server settings.
         kind: ``"streamable-http"`` or ``"sse"``.
 
@@ -542,10 +554,22 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
     """
     from starlette.routing import Route
 
+    # NOTE: the actually-installed mcp 2.0.0 SDK's ``streamable_http_app``/
+    # ``sse_app`` only accept a ``host`` kwarg — NOT ``port`` — despite the
+    # migration plan's assumption that ``streamable_http_app`` took both
+    # (verified via ``inspect.signature`` against
+    # ``mcp.server.mcpserver.server.MCPServer`` before writing this; see
+    # task-4-report.md). ``host`` alone drives whether the SDK auto-enables
+    # DNS-rebinding protection scoped to localhost (``sse_app``/
+    # ``streamable_http_app`` treat ``127.0.0.1``/``localhost``/``::1``
+    # specially) — passing the configured host, rather than relying on the
+    # SDK's ``"127.0.0.1"`` default, is what actually fixes the regression:
+    # without it, binding to e.g. ``0.0.0.0`` would still get the
+    # localhost-only transport-security defaults baked in.
     if kind == "streamable-http":
-        app = server.streamable_http_app()  # type: ignore[attr-defined]
+        app = server.streamable_http_app(host=settings.http_host)  # type: ignore[attr-defined]
     elif kind == "sse":
-        app = server.sse_app()  # type: ignore[attr-defined]
+        app = server.sse_app(host=settings.http_host)  # type: ignore[attr-defined]
     else:
         raise ValueError(f"unknown HTTP transport kind: {kind!r}")
 
@@ -614,7 +638,7 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
     if settings.http_ip_allowlist:
         app.add_middleware(_IPAllowlistMiddleware, allowlist=settings.http_ip_allowlist)
 
-    # FastMCP types streamable_http_app() / sse_app() as Starlette already,
+    # MCPServer types streamable_http_app() / sse_app() as Starlette already,
     # but mypy under strict mode loses the type through the .add_middleware
     # call (returns None). Cast through Any to settle the return type
     # without hiding real type errors.

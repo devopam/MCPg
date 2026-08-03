@@ -7,7 +7,7 @@ relevant to that intent before any tool is advertised on the wire.
 
 Big prompt-injection resilience win: a session declared ``intent=lookup``
 literally cannot call ``drop_database`` because ``run_ddl`` was never
-registered with FastMCP. The defence is structural, not policy — the
+registered with MCPServer. The defence is structural, not policy — the
 adversary can't talk the agent into a tool that isn't on the wire.
 
 Why launch-time, not call-time
@@ -16,7 +16,7 @@ Why launch-time, not call-time
 The MCP transport advertises the tool list on connect. A call-time
 "is this tool allowed?" check would still expose every tool name in
 ``tools/list`` — useful for a soft policy gate, but it leaks the
-attack surface. Removing the tools from the FastMCP registry before
+attack surface. Removing the tools from the MCPServer registry before
 the first ``tools/list`` request is the only way to make them
 invisible.
 
@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING
 from mcpg.about import classify_tool
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 
 # Tools that are NEVER removed by the intent filter — without them an
@@ -149,7 +149,7 @@ def resolve_intent_to_buckets(intent_values: tuple[str, ...]) -> frozenset[str] 
 
 
 def filter_server_tools(
-    server: FastMCP,
+    server: MCPServer,
     allowed_buckets: frozenset[str],
     *,
     always_keep: frozenset[str] = _ALWAYS_KEEP,
@@ -163,7 +163,7 @@ def filter_server_tools(
     log / surface the diff. Idempotent — running twice with the same
     arguments removes nothing the second time.
     """
-    # FastMCP's ``list_tools`` is async; we use the internal
+    # MCPServer's ``list_tools`` is async; we use the internal
     # ``_tool_manager.list_tools()`` instead because the intent filter
     # runs in synchronous startup code. ``server.remove_tool(name)``
     # is the public removal API.

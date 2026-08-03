@@ -2,7 +2,7 @@ import asyncio
 from unittest.mock import patch
 
 import pytest
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.database import Database
@@ -40,7 +40,7 @@ async def test_concurrent_load_and_caching_integration(connected_database: Datab
         with patch.object(connected_database, "driver", return_value=spied_driver):
             # A. Warm up the cache for a specific schema query
             warmup_res = await client.call_tool("list_tables", {"schema": "public"})
-            assert warmup_res.isError is False
+            assert warmup_res.is_error is False
 
             # Record the execute calls for the warmup
             warmup_calls = call_count
@@ -55,7 +55,7 @@ async def test_concurrent_load_and_caching_integration(connected_database: Datab
 
             # C. Verify all 30 parallel requests returned successfully and were cached
             for idx, res in enumerate(results):
-                assert res.isError is False, f"Task {idx} failed: {res}"
+                assert res.is_error is False, f"Task {idx} failed: {res}"
 
             # D. Crucial check: Assert that the database was NOT queried again!
             # All 30 concurrent tasks must have hit the cache populated by the warmup.

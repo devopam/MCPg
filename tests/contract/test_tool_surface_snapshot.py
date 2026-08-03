@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from mcpg.config import load_settings
 from mcpg.tools import register_tools
@@ -59,8 +59,8 @@ _SNAPSHOT_PATH = Path(__file__).parent / "tool_surface.snapshot.json"
 _FIXTURE_DB_URL = "postgresql://snapshot:snapshot@127.0.0.1:5432/snapshot"
 
 
-def _build_maximal_server() -> FastMCP:
-    """Construct a FastMCP server with every flag enabled.
+def _build_maximal_server() -> MCPServer:
+    """Construct an MCPServer with every flag enabled.
 
     Mirrors what an operator would see if they ran MCPg with the
     most permissive configuration — every conditionally-registered
@@ -76,7 +76,7 @@ def _build_maximal_server() -> FastMCP:
             "MCPG_ALLOW_LISTEN": "true",
         }
     )
-    server: FastMCP = FastMCP("mcpg-snapshot")
+    server: MCPServer = MCPServer("mcpg-snapshot")
     register_tools(server, settings)
     return server
 
@@ -92,7 +92,7 @@ def _canonical_tool_record(tool: Any) -> dict[str, Any]:
     return {
         "name": tool.name,
         "description": (tool.description or "").strip(),
-        "inputSchema": tool.inputSchema,
+        "inputSchema": tool.input_schema,
     }
 
 

@@ -2,7 +2,7 @@
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.server import create_server
@@ -108,9 +108,9 @@ async def test_fuzzy_search_tool_is_callable_from_a_client() -> None:
             {"schema": "app", "table": "users", "column": "name", "term": "alice"},
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is False
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is False
 
 
 # --- full-text search ------------------------------------------------------
@@ -153,7 +153,7 @@ async def test_full_text_search_tool_is_callable_from_a_client() -> None:
             {"schema": "app", "table": "posts", "column": "body", "search_query": "cat"},
         )
 
-    assert result.isError is False
+    assert result.is_error is False
 
 
 # --- vector search ---------------------------------------------------------
@@ -223,9 +223,9 @@ async def test_vector_search_tool_is_callable_from_a_client() -> None:
             {"schema": "app", "table": "docs", "column": "embedding", "query_vector": [1.0, 2.0]},
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is False
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is False
 
 
 # --- MMR search ------------------------------------------------------------
@@ -379,10 +379,10 @@ async def test_mmr_search_tool_is_callable_from_a_client() -> None:
             {"schema": "app", "table": "docs", "column": "embedding", "query_vector": [1.0, 0.0], "k": 2},
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is True
-    assert len(result.structuredContent["matches"]) == 2
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is True
+    assert len(result.structured_content["matches"]) == 2
 
 
 def test_parse_embedding_handles_sequences_strings_and_empties() -> None:
@@ -476,9 +476,9 @@ async def test_geo_search_tool_is_callable_from_a_client() -> None:
             },
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is False
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is False
 
 
 # --- vector_range_search (11.2) -----------------------------------------
@@ -551,8 +551,8 @@ async def test_vector_range_search_tool_is_callable_from_a_client() -> None:
             },
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
+    assert result.is_error is False
+    assert result.structured_content is not None
 
 
 # --- hybrid_search (11.1) ------------------------------------------------
@@ -684,7 +684,7 @@ async def test_hybrid_search_tool_is_callable_from_a_client() -> None:
             },
         )
 
-    assert result.isError is False
+    assert result.is_error is False
 
 
 # --- recommend_vector_quantization (11.3) -------------------------------
@@ -769,7 +769,7 @@ async def test_recommend_vector_quantization_tool_is_callable_from_a_client() ->
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("recommend_vector_quantization", {"schema": "app"})
 
-    assert result.isError is False
+    assert result.is_error is False
 
 
 def test_quantization_recommendation_dataclass_shape() -> None:

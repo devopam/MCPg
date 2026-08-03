@@ -1,7 +1,7 @@
 """Tests for the token-efficient compact schema introspection tool."""
 
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.introspection import get_compact_schema
@@ -102,5 +102,5 @@ async def test_get_compact_schema_tool_registered() -> None:
         # Calling it with FakeDriver (empty results) should return empty tables message
         result = await client.call_tool("get_compact_schema", {"schema": "public"})
 
-    assert result.isError is False
+    assert result.is_error is False
     assert "no tables" in result.content[0].text

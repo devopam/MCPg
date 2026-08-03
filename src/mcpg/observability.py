@@ -10,8 +10,10 @@ Three series are exported:
 - ``mcpg_tool_calls_total{tool, bucket, status}`` — counter, one
   increment per ``call_tool`` invocation. ``bucket`` is the
   capability bucket the tool routes into (per
-  :func:`mcpg.about.classify_tool`); ``status`` is ``ok`` or
-  ``error``. The bucket label lets operators aggregate by capability
+  :func:`mcpg.about.classify_tool`); ``status`` is ``ok``, ``error``,
+  or ``denied`` (a write-tier call blocked by the
+  ``MCPG_ELICIT_CONFIRM_WRITES`` confirmation gate). The bucket label
+  lets operators aggregate by capability
   (``sum by (bucket) (rate(mcpg_tool_calls_total[5m]))``) without
   re-deriving the routing from tool names in PromQL — drives
   empirical ``describe_self`` ordering (roadmap row 1.4).
@@ -24,7 +26,7 @@ Three series are exported:
   ``rate(..._sum[1m]) / rate(..._count[1m])`` query computes the mean.
 
 A single module-level :class:`Metrics` instance backs the
-:class:`mcpg.server.AuditedFastMCP` hook. Tests get a fresh instance
+:class:`mcpg.server.AuditedMCPServer` hook. Tests get a fresh instance
 via :func:`reset_metrics` so cross-test pollution can't accumulate.
 """
 
@@ -92,7 +94,9 @@ class Metrics:
 
         Args:
             tool: Tool name (the MCP-side identifier).
-            status: ``ok`` on success, ``error`` when the tool raised.
+            status: ``ok`` on success, ``error`` when the tool raised,
+                or ``denied`` when a write-tier call was blocked by the
+                elicitation confirmation gate.
             duration_seconds: Wall-clock time the call took.
             bucket: Capability bucket id from
                 :func:`mcpg.about.classify_tool` — adds the
@@ -119,7 +123,7 @@ class Metrics:
             )
 
 
-# Module-level singleton — the server's AuditedFastMCP records into it.
+# Module-level singleton — the server's AuditedMCPServer records into it.
 _metrics = Metrics()
 
 

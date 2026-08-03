@@ -13,7 +13,7 @@ inspect what registered, assert against an explicit manifest).
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from mcpg.config import load_settings
 from mcpg.tools import register_tools
@@ -25,7 +25,7 @@ _FIXTURE_DB_URL = "postgresql://snapshot:snapshot@127.0.0.1:5432/snapshot"
 # Static resources expected on every maximal-flag server. The
 # template-typed siblings (`mcpg://capabilities/{bucket_id}`,
 # `mcpg://schema/{schema_name}`) are checked separately because
-# FastMCP routes them through `list_templates` not `list_resources`.
+# MCPServer routes them through `list_templates` not `list_resources`.
 _EXPECTED_STATIC_RESOURCES: frozenset[str] = frozenset(
     {
         "mcpg://about/index",
@@ -41,7 +41,7 @@ _EXPECTED_TEMPLATE_RESOURCES: dict[str, frozenset[str]] = {
 }
 
 
-def _build_maximal_server() -> FastMCP:
+def _build_maximal_server() -> MCPServer:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _FIXTURE_DB_URL,
@@ -51,7 +51,7 @@ def _build_maximal_server() -> FastMCP:
             "MCPG_ALLOW_LISTEN": "true",
         }
     )
-    server: FastMCP = FastMCP("mcpg-resources-fixture")
+    server: MCPServer = MCPServer("mcpg-resources-fixture")
     register_tools(server, settings)
     return server
 

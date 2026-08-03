@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.io_stats import (
@@ -216,7 +216,7 @@ async def test_buffercache_tools_execution() -> None:
     async with create_connected_server_and_client_session(server) as client:
         # Call read_pg_buffercache_summary tool
         result_summary = await client.call_tool("read_pg_buffercache_summary", {})
-        assert result_summary.isError is False
+        assert result_summary.is_error is False
         assert result_summary.content[0].text is not None
         summary_data = json.loads(result_summary.content[0].text)
         assert summary_data["available"] is True
@@ -224,7 +224,7 @@ async def test_buffercache_tools_execution() -> None:
 
         # Call read_pg_buffercache_relations tool
         result_relations = await client.call_tool("read_pg_buffercache_relations", {"schema": "public", "limit": 5})
-        assert result_relations.isError is False
+        assert result_relations.is_error is False
         assert result_relations.content[0].text is not None
         relations_data = json.loads(result_relations.content[0].text)
         assert relations_data["available"] is True

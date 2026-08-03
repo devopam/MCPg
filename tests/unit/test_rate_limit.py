@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from _fakes import FakeDatabase, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 from test_health import _HEALTHY_ROUTES
 
 from mcpg.config import load_settings
@@ -94,11 +94,11 @@ async def test_server_call_tool_enforces_rate_limits() -> None:
     async with create_connected_server_and_client_session(server) as client:
         # First call succeeds
         result1 = await client.call_tool("check_database_health", {})
-        assert result1.isError is False
+        assert result1.is_error is False
 
         # Second call is throttled, returning an error response
         result2 = await client.call_tool("check_database_health", {})
-        assert result2.isError is True
+        assert result2.is_error is True
         assert any("Rate limit exceeded" in content.text for content in result2.content)
 
 

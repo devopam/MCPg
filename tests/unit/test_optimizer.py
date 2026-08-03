@@ -3,7 +3,7 @@
 import json
 
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.advisors import optimize_query
 from mcpg.config import load_settings
@@ -60,6 +60,6 @@ async def test_optimize_query_tool_registered() -> None:
         # Run optimizer through the tool with a failing query plan (graceful degradation)
         result = await client.call_tool("optimize_query", {"sql": "SELECT 1;"})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["original_sql"] == "SELECT 1;"
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["original_sql"] == "SELECT 1;"

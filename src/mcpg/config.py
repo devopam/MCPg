@@ -69,6 +69,7 @@ class Settings:
     allow_ddl: bool = False
     allow_shell: bool = False
     allow_listen: bool = False
+    elicit_confirm_writes: bool = False
     shell_timeout_sec: int = 60
     shell_max_output_bytes: int = 64 * 1024 * 1024
     # Subprocess hardening for the shell-gated PG binaries. All opt-in.
@@ -293,6 +294,7 @@ class Settings:
             f"allow_ddl={self.allow_ddl}, "
             f"allow_shell={self.allow_shell}, "
             f"allow_listen={self.allow_listen}, "
+            f"elicit_confirm_writes={self.elicit_confirm_writes}, "
             f"shell_timeout_sec={self.shell_timeout_sec}, "
             f"shell_max_output_bytes={self.shell_max_output_bytes}, "
             f"subprocess_bin_allowlist={self.subprocess_bin_allowlist!r}, "
@@ -549,6 +551,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     allow_listen = False
     if (raw := env.get("MCPG_ALLOW_LISTEN")) is not None:
         allow_listen = _parse_bool("MCPG_ALLOW_LISTEN", raw)
+
+    elicit_confirm_writes = False
+    if (raw := env.get("MCPG_ELICIT_CONFIRM_WRITES")) is not None:
+        elicit_confirm_writes = _parse_bool("MCPG_ELICIT_CONFIRM_WRITES", raw)
 
     listen_queue_max = 1000
     if (raw := env.get("MCPG_LISTEN_QUEUE_MAX")) is not None:
@@ -1231,6 +1237,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         allow_ddl=allow_ddl,
         allow_shell=allow_shell,
         allow_listen=allow_listen,
+        elicit_confirm_writes=elicit_confirm_writes,
         shell_timeout_sec=shell_timeout_sec,
         shell_max_output_bytes=shell_max_output_bytes,
         subprocess_bin_allowlist=subprocess_bin_allowlist,
