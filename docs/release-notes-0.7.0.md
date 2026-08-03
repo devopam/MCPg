@@ -1,13 +1,12 @@
 # MCPg v0.7.0 — release notes
 
-**Released:** 2026-08-01
+**Released:** 2026-08-03
 **Tool surface:** **254** tools across 19 capability buckets (read-only
 mode exposes a subset) — unchanged from 0.6.12; this release ships zero
 tool additions or removals.
-**Tests:** full unit + contract suite green locally on this branch. The
-integration matrix (PG 14–18 required, PG 19 + WarehousePG experimental)
-runs via `ci.yml` on push to `main`/`claude/**` or on an opened PR — not
-yet exercised for this exact commit, since it hasn't been pushed.
+**Tests:** full unit + contract suite green locally, and the full `ci.yml`
+matrix (lint, mypy, security audit, PG 14–19 + WarehousePG integration)
+passed on GitHub Actions for this exact commit ahead of the tag.
 **Runtime:** Python 3.12–3.14 (`requires-python >=3.12`; CI/mypy target
 3.14)
 
@@ -63,6 +62,21 @@ by inserting the blank line. A repo-wide grep for the same precondition
 (a non-blank line immediately followed by a bare `---`/`***`/`___`
 line, excluding legitimate YAML front-matter closes) turned up no other
 instances.
+
+## Also fixed
+
+- **Friendly error for a missing required tool argument (#287).** Any tool
+  call omitting a required argument used to leak the MCP SDK's raw
+  `pydantic.ValidationError` dump (including a noisy `errors.pydantic.dev`
+  link) to both the client and the audit log. `AuditedMCPServer.call_tool`
+  now reformats it into a short, actionable message, e.g.
+  `list_indexes: table: Field required`. Generic to every tool.
+- **`translate_nl_to_sql` now reports its internal LLM call's token usage**
+  (`tokens_in`/`tokens_out`, parsed per-provider), closing a blind spot for
+  external cost accounting. Wired into `audit_nl2sql.py`'s previously-unused
+  audit columns.
+- **`mcpg --demo` now indexes `reviews.customer_id`**, a second unplanted
+  unindexed FK the seed script's own comment claimed was already covered.
 
 ## Upgrade impact
 

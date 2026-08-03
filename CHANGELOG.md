@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-03
+
 ### Fixed
 
 - **Friendly error for a missing required tool argument (#287).** Calling
@@ -16,14 +18,14 @@ adheres to [Semantic Versioning](https://semver.org/).
   error for list_indexesArguments\ntable\n  Field required [type=missing,
   ...]`. This was generic to every tool (the failure happens in the shared
   MCP SDK argument-validation path, not per-tool code).
-  `AuditedFastMCP.call_tool` in `src/mcpg/server.py` now detects a
+  `AuditedMCPServer.call_tool` in `src/mcpg/server.py` now detects a
   `pydantic.ValidationError` (directly, or as the SDK's wrapping
-  `ToolError.__cause__`) and replaces it with a short, actionable message
-  built from `ValidationError.errors()` before it reaches the audit log or
-  the client, e.g. `list_indexes: table: Field required`. Non-validation
-  tool errors (e.g. a plain `ValueError`/`RuntimeError` raised for a
-  business-logic reason) are unaffected — only the pydantic-validation-error
-  case is reformatted.
+  `ToolError.__cause__`/`__context__`) and replaces it with a short,
+  actionable message built from `ValidationError.errors()` before it
+  reaches the audit log or the client, e.g.
+  `list_indexes: table: Field required`. Non-validation tool errors (e.g.
+  a plain `ValueError`/`RuntimeError` raised for a business-logic reason)
+  are unaffected — only the pydantic-validation-error case is reformatted.
 - **`translate_nl_to_sql` now reports its internal LLM call's token usage.**
   The tool makes its own HTTP call to whichever NL→SQL provider is
   configured — independent of and invisible to whatever's driving MCPg over
@@ -42,11 +44,6 @@ adheres to [Semantic Versioning](https://semver.org/).
   but the DDL only ever indexed `reviews.product_id` — a second, unplanted
   unindexed FK alongside the intentionally-planted `orders.customer_id`
   finding (which is untouched).
-
-## [0.7.0] - 2026-08-01
-
-### Fixed
-
 - **Capped `mcp[cli]` below 2.0** (`>=1.28.1,<2`), as an interim hotfix
   (#290). The upstream `mcp` SDK published a `2.0.0` release that renames
   `mcp.server.fastmcp.FastMCP` to `mcp.server.mcpserver.MCPServer` (and
