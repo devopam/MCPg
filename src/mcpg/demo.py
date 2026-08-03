@@ -341,6 +341,7 @@ _TABLE_DDL: list[LiteralString] = [
     "CREATE INDEX order_items_order_id_idx ON {schema}.order_items (order_id)",
     "CREATE INDEX order_items_product_id_idx ON {schema}.order_items (product_id)",
     "CREATE INDEX reviews_product_id_idx ON {schema}.reviews (product_id)",
+    "CREATE INDEX reviews_customer_id_idx ON {schema}.reviews (customer_id)",
 ]
 
 _INSERTS: dict[str, LiteralString] = {

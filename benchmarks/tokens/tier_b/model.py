@@ -2,9 +2,9 @@
 
 Defaults to Anthropic (Claude). Credentials come from the environment
 (``ANTHROPIC_API_KEY``), never a flag, so a key is never written to disk or a
-result file. Temperature is pinned to 0 for reproducibility. The interface is
-deliberately small (:class:`ModelResponse` + ``complete``) so another provider
-can be dropped in without touching the agent loop.
+result file. The interface is deliberately small (:class:`ModelResponse` +
+``complete``) so another provider can be dropped in without touching the
+agent loop.
 
 ``anthropic`` is an optional ``bench`` dependency, imported lazily; its absence
 (or a missing key) raises a clear, actionable error at *run* time — Tier-B is
@@ -40,7 +40,7 @@ class ModelClient(Protocol):
 
 
 class AnthropicClient:
-    """``ModelClient`` backed by the Anthropic Messages API (async, temp 0)."""
+    """``ModelClient`` backed by the Anthropic Messages API (async)."""
 
     def __init__(self, model: str = DEFAULT_MODEL, max_tokens: int = DEFAULT_MAX_TOKENS) -> None:
         try:
@@ -61,12 +61,15 @@ class AnthropicClient:
     async def complete(self, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> ModelResponse:
         # The SDK types messages/tools as its own TypedDicts; we build plain
         # dicts (accepted at runtime). Cast to keep the loop provider-agnostic.
+        # No temperature kwarg: claude-sonnet-5 (the default --model) rejects it
+        # as a deprecated parameter (HTTP 400 invalid_request_error). Left out
+        # entirely rather than made conditional on model name — add it back
+        # per-model if a future --model target still supports/needs it.
         resp = await self._client.messages.create(
             model=self._model,
             system=system,
             messages=cast("Any", messages),
             tools=cast("Any", tools),
-            temperature=0,
             max_tokens=self._max_tokens,
         )
         return ModelResponse(

@@ -1,6 +1,15 @@
 # MCPg benchmark suite — plan
 
-**Status:** planning (this doc). **Approach:** plan-first, then phased PRs
+**Status:** the plan below is the original, full ambition of this suite,
+including an agent-loop (Tier B) token study. **The agent-loop objective is
+descoped from the published claim.** The shipped, published result is
+narrower than this plan: deterministic per-call token accounting (Tier A,
+[`docs/token-efficiency.md`](../token-efficiency.md)) plus the performance
+result ([`docs/performance-benchmark.md`](../performance-benchmark.md)). The
+rest of this document is kept as the historical plan, not a current claim —
+read the two docs above for what's actually published.
+
+**Approach:** plan-first, then phased PRs
 (harness → token accounting → dashboard → agent study → writeup).
 **Audience of the *output*:** public — a conclusive, evidence-driven case,
 built to survive a skeptical technical reader (the kind who knows Postgres).

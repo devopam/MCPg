@@ -642,7 +642,19 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
         }
     ),
     "translate_nl_to_sql": frozenset(
-        {"sql", "explanation", "model", "provider", "executed", "rows", "columns", "row_count", "error"}
+        {
+            "sql",
+            "explanation",
+            "model",
+            "provider",
+            "executed",
+            "rows",
+            "columns",
+            "row_count",
+            "error",
+            "tokens_in",
+            "tokens_out",
+        }
     ),
     "analyze_query_plan": frozenset(
         {

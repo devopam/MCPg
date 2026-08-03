@@ -1,0 +1,12 @@
+{
+  "$schema": "https://wardn.ai/schemas/wardn.json",
+  "servers": {
+    "io.github.devopam/mcpg": {
+      "owners": [
+        {
+          "userId": "abac06d3-a7a2-481d-8964-b4c9ed0bff55"
+        }
+      ]
+    }
+  }
+}

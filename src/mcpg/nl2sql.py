@@ -320,15 +320,37 @@ class TranslationResult:
     # sentinel. When refused, ``sql`` is empty and nothing is executed.
     refused: bool = False
     refusal_reason: str | None = None
+    # The internal translation LLM call's cost — this call never goes
+    # through a caller's own model loop, so without this a caller driving
+    # MCPg over MCP (e.g. an agent, or the Tier-B benchmark) has no way to
+    # see it at all.
+    tokens_in: int = 0
+    tokens_out: int = 0
+
+
+@dataclass(frozen=True)
+class ProviderCompletion:
+    """One provider call's raw text plus the tokens it actually cost.
+
+    Token counts come straight off each vendor's response body (discarded
+    before this existed) — needed so callers like the Tier-B benchmark can
+    account for this internal call's cost, which is otherwise invisible to
+    anyone driving MCPg over MCP (this call never goes through the agent's
+    own model loop).
+    """
+
+    text: str
+    tokens_in: int
+    tokens_out: int
 
 
 @runtime_checkable
 class LLMProvider(Protocol):
     """Common interface for the NL→SQL chat completion call.
 
-    Each provider's :meth:`complete` returns the raw text from the
-    LLM. The caller does JSON parsing — that way provider-specific
-    JSON-mode quirks don't leak into this module.
+    Each provider's :meth:`complete` returns the raw text from the LLM plus
+    its token usage. The caller does JSON parsing of the text — that way
+    provider-specific JSON-mode quirks don't leak into this module.
     """
 
     name: str
@@ -341,8 +363,8 @@ class LLMProvider(Protocol):
         model: str,
         max_tokens: int,
         timeout: float,
-    ) -> str:
-        """Send the prompt; return the completion text. Raises on transport error."""
+    ) -> ProviderCompletion:
+        """Send the prompt; return the completion text + usage. Raises on transport error."""
         ...
 
 
@@ -363,7 +385,7 @@ class AnthropicProvider:
         model: str,
         max_tokens: int,
         timeout: float,
-    ) -> str:
+    ) -> ProviderCompletion:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 f"{self._base_url}/v1/messages",
@@ -381,13 +403,15 @@ class AnthropicProvider:
             )
         response.raise_for_status()
         body = response.json()
+        usage = body.get("usage") or {}
+        tokens_in, tokens_out = int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)
         # content is a list of blocks; for plain text we want the first
         # text block. JSON-mode isn't strictly supported, so we ask for
         # JSON in the prompt and trust the model to comply.
         for block in body.get("content", []):
             if block.get("type") == "text":
-                return str(block.get("text", ""))
-        return ""
+                return ProviderCompletion(str(block.get("text", "")), tokens_in, tokens_out)
+        return ProviderCompletion("", tokens_in, tokens_out)
 
 
 class OpenAIProvider:
@@ -412,7 +436,7 @@ class OpenAIProvider:
         model: str,
         max_tokens: int,
         timeout: float,
-    ) -> str:
+    ) -> ProviderCompletion:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 f"{self._base_url}/chat/completions",
@@ -432,10 +456,14 @@ class OpenAIProvider:
             )
         response.raise_for_status()
         body = response.json()
+        usage = body.get("usage") or {}
+        tokens_in = int(usage.get("prompt_tokens") or 0)
+        tokens_out = int(usage.get("completion_tokens") or 0)
         choices = body.get("choices", [])
         if not choices:
-            return ""
-        return str(choices[0].get("message", {}).get("content", ""))
+            return ProviderCompletion("", tokens_in, tokens_out)
+        text = str(choices[0].get("message", {}).get("content", ""))
+        return ProviderCompletion(text, tokens_in, tokens_out)
 
 
 class GeminiProvider:
@@ -455,7 +483,7 @@ class GeminiProvider:
         model: str,
         max_tokens: int,
         timeout: float,
-    ) -> str:
+    ) -> ProviderCompletion:
         # Gemini accepts the API key as a query string or `x-goog-api-key`
         # header — we use the header to avoid logging-route leakage.
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -476,11 +504,15 @@ class GeminiProvider:
             )
         response.raise_for_status()
         body = response.json()
+        usage = body.get("usageMetadata") or {}
+        tokens_in = int(usage.get("promptTokenCount") or 0)
+        tokens_out = int(usage.get("candidatesTokenCount") or 0)
         candidates = body.get("candidates", [])
         if not candidates:
-            return ""
+            return ProviderCompletion("", tokens_in, tokens_out)
         parts = candidates[0].get("content", {}).get("parts", [])
-        return "".join(str(p.get("text", "")) for p in parts)
+        text = "".join(str(p.get("text", "")) for p in parts)
+        return ProviderCompletion(text, tokens_in, tokens_out)
 
 
 def is_valid_provider(name: str) -> bool:
@@ -1149,7 +1181,7 @@ async def translate_nl_to_sql(
     system_prompt = _build_system_prompt(server_version_num)
 
     try:
-        raw = await provider.complete(
+        completion = await provider.complete(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             model=model,
@@ -1158,6 +1190,9 @@ async def translate_nl_to_sql(
         )
     except httpx.HTTPError as exc:
         raise NL2SQLError(f"NL→SQL provider request failed: {exc}") from exc
+
+    raw = completion.text
+    tokens_in, tokens_out = completion.tokens_in, completion.tokens_out
 
     sql, explanation = _parse_response(raw)
 
@@ -1186,6 +1221,8 @@ async def translate_nl_to_sql(
             error=None,
             refused=True,
             refusal_reason=refusal_reason,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
         )
     elif preflight_error is not None:
         # EXPLAIN rejected the generated SQL — return it with the planner
@@ -1200,6 +1237,8 @@ async def translate_nl_to_sql(
             columns=[],
             row_count=0,
             error=preflight_error,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
         )
     elif not execute or not sql:
         translation = TranslationResult(
@@ -1212,6 +1251,8 @@ async def translate_nl_to_sql(
             columns=[],
             row_count=0,
             error=None if sql else "model returned no SQL",
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
         )
     else:
         # Execution path: assert single-statement first (defence-in-
@@ -1231,6 +1272,8 @@ async def translate_nl_to_sql(
                 columns=exec_result.columns,
                 row_count=exec_result.row_count,
                 error=None,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
             )
         except (QueryError, NL2SQLError) as exc:
             # psycopg / libpq error messages routinely embed DSN
@@ -1248,6 +1291,8 @@ async def translate_nl_to_sql(
                 columns=[],
                 row_count=0,
                 error=obfuscate_password(str(exc)),
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
             )
 
     if audit_persist:
@@ -1270,6 +1315,8 @@ async def translate_nl_to_sql(
                 row_count=translation.row_count if translation.executed else None,
                 error=translation.error,
                 duration_ms=duration_ms,
+                prompt_tokens=translation.tokens_in,
+                completion_tokens=translation.tokens_out,
                 env=env,
             )
         except Exception as exc:  # pragma: no cover - swallowed on purpose

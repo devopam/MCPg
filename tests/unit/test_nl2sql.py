@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
+from unittest.mock import patch
 
+import httpx
 import pytest
 from _fakes import FakeRoutingDriver
 
@@ -24,6 +27,7 @@ from mcpg.nl2sql import (
     NL2SQLError,
     OpenAIProvider,
     ProviderCallParams,
+    ProviderCompletion,
     _assert_single_statement,
     _parse_response,
     _reset_egress_notice_cache,
@@ -46,6 +50,8 @@ class _StubProvider:
 
     name: str = "stub"
     response: str = ""
+    tokens_in: int = 111
+    tokens_out: int = 222
     captured_system: str = ""
     captured_user: str = ""
     captured_model: str = ""
@@ -59,13 +65,13 @@ class _StubProvider:
         model: str,
         max_tokens: int,
         timeout: float,
-    ) -> str:
+    ) -> ProviderCompletion:
         _ = timeout
         self.captured_system = system_prompt
         self.captured_user = user_prompt
         self.captured_model = model
         self.captured_max_tokens = max_tokens
-        return self.response
+        return ProviderCompletion(self.response, self.tokens_in, self.tokens_out)
 
 
 def _routes_for_simple_schema() -> dict[str, list[dict[str, object]]]:
@@ -443,6 +449,10 @@ async def test_translate_nl_to_sql_surfaces_refusal_from_sentinel_in_sql_field()
     assert result.sql == ""
     assert result.executed is False
     assert result.error is None
+    # The refusal branch is a distinct TranslationResult construction site —
+    # token usage must still carry through it, not just the happy path.
+    assert result.tokens_in == provider.tokens_in
+    assert result.tokens_out == provider.tokens_out
 
 
 async def test_translate_nl_to_sql_detects_bare_refusal_sentinel() -> None:
@@ -523,6 +533,27 @@ async def test_translate_nl_to_sql_records_provider_and_model_on_the_result() ->
 
     assert result.model == "my-model-id"
     assert result.provider == "stub"
+
+
+async def test_translate_nl_to_sql_reports_the_providers_token_usage() -> None:
+    """The internal provider call's tokens never go through a caller's own
+    model loop — TranslationResult is the only place they're visible, so
+    they must survive end-to-end regardless of which branch handles the
+    result (this one takes the no-execute generation-only path)."""
+    provider = _StubProvider(response='{"sql": "SELECT 1", "explanation": "smoke"}', tokens_in=555, tokens_out=777)
+
+    result = await translate_nl_to_sql(
+        FakeRoutingDriver(_routes_for_simple_schema()),  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="m",
+        question="smoke",
+        schema="public",
+        execute=False,
+        explain_preflight=False,
+    )
+
+    assert result.tokens_in == 555
+    assert result.tokens_out == 777
 
 
 async def test_translate_nl_to_sql_reports_error_when_model_returns_no_sql() -> None:
@@ -1214,3 +1245,99 @@ def test_parse_response_extracts_fence_body_over_outer_garbage() -> None:
     sql, explanation = _parse_response(raw)
     assert sql == "SELECT 2"
     assert explanation == "ok"
+
+
+# --- provider token-usage parsing (real HTTP response shapes) -------------
+#
+# No existing nl2sql test mocks httpx — _StubProvider bypasses the real
+# providers' HTTP/JSON-parsing code entirely. These reuse the idiomatic
+# fake-AsyncClient pattern from tests/unit/test_oidc.py's
+# _mock_httpx_responses, applied to POST instead of GET, so the three real
+# provider classes' usage-block parsing is actually exercised.
+
+
+def _mock_post_response(body: dict[str, Any]):
+    """Patch ``mcpg.nl2sql.httpx`` so any POST returns ``body`` as JSON."""
+
+    class _AsyncResponse:
+        def __init__(self, body: dict[str, Any]) -> None:
+            self._body = body
+            self.status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return self._body
+
+    class _AsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> _AsyncClient:
+            return self
+
+        async def __aexit__(self, *exc_info: object) -> None:
+            return None
+
+        async def post(self, url: str, **_kwargs: Any) -> _AsyncResponse:
+            return _AsyncResponse(body)
+
+    return patch.multiple(
+        "mcpg.nl2sql",
+        httpx=type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
+    )
+
+
+async def test_anthropic_provider_parses_usage_from_the_real_response_shape() -> None:
+    body = {
+        "content": [{"type": "text", "text": '{"sql": "SELECT 1", "explanation": "x"}'}],
+        "usage": {"input_tokens": 123, "output_tokens": 45},
+    }
+    with _mock_post_response(body):
+        result = await AnthropicProvider(api_key="k").complete(
+            system_prompt="sys", user_prompt="user", model="m", max_tokens=100, timeout=5
+        )
+    assert result.text == '{"sql": "SELECT 1", "explanation": "x"}'
+    assert result.tokens_in == 123
+    assert result.tokens_out == 45
+
+
+async def test_openai_provider_parses_usage_from_the_real_response_shape() -> None:
+    body = {
+        "choices": [{"message": {"content": '{"sql": "SELECT 1", "explanation": "x"}'}}],
+        "usage": {"prompt_tokens": 88, "completion_tokens": 33},
+    }
+    with _mock_post_response(body):
+        result = await OpenAIProvider(api_key="k").complete(
+            system_prompt="sys", user_prompt="user", model="m", max_tokens=100, timeout=5
+        )
+    assert result.text == '{"sql": "SELECT 1", "explanation": "x"}'
+    assert result.tokens_in == 88
+    assert result.tokens_out == 33
+
+
+async def test_gemini_provider_parses_usage_from_the_real_response_shape() -> None:
+    body = {
+        "candidates": [{"content": {"parts": [{"text": '{"sql": "SELECT 1", "explanation": "x"}'}]}}],
+        "usageMetadata": {"promptTokenCount": 61, "candidatesTokenCount": 19},
+    }
+    with _mock_post_response(body):
+        result = await GeminiProvider(api_key="k").complete(
+            system_prompt="sys", user_prompt="user", model="m", max_tokens=100, timeout=5
+        )
+    assert result.text == '{"sql": "SELECT 1", "explanation": "x"}'
+    assert result.tokens_in == 61
+    assert result.tokens_out == 19
+
+
+async def test_provider_usage_missing_or_malformed_defaults_to_zero_not_a_crash() -> None:
+    """A vendor quirk (missing/null usage block) must not break translation
+    — the token count is a nice-to-have, not load-bearing for correctness."""
+    body = {"content": [{"type": "text", "text": "no usage block here"}]}
+    with _mock_post_response(body):
+        result = await AnthropicProvider(api_key="k").complete(
+            system_prompt="sys", user_prompt="user", model="m", max_tokens=100, timeout=5
+        )
+    assert result.tokens_in == 0
+    assert result.tokens_out == 0

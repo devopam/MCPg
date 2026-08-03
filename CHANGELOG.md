@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`translate_nl_to_sql` now reports its internal LLM call's token usage.**
+  The tool makes its own HTTP call to whichever NL→SQL provider is
+  configured — independent of and invisible to whatever's driving MCPg over
+  MCP — and `TranslationResult` previously reported no token usage for it at
+  all, a total blind spot for any external cost accounting (an agent's own
+  budget, or a benchmark). Each provider's `.complete()` now returns a
+  `ProviderCompletion` (text + `tokens_in`/`tokens_out`) parsed from that
+  vendor's usage block (Anthropic `usage.input_tokens`/`output_tokens`,
+  OpenAI-compatible `usage.prompt_tokens`/`completion_tokens`, Gemini
+  `usageMetadata.promptTokenCount`/`candidatesTokenCount`) instead of
+  discarding it; missing/malformed usage defaults to 0 rather than raising.
+  Also wires the counts into `audit_nl2sql.py`'s already-existing but
+  previously-unused `prompt_tokens`/`completion_tokens` audit columns.
+- **`mcpg --demo` now indexes `reviews.customer_id`.** The seed script's own
+  comment claimed `order_items` and `reviews` both get "proper FK indexes,"
+  but the DDL only ever indexed `reviews.product_id` — a second, unplanted
+  unindexed FK alongside the intentionally-planted `orders.customer_id`
+  finding (which is untouched).
+
 ## [0.7.0] - 2026-08-01
 
 ### Fixed

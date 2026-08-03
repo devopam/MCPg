@@ -1,0 +1,223 @@
+{
+  "metadata": {
+    "kind": "real_harness_comparison",
+    "model": "claude-sonnet-5",
+    "trials_per_arm": 1,
+    "max_budget_usd": 1.0,
+    "mcpg_system_prompt_hint": null,
+    "task_set": "audit",
+    "host": {
+      "python": "3.13.7",
+      "os": "Windows-11-10.0.26200-SP0"
+    },
+    "complete": true,
+    "known_limitation": "translate_nl_to_sql's internal LLM call, if it fires in the mcpg arm, is not included in these token/cost numbers \u2014 see module docstring."
+  },
+  "trials": [
+    {
+      "task_id": "missing_index",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 156583,
+      "tokens_out": 1252,
+      "turns": 4,
+      "tool_calls": 3,
+      "passed": true,
+      "final_answer": "The table/column that most needs a new index is:\n\n**`mcpg_demo.orders.customer_id`** (constraint `orders_customer_id_fkey`)\n\nIt's the only foreign-key column in the schema with no supporting index \u2014 every join or lookup from `customers` to their `orders` (3,000 rows) forces a sequential scan on `orders` instead of an index lookup. Fix:\n\n```sql\nCREATE INDEX orders_customer_id_idx ON mcpg_demo.orders (customer_id);\n```",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.1663758,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "missing_index",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 399304,
+      "tokens_out": 2775,
+      "turns": 10,
+      "tool_calls": 9,
+      "passed": false,
+      "final_answer": "I'm blocked on tool approvals for both `docker exec` and the `mcpg` MCP tools \u2014 these need your permission to run. Could you approve the pending permission prompt (or let me know if you'd like me to use a different approach)?",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.3078123,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "ToolSearch",
+        "mcp__mcpg__list_foreign_keys",
+        "mcp__mcpg__recommend_indexes",
+        "mcp__mcpg__list_foreign_keys",
+        "mcp__mcpg__list_foreign_keys",
+        "Bash",
+        "PowerShell"
+      ]
+    },
+    {
+      "task_id": "pii_columns",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 197282,
+      "tokens_out": 1579,
+      "turns": 5,
+      "tool_calls": 4,
+      "passed": true,
+      "final_answer": "Confirmed via schema and sample data. Here's the full PII inventory for this database (`mcpg_demo` schema):\n\n**Direct/identifying PII**\n- `customers.full_name` \u2014 person's full name\n- `customers.email` \u2014 email address\n- `customers.phone` \u2014 phone number\n\n**Indirect/quasi-identifier PII**\n- `customers.country` \u2014 geolocation attribute, PII when combined with other fields\n- `customers.customer_id` \u2014 identifier that links to the above (PII by association wherever it appears as a foreign key: `orders.customer_id`, `reviews.customer_id`)\n\n**Behavioral data tied to an identifiable person**\n- `customers.signup_date` \u2014 account creation timestamp for a named individual\n- `customers.marketing_opt_in` \u2014 consent/preference record tied to a named individual\n\nNo PII found in `order_items`, `orders` (beyond the `customer_id` FK), `products`, or `reviews` (`review_text` sampled \u2014 no embedded names/PII; `reviewSource` and `rating` are non-personal).\n\n**Summary \u2014 table.column list:**\n- `customers.full_name`\n- `customers.email`\n- `customers.phone`\n- `customers.country`\n- `customers.customer_id`\n- `customers.signup_date`\n- `customers.marketing_opt_in`\n- `orders.customer_id` (FK reference to PII)\n- `reviews.customer_id` (FK reference to PII)",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.1518666,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "pii_columns",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 594642,
+      "tokens_out": 3941,
+      "turns": 18,
+      "tool_calls": 17,
+      "passed": true,
+      "final_answer": "Data confirms no hidden PII in free-text fields (reviews/product descriptions are generic template text with no names, emails, or identifiers embedded). The PII is confined to the `customers` table plus foreign-key links to it elsewhere.\n\n## PII columns found\n\n**Direct PII:**\n- `customers.full_name` \u2014 personal name\n- `customers.email` \u2014 email address\n- `customers.phone` \u2014 phone number\n\n**Indirect identifiers** (link records back to a specific individual, though not directly identifying on their own):\n- `customers.customer_id` \u2014 primary key tied to a named person\n- `orders.customer_id` \u2014 foreign key referencing the customer\n- `reviews.customer_id` \u2014 foreign key referencing the customer\n- `customers.country` \u2014 coarse location data (low sensitivity, but a data point about the individual)\n\n**Not PII:** `customers.signup_date`, `customers.marketing_opt_in`, and everything in `products`, `order_items`, `reviews.review_text`/`reviewSource` \u2014 verified by sampling that free-text fields contain only generic templated content, no embedded personal data.",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.37104329999999996,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "ToolSearch",
+        "mcp__mcpg__find_sensitive_columns",
+        "mcp__mcpg__list_tables",
+        "mcp__mcpg__list_tables",
+        "ToolSearch",
+        "mcp__mcpg__list_schemas",
+        "mcp__mcpg__find_sensitive_columns",
+        "ToolSearch",
+        "mcp__mcpg__get_compact_schema",
+        "mcp__mcpg__run_select",
+        "mcp__mcpg__run_select",
+        "mcp__mcpg__run_select",
+        "mcp__mcpg__run_select",
+        "mcp__mcpg__run_select",
+        "mcp__mcpg__run_select"
+      ]
+    },
+    {
+      "task_id": "naming_violation",
+      "arm": "baseline",
+      "trial": 0,
+      "tokens_in": 116604,
+      "tokens_out": 479,
+      "turns": 3,
+      "tool_calls": 2,
+      "passed": true,
+      "final_answer": "The offending column is `reviewSource` in `mcpg_demo.reviews` \u2014 it's camelCase, while every other column in the database uses snake_case.",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.10387919999999999,
+      "tool_names": [
+        "Bash",
+        "Bash"
+      ]
+    },
+    {
+      "task_id": "naming_violation",
+      "arm": "mcpg",
+      "trial": 0,
+      "tokens_in": 344698,
+      "tokens_out": 1240,
+      "turns": 8,
+      "tool_calls": 7,
+      "passed": false,
+      "final_answer": "I need your approval to run either the `lint_naming_conventions` MCP tool or a `docker exec ... psql` command against the local database. Could you approve one of these when the permission prompt appears?",
+      "error": null,
+      "hidden_tokens_in": 0,
+      "hidden_tokens_out": 0,
+      "cost_usd": 0.21609119999999998,
+      "tool_names": [
+        "Bash",
+        "Bash",
+        "ToolSearch",
+        "mcp__mcpg__lint_naming_conventions",
+        "mcp__mcpg__lint_naming_conventions",
+        "mcp__mcpg__lint_naming_conventions",
+        "Bash"
+      ]
+    }
+  ],
+  "aggregate": {
+    "mcpg": {
+      "trials": 3,
+      "mean_total_tokens": 448866.6666666667,
+      "mean_tool_calls": 11.0,
+      "mean_turns": 12.0,
+      "correctness": 0.3333333333333333
+    },
+    "baseline": {
+      "trials": 3,
+      "mean_total_tokens": 157926.33333333334,
+      "mean_tool_calls": 3.0,
+      "mean_turns": 4.0,
+      "correctness": 1.0
+    },
+    "token_ratio": 0.35183350660923807,
+    "errored": 0,
+    "per_task": [
+      {
+        "task_id": "missing_index",
+        "mcpg": {
+          "mean_total_tokens": 402079.0,
+          "mean_tool_calls": 9.0,
+          "correctness": 0.0
+        },
+        "baseline": {
+          "mean_total_tokens": 157835.0,
+          "mean_tool_calls": 3.0,
+          "correctness": 1.0
+        }
+      },
+      {
+        "task_id": "pii_columns",
+        "mcpg": {
+          "mean_total_tokens": 598583.0,
+          "mean_tool_calls": 17.0,
+          "correctness": 1.0
+        },
+        "baseline": {
+          "mean_total_tokens": 198861.0,
+          "mean_tool_calls": 4.0,
+          "correctness": 1.0
+        }
+      },
+      {
+        "task_id": "naming_violation",
+        "mcpg": {
+          "mean_total_tokens": 345938.0,
+          "mean_tool_calls": 7.0,
+          "correctness": 0.0
+        },
+        "baseline": {
+          "mean_total_tokens": 117083.0,
+          "mean_tool_calls": 2.0,
+          "correctness": 1.0
+        }
+      }
+    ]
+  },
+  "schema_version": 1,
+  "kind": "tokens_tier_b"
+}

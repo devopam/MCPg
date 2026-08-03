@@ -31,10 +31,30 @@ class TrialResult:
     passed: bool
     final_answer: str
     error: str | None = None
+    # translate_nl_to_sql makes its own internal LLM call, invisible to the
+    # outer agent loop's own tokens_in/tokens_out above — this is that call's
+    # cost, folded in separately so the writeup can show both the outer-loop
+    # total and the internal-call breakdown. 0 for any trial that never calls
+    # it (including every baseline-arm trial, which doesn't have the tool).
+    hidden_tokens_in: int = 0
+    hidden_tokens_out: int = 0
+    # Populated only by the real-harness experiment (real_harness_comparison.py),
+    # which gets an authoritative dollar cost directly from `claude -p`'s
+    # result event — a single number that already accounts for cache-write
+    # vs. cache-read discounting, unlike a raw token sum. 0.0 for every trial
+    # from the synthetic Python-loop harness, which has no such figure.
+    cost_usd: float = 0.0
+    # Real tool-call names in call order, extracted from stream-json's
+    # per-turn `assistant` events — lets the writeup answer "did
+    # translate_nl_to_sql actually fire" directly instead of inferring it
+    # from token/turn counts. Empty for the synthetic harness (it already
+    # knows its allowed_tools; this is for observing real, uncontrolled
+    # tool choice).
+    tool_names: tuple[str, ...] = ()
 
     @property
     def total_tokens(self) -> int:
-        return self.tokens_in + self.tokens_out
+        return self.tokens_in + self.tokens_out + self.hidden_tokens_in + self.hidden_tokens_out
 
 
 @dataclass(frozen=True)
