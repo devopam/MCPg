@@ -30,3 +30,4 @@ _site/
 # Subagent-driven-development scratch workspace (ledgers, briefs, review
 # packages) — per-plan working state, not part of the shipped repo.
 .superpowers/
+.gstack/

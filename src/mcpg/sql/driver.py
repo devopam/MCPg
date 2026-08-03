@@ -68,6 +68,16 @@ def obfuscate_password(text: str | None) -> str | None:
     dsn_double_quote = re.compile(r'(password\s*=\s*")([^"]+)(")', re.IGNORECASE)
     text = re.sub(dsn_double_quote, r"\1****\3", text)
 
+    # SQL-literal syntax: a bare keyword + single-quoted literal, no
+    # ``=`` sign — e.g. a foreign-data-wrapper ``OPTIONS (password
+    # '...')`` clause (see ``mcpg.redis_fdw.create_redis_user_mapping``)
+    # or DDL forms like ``ALTER ROLE x WITH PASSWORD '...'`` / MySQL-style
+    # ``IDENTIFIED BY '...'``. None of the ``=``-anchored patterns above
+    # match this form, so it needs its own pattern (CodeQL
+    # py/clear-text-logging-sensitive-data, alert #5).
+    sql_literal_pattern = re.compile(r"((?:password|identified\s+by)\s+')([^']+)(')", re.IGNORECASE)
+    text = re.sub(sql_literal_pattern, r"\1****\3", text)
+
     return text
 
 
@@ -261,5 +271,18 @@ class SqlDriver:
                     await connection.rollback()
                 except Exception as rollback_error:
                     logger.error("Error rolling back transaction: %s", rollback_error)
-            logger.error("Error executing query (%s): %s", query, e)
+            # Route both the query text and the exception through
+            # obfuscate_password before logging. Some real call sites
+            # (e.g. mcpg.redis_fdw.create_redis_user_mapping's ``CREATE
+            # USER MAPPING ... OPTIONS (password '...')`` DDL) interpolate
+            # a real secret straight into the SQL text; if execution then
+            # raises, the query — and potentially the driver's echo of it
+            # back in the exception message — must not reach the log in
+            # clear text (CodeQL py/clear-text-logging-sensitive-data,
+            # alert #5).
+            logger.error(
+                "Error executing query (%s): %s",
+                obfuscate_password(str(query)),
+                obfuscate_password(str(e)),
+            )
             raise

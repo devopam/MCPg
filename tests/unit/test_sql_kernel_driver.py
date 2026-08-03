@@ -5,6 +5,7 @@ Ported from the vendored ``tests/vendor/sql/test_sql_driver.py``, now
 exercising :class:`mcpg.sql.SqlDriver` / :class:`mcpg.sql.DbConnPool`.
 """
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -202,6 +203,35 @@ async def test_connection_error_marks_pool_invalid(mock_db_pool):
 
     assert db_pool._is_valid is False
     assert isinstance(db_pool._last_error, str)
+
+
+@pytest.mark.asyncio
+async def test_execute_query_error_log_redacts_sql_literal_secret(mock_connection, caplog):
+    """Regression test for CodeQL alert #5 (py/clear-text-logging-sensitive-data).
+
+    ``_execute_with_connection``'s error-path ``logger.error`` call must
+    never leak a literal secret embedded in SQL-syntax password clauses.
+    The real traced call chain: ``mcpg.redis_fdw.create_redis_user_mapping``
+    resolves a real value from the configured secrets backend
+    (``mcpg.secrets.build_secrets_provider`` / ``SecretsProvider.get``) and
+    interpolates it into a ``CREATE USER MAPPING ... OPTIONS (password
+    '...')`` statement (no ``=`` sign — the DSN-style
+    ``obfuscate_password`` patterns wouldn't have caught this before the
+    fix). If that ``execute_query`` call ever raises, the query text must
+    reach the log redacted, not verbatim.
+    """
+    connection, cursor = mock_connection
+    secret = "sup3r-sekret-token-xyz"
+    query = f"CREATE USER MAPPING IF NOT EXISTS FOR PUBLIC SERVER \"redis_primary\" OPTIONS (password '{secret}')"
+    cursor.execute.side_effect = Exception("boom")
+    driver = SqlDriver(conn=connection)
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(Exception, match="boom"):
+            await driver._execute_with_connection(connection, query, None, force_readonly=False)
+
+    assert secret not in caplog.text
+    assert "****" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,46 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Code-scanning triage (CodeQL + OpenSSF Scorecard).** Removed the
+  unused, broken `apisec-scan.yml` workflow (pointed at a demo project
+  with no real credentials). Added least-privilege `permissions:` blocks
+  to the three `ci.yml` jobs CodeQL flagged
+  (`actions/missing-workflow-permissions`) — all three only check out the
+  repo and run local commands, so a single top-level `contents: read`
+  covers them. Pinned Docker base images (`Dockerfile`,
+  `local-postgres.Dockerfile`, `.github/ci-postgres-warehousepg.Dockerfile`,
+  `.github/ci-postgres-pg19.Dockerfile`,
+  `scratch/pg_turboquant/docker/Dockerfile.dev`) to `@sha256:` content
+  digests; `.github/ci-postgres.Dockerfile` is intentionally left
+  unpinned (parameterized by `PG_MAJOR` to drive the CI matrix) with a
+  comment explaining the exception. Pinned the unversioned
+  `pip install huggingface_hub` step in `publish.yml`'s (non-blocking)
+  HF-Space-refresh job to `==1.26.0`.
+- **Hardened `SqlDriver`'s query-error log line against clear-text secret
+  leakage (CodeQL `py/clear-text-logging-sensitive-data`, high severity).**
+  `_execute_with_connection`'s exception handler logged the raw `query`
+  text verbatim. Root-caused: this is a real, reachable path —
+  `mcpg.redis_fdw.create_redis_user_mapping` resolves a real secret from
+  the configured secrets backend and interpolates it into a
+  `CREATE USER MAPPING ... OPTIONS (password '...')` statement (SQL
+  literal syntax, no `=` sign) before calling `execute_query`; if that
+  call raises, the literal secret would have reached the log verbatim.
+  `obfuscate_password`'s existing DSN-style patterns (`password=...`)
+  didn't match this `=`-less SQL-literal form. Added a new
+  `obfuscate_password` pattern for bare-keyword SQL literals
+  (`password '...'` / `IDENTIFIED BY '...'`) and routed both the logged
+  `query` and exception text through `obfuscate_password` in
+  `src/mcpg/sql/driver.py`. Regression tests added in
+  `tests/unit/test_sql_kernel_obfuscate.py` and
+  `tests/unit/test_sql_kernel_driver.py`.
+- Reviewed the CodeQL `py/incomplete-url-substring-sanitization` alert on
+  `tests/unit/test_secrets.py:234` — a test-only false positive (a
+  hardcoded-literal `assert "vault.example.com" in rendered` debug-repr
+  check, not a URL-sanitization decision on untrusted input); suppressed
+  with an inline `codeql[...]` comment explaining why.
+
 ## [0.7.0] - 2026-08-03
 
 ### Fixed

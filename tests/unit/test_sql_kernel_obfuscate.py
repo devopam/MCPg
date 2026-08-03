@@ -94,3 +94,30 @@ def test_obfuscate_dsn_format() -> None:
     assert obfuscated is not None
     assert "supersecret" not in obfuscated
     assert 'password="****"' in obfuscated
+
+
+def test_obfuscate_sql_literal_syntax() -> None:
+    """SQL-syntax password literals (no ``=`` sign) must be redacted too.
+
+    Regression test for CodeQL alert #5
+    (py/clear-text-logging-sensitive-data): the real tainted-flow instance
+    traced to ``mcpg.redis_fdw.create_redis_user_mapping``, which builds a
+    ``CREATE USER MAPPING ... OPTIONS (password '...')`` statement by
+    interpolating a real secrets-backend value. That form has no ``=``
+    between the keyword and the quoted literal, so the pre-existing
+    ``password=``-anchored patterns above do not match it.
+    """
+    ddl = "CREATE USER MAPPING IF NOT EXISTS FOR PUBLIC SERVER \"r\" OPTIONS (password 's3cr3t-token')"
+    obfuscated = obfuscate_password(ddl)
+    assert obfuscated is not None
+    assert "s3cr3t-token" not in obfuscated
+    assert "password '****'" in obfuscated
+
+    # MySQL-style ``IDENTIFIED BY '...'`` — same bare-keyword-plus-literal
+    # shape, covered defensively even though no current mcpg call site
+    # emits it.
+    ddl2 = "CREATE USER admin IDENTIFIED BY 'hunter2'"
+    obfuscated2 = obfuscate_password(ddl2)
+    assert obfuscated2 is not None
+    assert "hunter2" not in obfuscated2
+    assert "IDENTIFIED BY '****'" in obfuscated2
