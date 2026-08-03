@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "4c4f0697db33",
+  "strategy": "manual-commit",
+  "branch": "fix/list-indexes-friendly-validation-error",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CHANGELOG.md",
+    "src/mcpg/server.py",
+    "tests/unit/test_server.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4c/4f0697db33/0/metadata.json",
+      "transcript": "/4c/4f0697db33/0/full.jsonl",
+      "compact_transcript": "/4c/4f0697db33/0/transcript.jsonl",
+      "content_hash": "/4c/4f0697db33/0/content_hash.txt",
+      "prompt": "/4c/4f0697db33/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1176,
+    "cache_creation_tokens": 3555944,
+    "cache_read_tokens": 170127169,
+    "output_tokens": 400647,
+    "api_call_count": 597
+  }
+}
