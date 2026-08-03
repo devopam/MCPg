@@ -132,6 +132,84 @@ async def test_lifespan_waits_for_in_flight_calls_to_drain() -> None:
     assert server.in_flight_calls == 0
 
 
+async def test_call_tool_missing_required_argument_returns_friendly_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Issue #287: a missing required argument must produce a short,
+    actionable message — not the raw multi-line pydantic ``ValidationError``
+    dump (which includes a noisy ``errors.pydantic.dev`` link) — both in
+    what the client sees (the raised/returned exception) and in the audit
+    log, since both read from the same exception object.
+    """
+    import logging
+
+    server = create_server(_SETTINGS)
+
+    def fake_tool(required_arg: str) -> dict[str, bool]:
+        return {"ok": True}
+
+    server.add_tool(fake_tool, name="fake_tool")
+
+    mcpg_logger = logging.getLogger("mcpg")
+    old_propagate = mcpg_logger.propagate
+    mcpg_logger.propagate = True
+    try:
+        with caplog.at_level(logging.WARNING, logger="mcpg.audit"), pytest.raises(Exception) as exc_info:
+            await server.call_tool("fake_tool", {})
+    finally:
+        mcpg_logger.propagate = old_propagate
+
+    message = str(exc_info.value)
+    assert "errors.pydantic.dev" not in message
+    assert "validation error for" not in message
+    assert "fake_tool" in message
+    assert "required_arg" in message
+
+    audit_warnings = [r for r in caplog.records if r.levelname == "WARNING" and r.name == "mcpg.audit"]
+    assert len(audit_warnings) == 1
+    audit_message = audit_warnings[0].message
+    assert "errors.pydantic.dev" not in audit_message
+    assert "validation error for" not in audit_message
+    assert "fake_tool" in audit_message
+    assert "required_arg" in audit_message
+
+
+async def test_call_tool_validation_error_does_not_leak_other_argument_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The raw pydantic dump embeds ``input_value={...}`` — the full,
+    *unredacted* arguments dict — into the error text. ``audit.record``
+    masks the ``arguments=`` field via ``redact_arguments``, but only runs
+    ``obfuscate_password`` (DSN passwords only) over the ``error=`` field,
+    so a secret-named argument supplied alongside a missing required one
+    previously reached the audit sink in the clear via the raw dump's
+    ``input_value``. The friendly message is built only from ``loc``/``msg``
+    and never touches the submitted values, so this can no longer leak.
+    """
+    import logging
+
+    server = create_server(_SETTINGS)
+
+    def fake_tool(required_arg: str, password: str) -> dict[str, bool]:
+        return {"ok": True}
+
+    server.add_tool(fake_tool, name="fake_tool_with_secret")
+
+    mcpg_logger = logging.getLogger("mcpg")
+    old_propagate = mcpg_logger.propagate
+    mcpg_logger.propagate = True
+    try:
+        with caplog.at_level(logging.WARNING, logger="mcpg.audit"), pytest.raises(Exception) as exc_info:
+            await server.call_tool("fake_tool_with_secret", {"password": "hunter2"})
+    finally:
+        mcpg_logger.propagate = old_propagate
+
+    assert "hunter2" not in str(exc_info.value)
+    audit_warnings = [r for r in caplog.records if r.levelname == "WARNING" and r.name == "mcpg.audit"]
+    assert len(audit_warnings) == 1
+    assert "hunter2" not in audit_warnings[0].message
+
+
 async def test_lifespan_drain_timeout() -> None:
     import dataclasses
     import time

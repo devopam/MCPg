@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Friendly error for a missing required tool argument (#287).** Calling
+  any tool with a required argument omitted used to leak the MCP SDK's raw
+  `pydantic` `ValidationError` dump — including a `For further information
+  visit https://errors.pydantic.dev/...` link — to both the MCP client and
+  the audit log, e.g. `Error executing tool list_indexes: 1 validation
+  error for list_indexesArguments\ntable\n  Field required [type=missing,
+  ...]`. This was generic to every tool (the failure happens in the shared
+  MCP SDK argument-validation path, not per-tool code).
+  `AuditedFastMCP.call_tool` in `src/mcpg/server.py` now detects a
+  `pydantic.ValidationError` (directly, or as the SDK's wrapping
+  `ToolError.__cause__`) and replaces it with a short, actionable message
+  built from `ValidationError.errors()` before it reaches the audit log or
+  the client, e.g. `list_indexes: table: Field required`. Non-validation
+  tool errors (e.g. a plain `ValueError`/`RuntimeError` raised for a
+  business-logic reason) are unaffected — only the pydantic-validation-error
+  case is reformatted.
 - **`translate_nl_to_sql` now reports its internal LLM call's token usage.**
   The tool makes its own HTTP call to whichever NL→SQL provider is
   configured — independent of and invisible to whatever's driving MCPg over
