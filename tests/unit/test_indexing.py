@@ -2,7 +2,7 @@
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.indexing import IndexRecommendation, IndexSuggestion, recommend_indexes
@@ -169,7 +169,7 @@ async def test_recommend_indexes_tool_is_callable_from_a_client() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("recommend_indexes", {})
 
-    assert result.isError is False
+    assert result.is_error is False
 
 
 # --- recommend_index_drops -------------------------------------------------
@@ -395,4 +395,4 @@ async def test_recommend_index_drops_tool_is_callable_from_a_client() -> None:
         assert "recommend_index_drops" in listed
         result = await client.call_tool("recommend_index_drops", {"schema": "public"})
 
-    assert result.isError is False
+    assert result.is_error is False

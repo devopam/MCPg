@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.query import (
@@ -92,10 +92,10 @@ async def test_run_select_tool_is_callable_from_a_client() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("run_select", {"sql": "SELECT 1 AS one", "max_rows": 1})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["row_count"] == 1
-    assert result.structuredContent["truncated"] is False
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["row_count"] == 1
+    assert result.structured_content["truncated"] is False
 
 
 # --- run_select_tuned (roadmap 2.9) ----------------------------------------
@@ -192,9 +192,9 @@ async def test_run_select_tuned_tool_is_callable_from_a_client() -> None:
             {"sql": "SELECT 1 AS one", "work_mem": "128MB"},
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["row_count"] == 1
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["row_count"] == 1
 
 
 async def test_explain_query_returns_the_plan() -> None:
@@ -231,7 +231,7 @@ async def test_explain_query_tool_is_callable_from_a_client() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("explain_query", {"sql": "SELECT 1"})
 
-    assert result.isError is False
+    assert result.is_error is False
 
 
 _PLAN_TREE = [
@@ -280,7 +280,7 @@ async def test_analyze_query_plan_tool_is_callable_from_a_client() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("analyze_query_plan", {"sql": "SELECT 1"})
 
-    assert result.isError is False
+    assert result.is_error is False
 
 
 # --- io=True / EXPLAIN ANALYZE BUFFERS path (roadmap 2.6) ---------------

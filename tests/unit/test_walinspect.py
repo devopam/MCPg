@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.server import create_server
@@ -212,7 +212,7 @@ async def test_walinspect_tools_execution() -> None:
     async with create_connected_server_and_client_session(server) as client:
         # Call read_pg_wal_records tool
         res_records = await client.call_tool("read_pg_wal_records", {"start_lsn": "0/E419E28"})
-        assert res_records.isError is False
+        assert res_records.is_error is False
         assert res_records.content[0].text is not None
         records_data = json.loads(res_records.content[0].text)
         assert records_data["available"] is True
@@ -221,7 +221,7 @@ async def test_walinspect_tools_execution() -> None:
 
         # Call read_pg_wal_stats tool
         res_stats = await client.call_tool("read_pg_wal_stats", {"start_lsn": "0/E419E28"})
-        assert res_stats.isError is False
+        assert res_stats.is_error is False
         assert res_stats.content[0].text is not None
         stats_data = json.loads(res_stats.content[0].text)
         assert stats_data["available"] is True

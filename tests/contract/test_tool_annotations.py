@@ -22,7 +22,7 @@ These tests pin the derivation in ``tools._apply_tool_wire_metadata``:
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from mcpg.config import load_settings
 from mcpg.tools import register_tools
@@ -37,7 +37,7 @@ _MUST_NOT_BE_READ_ONLY = {"run_ddl", "terminate_backend", "cancel_query", "resto
 _OPEN_WORLD = {"translate_nl_to_sql"}
 
 
-def _build_server(access_mode: str) -> FastMCP:
+def _build_server(access_mode: str) -> MCPServer:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _FIXTURE_DB_URL,
@@ -49,7 +49,7 @@ def _build_server(access_mode: str) -> FastMCP:
             ),
         }
     )
-    server: FastMCP = FastMCP(f"mcpg-annotations-fixture-{access_mode}")
+    server: MCPServer = MCPServer(f"mcpg-annotations-fixture-{access_mode}")
     register_tools(server, settings)
     return server
 
@@ -57,7 +57,9 @@ def _build_server(access_mode: str) -> FastMCP:
 def test_every_tool_carries_annotations_with_read_only_hint() -> None:
     server = _build_server("unrestricted")
     missing = [
-        t.name for t in server._tool_manager.list_tools() if t.annotations is None or t.annotations.readOnlyHint is None
+        t.name
+        for t in server._tool_manager.list_tools()
+        if t.annotations is None or t.annotations.read_only_hint is None
     ]
     assert not missing, f"tools without a readOnlyHint annotation: {missing}"
 
@@ -73,7 +75,7 @@ def test_read_only_hints_match_the_read_only_mode_surface() -> None:
     read_only_surface = {t.name for t in _build_server("read-only")._tool_manager.list_tools()}
 
     hinted_read_only = {
-        t.name for t in maximal._tool_manager.list_tools() if t.annotations and t.annotations.readOnlyHint
+        t.name for t in maximal._tool_manager.list_tools() if t.annotations and t.annotations.read_only_hint
     }
     assert hinted_read_only == read_only_surface, (
         f"hinted-but-not-gated: {sorted(hinted_read_only - read_only_surface)}; "
@@ -86,10 +88,10 @@ def test_spot_check_anchor_tools() -> None:
     by_name = {t.name: t for t in server._tool_manager.list_tools()}
     for name in _MUST_BE_READ_ONLY:
         assert name in by_name, f"anchor tool missing from the unrestricted surface: {name}"
-        assert by_name[name].annotations is not None and by_name[name].annotations.readOnlyHint is True, name
+        assert by_name[name].annotations is not None and by_name[name].annotations.read_only_hint is True, name
     for name in _MUST_NOT_BE_READ_ONLY:
         assert name in by_name, f"anchor tool missing from the unrestricted surface: {name}"
-        assert by_name[name].annotations is not None and by_name[name].annotations.readOnlyHint is False, name
+        assert by_name[name].annotations is not None and by_name[name].annotations.read_only_hint is False, name
 
 
 def test_open_world_hint_is_closed_except_external_service_tools() -> None:
@@ -97,8 +99,8 @@ def test_open_world_hint_is_closed_except_external_service_tools() -> None:
     for tool in server._tool_manager.list_tools():
         assert tool.annotations is not None
         expected = tool.name in _OPEN_WORLD
-        assert tool.annotations.openWorldHint is expected, (
-            f"{tool.name}: openWorldHint={tool.annotations.openWorldHint}, expected {expected}"
+        assert tool.annotations.open_world_hint is expected, (
+            f"{tool.name}: openWorldHint={tool.annotations.open_world_hint}, expected {expected}"
         )
 
 
@@ -108,12 +110,12 @@ async def test_annotations_reach_the_wire_via_list_tools() -> None:
     wire_tools = await server.list_tools()
     sample = {t.name: t for t in wire_tools}
     assert sample["run_select"].annotations is not None
-    assert sample["run_select"].annotations.readOnlyHint is True
-    assert sample["run_select"].annotations.openWorldHint is False
+    assert sample["run_select"].annotations.read_only_hint is True
+    assert sample["run_select"].annotations.open_world_hint is False
     assert sample["run_ddl"].annotations is not None
-    assert sample["run_ddl"].annotations.readOnlyHint is False
+    assert sample["run_ddl"].annotations.read_only_hint is False
     assert sample["translate_nl_to_sql"].annotations is not None
-    assert sample["translate_nl_to_sql"].annotations.openWorldHint is True
+    assert sample["translate_nl_to_sql"].annotations.open_world_hint is True
 
 
 def test_sweep_preserves_annotations_a_registration_set_explicitly() -> None:
@@ -127,7 +129,7 @@ def test_sweep_preserves_annotations_a_registration_set_explicitly() -> None:
 
     from mcpg.tools import _apply_tool_wire_metadata
 
-    server: FastMCP = FastMCP("mcpg-annotations-merge-fixture")
+    server: MCPServer = MCPServer("mcpg-annotations-merge-fixture")
 
     @server.tool(
         name="preexisting_annotated_tool",
@@ -142,9 +144,9 @@ def test_sweep_preserves_annotations_a_registration_set_explicitly() -> None:
     annotations = {t.name: t.annotations for t in server._tool_manager.list_tools()}["preexisting_annotated_tool"]
     assert annotations is not None
     assert annotations.title == "Keep me"  # preserved
-    assert annotations.destructiveHint is False  # preserved
-    assert annotations.readOnlyHint is False  # explicit False beats the derived True
-    assert annotations.openWorldHint is False  # unset -> filled by the derivation
+    assert annotations.destructive_hint is False  # preserved
+    assert annotations.read_only_hint is False  # explicit False beats the derived True
+    assert annotations.open_world_hint is False  # unset -> filled by the derivation
 
 
 def test_destructive_partition_exactly_covers_the_write_surface() -> None:
@@ -161,7 +163,7 @@ def test_destructive_partition_exactly_covers_the_write_surface() -> None:
 
     maximal = _build_server("unrestricted")
     write_surface = {
-        t.name for t in maximal._tool_manager.list_tools() if t.annotations and t.annotations.readOnlyHint is False
+        t.name for t in maximal._tool_manager.list_tools() if t.annotations and t.annotations.read_only_hint is False
     }
     classified = _DESTRUCTIVE_TOOLS | _NON_DESTRUCTIVE_WRITE_TOOLS
     assert write_surface == classified, (
@@ -176,13 +178,13 @@ def test_destructive_hint_is_explicit_on_writes_and_absent_on_reads() -> None:
     server = _build_server("unrestricted")
     for tool in server._tool_manager.list_tools():
         assert tool.annotations is not None
-        if tool.annotations.readOnlyHint:
+        if tool.annotations.read_only_hint:
             # Meaningless for read-only tools per the MCP spec — stay unset.
-            assert tool.annotations.destructiveHint is None, tool.name
+            assert tool.annotations.destructive_hint is None, tool.name
         else:
             expected = tool.name in _DESTRUCTIVE_TOOLS
-            assert tool.annotations.destructiveHint is expected, (
-                f"{tool.name}: destructiveHint={tool.annotations.destructiveHint}, expected {expected}"
+            assert tool.annotations.destructive_hint is expected, (
+                f"{tool.name}: destructiveHint={tool.annotations.destructive_hint}, expected {expected}"
             )
 
 

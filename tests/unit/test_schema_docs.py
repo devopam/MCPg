@@ -3,7 +3,7 @@
 from typing import Any
 
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.schema_docs import _parse_pk_columns, generate_schema_docs
@@ -175,5 +175,5 @@ async def test_generate_schema_docs_tool_is_registered_and_callable() -> None:
 
         result = await client.call_tool("generate_schema_docs", {"schema": "app", "include_samples": True})
 
-    assert result.isError is False
+    assert result.is_error is False
     assert result.content[0].text.startswith("# Schema Reference: app\n")  # type: ignore[union-attr]

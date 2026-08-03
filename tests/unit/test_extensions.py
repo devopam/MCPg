@@ -2,7 +2,7 @@
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.extensions import EnableExtensionResult, ExtensionError, enable_extension
@@ -49,7 +49,7 @@ async def test_enable_extension_tool_is_callable_when_ddl_is_allowed() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("enable_extension", {"name": "pg_trgm"})
 
-    assert result.isError is False
+    assert result.is_error is False
 
 
 async def test_enable_extension_tool_is_absent_without_ddl_opt_in() -> None:

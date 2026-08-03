@@ -2,10 +2,10 @@
 
 The unit tests in `tests/unit/test_tool_introspection.py` exercise the
 builders against canned inputs. This test wires the tool into a
-maximal-flag FastMCP server and calls it through the real MCP
+maximal-flag MCPServer and calls it through the real MCP
 dispatch path, so the assertions cover the live shape an agent will
 actually see — including ``inputSchema`` derivation from the
-function signature, the FastMCP registration plumbing, and the
+function signature, the MCPServer registration plumbing, and the
 `mcpg.about` bucket lookup against the canonical capability list.
 """
 
@@ -15,7 +15,7 @@ import json
 from typing import Any
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from mcpg.config import load_settings
 from mcpg.tools import register_tools
@@ -23,7 +23,7 @@ from mcpg.tools import register_tools
 _FIXTURE_DB_URL = "postgresql://snapshot:snapshot@127.0.0.1:5432/snapshot"
 
 
-def _build_maximal_server() -> FastMCP:
+def _build_maximal_server() -> MCPServer:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _FIXTURE_DB_URL,
@@ -33,24 +33,26 @@ def _build_maximal_server() -> FastMCP:
             "MCPG_ALLOW_LISTEN": "true",
         }
     )
-    server: FastMCP = FastMCP("mcpg-describe-tool-fixture")
+    server: MCPServer = MCPServer("mcpg-describe-tool-fixture")
     register_tools(server, settings)
     return server
 
 
-async def _call_describe_tool(server: FastMCP, name: str) -> dict[str, Any]:
+async def _call_describe_tool(server: MCPServer, name: str) -> dict[str, Any]:
     """Invoke ``describe_tool`` through the MCP call path and return the
     parsed JSON payload from the response.
 
-    FastMCP returns ``(content_list, structured_content)`` for typed
-    tools (with a populated outputSchema) and the dict-returning shape
-    for the others. We accept either so the assertion doesn't bind on
-    FastMCP's internal envelope across versions.
+    ``MCPServer.call_tool`` returns a ``CallToolResult`` with a populated
+    ``structured_content`` (with a populated ``output_schema``) for typed
+    tools, falling back to parsing the first content block's text for the
+    others. We accept either so the assertion doesn't bind on MCPServer's
+    internal envelope across versions.
     """
     result: Any = await server.call_tool("describe_tool", {"name": name})
-    if isinstance(result, tuple) and len(result) >= 2 and isinstance(result[1], dict):
-        return result[1]
-    content_list: Any = result[0] if isinstance(result, tuple) else result
+    structured = getattr(result, "structured_content", None)
+    if isinstance(structured, dict):
+        return structured
+    content_list = result.content
     first = content_list[0]
     text = getattr(first, "text", None)
     assert text is not None, f"unexpected tool result shape: {result!r}"

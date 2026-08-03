@@ -1,7 +1,7 @@
 """Tests for workload analysis and the analyze_workload tool."""
 
 from _fakes import FakeDatabase, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.server import create_server
@@ -58,9 +58,9 @@ async def test_analyze_workload_tool_is_callable_from_a_client() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("analyze_workload", {})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is False
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is False
 
 
 # --- detect_n_plus_one (Phase 8.4) ---------------------------------------
@@ -144,6 +144,6 @@ async def test_detect_n_plus_one_tool_is_callable_from_a_client() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("detect_n_plus_one", {})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is False
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is False

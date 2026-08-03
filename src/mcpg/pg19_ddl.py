@@ -84,7 +84,7 @@ class ValidateCheckConstraintResult:
 
     The schema identifier lives on ``table_schema`` (not ``schema``)
     so Pydantic's structured-output machinery doesn't trip over the
-    ``BaseModel.schema()`` method name shadow when FastMCP auto-builds
+    ``BaseModel.schema()`` method name shadow when MCPServer auto-builds
     the tool's outputSchema.
     """
 

@@ -1,7 +1,7 @@
 """Tests for the schema-advisor rules and their MCP tool."""
 
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.advisors import (
     RULE_DUPLICATE_INDEXES,
@@ -167,11 +167,11 @@ async def test_run_advisors_tool_is_registered_and_callable() -> None:
 
         result = await client.call_tool("run_advisors", {"schema": "public"})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["schema"] == "public"
-    assert result.structuredContent["findings"] == []
-    assert len(result.structuredContent["rules_run"]) == 6
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["schema"] == "public"
+    assert result.structured_content["findings"] == []
+    assert len(result.structured_content["rules_run"]) == 6
 
 
 # --- find_unused_objects -----------------------------------------------

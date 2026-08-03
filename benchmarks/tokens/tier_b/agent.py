@@ -40,7 +40,7 @@ _SYSTEM = (
 def _anthropic_tools(mcp_tools: list[Any], allowed: set[str]) -> list[dict[str, Any]]:
     """Convert the MCP tool list to Anthropic tool defs, filtered to ``allowed``."""
     return [
-        {"name": t.name, "description": t.description or "", "input_schema": t.inputSchema}
+        {"name": t.name, "description": t.description or "", "input_schema": t.input_schema}
         for t in mcp_tools
         if t.name in allowed
     ]
@@ -52,7 +52,7 @@ def _text_of(content: list[dict[str, Any]]) -> str:
 
 def _tool_result_text(result: Any) -> str:
     """Serialize an MCP tool result to the text the model sees (structured JSON preferred)."""
-    structured = getattr(result, "structuredContent", None)
+    structured = getattr(result, "structured_content", None)
     if structured is not None:
         return json.dumps(structured, default=str)
     blocks = getattr(result, "content", None) or []

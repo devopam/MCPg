@@ -42,16 +42,33 @@ adheres to [Semantic Versioning](https://semver.org/).
   but the DDL only ever indexed `reviews.product_id` — a second, unplanted
   unindexed FK alongside the intentionally-planted `orders.customer_id`
   finding (which is untouched).
-- **Capped `mcp[cli]` below 2.0** (`>=1.28.1,<2`). The upstream `mcp` SDK
-  published a `2.0.0` release that renames `mcp.server.fastmcp.FastMCP` to
-  `mcp.server.mcpserver.MCPServer` (and restructures the module tree around
-  it) with no back-compat shim — since MCPg's dependency spec had no upper
-  bound, a fresh `pip install mcpg` started resolving `mcp==2.0.0` and
-  crashing at import (`ModuleNotFoundError: No module named
-  'mcp.server.fastmcp'`) before `src/mcpg/server.py` could even start. Pins
-  the resolved SDK to the last compatible 1.x line until MCPg migrates to
-  the new `MCPServer` API (tracked separately). `uv.lock` regenerated
-  (resolves `mcp==1.28.1`); full unit + contract suite green.
+
+## [0.7.0] - 2026-08-01
+
+### Fixed
+
+- **Capped `mcp[cli]` below 2.0** (`>=1.28.1,<2`), as an interim hotfix
+  (#290). The upstream `mcp` SDK published a `2.0.0` release that renames
+  `mcp.server.fastmcp.FastMCP` to `mcp.server.mcpserver.MCPServer` (and
+  restructures the module tree around it) with no back-compat shim — since
+  MCPg's dependency spec had no upper bound, a fresh `pip install mcpg`
+  started resolving `mcp==2.0.0` and crashing at import
+  (`ModuleNotFoundError: No module named 'mcp.server.fastmcp'`) before
+  `src/mcpg/server.py` could even start. Pinned the resolved SDK to the
+  last compatible 1.x line (`uv.lock` regenerated, resolving
+  `mcp==1.28.1`) pending the full migration. **Superseded in this release**
+  by the "Migrated to the `mcp` 2.0 SDK" entry below — the `<2` cap no
+  longer applies now that the floor has moved to `mcp>=2.0.0`.
+- **README "Listed On" Setext-heading rendering bug** on the published
+  GitHub Pages site (kramdown/Jekyll, not GitHub.com's cmark renderer): the
+  `- **[Glama](...)**` bullet was immediately followed by the `---`
+  thematic-break divider with no blank line between them, so kramdown read
+  `---` as a Setext heading underline for "Glama" instead of a horizontal
+  rule, rendering just that one bullet as an `<h2>` in the theme's large
+  heading font. Fixed by inserting the blank line kramdown needs to end the
+  list before the divider. A repo-wide grep for the same precondition
+  (non-blank line directly followed by a bare `---`/`***`/`___` line,
+  excluding legitimate YAML front-matter closes) found no other instances.
 - **`asyncio.WindowsSelectorEventLoopPolicy` forward-compat for CPython
   3.14.** CPython 3.14 privatized the class to
   `_WindowsSelectorEventLoopPolicy` (confirmed against typeshed's
@@ -75,6 +92,36 @@ adheres to [Semantic Versioning](https://semver.org/).
   `test_run_http_builds_app_and_serves_via_uvicorn`'s fake `uvicorn.run`
   didn't accept the `loop` kwarg that `run_http` has always passed on
   `win32` — now accepts `**kwargs`.
+
+### Changed
+
+- **Migrated to the `mcp` 2.0 SDK.** Lifts the `mcp[cli]<2` cap from the #290
+  hotfix. `FastMCP` → `MCPServer`, `AuditedFastMCP` → `AuditedMCPServer`.
+  Tenancy's per-request role propagation moved off the removed
+  `request_ctx` ambient contextvar onto a `ServerMiddleware` — a
+  simplification that makes `current_role` reliably authoritative on every
+  transport (previously only guaranteed on stdio). Zero changes to any of
+  the 254 tool registration call sites. See
+  `docs/plans/mcp-2.0-migration.md` for the full
+  rationale.
+
+### Added
+
+- **`MCPG_ELICIT_CONFIRM_WRITES`** (opt-in, default `false`): when set,
+  every write/DDL/shell/listen/migrate-tier tool call requires an accepted
+  `ctx.elicit()` confirmation before running, for clients that declare
+  elicitation support. Centralized in `AuditedMCPServer.call_tool`; no
+  per-tool changes.
+
+### Upgrade impact
+
+- **Dependency floor is now `mcp>=2.0.0`.** This is a hard break for any
+  deployment pinned to `mcp` 1.x — the 1.x `mcp.server.fastmcp.FastMCP` API
+  is gone from the resolved dependency; upgrade `mcp` alongside MCPg.
+- **`mcpg.server.AuditedFastMCP` is renamed to `AuditedMCPServer`**, with
+  **no backward-compatibility alias**. Anything importing
+  `AuditedFastMCP` directly (it was exported in `__all__`) must update the
+  import name.
 
 ## [0.6.12] - 2026-07-28
 

@@ -52,7 +52,7 @@ async def test_slow_call_warning_emitted_when_exceeding_threshold(caplog) -> Non
     # We patch super().call_tool to simulate a successful tool run
     # and time.monotonic to simulate 0.15 seconds duration (exceeds threshold)
     with (
-        patch("mcp.server.fastmcp.FastMCP.call_tool", return_value="ok_result"),
+        patch("mcp.server.mcpserver.MCPServer.call_tool", return_value="ok_result"),
         patch("time.monotonic", side_effect=[0.0, 0.15]),
         caplog.at_level(logging.WARNING, logger="mcpg.server"),
     ):
@@ -84,7 +84,7 @@ async def test_slow_call_warning_not_emitted_when_under_threshold(caplog) -> Non
     server = create_server(settings)
 
     with (
-        patch("mcp.server.fastmcp.FastMCP.call_tool", return_value="ok_result"),
+        patch("mcp.server.mcpserver.MCPServer.call_tool", return_value="ok_result"),
         patch("time.monotonic", side_effect=[0.0, 0.05]),
         caplog.at_level(logging.WARNING, logger="mcpg.server"),
     ):
@@ -112,7 +112,7 @@ async def test_slow_call_warning_not_emitted_when_disabled(caplog) -> None:
     server = create_server(settings)
 
     with (
-        patch("mcp.server.fastmcp.FastMCP.call_tool", return_value="ok_result"),
+        patch("mcp.server.mcpserver.MCPServer.call_tool", return_value="ok_result"),
         patch("time.monotonic", side_effect=[0.0, 5.0]),
         caplog.at_level(logging.WARNING, logger="mcpg.server"),
     ):
@@ -140,7 +140,7 @@ async def test_slow_call_warning_emitted_on_error_path(caplog) -> None:
     server = create_server(settings)
 
     with (
-        patch("mcp.server.fastmcp.FastMCP.call_tool", side_effect=ValueError("fail")),
+        patch("mcp.server.mcpserver.MCPServer.call_tool", side_effect=ValueError("fail")),
         patch("time.monotonic", side_effect=[0.0, 0.15]),
         caplog.at_level(logging.WARNING, logger="mcpg.server"),
     ):

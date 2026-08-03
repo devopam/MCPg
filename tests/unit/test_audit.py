@@ -1,7 +1,7 @@
 """Tests for the DBA Database Performance Auditor and its MCP tool."""
 
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.audit import audit_database
 from mcpg.config import load_settings
@@ -263,9 +263,9 @@ async def test_audit_database_tool_is_registered_and_callable() -> None:
 
         result = await client.call_tool("audit_database", {"schema": "public"})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["overall_health"] in ("GOOD", "WARNING", "CRITICAL")
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["overall_health"] in ("GOOD", "WARNING", "CRITICAL")
 
 
 async def test_audit_database_log_scanning_escapes_identifiers() -> None:

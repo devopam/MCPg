@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import Settings, load_settings
 from mcpg.server import create_server
@@ -34,7 +34,7 @@ async def test_translate_nl_to_sql_errors_clearly_when_no_provider_configured() 
             {"question": "How many widgets?", "schema": "public"},
         )
 
-    assert result.isError is True
+    assert result.is_error is True
     msg = "\n".join(block.text for block in result.content if hasattr(block, "text"))
     assert "no provider configured" in msg
     assert "ANTHROPIC_API_KEY" in msg
@@ -50,7 +50,7 @@ async def test_translate_nl_to_sql_errors_when_caller_picks_unconfigured_provide
             {"question": "x", "schema": "public", "provider": "openai"},
         )
 
-    assert result.isError is True
+    assert result.is_error is True
     msg = "\n".join(block.text for block in result.content if hasattr(block, "text"))
     assert "'openai' is not configured" in msg
     assert "anthropic" in msg  # tells the caller what IS configured
@@ -92,7 +92,7 @@ async def test_translate_nl_to_sql_errors_on_unknown_provider_name() -> None:
             {"question": "x", "schema": "public", "provider": "cohere"},
         )
 
-    assert result.isError is True
+    assert result.is_error is True
     msg = "\n".join(block.text for block in result.content if hasattr(block, "text"))
     assert "unknown NL→SQL provider" in msg
     assert "anthropic" in msg
@@ -118,7 +118,7 @@ async def test_valid_but_unconfigured_new_vendor_names_its_env_var(provider: str
             {"question": "x", "schema": "public", "provider": provider},
         )
 
-    assert result.isError is True
+    assert result.is_error is True
     msg = "\n".join(block.text for block in result.content if hasattr(block, "text"))
     assert "not configured" in msg
     assert env_var in msg
@@ -136,8 +136,8 @@ async def test_get_server_info_surfaces_default_and_available_providers() -> Non
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("get_server_info", {})
 
-    assert result.isError is False
-    info = result.structuredContent
+    assert result.is_error is False
+    info = result.structured_content
     assert info is not None
     assert info["nl2sql_default_provider"] == "openai"
     assert sorted(info["nl2sql_available_providers"]) == ["anthropic", "openai"]
@@ -172,6 +172,6 @@ async def test_default_provider_resolution_via_get_server_info(env: dict[str, st
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("get_server_info", {})
 
-    info = result.structuredContent
+    info = result.structured_content
     assert info is not None
     assert info["nl2sql_default_provider"] == expected_default

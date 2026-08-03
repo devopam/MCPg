@@ -3,7 +3,7 @@
 from typing import Any
 
 from _fakes import FakeDatabase, FakeDriver, FakeParamRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.introspection import ColumnInfo
@@ -267,10 +267,10 @@ async def test_compare_schemas_tool_is_registered_and_callable() -> None:
 
         result = await client.call_tool("compare_schemas", {"left_schema": "a", "right_schema": "b"})
 
-    assert result.isError is False
+    assert result.is_error is False
     # Empty FakeDriver returns no tables on either side — diff is a zeroed
     # structure with the schema names preserved.
-    payload = result.structuredContent
+    payload = result.structured_content
     assert payload is not None
     assert payload["left_schema"] == "a"
     assert payload["right_schema"] == "b"

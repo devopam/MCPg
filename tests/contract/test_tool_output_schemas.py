@@ -3,14 +3,14 @@
 Closes a gap that ``test_tool_return_shapes.py`` doesn't cover: the
 return-shape snapshot pins the dataclass field names of every tool's
 underlying helper, but it doesn't assert that the tool's MCP
-``outputSchema`` is actually populated on the wire. FastMCP auto-derives
+``outputSchema`` is actually populated on the wire. MCPServer auto-derives
 ``outputSchema`` from the function's return type annotation only — a
 handler annotated ``-> dict[str, Any]`` produces ``outputSchema = None``
 and the client (LangChain, LangGraph, etc.) can't validate the response.
 
 This test:
 
-1. Boots a maximal-flag FastMCP server (same fixture as the surface
+1. Boots a maximal-flag MCPServer (same fixture as the surface
    snapshot test).
 2. Walks every registered tool.
 3. For tools listed in ``_TOOLS_WITH_STRUCTURED_OUTPUT``, asserts the
@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import warnings
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from mcpg.config import load_settings
 from mcpg.tools import register_tools
@@ -76,7 +76,7 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
     ),
     # PG 19 SQL/PGQ helpers (Phase 3 PR-13 sweep).
     "get_pgq_status": frozenset({"available", "server_version_num", "server_version", "detail"}),
-    # List-returning handlers: FastMCP wraps `list[Dataclass]` returns into a
+    # List-returning handlers: MCPServer wraps `list[Dataclass]` returns into a
     # `{"result": [...]}` envelope at the top level. The per-item dataclass
     # fields live under `$defs` — the field-level snapshot test in
     # `test_tool_return_shapes.py` pins those. We only assert the envelope key
@@ -575,7 +575,7 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
     "turboquant_rerank_candidates": frozenset({"result"}),
     "turboquant_approx_candidates": frozenset({"result"}),
     "recommend_turboquant_maintenance": frozenset({"result"}),
-    # Optional (DataClass | None) returns are enveloped by FastMCP into {"result": ...} too.
+    # Optional (DataClass | None) returns are enveloped by MCPServer into {"result": ...} too.
     "get_turboquant_last_scan_stats": frozenset({"result"}),
     "get_turboquant_heap_stats": frozenset({"schema", "index", "row_count", "raw"}),
     "get_turboquant_index_metadata": frozenset(
@@ -775,8 +775,8 @@ _TOOLS_WITH_STRUCTURED_OUTPUT: dict[str, frozenset[str]] = {
 }
 
 
-def _build_maximal_server() -> FastMCP:
-    """Build a FastMCP server with every capability gate flipped on.
+def _build_maximal_server() -> MCPServer:
+    """Build an MCPServer with every capability gate flipped on.
 
     Same shape as the fixture used by ``test_tool_surface_snapshot``;
     duplicated here to keep this test self-contained.
@@ -790,7 +790,7 @@ def _build_maximal_server() -> FastMCP:
             "MCPG_ALLOW_LISTEN": "true",
         }
     )
-    server: FastMCP = FastMCP("mcpg-output-schemas-fixture")
+    server: MCPServer = MCPServer("mcpg-output-schemas-fixture")
     register_tools(server, settings)
     return server
 
@@ -880,7 +880,7 @@ def test_output_schema_build_emits_no_pydantic_schema_field_shadow_warnings() ->
 def test_converted_tool_count_grows_monotonically() -> None:
     """Sanity gate — the structured-output manifest should never shrink.
 
-    FastMCP auto-wraps even ``list[dict[str, Any]]`` returns into a
+    MCPServer auto-wraps even ``list[dict[str, Any]]`` returns into a
     ``{"result": [...]}`` envelope, so we can't usefully canary on
     "tools still annotated dict[str, Any] should have no schema" (they
     do, just a permissive one). Instead, we lock in a floor: as we

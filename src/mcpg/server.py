@@ -1,6 +1,6 @@
 """MCP server bootstrap for MCPg.
 
-``create_server`` builds a configured :class:`FastMCP` instance. All shared
+``create_server`` builds a configured :class:`MCPServer` instance. All shared
 state (settings, the database connection) is owned by the server's lifespan
 and exposed to tools via :class:`AppContext` — there is no module-level
 mutable global state.
@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
-from mcp.types import ContentBlock
-from pydantic import ValidationError
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult, InputRequiredResult, TextContent
+from pydantic import BaseModel, Field, ValidationError
 
 from mcpg import __version__, about, audit
 from mcpg.analytical import AnalyticalRunner
@@ -29,6 +29,7 @@ from mcpg.listen import ListenManager
 from mcpg.middleware.rate_limit import RateLimiter
 from mcpg.observability import get_metrics
 from mcpg.otel_tracing import TracerHandle, setup_tracing, tool_span
+from mcpg.tenancy import TenantRoleContextMiddleware
 from mcpg.tools import register_tools
 
 
@@ -43,7 +44,10 @@ def _friendly_validation_error(tool_name: str, error: ValidationError) -> str:
     line per error using each error's already-human-readable ``msg`` (e.g.
     "Field required"), keyed by its field path.
     """
-    details = "; ".join(f"{'.'.join(str(part) for part in err['loc'])}: {err['msg']}" for err in error.errors())
+    details = "; ".join(
+        f"{'.'.join(str(part) for part in err['loc'])}: {err['msg']}" if err["loc"] else err["msg"]
+        for err in error.errors()
+    )
     return f"{tool_name}: {details}"
 
 
@@ -52,11 +56,22 @@ SERVER_INSTRUCTIONS = (
     "MCPg: a PostgreSQL MCP server for inspecting, querying, operating, and tuning a Postgres database."
 )
 
-__all__ = ["SERVER_NAME", "AppContext", "AuditedFastMCP", "create_server", "make_lifespan", "run"]
+__all__ = ["SERVER_NAME", "AppContext", "AuditedMCPServer", "create_server", "make_lifespan", "run"]
 
 
-class AuditedFastMCP(FastMCP[AppContext]):
-    """A FastMCP server that records an audit event for every tool call."""
+class _ConfirmMutation(BaseModel):
+    """Elicitation schema for the write-tier confirmation gate.
+
+    Elicitation schemas must contain only primitive types per the MCP
+    spec (see ``Context.elicit``'s docstring) — a single boolean field
+    is all this gate needs.
+    """
+
+    confirm: bool = Field(description="Set true to proceed with this write/DDL operation.")
+
+
+class AuditedMCPServer(MCPServer[AppContext]):
+    """An MCPServer that records an audit event for every tool call."""
 
     rate_limiter: RateLimiter
     mcpg_settings: Settings
@@ -65,16 +80,6 @@ class AuditedFastMCP(FastMCP[AppContext]):
     # the ``mcpg[otel]`` extra isn't installed — :func:`tool_span`
     # treats both cases as no-ops so ``call_tool`` doesn't branch.
     otel_tracer: TracerHandle | None = None
-
-    def __init__(self, *args: Any, version: str | None = None, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        # FastMCP's constructor doesn't forward a version to the low-level
-        # MCP server, so the ``initialize`` handshake reports the MCP SDK's
-        # version in ``serverInfo`` rather than ours. This subclass exists
-        # to extend FastMCP, so it's the right place to hold that one bit of
-        # SDK-internal knowledge: pin the advertised version to mcpg's own.
-        if version is not None:
-            self._mcp_server.version = version
 
     def _log_if_slow(self, name: str, duration: float) -> None:
         if not hasattr(self, "mcpg_settings"):
@@ -94,15 +99,11 @@ class AuditedFastMCP(FastMCP[AppContext]):
                 threshold_sec,
             )
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[ContentBlock] | dict[str, Any]:
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], context: Context[AppContext, Any] | None = None
+    ) -> CallToolResult | InputRequiredResult:
         self.in_flight_calls += 1
         try:
-            # Enforce rate limiting if configured
-            if hasattr(self, "rate_limiter"):
-                allowed = await self.rate_limiter.consume(name)
-                if not allowed:
-                    raise RuntimeError(f"Rate limit exceeded for tool {name!r}. Please try again later.")
-
             metrics = get_metrics()
             # Resolve the capability bucket once per call so both the
             # OTel span attribute and the Prometheus counter carry the
@@ -110,22 +111,86 @@ class AuditedFastMCP(FastMCP[AppContext]):
             # don't match any override / pattern — defensively use
             # "unknown" so the label dimension stays cardinality-stable.
             bucket = about.classify_tool(name) or "unknown"
+
+            # Enforce rate limiting if configured
+            if hasattr(self, "rate_limiter"):
+                allowed = await self.rate_limiter.consume(name)
+                if not allowed:
+                    raise RuntimeError(f"Rate limit exceeded for tool {name!r}. Please try again later.")
+
+            # Opt-in interactive confirmation gate for write-tier tools
+            # (MCPG_ELICIT_CONFIRM_WRITES). Centralized here rather than in
+            # any of the 254 individual tool bodies: reuses the
+            # readOnlyHint annotation tools.py already stamps on every
+            # registered tool, and skips the elicit round-trip entirely
+            # for clients that didn't declare elicitation support during
+            # initialize, so non-interactive/automated clients are
+            # unaffected unless they opt in.
+            if (
+                getattr(self, "mcpg_settings", None) is not None
+                and self.mcpg_settings.elicit_confirm_writes
+                and context is not None
+            ):
+                tool = self._tool_manager.get_tool(name)
+                is_read_only = tool is not None and tool.annotations is not None and tool.annotations.read_only_hint
+                if tool is not None and not is_read_only:
+                    capabilities = context.client_capabilities
+                    supports_elicitation = capabilities is not None and capabilities.elicitation is not None
+                    if supports_elicitation:
+                        # Timestamp taken here (not shared with the tool-body
+                        # `start` timer below, which is never set on this
+                        # path) so a denied call's duration includes the
+                        # elicitation round-trip. Scoped to this branch only —
+                        # it must not add an extra `time.monotonic()` call to
+                        # every invocation, since other tests (test_slow_call.py)
+                        # patch `time.monotonic` with a fixed-length side_effect
+                        # list sized to the normal (non-gated) call path.
+                        gate_start = time.monotonic()
+                        confirmation = await context.elicit(
+                            f"{name!r} will modify the database. Proceed?",
+                            _ConfirmMutation,
+                        )
+                        if confirmation.action != "accept" or not confirmation.data.confirm:
+                            # Declined/cancelled writes never reach the
+                            # normal audit.record()/metrics.record_call()
+                            # calls below (the tool body never runs) — record
+                            # an equivalent event here so a denied write is
+                            # never invisible to the audit log or
+                            # render_prometheus(). Deliberately does not call
+                            # `self._log_if_slow` — the tool body never ran,
+                            # so a "slow call" warning here would be
+                            # measuring user think-time, not tool latency.
+                            denied_duration = time.monotonic() - gate_start
+                            audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="denied"))
+                            metrics.record_call(name, "denied", denied_duration, bucket=bucket)
+                            return CallToolResult(
+                                content=[
+                                    TextContent(
+                                        type="text",
+                                        text=f"{name!r} was not confirmed; no changes made.",
+                                    )
+                                ],
+                                is_error=True,
+                            )
+
             start = time.monotonic()
             try:
                 with tool_span(self.otel_tracer, name, arguments, bucket=bucket):
-                    result = await super().call_tool(name, arguments)
+                    result = await super().call_tool(name, arguments, context)
             except Exception as exc:
                 duration = time.monotonic() - start
                 self._log_if_slow(name, duration)
                 # The SDK's argument-validation failure surfaces here as a
-                # ToolError whose message is str(ValidationError) (chained
-                # via __cause__); some paths may raise the ValidationError
-                # directly, so check both defensively. Either way, replace
-                # it with a friendly message before it's used below, since
-                # both the audit log (`error=`) and the client-visible
-                # message (further up the call stack) read from this same
-                # exception object. See GH #287.
-                validation_error = exc if isinstance(exc, ValidationError) else exc.__cause__
+                # ToolError whose message is str(ValidationError). The known
+                # SDK path chains it via `raise ... from e` (__cause__), but
+                # an implicit `raise` inside an except block (no `from`)
+                # only sets __context__ -- check both defensively, plus the
+                # case where the ValidationError reaches us directly. Either
+                # way, replace it with a friendly message before it's used
+                # below, since both the audit log (`error=`) and the
+                # client-visible message (further up the call stack) read
+                # from this same exception object. See GH #287.
+                validation_error = exc if isinstance(exc, ValidationError) else (exc.__cause__ or exc.__context__)
                 if isinstance(validation_error, ValidationError):
                     friendly_exc = ToolError(_friendly_validation_error(name, validation_error))
                     audit.record(
@@ -151,7 +216,7 @@ def make_lifespan(
     listen_manager: ListenManager,
     cursor_manager: CursorManager,
     analytical_runner: AnalyticalRunner | None = None,
-) -> Callable[[FastMCP[AppContext]], AbstractAsyncContextManager[AppContext]]:
+) -> Callable[[MCPServer[AppContext]], AbstractAsyncContextManager[AppContext]]:
     """Build the server lifespan: open the database on start, close on stop.
 
     The listen manager is created eagerly (cheap — it doesn't open the
@@ -162,7 +227,7 @@ def make_lifespan(
     """
 
     @asynccontextmanager
-    async def lifespan(_server: FastMCP[AppContext]) -> AsyncIterator[AppContext]:
+    async def lifespan(_server: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
         from mcpg.cache import CacheManager, cache_namespace
 
         cache_manager = CacheManager(
@@ -228,8 +293,8 @@ def create_server(
     listen_manager: ListenManager | None = None,
     cursor_manager: CursorManager | None = None,
     analytical_runner: AnalyticalRunner | None = None,
-) -> FastMCP[AppContext]:
-    """Construct a configured FastMCP server.
+) -> MCPServer[AppContext]:
+    """Construct a configured MCPServer.
 
     Args:
         settings: Validated server configuration.
@@ -269,13 +334,12 @@ def create_server(
     ar = analytical_runner if settings.enable_analytical_queries else None
     if ar is None and database is None and settings.enable_analytical_queries:
         ar = AnalyticalRunner(settings)
-    server: AuditedFastMCP = AuditedFastMCP(
+    server: AuditedMCPServer = AuditedMCPServer(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
         version=__version__,
         lifespan=make_lifespan(settings, db, lm, cm, ar),
-        host=settings.http_host,
-        port=settings.http_port,
+        middleware=[TenantRoleContextMiddleware()],
     )
     server.mcpg_settings = settings
     server.otel_tracer = setup_tracing(settings)

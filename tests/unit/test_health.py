@@ -1,7 +1,7 @@
 """Tests for database health checks and the check_database_health tool."""
 
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.health import (
@@ -128,9 +128,9 @@ async def test_check_database_health_tool_is_callable_from_a_client() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("check_database_health", {})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["status"] == "ok"
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["status"] == "ok"
 
 
 # --- analyze_table_bloat (roadmap 2.7) -------------------------------------
@@ -292,7 +292,7 @@ async def test_analyze_table_bloat_tool_is_callable_from_a_client() -> None:
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("analyze_table_bloat", {"schema": "public"})
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is True
-    assert result.structuredContent["method"] == "estimate"
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is True
+    assert result.structured_content["method"] == "estimate"

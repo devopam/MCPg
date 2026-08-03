@@ -19,7 +19,7 @@ The contract this module enforces:
 from __future__ import annotations
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from mcpg.about import (
     BUCKET_IDS,
@@ -45,7 +45,7 @@ async def _registered_tool_names() -> list[str]:
             "MCPG_ALLOW_LISTEN": "true",
         }
     )
-    server: FastMCP = FastMCP("mcpg-test")
+    server: MCPServer = MCPServer("mcpg-test")
     register_tools(server, settings)
     tools = await server.list_tools()
     return [t.name for t in tools]

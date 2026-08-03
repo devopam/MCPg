@@ -2,7 +2,7 @@
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.server import create_server
@@ -508,8 +508,8 @@ async def test_migrate_vector_to_halfvec_tool_is_callable_from_a_client() -> Non
             {"schema": "app", "table": "docs", "column": "embedding"},
         )
 
-    assert result.isError is False
-    assert result.structuredContent is not None
-    assert result.structuredContent["available"] is True
-    assert result.structuredContent["already_halfvec"] is False
-    assert "halfvec_cosine_ops" in " ".join(result.structuredContent["migration_sql"])
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["available"] is True
+    assert result.structured_content["already_halfvec"] is False
+    assert "halfvec_cosine_ops" in " ".join(result.structured_content["migration_sql"])

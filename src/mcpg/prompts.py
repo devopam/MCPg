@@ -7,7 +7,7 @@ reconstruct one from scratch on every session.
 
 Each builder returns a ready-to-render user-role message. The
 ``mcpg.tools._register_prompts`` registrar wires the functions onto
-FastMCP via ``@server.prompt(...)`` so they appear in the standard
+MCPServer via ``@server.prompt(...)`` so they appear in the standard
 ``prompts/list`` / ``prompts/get`` MCP protocol surface — clients
 pick them up automatically.
 

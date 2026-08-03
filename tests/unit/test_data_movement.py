@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
-from mcp.shared.memory import create_connected_server_and_client_session
+from _mcp_test_helpers import create_connected_server_and_client_session
 
 from mcpg.config import load_settings
 from mcpg.data_movement import (
@@ -198,8 +198,8 @@ async def test_export_tools_are_registered_and_callable_in_read_mode() -> None:
         assert {"export_query", "export_table"} <= listed
 
         result = await client.call_tool("export_query", {"sql": "SELECT id FROM widget"})
-    assert result.isError is False
-    payload = result.structuredContent
+    assert result.is_error is False
+    payload = result.structured_content
     assert payload is not None
     assert payload["format"] == "csv"
     assert payload["row_count"] == 1
@@ -1087,9 +1087,9 @@ async def test_import_tools_registered_in_unrestricted_mode() -> None:
             "import_csv",
             {"schema": "app", "table": "widget", "content": "id\n1\n2\n"},
         )
-        assert result.isError is False
-        assert result.structuredContent is not None
-        assert result.structuredContent["format"] == "csv"
+        assert result.is_error is False
+        assert result.structured_content is not None
+        assert result.structured_content["format"] == "csv"
 
 
 # --- import_vectors --------------------------------------------------------
@@ -1284,6 +1284,6 @@ async def test_import_vectors_tool_is_listed_in_unrestricted_mode() -> None:
                 "content": json.dumps([{"embedding": [0.1, 0.2]}]),
             },
         )
-        assert result.isError is False
-        assert result.structuredContent is not None
-        assert result.structuredContent["rows_imported"] == 1
+        assert result.is_error is False
+        assert result.structured_content is not None
+        assert result.structured_content["rows_imported"] == 1

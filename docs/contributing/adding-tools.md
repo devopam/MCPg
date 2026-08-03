@@ -174,14 +174,14 @@ There are two shapes — pick the **typed-return** shape for any new tool you wr
     ),
 )
 async def get_<thing>(ctx: _Ctx, arg: str) -> <feature>.ThingResult:
-    # Returns the dataclass directly — FastMCP auto-derives the
+    # Returns the dataclass directly — the MCP SDK auto-derives the
     # outputSchema from the type annotation. Don't call asdict().
     return await <feature>.get_<thing>(_driver(ctx), arg)
 ```
 
 Two rules for the dataclass that the tool returns:
 
-- **No `slots=True`** on the dataclass — the slot descriptors leak into Pydantic's introspection and FastMCP falls back to `outputSchema = None`. Use `@dataclass(frozen=True)` only.
+- **No `slots=True`** on the dataclass — the slot descriptors leak into Pydantic's introspection and the MCP SDK falls back to `outputSchema = None`. Use `@dataclass(frozen=True)` only.
 - **Avoid Pydantic-reserved field names** — at minimum: `schema`, `model_*`, `copy`, `dict`, `parse_obj`. If your domain field is named `schema` (a SQL schema identifier, for example), rename to `table_schema` and document the rename in the tool's `Returns an object with …` sentence. The contract test at `tests/contract/test_tool_output_schemas.py` catches the shadow warning.
 
 **Legacy `dict[str, Any]` shape (existing tools — sweep when convenient):**

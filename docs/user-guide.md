@@ -269,8 +269,12 @@ per-request role automatically.
 Per-request role selection is honoured **per message** on the
 `streamable-http` / `sse` transports — every tool call resolves the role
 from its own request, so two tenants sharing one MCP session each run
-under their own role. (This is threaded through the SDK's per-message
-request context; earlier releases up to 0.6.10 pinned the role to a
+under their own role. (An HTTP/SSE middleware validates the role and
+stashes it on the request; `TenantRoleContextMiddleware` — a
+`ServerMiddleware` that runs inside the MCP SDK's own per-request dispatch
+task — reads it back and sets a `ContextVar` scoped to that task for the
+lifetime of the request, so it's reliably resolved per message and can't
+leak between requests. Earlier releases up to 0.6.10 pinned the role to a
 session's first request — fixed in 0.6.11.)
 
 Role names are identifier-validated
@@ -695,6 +699,14 @@ export MCPG_ENABLE_HEAVY_DIAGNOSTICS=true   # toggle computationally heavy diagn
 ```
 
 Enables operational gating for administrators over expensive diagnostic tools. When set to `false`, diagnostic, diagramming, and advisor tools (`run_advisors`, `recommend_indexes`, `generate_schema_diagram`, etc.) remain registered for client discovery but raise a friendly, administrator-disabled `RuntimeError` at call-time.
+
+```bash
+export MCPG_ELICIT_CONFIRM_WRITES=true   # interactive write confirmation (default: false)
+```
+
+When set, every write/DDL/shell/listen/migrate-tier tool call (any tool whose `readOnlyHint` annotation isn't `true`) is gated behind an interactive `ctx.elicit()` confirmation prompt — the client must accept before the tool runs. Declining or cancelling the prompt blocks the call and now also records an audit event (`status="denied"`) and a `mcpg_tool_calls_total{...,status="denied"}` metrics increment, so a blocked write is never invisible to the audit log or `/metrics`.
+
+**This is best-effort, not an enforcement boundary.** The gate only engages when the incoming call carries a request context *and* the client declared the `elicitation` capability during `initialize`; a client that omits either — including any non-interactive/automated client — silently bypasses the gate and the tool runs exactly as it would with the flag off. Treat this as a UX safety net for interactive clients, not a substitute for `MCPG_ACCESS_MODE` / `MCPG_ALLOW_*` policy enforcement.
 
 ---
 
