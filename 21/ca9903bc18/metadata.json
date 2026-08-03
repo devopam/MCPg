@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "21ca9903bc18",
+  "strategy": "manual-commit",
+  "branch": "fix/list-indexes-friendly-validation-error",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".gitignore",
+    "CHANGELOG.md",
+    "README.md",
+    "benchmarks/tokens/tier_b/agent.py",
+    "benchmarks/tokens/tier_b/runner.py",
+    "docs/feature-shortlist.md",
+    "docs/installation.md",
+    "docs/scaling.md",
+    "docs/security-hardening.md",
+    "docs/user-guide.md",
+    "pyproject.toml",
+    "src/mcpg/http_runtime.py",
+    "src/mcpg/observability.py",
+    "src/mcpg/server.py",
+    "tests/contract/test_tool_output_schemas.py",
+    "tests/unit/test_config.py",
+    "tests/unit/test_http_runtime.py",
+    "tests/unit/test_server.py",
+    "tests/unit/test_write.py",
+    "uv.lock"
+  ],
+  "sessions": [
+    {
+      "metadata": "/21/ca9903bc18/0/metadata.json",
+      "transcript": "/21/ca9903bc18/0/full.jsonl",
+      "compact_transcript": "/21/ca9903bc18/0/transcript.jsonl",
+      "content_hash": "/21/ca9903bc18/0/content_hash.txt",
+      "prompt": "/21/ca9903bc18/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1248,
+    "cache_creation_tokens": 3588520,
+    "cache_read_tokens": 185022085,
+    "output_tokens": 415946,
+    "api_call_count": 633
+  }
+}
