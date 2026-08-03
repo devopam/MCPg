@@ -1,0 +1,468 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "130d3bab2fce",
+  "session_id": "16455311-cc88-42c3-a448-f8e24615a85e",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-03T07:08:43.255865Z",
+  "branch": "feat/mcp-2.0-migration",
+  "checkpoints_count": 4,
+  "save_step_count": 5,
+  "files_touched": [
+    "CHANGELOG.md",
+    "REPOSITORY/wardn.json",
+    "benchmarks/dashboard/generate.py",
+    "benchmarks/perf/paths.py",
+    "benchmarks/perf/runner.py",
+    "benchmarks/results/forced-nl2sql-comparison.json",
+    "benchmarks/results/perf-sf10.html",
+    "benchmarks/results/perf-sf10.json",
+    "benchmarks/results/real-harness-comparison-dba-audit-v2.json",
+    "benchmarks/results/real-harness-comparison-dba-audit-v3.json",
+    "benchmarks/results/real-harness-comparison-dba-audit.json",
+    "benchmarks/results/real-harness-comparison-hint-test.json",
+    "benchmarks/results/real-harness-comparison-smoke.json",
+    "benchmarks/tokens/tier_b/agent.py",
+    "benchmarks/tokens/tier_b/experiments/__init__.py",
+    "benchmarks/tokens/tier_b/experiments/forced_nl2sql_comparison.py",
+    "benchmarks/tokens/tier_b/experiments/real_harness_comparison.py",
+    "benchmarks/tokens/tier_b/model.py",
+    "benchmarks/tokens/tier_b/runner.py",
+    "benchmarks/tokens/tier_b/schema.py",
+    "benchmarks/tokens/tier_b/tasks.py",
+    "docs/feature-shortlist.md",
+    "docs/performance-benchmark.md",
+    "docs/plans/benchmark-suite.md",
+    "docs/token-efficiency.md",
+    "src/mcpg/demo.py",
+    "src/mcpg/nl2sql.py",
+    "tests/contract/test_tool_output_schemas.py",
+    "tests/contract/tool_return_shapes.snapshot.json",
+    "tests/unit/test_bench_tier_b.py",
+    "tests/unit/test_config.py",
+    "tests/unit/test_demo.py",
+    "tests/unit/test_nl2sql.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "827887cba0c9",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 994,
+    "cache_creation_tokens": 3460291,
+    "cache_read_tokens": 138646236,
+    "output_tokens": 350166,
+    "api_call_count": 505
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Rgvzmz1cw75QGPA9SHM1en",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:writing-plans"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "827887cba0c9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 611,
+        "end": 612,
+        "entry_ids": [
+          "0848c924-7817-479e-8ed8-51f2622bb56f"
+        ],
+        "tool_use_id": "toolu_01Rgvzmz1cw75QGPA9SHM1en"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Rgvzmz1cw75QGPA9SHM1en"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:writing-plans",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01Ts2Mj3QbCf29ydFfaJ4gV6",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:subagent-driven-development"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "827887cba0c9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 884,
+        "end": 885,
+        "entry_ids": [
+          "e6e1cb2f-1a34-4260-afea-62e6b5bc3c25"
+        ],
+        "tool_use_id": "toolu_01Ts2Mj3QbCf29ydFfaJ4gV6"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Ts2Mj3QbCf29ydFfaJ4gV6"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:subagent-driven-development",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01UcfZwJcrqvmL7eGnBXbKza",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:using-git-worktrees"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "827887cba0c9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 896,
+        "end": 897,
+        "entry_ids": [
+          "7b27c80c-9ba5-4048-b712-49eeddd5fd4a"
+        ],
+        "tool_use_id": "toolu_01UcfZwJcrqvmL7eGnBXbKza"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01UcfZwJcrqvmL7eGnBXbKza"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:using-git-worktrees",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01KwgmvgbhDbgvcn5bEBqjZ3",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:requesting-code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "827887cba0c9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2187,
+        "end": 2188,
+        "entry_ids": [
+          "0c4ad1a7-9e07-4d13-b34c-2e558724e274"
+        ],
+        "tool_use_id": "toolu_01KwgmvgbhDbgvcn5bEBqjZ3"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01KwgmvgbhDbgvcn5bEBqjZ3"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:requesting-code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_013w7UAUD3AZwwio7CTMVX2Q",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "browse"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "827887cba0c9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2304,
+        "end": 2305,
+        "entry_ids": [
+          "5f9651dc-8be3-477d-98dc-9ffba40d80f2"
+        ],
+        "tool_use_id": "toolu_013w7UAUD3AZwwio7CTMVX2Q"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_013w7UAUD3AZwwio7CTMVX2Q"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: browse",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01XyfpB7w73qpynfqQcSk9jp",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:finishing-a-development-branch"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "827887cba0c9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2767,
+        "end": 2768,
+        "entry_ids": [
+          "5c9f3e00-08b8-46d1-a183-49ab4b1716f5"
+        ],
+        "tool_use_id": "toolu_01XyfpB7w73qpynfqQcSk9jp"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01XyfpB7w73qpynfqQcSk9jp"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:finishing-a-development-branch",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_016JY4yCoBACnBfX5wBCGZYF",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "superpowers:receiving-code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "827887cba0c9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2830,
+        "end": 2831,
+        "entry_ids": [
+          "a1f40346-1cb3-498d-a847-b5a95954d6ad"
+        ],
+        "tool_use_id": "toolu_016JY4yCoBACnBfX5wBCGZYF"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_016JY4yCoBACnBfX5wBCGZYF"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: superpowers:receiving-code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 15
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-03T07:08:42.8157583Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 5013,
+    "human_modified": 28232,
+    "human_removed": 0,
+    "total_committed": 10394,
+    "total_lines_changed": 33245,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 11022,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1315,
+      "agent_lines_removed": 642,
+      "user_added_per_file": {
+        ".claude/hooks/check-gstack.sh": 20,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.json": 98,
+        ".claude/settings.local.json": 160,
+        ".gemini/settings.json": 141,
+        ".mcp.json": 8,
+        "demo.py": 753,
+        "schema_details.txt": 716,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scratch/run_audit_db.py": 70,
+        "scratch/run_output.txt": 72
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 11022,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1315,
+      "agent_lines_removed": 642,
+      "user_added_per_file": {
+        ".claude/hooks/check-gstack.sh": 20,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.json": 98,
+        ".claude/settings.local.json": 160,
+        ".gemini/settings.json": 141,
+        ".mcp.json": 8,
+        "demo.py": 753,
+        "schema_details.txt": 716,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scratch/run_audit_db.py": 70,
+        "scratch/run_output.txt": 72
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 11025,
+      "user_lines_removed": 0,
+      "agent_lines_added": 1315,
+      "agent_lines_removed": 642,
+      "user_added_per_file": {
+        ".claude/hooks/check-gstack.sh": 20,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.json": 98,
+        ".claude/settings.local.json": 163,
+        ".gemini/settings.json": 141,
+        ".mcp.json": 8,
+        "demo.py": 753,
+        "schema_details.txt": 716,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scratch/run_audit_db.py": 70,
+        "scratch/run_output.txt": 72
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 24968,
+      "user_lines_removed": 8925,
+      "agent_lines_added": 6707,
+      "agent_lines_removed": 6034,
+      "user_added_per_file": {
+        ".claude/hooks/check-gstack.sh": 20,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.json": 98,
+        ".claude/settings.local.json": 168,
+        ".gemini/settings.json": 141,
+        ".mcp.json": 8,
+        "CHANGELOG.md": 21,
+        "REPOSITORY/wardn.json": 12,
+        "benchmarks/dashboard/generate.py": 734,
+        "benchmarks/perf/paths.py": 117,
+        "benchmarks/perf/runner.py": 485,
+        "benchmarks/results/forced-nl2sql-comparison.json": 106,
+        "benchmarks/results/perf-sf10.html": 117,
+        "benchmarks/results/perf-sf10.json": 2548,
+        "benchmarks/results/real-harness-comparison-dba-audit-v2.json": 205,
+        "benchmarks/results/real-harness-comparison-dba-audit-v3.json": 216,
+        "benchmarks/results/real-harness-comparison-dba-audit.json": 223,
+        "benchmarks/results/real-harness-comparison-hint-test.json": 157,
+        "benchmarks/results/real-harness-comparison-smoke.json": 164,
+        "benchmarks/tokens/tier_b/agent.py": 145,
+        "benchmarks/tokens/tier_b/experiments/__init__.py": 8,
+        "benchmarks/tokens/tier_b/experiments/forced_nl2sql_comparison.py": 140,
+        "benchmarks/tokens/tier_b/experiments/real_harness_comparison.py": 465,
+        "benchmarks/tokens/tier_b/model.py": 80,
+        "benchmarks/tokens/tier_b/runner.py": 204,
+        "benchmarks/tokens/tier_b/schema.py": 121,
+        "benchmarks/tokens/tier_b/tasks.py": 188,
+        "demo.py": 753,
+        "docs/feature-shortlist.md": 3,
+        "docs/performance-benchmark.md": 357,
+        "docs/plans/benchmark-suite.md": 277,
+        "docs/token-efficiency.md": 115,
+        "schema_details.txt": 716,
+        "scratch/awesome-mcp-servers/.github/workflows/check-glama.yml": 394,
+        "scratch/awesome-mcp-servers/CONTRIBUTING.md": 49,
+        "scratch/awesome-mcp-servers/LICENSE": 25,
+        "scratch/awesome-mcp-servers/README-fa-ir.md": 1311,
+        "scratch/awesome-mcp-servers/README-ja.md": 743,
+        "scratch/awesome-mcp-servers/README-ko.md": 684,
+        "scratch/awesome-mcp-servers/README-pt_BR.md": 593,
+        "scratch/awesome-mcp-servers/README-th.md": 752,
+        "scratch/awesome-mcp-servers/README-zh.md": 742,
+        "scratch/awesome-mcp-servers/README-zh_TW.md": 595,
+        "scratch/awesome-mcp-servers/README.md": 3095,
+        "scratch/run_audit_db.py": 70,
+        "scratch/run_output.txt": 72,
+        "src/mcpg/demo.py": 493,
+        "src/mcpg/nl2sql.py": 1325,
+        "tests/contract/test_tool_output_schemas.py": 900,
+        "tests/contract/tool_return_shapes.snapshot.json": 2396,
+        "tests/unit/test_bench_tier_b.py": 155,
+        "tests/unit/test_config.py": 12,
+        "tests/unit/test_demo.py": 106,
+        "tests/unit/test_nl2sql.py": 1343
+      },
+      "user_removed_per_file": {
+        "benchmarks/dashboard/generate.py": 734,
+        "benchmarks/perf/paths.py": 108,
+        "benchmarks/perf/runner.py": 414,
+        "benchmarks/tokens/tier_b/agent.py": 119,
+        "benchmarks/tokens/tier_b/model.py": 77,
+        "benchmarks/tokens/tier_b/runner.py": 136,
+        "benchmarks/tokens/tier_b/schema.py": 101,
+        "benchmarks/tokens/tier_b/tasks.py": 88,
+        "docs/feature-shortlist.md": 3,
+        "docs/performance-benchmark.md": 252,
+        "docs/plans/benchmark-suite.md": 268,
+        "docs/token-efficiency.md": 151,
+        "src/mcpg/demo.py": 492,
+        "src/mcpg/nl2sql.py": 1278,
+        "tests/contract/test_tool_output_schemas.py": 888,
+        "tests/contract/tool_return_shapes.snapshot.json": 2394,
+        "tests/unit/test_bench_tier_b.py": 92,
+        "tests/unit/test_config.py": 8,
+        "tests/unit/test_demo.py": 106,
+        "tests/unit/test_nl2sql.py": 1216
+      }
+    }
+  ]
+}

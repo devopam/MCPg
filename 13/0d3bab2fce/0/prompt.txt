@@ -1,0 +1,300 @@
+continue
+
+---
+
+<task-notification>
+<task-id>a6dcffa5e1b32b4e0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\a6dcffa5e1b32b4e0.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 9: docs, roadmap, changelog" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The commit is running in the background (with the full pre-commit hook suite). I'll wait for its completion notification rather than polling.</result>
+<usage><subagent_tokens>124566</subagent_tokens><tool_uses>48</tool_uses><duration_ms>5315726</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6dcffa5e1b32b4e0</task-id>
+<tool-use-id>toolu_01JXNBH6BfmQENGCKWJERF6m</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\a6dcffa5e1b32b4e0.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 9: docs, roadmap, changelog" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Report written to `C:\Users\devop\OneDrive\Documents\GitHub\MCPg\.superpowers\sdd\2026-07-30-mcp-2.0-migration\task-9-report.md`.
+
+**Status:** DONE
+
+**Commit:** `c73e024294dc5ec12517adacafb4c1a677853ee3` — "docs: mcp 2.0 migration roadmap row, architecture diagram, changelog" (6 files: CHANGELOG.md, docs/PROGRESS.md, docs/architecture.md, docs/contributing/adding-tools.md, docs/feature-shortlist.md, docs/security.md — 47 insertions, 11 deletions)
+
+**Verification summary:** Full suite green (2883 passed, 3 skipped), mypy/ruff check/ruff format clean, `tests/contract/test_doc_tables.py` passes (3/3); pre-commit hook (lint/format/mypy/bandit+audit/full unit suite) passed cleanly without `--no-verify`. The `slots=True` claim in adding-tools.md was verified against the actual installed `mcp` 2.0 `func_metadata.py` (not assumed) — confirmed still accurate: a slotted dataclass's `member_descriptor` leaks through `getattr(cls, field_name, _no_default)` in `_create_model_from_class`, breaking Pydantic schema generation and producing `outputSchema = None`.
+
+**Concerns:**
+- Judgment call on `docs/PROGRESS.md` lines 290/949: these are inside the file's self-described "historical record" dated log, where `AuditedFastMCP` was period-accurate at the time. I renamed them to `AuditedMCPServer` per the brief's explicit line-number instruction, but flagged this in the report in case the maintainer prefers historical-log fidelity over dead-name elimination.
+- Unrelated pre-existing working-tree noise (modified `CLAUDE.md`, untracked scratch dirs) left untouched, as before.</result>
+<usage><subagent_tokens>131828</subagent_tokens><tool_uses>3</tool_uses><duration_ms>86437</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a98d997bc82c2aa43</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\a98d997bc82c2aa43.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 9 docs/roadmap/changelog diff" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All checks confirm the report's claims. Final verdict below.
+
+## Verdict: APPROVE
+
+Task 9 is accurate, complete, and correctly scoped. Every claim in the report was independently verified rather than trusted:
+
+**Verified findings:**
+1. **Diff matches exactly**: `git show c73e024 --stat` confirms 6 files, +47/-11, identical to the report.
+2. **The central technical claim is correct.** Read `.venv/Lib/site-packages/mcp/server/mcpserver/utilities/func_metadata.py` lines 470–494 directly, and independently reproduced with a live Python repro: `getattr(SlottedDataclass, field_name, _no_default)` on the class object returns a `member_descriptor`, not `_no_default` — confirmed via `python -c` (`&lt;member 'a' of 'Foo' objects&gt; &lt;class 'member_descriptor'&gt;`). The exception path at lines 447–463 catches the resulting Pydantic failure and returns `(None, None, False)`, exactly matching the doc's `outputSchema = None` claim. The rename from "FastMCP auto-derives" to "the MCP SDK auto-derives" is warranted, not a blind find-replace.
+3. **Roadmap §20 and CHANGELOG are factually accurate against the ledger.** All three sub-rows (core SDK migration, `ServerMiddleware` tenancy redesign, elicitation opt-in) map onto Tasks 1–3, 5, and 6 respectively per `progress.md`. Confirmed `TenantRoleContextMiddleware` is a real class in `src/mcpg/tenancy.py`. Confirmed `pyproject.toml` now pins `mcp[cli]&gt;=2.0.0`, so "lifts the cap" is true, not aspirational. `tools/roadmap_linkage.py list` independently shows 20.1/20.2/20.3 parsing as `shipped`.
+4. **No generated-table drift.** Generated markers in `docs/architecture.md` are lines 66–180; Task 9 only touched 18-19/38-39/258, well outside. `pytest tests/contract/test_doc_tables.py` independently re-run: 3 passed.
+5. **`git status --short`** shows only the pre-existing `CLAUDE.md` modification and untracked scratch/tooling dirs — no leftover Task 9 changes.
+6. **Plan document's Task 9 section** matches the brief verbatim; no amendments were made to Task 9 during execution (unlike Tasks 4/5/7).
+
+**On the flagged judgment call (PROGRESS.md lines 290/949):** Not a concern. The brief (line 7) explicitly named these exact line numbers as in-scope ("discovered during Task 3"), so renaming them followed the brief's explicit instruction rather than being a unilateral overreach. The implementer's transparency in flagging it as a judgment call is good practice but the call itself was correct — line 102 (undated) and lines 290/949 (dated log) are all pre-existing stale references to a class name that no longer exists anywhere in the codebase; leaving dead-name greppability in a historical log has no value that outweighs consistency, and PROGRESS.md's own header doesn't claim verbatim code-name fidelity is a goal.
+
+No other issues found. Nothing here would embarrass the project if merged.</result>
+<usage><subagent_tokens>70788</subagent_tokens><tool_uses>18</tool_uses><duration_ms>158092</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a42cd5643058f0a55</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\a42cd5643058f0a55.output</output-file>
+<status>completed</status>
+<summary>Agent "Final whole-branch review of mcp 2.0 migration" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have all the evidence I need. Here is the review.
+
+---
+
+## Strengths
+
+- **The riskiest seam is genuinely correct.** `AuditedMCPServer.call_tool` (`src/mcpg/server.py:82-150`) matches mcp 2.0's real signature — I verified live: `MCPServer.call_tool(self, name, arguments, context=None) -&gt; CallToolResult | InputRequiredResult`. The decision to leave the `try/except → audit(status="error") → raise` logic untouched is right: `_handle_call_tool` is still the only layer that converts exceptions to `is_error` results, so the propagate-and-re-raise contract is preserved.
+- **The Task 5 deviation from the plan's snippet was the correct call.** The plan's literal middleware (early-return when the request carries no role) leaves an inherited `current_role` in place; the shipped version sets unconditionally whenever `ctx.request` is present. I independently traced why this is safe *and* necessary: `ServerRequestContext.request` is populated from `ServerMessageMetadata.request_context`, which **every** HTTP path constructs with the real Starlette request (`server/sse.py:257`, `server/streamable_http.py:234`, `server/_streamable_http_modern.py:238,399`). So on HTTP the middleware is always authoritative, and stdio (`request is None`) is a true no-op. The fail-closed direction (clobber → `None` → static default) matches the old mechanism's contract exactly. No new leak.
+- **`http_runtime.py:545-560` is right for the right reason,** and the in-code comment is accurate rather than parroting the plan. I confirmed `streamable_http_app`/`sse_app` take only `host` (no `port`), and that `host` solely controls the localhost DNS-rebinding auto-enable (`server/mcpserver/server.py:1100-1105`). Passing `settings.http_host` preserves pre-migration behavior for non-default binds; the plan's `port=` assumption was simply wrong and the implementer caught it live.
+- **Verification quality throughout is unusually high** — snake_case vs. JSON-key safety proven by the untouched `tool_surface.snapshot.json`, the `slots=True` claim traced to `func_metadata`'s `member_descriptor` behavior rather than assumed, both snapshots byte-identical.
+- **I independently reproduced the headline claims:** `2883 passed, 3 skipped` (356s), `mypy src/mcpg` clean (107 files), `ruff check` + `ruff format --check` clean, `uv.lock` resolves `mcp==2.0.0`, both contract snapshots absent from the diff. `grep` for `.isError/.inputSchema/.readOnlyHint/...` across `src/`, `benchmarks/`, `tools/` returns **zero** — the sweep is complete in production code. No leftover `mcp` version pins in `packaging/mcpb`, `packaging/smithery`, or `Dockerfile` (checked per the ship-surface list in CLAUDE.md).
+- Elicitation gate design is sound: centralized, capability-gated, opt-in, decline **and** cancel both blocked, `confirm=False`-on-accept blocked, `context=None` safe. Eight tests cover all of it.
+
+## Issues
+
+### Critical (Must Fix)
+None.
+
+### Important (Should Fix)
+
+**1. The referenced plan document is untracked — two doc links will 404 on merge.**
+`CHANGELOG.md:54` ("See `docs/superpowers/plans/2026-07-30-mcp-2.0-migration.md` for the full rationale") and `docs/feature-shortlist.md:318` (`[...](../superpowers/plans/2026-07-30-mcp-2.0-migration.md)`) both point at a file that is **not in the repo**: `git ls-files docs/superpowers` → empty, and `git check-ignore` exits 1, so it's untracked *and* unignored. The repo convention is tracked `docs/plans/` (row 18.1 links `plans/devendor-sql-kernel.md`; `docs/plans/{benchmark-suite,bm25-integration,devendor-sql-kernel}.md` are all committed).
+Fix: `git mv`/copy the plan to `docs/plans/mcp-2.0-migration.md`, commit it, update both links. Secondary hazard: since `docs/superpowers/` is unignored, a `git add -A` before the PR sweeps the whole directory (including any other scratch under it) into the commit.
+
+**2. A declined/cancelled write leaves no audit event and no metric — falsifying a documented guarantee.** `src/mcpg/server.py:116-125` returns before `metrics = get_metrics()` and before both `audit.record(...)` calls. I reproduced it: declined write → `is_error: True`, **0 audit events**, tool absent from `render_prometheus()`. This contradicts `docs/security.md:229` ("`AuditedMCPServer` records **every** tool invocation") and the class docstring at `server.py:54` ("records an audit event for every tool call"). For a compliance-oriented server, "operator refused a write" is exactly the event you want in the trail, and its absence is indistinguishable from "the call never happened."
+Fix (preferred — makes code match the docs rather than weakening them): before the early `return`, emit `audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="denied", error="write not confirmed"))` and a matching `metrics.record_call(name, "denied"/"error", duration, bucket=bucket)`. Blast radius is limited by the flag defaulting to off, but the doc claim is unconditional.
+
+**3. The tenancy middleware's *wiring* is untested.** `TenantRoleContextMiddleware` appears in `tests/` only in `test_tenancy.py`, always constructed directly. Nothing asserts `create_server` registers it. Delete `middleware=[TenantRoleContextMiddleware()]` from `server.py:281` and all 2883 tests still pass while per-request multi-tenancy silently degrades to static-default-only — a silent security regression with no net. I confirmed a clean assertion is available: `create_server(...)._lowlevel_server.middleware` contains the instance (alongside the SDK's `OpenTelemetryMiddleware` and `RequestStateBoundary`); `MCPServer` also exposes a public `middleware` attribute.
+Fix: one test in `tests/unit/test_server.py` asserting `any(isinstance(m, TenantRoleContextMiddleware) for m in create_server(_SETTINGS)._lowlevel_server.middleware)`.
+
+**4. Documentation gaps, one commit's worth.**
+- **`MCPG_ELICIT_CONFIRM_WRITES` has no user-facing documentation.** It appears in 7 files, all internal (`config.py`, `server.py`, two test files, CHANGELOG, roadmap, plan). For comparison `MCPG_ALLOW_LISTEN` appears in 30, including `README.md`, `docs/user-guide.md`, `docs/installation.md`, `docs/security-hardening.md`. A shipped user-configurable feature that no user can discover. Add it to the `installation.md` config table and the `user-guide.md` env-var section, noting the client-capability requirement (clients that don't declare `elicitation` silently bypass the gate — an operator needs to know the gate is best-effort, not an enforcement boundary).
+- **Two live docs still describe the removed mechanism.** `docs/security-hardening.md:40-43` ("the tenancy driver reads it from the SDK's per-message request context at query time") and `docs/user-guide.md:272-274` ("threaded through the SDK's per-message request context"). The observable behavior claim (per-message resolution) is still true, so this is precision not falsehood — but it's in the security doc, and it's the class of claim CLAUDE.md's verify-before-you-write rule targets. This is a **plan gap, not implementer error**: Task 9's file list named `security.md` and not `security-hardening.md`. Also stale, lower stakes: `docs/scaling.md:18` ("the FastMCP transport handler").
+
+### Minor (Nice to Have)
+
+**5. `http_runtime.py:186-188` and `257-259` carry now-false comments** ("Stash on the scope so the tool-dispatch task (a separate, session-scoped task on HTTP/SSE) reads the correct per-request role via the SDK request context; the ContextVar alone doesn't reach it"). I agree with the ledger's deferral of the *code* removal (line 31: "Harmless (new middleware overrides them)") — the redundant `current_role.set()` is genuinely inert now. But actively-wrong comments describing a mechanism that no longer exists, in the security-sensitive file, are what tempt the next reader to re-add the hack. Scope the ask to the comments; leave the code cleanup as the tracked follow-up.
+
+**6. Roadmap row 20.1 says "HTTP app host/port fix"** (`docs/feature-shortlist.md:318`). There was no port fix — port was never broken, and `streamable_http_app` has no `port` kwarg. The ledger already recorded this as a PLAN CORRECTION (line 25); the roadmap row inherited the plan's wrong framing. One word.
+
+**7. Cosmetic consistency:** `tests/unit/test_server.py:25` still names the test `test_create_server_returns_named_fastmcp` (already ledger-tracked at line 22), and `tests/unit/test_server.py:151-152` constructs `ToolAnnotations(readOnlyHint=...)` in camelCase while `tools.py` now uses snake_case — the alias works, but it reads against the sweep.
+
+## Recommendations
+
+1. Land fixes 1–4 as a single follow-up commit before opening the PR; none require design changes.
+2. Consider adding a sentence to the CHANGELOG on upgrade impact: the floor moved to `mcp&gt;=2.0.0` (a hard break for anyone pinned to 1.x), and `mcpg.server.AuditedFastMCP` — which was in `__all__` — is gone with no alias. Pre-1.0 makes this defensible, but it's worth stating rather than leaving readers to infer it from "`AuditedFastMCP` → `AuditedMCPServer`". The `[Unreleased]` section now both caps and un-caps `mcp[cli]` (lines 11-20 vs. 47-55); a "superseded below" note on the cap entry would spare the release-notes author.
+3. **Scope statements, so this review doesn't overclaim:** integration lanes were **collection-verified only** (112 tests collected, no live Postgres available here) — CI's PG 14–18 matrix remains the real gate for `tests/integration/`. And the uncommitted `CLAUDE.md` gstack edit plus untracked scratch (`$body`, `curl.exe`, `demo.py`, `scratch/`, `.claude/`, `.gemini/`) are outside this review range and should not be swept into the PR.
+4. Not blocking, worth knowing: if anyone ever runs mcpg with `json_response=True` or stateless streamable-HTTP, the request-scoped channel sets `can_send_request=False` and `ctx.elicit()` can't complete. mcpg doesn't enable either today (`build_http_app` takes the defaults), so this is latent — but if the elicit gate ever becomes default-on, it needs a guard.
+
+## Assessment
+
+**Ready to merge?** With fixes
+
+**Reasoning:** The migration is functionally correct and unusually well-verified — I independently reproduced the green suite, clean mypy/ruff, byte-identical snapshots, and the load-bearing SDK claims, and the security-sensitive tenancy deviation from the plan is the right call for the right reason. The blocking items are a broken doc link to an untracked plan file, an audit/metrics blind spot on the new decline path that contradicts a written security guarantee, a missing one-line test for the middleware wiring, and undocumented user-facing config — all small, mechanical fixes with no redesign implied.</result>
+<usage><subagent_tokens>149428</subagent_tokens><tool_uses>49</tool_uses><duration_ms>12783348</duration_ms></usage>
+</task-notification>
+
+---
+
+one request, can you please ensure we update documentation as well. Last time I saw again that the font mismatch for MCP registries in visible in GitHub io documentation while it looks sorted on README. do a clean sweep similar to this aspect. this will be a major change, so we will use 0.7.0 and rest it thoroughly before we actually push it to use
+
+---
+
+<task-notification>
+<task-id>ad525e1fc6c33c46c</task-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\ad525e1fc6c33c46c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 10: fix final review findings" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll wait for the notification before continuing.</result>
+<usage><subagent_tokens>163028</subagent_tokens><tool_uses>137</tool_uses><duration_ms>11481292</duration_ms></usage>
+</task-notification>
+
+---
+
+Check whether Task 10's git commit (pre-commit hook running full test suite in the MCPg repo) has finished. If git log shows a new commit past c73e024 and no git/pytest processes are running, resume Task 10's agent if it hasn't self-reported, verify its report file, dispatch its task-scoped reviewer, then dispatch Task 11 (README Setext-heading fix + version bump to 0.7.0 + local pre-flight, brief already written at .superpowers/sdd/2026-07-30-mcp-2.0-migration/task-11-brief.md). If still running, reschedule.
+
+---
+
+<task-notification>
+<task-id>ad525e1fc6c33c46c</task-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\ad525e1fc6c33c46c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 10: fix final review findings" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The report has already been written to that exact path with all required sections. Task 10 is complete.
+
+## Summary
+
+All 7 fixes from the final whole-branch review are implemented, verified, and committed in a single commit: **`34b6624`** on `feat/mcp-2.0-migration`.
+
+- **Fix 1**: Moved the untracked plan doc to `docs/plans/mcp-2.0-migration.md`, fixed both dangling links.
+- **Fix 2**: `AuditedMCPServer.call_tool` now emits an `AuditEvent(status="denied")` + `metrics.record_call(..., "denied", ...)` when a write is declined/cancelled, fixing the "invisible audit trail" bug. Extended tests via monkeypatched `audit.record` + metrics-snapshot deltas. Caught and fixed a regression along the way (an early design broke `test_slow_call.py`'s fixed-length `time.monotonic` mocks — resolved by scoping the extra timer call to only the elicitation branch).
+- **Fix 3**: Verified `create_server(...)._lowlevel_server.middleware` against the installed SDK before writing the assertion; added a test confirming `TenantRoleContextMiddleware` is wired in.
+- **Fix 4**: Documented `MCPG_ELICIT_CONFIRM_WRITES` (found the brief slightly misidentified where the real config table lives — it's in `README.md`, not `installation.md` — and documented in the correct location plus a cross-reference); verified and accurately described the gate's best-effort/bypass behavior from the actual code; updated stale tenancy-mechanism docs and the `scaling.md` FastMCP mention.
+- **Fix 5**: Corrected stale comments in `http_runtime.py` (code untouched).
+- **Fix 6**: Reworded the "host/port fix" roadmap claim.
+- **Fix 7**: Renamed the FastMCP-named test and fixed `ToolAnnotations` to snake_case kwargs (verified both forms work before changing).
+
+Verification: ruff, ruff-format, mypy --strict all clean; `tests/contract/test_doc_tables.py` 3/3 passed; full `tests/unit tests/contract` run 2884 passed/3 skipped; pre-commit hook (no `--no-verify`) passed cleanly with its own full suite run. Contract snapshots untouched. One unrelated `.gitignore` change (from background tooling, not my edits) was reverted rather than committed. Full details, verification transcripts, and deviations are in `.superpowers/sdd/2026-07-30-mcp-2.0-migration/task-10-report.md`.</result>
+<usage><subagent_tokens>173439</subagent_tokens><tool_uses>141</tool_uses><duration_ms>12348154</duration_ms></usage>
+</task-notification>
+
+---
+
+Check whether Task 10's report file (.superpowers/sdd/2026-07-30-mcp-2.0-migration/task-10-report.md) now exists. If yes, dispatch Task 10's task-scoped reviewer (general-purpose subagent, sonnet, following the same review pattern used for Task 9: read brief+report+diff, independently verify the audit/metrics fix and middleware-wiring test, report APPROVE/NEEDS FIXES). If the report still doesn't exist, resume agent ad525e1fc6c33c46c again with a reminder to write it. After Task 10's review comes back clean, update the ledger, mark Task 10 complete, then dispatch Task 11 (brief already at .superpowers/sdd/2026-07-30-mcp-2.0-migration/task-11-brief.md) as a general-purpose sonnet implementer.
+
+---
+
+<task-notification>
+<task-id>a925f38e44a1afff5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\a925f38e44a1afff5.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 10 final-review-fixups diff" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All confirmed — no name collision (only one occurrence), no camelCase `readOnlyHint` remaining, and the plan doc content is coherent and consistent with what's described (a straight relocation, not a rewrite). All 7 fixes independently verified.
+
+## Verdict: APPROVE
+
+All 7 findings from the final whole-branch review are genuinely fixed, and every claim in the implementer's report checked out under independent verification.
+
+**Verified findings (no discrepancies):**
+- **Fix 1** (plan doc): `docs/plans/mcp-2.0-migration.md` tracked via `git ls-files`; `docs/superpowers/` gone; CHANGELOG.md and feature-shortlist.md links updated; no dangling references to the old path.
+- **Fix 2** (audit trail on denial): diffed `server.py` directly — `metrics`/`bucket` hoisted above the gate, a `gate_start` timer added only inside the `supports_elicitation` branch (never touched by `test_slow_call.py`'s fixed-length mocks), `audit.record(status="denied")` + `metrics.record_call(..., "denied", ...)` emitted before the unchanged `CallToolResult`. Confirmed byte-for-byte the returned `CallToolResult` content/is_error is identical to the pre-fix version. Ran the new tests myself — both assert a real captured `AuditEvent` and a metrics-counter delta of 1, not vacuous checks. `observability.py` docstrings correctly updated to include `"denied"`; `audit.py`'s `status` field is a plain `str` (no enum to violate).
+- **Fix 3** (middleware test): I commented out `middleware=[TenantRoleContextMiddleware()]` in `server.py` and re-ran `test_create_server_registers_tenant_role_context_middleware` — it failed as expected (`assert False`). Reverted; diff confirmed clean. Strongest possible evidence the test is load-bearing.
+- **Fix 4** (docs): `MCPG_ELICIT_CONFIRM_WRITES` documented in README.md's table (confirmed the implementer's deviation claim — it's not in installation.md's table, which only cross-references), plus installation.md scenario row and user-guide.md paragraph. Best-effort/bypass wording matches `server.py`'s actual gate conditions (`context is not None`, `elicit_confirm_writes`, `read_only_hint`, `capabilities.elicitation is not None`) exactly. security-hardening.md/user-guide.md tenancy prose now matches `tenancy.py`'s `TenantRoleContextMiddleware` docstring; scaling.md's "FastMCP transport handler" replaced with "MCPServer-provided transport handler".
+- **Fix 5** (http_runtime.py comments): diff shows only comment text changed; the `scope[...] =` and `current_role.set(...)` code lines are untouched.
+- **Fix 6** (roadmap wording): confirmed "HTTP app host fix" (no "port") in feature-shortlist.md row 20.1.
+- **Fix 7** (test cosmetics): only one `test_create_server_returns_named_*` test exists (no collision); zero remaining `readOnlyHint` camelCase occurrences in test_server.py.
+- **test_slow_call.py regression**: no diff to this file at all — the real fix was scoping the new timer call inside the `supports_elicitation` branch so the slow-call tests (which never pass a context/enable the flag) never hit it. Ran it: 5 tests pass, still exercising meaningful time-based behavior.
+- **Full verification**: `pytest tests/unit tests/contract -q` → 2884 passed, 3 skipped (exact match to report). `mypy src/mcpg` clean. `ruff check` and `ruff format --check` clean. `test_doc_tables.py` 3 passed. Contract snapshots untouched in the `c73e024..34b6624` range. `git status --short` shows only pre-existing noise (CLAUDE.md mod, scratch/untracked dirs) plus a harmless untracked `.gstack/` the report already explained.
+
+No Important or Minor findings remain open. Nothing needs further work.</result>
+<usage><subagent_tokens>78487</subagent_tokens><tool_uses>36</tool_uses><duration_ms>1004753</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2394a626c20a3d16</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\a2394a626c20a3d16.output</output-file>
+<status>failed</status>
+<summary>Agent "Implement Task 11: README fix + 0.7.0 bump" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Still running (this is the pre-commit hook's own full test suite, step 5 of 5). Let's wait for the completion notification.</result>
+</task-notification>
+
+---
+
+continue
+
+---
+
+continue
+
+---
+
+okay
+
+---
+
+continue
+
+---
+
+continue
+
+---
+
+continue
+
+---
+
+<task-notification>
+<task-id>a1410e6d9410da760</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\a1410e6d9410da760.output</output-file>
+<status>completed</status>
+<summary>Agent "Review Task 11 version-bump diff" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Verdict: APPROVE
+
+Independently re-verified every load-bearing claim in Task 11's diff and report; nothing contradicts it.
+
+**Confirmed via direct verification (not trusting the report):**
+- `git show a194e67 --stat` — file list matches exactly: CHANGELOG.md, README.md, docs/index.md, docs/release-notes-0.7.0.md, packaging/mcpb/{manifest.json,pyproject.toml}, src/mcpg/__init__.py.
+- README: blank line now separates the Glama bullet from `---`; kramdown's Setext-heading rule requires an unbroken preceding paragraph/list line, so a blank line unambiguously forces `---` to read as a thematic break on both cmark and kramdown. Sound fix.
+- `src/mcpg/__init__.py` → `__version__ = "0.7.0"`; `pyproject.toml` untouched (dynamic version) — confirmed both by grep and `uv run python -c "import mcpg; print(mcpg.__version__)"` → `0.7.0`.
+- **`pyproject.toml` line 53: `"mcp[cli]&gt;=2.0.0"`** — this was the one claim worth independently checking rather than trusting the CHANGELOG text: the floor was actually raised, not merely the old `&lt;2` cap lifted. Verified.
+- `uv run pytest tests/unit/test_mcpb_bundle.py -v` → 3 passed.
+- `grep -rn "AuditedFastMCP" --include="*.py" src/mcpg/` → zero source hits (only stale `.pyc` cache binaries, irrelevant); `AuditedMCPServer` confirmed as a real exported class in `server.py`.
+- CHANGELOG: `[Unreleased]`→`[0.7.0] - 2026-08-01` with a fresh empty `[Unreleased]` above it; the `mcp[cli]&lt;2` cap entry now explicitly says "Superseded in this release"; an Upgrade-impact section covers both the `mcp&gt;=2.0.0` break and the no-alias rename.
+- `docs/plans/mcp-2.0-migration.md` — confirmed tracked (`git ls-files` returns it), so the release notes' link is not broken.
+- `docs/release-notes-0.7.0.md` cross-checked against `progress.md`'s ledger — accurately covers what Tasks 1-10 shipped (SDK migration, tenancy `ServerMiddleware` redesign, `MCPG_ELICIT_CONFIRM_WRITES`, README fix), no over/underclaiming. Linked at the top of `docs/index.md`'s list in correct descending order.
+- Pre-existing "252 tools" drift (manifest.json description, release-process.md:433, CLAUDE.md) confirmed pre-existing via `git log` (manifest.json last touched at v0.6.10) — reasonable, correctly out-of-scope call.
+- pip-audit's own `--help` text confirms the `--disable-pip` constraint the report cites verbatim.
+- `uv run pytest tests/unit tests/contract -q` → 2884 passed, 3 skipped, 0 failed — matches report exactly.
+- `git status --short` — clean, only the same pre-existing noise (CLAUDE.md, scratch/, etc.).
+
+**Minor, non-blocking notes:**
+1. `2026-08-01` dates (CHANGELOG + release notes) are already stale as of today; will need a real date at actual tag time. Confirmed this is the same forward-looking template `docs/release-notes-0.6.12.md` uses (its own `Released:`/docker-pull lines), so it's convention, not a Task 11 defect — but bundle it with the implementer's own flagged item #4 into one "update before tag" checklist.
+2. The referenced `ghcr.io/devopam/mcpg:0.7.0` image and `mcpg-0.7.0.mcpb` don't exist yet — same pre-existing convention, non-blocking.
+3. 252→254 drift follow-up task is genuinely worth filing.</result>
+<usage><subagent_tokens>76513</subagent_tokens><tool_uses>20</tool_uses><duration_ms>365876</duration_ms></usage>
+</task-notification>
+
+---
+
+we received review feedback on the PR
+
+---
+
+<task-notification>
+<task-id>a193a3e2a7aee6d1c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>C:\Users\devop\AppData\Local\Temp\claude\C--Users-devop-OneDrive-Documents-GitHub-MCPg\60e5eb81-7c59-4eb9-b32b-8226bb97676e\tasks\a193a3e2a7aee6d1c.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement Task 12: resolve merge conflict" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The merge commit is running in the background (this re-runs the full 2800+ test unit suite via the pre-commit hook, which takes several minutes). I'll wait for the completion notification rather than polling.</result>
+<usage><subagent_tokens>88116</subagent_tokens><tool_uses>30</tool_uses><duration_ms>339397</duration_ms></usage>
+</task-notification>

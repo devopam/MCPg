@@ -1,0 +1,58 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "130d3bab2fce",
+  "strategy": "manual-commit",
+  "branch": "feat/mcp-2.0-migration",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "CHANGELOG.md",
+    "REPOSITORY/wardn.json",
+    "benchmarks/dashboard/generate.py",
+    "benchmarks/perf/paths.py",
+    "benchmarks/perf/runner.py",
+    "benchmarks/results/forced-nl2sql-comparison.json",
+    "benchmarks/results/perf-sf10.html",
+    "benchmarks/results/perf-sf10.json",
+    "benchmarks/results/real-harness-comparison-dba-audit-v2.json",
+    "benchmarks/results/real-harness-comparison-dba-audit-v3.json",
+    "benchmarks/results/real-harness-comparison-dba-audit.json",
+    "benchmarks/results/real-harness-comparison-hint-test.json",
+    "benchmarks/results/real-harness-comparison-smoke.json",
+    "benchmarks/tokens/tier_b/agent.py",
+    "benchmarks/tokens/tier_b/experiments/__init__.py",
+    "benchmarks/tokens/tier_b/experiments/forced_nl2sql_comparison.py",
+    "benchmarks/tokens/tier_b/experiments/real_harness_comparison.py",
+    "benchmarks/tokens/tier_b/model.py",
+    "benchmarks/tokens/tier_b/runner.py",
+    "benchmarks/tokens/tier_b/schema.py",
+    "benchmarks/tokens/tier_b/tasks.py",
+    "docs/feature-shortlist.md",
+    "docs/performance-benchmark.md",
+    "docs/plans/benchmark-suite.md",
+    "docs/token-efficiency.md",
+    "src/mcpg/demo.py",
+    "src/mcpg/nl2sql.py",
+    "tests/contract/test_tool_output_schemas.py",
+    "tests/contract/tool_return_shapes.snapshot.json",
+    "tests/unit/test_bench_tier_b.py",
+    "tests/unit/test_config.py",
+    "tests/unit/test_demo.py",
+    "tests/unit/test_nl2sql.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/13/0d3bab2fce/0/metadata.json",
+      "transcript": "/13/0d3bab2fce/0/full.jsonl",
+      "compact_transcript": "/13/0d3bab2fce/0/transcript.jsonl",
+      "content_hash": "/13/0d3bab2fce/0/content_hash.txt",
+      "prompt": "/13/0d3bab2fce/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 994,
+    "cache_creation_tokens": 3460291,
+    "cache_read_tokens": 138646236,
+    "output_tokens": 350166,
+    "api_call_count": 505
+  }
+}
