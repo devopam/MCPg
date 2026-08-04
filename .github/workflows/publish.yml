@@ -79,14 +79,21 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.14"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: dist
+          path: dist/
       - name: Install runtime deps from real PyPI (anti-confusion)
         # TestPyPI is a public sandbox; combining its index with
         # ``--extra-index-url=pypi`` lets an attacker shadow our
         # deps with a higher-numbered fake (dependency confusion).
         # Step 1 pins real PyPI only, dep list canonically derived
-        # from pyproject.toml.
+        # from pyproject.toml. Hashes come from uv's own lockfile
+        # resolution, so pip refuses to install anything whose
+        # artifact doesn't match what we resolved (belt-and-braces
+        # on top of the index pinning above).
         run: |
-          uv export --no-dev --no-emit-project --no-hashes \
+          uv export --no-dev --no-emit-project \
             --format requirements-txt > /tmp/mcpg-deps.txt
           python -m pip install -r /tmp/mcpg-deps.txt
       - name: Wait for TestPyPI to index the upload
@@ -110,16 +117,23 @@ jobs:
           done
           echo "::error::TestPyPI simple index never listed mcpg==${VER}"
           exit 1
-      - name: Install mcpg from TestPyPI (no deps)
+      - name: Install mcpg from TestPyPI (no deps, hash-pinned)
         # A short retry on the install itself too: even after the simple
         # index origin has the version, a CDN edge cache in front of it can
-        # lag a few more seconds.
+        # lag a few more seconds. The hash comes from the wheel this same
+        # workflow run built and uploaded a few steps ago (downloaded
+        # above) — TestPyPI serves that identical file back byte-for-byte,
+        # so pinning to it also catches any upload-path tampering, not
+        # just dependency confusion.
         run: |
           VER="${GITHUB_REF_NAME#v}"
+          WHEEL="$(ls dist/mcpg-"${VER}"-*.whl)"
+          HASH="$(python -m pip hash "$WHEEL" | sed -n 's/^--hash=sha256://p')"
+          echo "mcpg==${VER} --hash=sha256:${HASH}" > /tmp/mcpg-pin.txt
           for i in 1 2 3; do
             if python -m pip install --no-deps \
                 --index-url https://test.pypi.org/simple/ \
-                "mcpg==${VER}"; then
+                -r /tmp/mcpg-pin.txt; then
               exit 0
             fi
             echo "pip install attempt $i/3 failed; retrying in 10s..."
