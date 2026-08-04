@@ -296,6 +296,12 @@ class SqlDriver:
             # alert #5).
             logger.error(
                 "Error executing query (%s): %s",
+                # codeql[py/clear-text-logging-sensitive-data]: obfuscate_password
+                # IS the sanitizer for this taint flow -- CodeQL's default query
+                # pack doesn't model first-party functions as sanitizers, so it
+                # keeps flagging the pre-sanitization taint even after the fix.
+                # Verified redacted (including the SQL-literal-with-embedded-quote
+                # edge case) in tests/unit/test_sql_kernel_{obfuscate,driver}.py.
                 obfuscate_password(str(query)),
                 obfuscate_password(str(e)),
             )
