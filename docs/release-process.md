@@ -771,19 +771,51 @@ release. Nothing else about the demo changes between releases.
 ### The reviewed submission: Claude connectors directory
 
 The Claude directory is a **reviewed** submission portal with no
-publish API, so releases can't push to it automatically. After a
-release that changes the tool surface or the `.mcpb` in a way worth
-re-listing:
+publish API, so releases can't push to it automatically. Review
+criteria: [Anthropic Software Directory
+Policy](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) —
+re-read it before each re-submission, it can change. After a release
+that changes the tool surface or the `.mcpb` in a way worth re-listing:
 
 1. Grab the new `mcpg-<version>.mcpb` from the GitHub release.
 2. Re-submit via the desktop-extension form linked from the
-   [connectors submission docs](https://claude.com/docs/connectors/building/submission).
+   [connectors submission docs](https://claude.com/docs/connectors/building/submission)
+   (currently a Google Form gated behind sign-in — open it directly to
+   see the live field list, don't assume it matches what's below).
 3. Track status in Claude's submissions dashboard; escalate to
    `mcp-review@anthropic.com` if stuck.
 
 Because the bundle installs `mcpg` from PyPI (always the pinned release
 at install time), a listed extension keeps working across patch
 releases without re-submission — re-submit only for material changes.
+
+**Ready-to-paste content for the form**, cross-checked against the
+policy's explicit requirements:
+
+- **Testing account with sample data** (policy requires this): the
+  hosted read-only demo — `https://devopam-mcpg-demo.hf.space/mcp` —
+  serves throwaway seeded data (see `docs/demo.md`) and needs no
+  credentials. Point reviewers at it directly rather than asking them
+  to stand up their own Postgres instance.
+- **At least three working example prompts** (policy requires this):
+  pick 3+ from `docs/tour.md`'s section headings (each is itself a
+  literal example prompt, worked end-to-end underneath) — e.g. `"What's
+  in this database?"`, `"Is this database healthy?"`, `"Tune pgvector"`.
+  28+ sections exist there; rotate which ones you cite if a resubmission
+  wants fresher examples.
+- **Ownership/architecture note**: MCPg is a bring-your-own-database
+  tool — it doesn't call a fixed API endpoint the maintainer runs.
+  Each user supplies their own PostgreSQL connection string at
+  configure time (stored in the OS keychain via the `.mcpb` manifest's
+  `sensitive: true` field); the only endpoint the maintainer actually
+  owns/controls is the demo Space above. State this plainly if the form
+  asks about endpoint ownership — the policy's phrasing assumes a more
+  typical fixed-backend SaaS connector shape, which MCPg deliberately
+  isn't.
+- **Data-handling boundary**: `PRIVACY.md` explicitly states MCPg never
+  accesses Claude's own memory, conversation history, or uploaded
+  files — only the Postgres database and (for the opt-in
+  `translate_nl_to_sql` tool) the NL→SQL provider the user configured.
 
 ---
 
