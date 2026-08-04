@@ -39,7 +39,17 @@ adheres to [Semantic Versioning](https://semver.org/).
   `query` and exception text through `obfuscate_password` in
   `src/mcpg/sql/driver.py`. Regression tests added in
   `tests/unit/test_sql_kernel_obfuscate.py` and
-  `tests/unit/test_sql_kernel_driver.py`.
+  `tests/unit/test_sql_kernel_driver.py` — confirmed against
+  `mcpg.redis_fdw.create_redis_user_mapping`'s actual generated SQL, so
+  the pattern match is exact, not assumed. The `test_sql_kernel_driver.py`
+  regression test as first committed (WIP commit 038b5dd) never actually
+  exercised the fix — it needed two follow-up corrections (a broken mock
+  of the async-context-manager protocol that caused a genuine infinite
+  loop, then a test-isolation fix for cross-test logger-handler leakage
+  from `test_obs_logging.py`) before its redaction assertion could
+  genuinely fire; see the fix commit's message for the full root-cause
+  trail. Verified redacted end-to-end (`password '****'` present, secret
+  absent) as part of a full green `pytest tests/unit tests/contract` run.
 - Reviewed the CodeQL `py/incomplete-url-substring-sanitization` alert on
   `tests/unit/test_secrets.py:234` — a test-only false positive (a
   hardcoded-literal `assert "vault.example.com" in rendered` debug-repr

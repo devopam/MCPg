@@ -17,7 +17,7 @@
 # Phase 1) — the surface MCPg actually compiles against to triage
 # behavioural / view-shape drift between PG 18 and PG 19.
 
-FROM postgres:19beta1
+FROM postgres:19beta1@sha256:d53e88982cb971bc2586fb37d9c9f7b3c707ae8fa6bc35dd1fb94bf2eda453f3
 
 ARG PG_MAJOR=19
 

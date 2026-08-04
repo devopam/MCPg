@@ -206,7 +206,7 @@ async def test_connection_error_marks_pool_invalid(mock_db_pool):
 
 
 @pytest.mark.asyncio
-async def test_execute_query_error_log_redacts_sql_literal_secret(mock_connection, caplog):
+async def test_execute_query_error_log_redacts_sql_literal_secret(caplog):
     """Regression test for CodeQL alert #5 (py/clear-text-logging-sensitive-data).
 
     ``_execute_with_connection``'s error-path ``logger.error`` call must
@@ -219,16 +219,60 @@ async def test_execute_query_error_log_redacts_sql_literal_secret(mock_connectio
     ``obfuscate_password`` patterns wouldn't have caught this before the
     fix). If that ``execute_query`` call ever raises, the query text must
     reach the log redacted, not verbatim.
+
+    This test exercises the real ``_execute_with_connection`` (not a
+    monkey-patched stand-in like the other tests in this file), so it
+    needs its own async-context-manager mock for ``connection.cursor()``:
+    the shared ``mock_connection`` fixture's ``AsyncContextManagerMock``
+    subclass overrides ``__aenter__``/``__aexit__`` as plain methods, but
+    on current Python/``unittest.mock`` that override is not honored by
+    the ``async with`` protocol on an ``AsyncMock`` instance -- it silently
+    falls back to an auto-generated ``__aenter__`` whose return value is
+    an unrelated mock, disconnected from any ``side_effect`` configured on
+    the fixture's cursor. That previously sent this test into a genuine
+    infinite loop (``while cursor.nextset(): pass`` looping forever on an
+    always-truthy, never-awaited coroutine returned by the auto mock's
+    ``nextset()``) instead of raising. Configuring ``__aenter__`` /
+    ``__aexit__`` as explicit ``AsyncMock`` attributes (the currently
+    correct idiom) avoids that trap.
+
+    Also attaches ``caplog.handler`` directly to the ``mcpg.sql.driver``
+    logger rather than relying on ``caplog.at_level`` + root-logger
+    propagation: at least one other test in this suite (observed:
+    ``tests/unit/test_obs_logging.py``'s ``setup_logging``/
+    ``configure_log_format`` coverage) mutates the ancestor ``mcpg``
+    logger's ``propagate``/handlers as global ``logging`` module state
+    and doesn't always restore it, which silently breaks
+    ``caplog``-via-propagation for any ``mcpg.*`` logger in tests that
+    happen to run afterward in the same session (this test passed in
+    isolation but failed — ``caplog.text`` empty despite the redacted
+    line genuinely being emitted, visible in "Captured stderr call" —
+    when run as part of the full suite). Attaching the handler directly
+    makes this test's assertions independent of that ordering.
     """
-    connection, cursor = mock_connection
     secret = "sup3r-sekret-token-xyz"
     query = f"CREATE USER MAPPING IF NOT EXISTS FOR PUBLIC SERVER \"redis_primary\" OPTIONS (password '{secret}')"
+
+    cursor = AsyncMock()
     cursor.execute.side_effect = Exception("boom")
+
+    cursor_cm = MagicMock()
+    cursor_cm.__aenter__ = AsyncMock(return_value=cursor)
+    cursor_cm.__aexit__ = AsyncMock(return_value=False)
+
+    connection = MagicMock()
+    connection.cursor = MagicMock(return_value=cursor_cm)
+
     driver = SqlDriver(conn=connection)
 
-    with caplog.at_level(logging.ERROR):
-        with pytest.raises(Exception, match="boom"):
-            await driver._execute_with_connection(connection, query, None, force_readonly=False)
+    driver_logger = logging.getLogger("mcpg.sql.driver")
+    driver_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.ERROR, logger="mcpg.sql.driver"):
+            with pytest.raises(Exception, match="boom"):
+                await driver._execute_with_connection(connection, query, None, force_readonly=False)
+    finally:
+        driver_logger.removeHandler(caplog.handler)
 
     assert secret not in caplog.text
     assert "****" in caplog.text
