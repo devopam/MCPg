@@ -1,0 +1,6 @@
+language: python3
+fuzzing_engines:
+  - libfuzzer
+sanitizers:
+  - address
+  - undefined

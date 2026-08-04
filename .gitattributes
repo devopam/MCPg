@@ -1,1 +1,7 @@
 demo_data/*.sql filter=lfs diff=lfs merge=lfs -text
+
+# Scripts that run inside Linux containers (ClusterFuzzLite build, CI) must
+# keep LF endings regardless of the checkout platform's core.autocrlf — a
+# stray \r in a shebang line breaks the interpreter.
+*.sh text eol=lf
+.clusterfuzzlite/** text eol=lf
