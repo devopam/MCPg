@@ -14,6 +14,14 @@ you.
   configure. The optional Prometheus `/metrics` endpoint and
   OpenTelemetry export are off by default and, when enabled, ship
   metrics/traces only to endpoints you specify.
+- **Never touches Claude's own memory, conversation history, or
+  uploaded files.** MCPg's only interface to the client is the MCP
+  protocol's tool-call arguments — the specific fields each tool
+  declares (e.g. a table name, a SQL statement). It has no mechanism to
+  query or extract anything from Claude's memory, chat history,
+  conversation summaries, or user-generated/uploaded files, and
+  collects no conversational data beyond what a given tool call's own
+  arguments contain.
 - **One documented exception — NL→SQL.** The `translate_nl_to_sql`
   tool sends your natural-language question plus relevant schema
   context (table/column names, not row data) to the LLM provider whose

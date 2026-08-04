@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-04
+
+### Changed
+
+- **New `.mcpb` bundle icon** (`packaging/mcpb/icon.png`). Replaces the
+  previous database-cylinder-plus-wordmark icon with an abstract
+  "convergence" mark — several streams meeting at one bright point —
+  designed to hold up at the small sizes directory listings actually
+  render icons at, without relying on embedded text.
+
 ### Security
 
 - **Code-scanning triage (CodeQL + OpenSSF Scorecard).** Removed the
