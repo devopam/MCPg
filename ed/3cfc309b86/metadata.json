@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "ed3cfc309b86",
+  "strategy": "manual-commit",
+  "branch": "release/0.7.1",
+  "checkpoints_count": 26,
+  "files_touched": [
+    "CHANGELOG.md",
+    "packaging/mcpb/manifest.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ed/3cfc309b86/0/metadata.json",
+      "transcript": "/ed/3cfc309b86/0/full.jsonl",
+      "compact_transcript": "/ed/3cfc309b86/0/transcript.jsonl",
+      "content_hash": "/ed/3cfc309b86/0/content_hash.txt",
+      "prompt": "/ed/3cfc309b86/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1988,
+    "cache_creation_tokens": 9587994,
+    "cache_read_tokens": 412124828,
+    "output_tokens": 645653,
+    "api_call_count": 1008
+  }
+}
