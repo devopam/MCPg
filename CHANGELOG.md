@@ -50,11 +50,35 @@ adheres to [Semantic Versioning](https://semver.org/).
   genuinely fire; see the fix commit's message for the full root-cause
   trail. Verified redacted end-to-end (`password '****'` present, secret
   absent) as part of a full green `pytest tests/unit tests/contract` run.
+- **Fixed an incomplete-redaction bug in the SQL-literal `obfuscate_password`
+  pattern added above.** Its literal-body group was a plain `[^']+`, which
+  stops at the *first* single quote — but `create_redis_user_mapping`
+  escapes an embedded `'` in the secret by doubling it (standard SQL
+  string-literal syntax: `password.replace("'", "''")`), so a password
+  containing a literal quote (e.g. `it's-a-secret` → `it''s-a-secret`) was
+  only partially redacted (`password '****''s-a-secret'` — the real
+  password's tail leaked in clear text). Changed the group to
+  `(?:[^']|'')*`, which consumes doubled-quote pairs as part of the
+  literal so the whole secret is matched; confirmed not vulnerable to
+  catastrophic backtracking (the two alternatives never overlap at a
+  given position — stress-tested at 50k adversarial chars, ~2ms).
+  Regression test added in `tests/unit/test_sql_kernel_obfuscate.py`.
 - Reviewed the CodeQL `py/incomplete-url-substring-sanitization` alert on
   `tests/unit/test_secrets.py:234` — a test-only false positive (a
   hardcoded-literal `assert "vault.example.com" in rendered` debug-repr
   check, not a URL-sanitization decision on untrusted input); suppressed
   with an inline `codeql[...]` comment explaining why.
+- Bumped the transitive `cryptography` dependency (pulled in via
+  `pyjwt[crypto]` / `google-auth`, no direct `pyproject.toml` pin) from
+  49.0.0 to 50.0.0, resolving CVE-2026-69247 / GHSA-g6cj-pr64-35w5 (a
+  Bleichenbacher timing oracle in PKCS#7 `EnvelopedData` decryption).
+  `main`'s branch protection requires the `Security audit (SAST &
+  Dependencies)` check (`pip-audit --strict`), which this advisory was
+  failing; `uv.lock` only — verified with the same `uv export --no-dev
+  --no-emit-project --format requirements-txt` + `pip-audit --strict
+  --disable-pip` invocation CI runs, and confirmed no JWT/OIDC test
+  regressions (`tests/unit/test_oidc.py`, `test_http_runtime.py`,
+  `test_config.py`).
 
 ## [0.7.0] - 2026-08-03
 

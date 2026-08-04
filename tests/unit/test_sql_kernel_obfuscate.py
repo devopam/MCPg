@@ -121,3 +121,36 @@ def test_obfuscate_sql_literal_syntax() -> None:
     assert obfuscated2 is not None
     assert "hunter2" not in obfuscated2
     assert "IDENTIFIED BY '****'" in obfuscated2
+
+
+def test_obfuscate_sql_literal_with_embedded_quote() -> None:
+    """A password containing a literal ``'`` must be fully redacted.
+
+    Regression test: ``mcpg.redis_fdw.create_redis_user_mapping`` escapes
+    an embedded ``'`` in the resolved secret by doubling it, per standard
+    SQL string-literal syntax (``password.replace("'", "''")``), before
+    interpolating it into ``OPTIONS (password '...')``. The
+    ``sql_literal_pattern`` regex's literal-body group previously used a
+    plain ``[^']+``, which stops at the *first* embedded quote and only
+    redacts the prefix — the remainder of the real password (everything
+    after that quote) leaked in clear text into the log. The pattern must
+    consume ``''`` (doubled-quote) pairs as part of the literal so the
+    whole secret is matched and redacted, not just the part before the
+    first embedded quote.
+    """
+    password = "it's-a-secret"
+    escaped = password.replace("'", "''")
+    assert escaped == "it''s-a-secret"
+    ddl = f"CREATE USER MAPPING IF NOT EXISTS FOR PUBLIC SERVER \"r\" OPTIONS (password '{escaped}')"
+
+    obfuscated = obfuscate_password(ddl)
+
+    assert obfuscated is not None
+    # The full secret -- not just the prefix before the embedded quote --
+    # must be gone. "s-a-secret" (the substring after the first embedded
+    # quote) is what the old [^']+ pattern used to leak; check it
+    # explicitly rather than relying only on the whole-password check.
+    assert password not in obfuscated
+    assert "s-a-secret" not in obfuscated
+    assert "it''s-a-secret" not in obfuscated
+    assert "password '****'" in obfuscated
