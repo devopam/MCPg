@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "8dc67c1349b0",
+  "strategy": "manual-commit",
+  "branch": "security/hash-pin-publish-deps",
+  "checkpoints_count": 12,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/8d/c67c1349b0/0/metadata.json",
+      "transcript": "/8d/c67c1349b0/0/full.jsonl",
+      "compact_transcript": "/8d/c67c1349b0/0/transcript.jsonl",
+      "content_hash": "/8d/c67c1349b0/0/content_hash.txt",
+      "prompt": "/8d/c67c1349b0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2390,
+    "cache_creation_tokens": 11064027,
+    "cache_read_tokens": 512242147,
+    "output_tokens": 756581,
+    "api_call_count": 1212
+  }
+}
