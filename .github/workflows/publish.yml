@@ -127,8 +127,17 @@ jobs:
         # just dependency confusion.
         run: |
           VER="${GITHUB_REF_NAME#v}"
-          WHEEL="$(ls dist/mcpg-"${VER}"-*.whl)"
+          mapfile -t WHEELS < <(ls dist/mcpg-"${VER}"-*.whl)
+          if [ "${#WHEELS[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one wheel for mcpg==${VER} in dist/, found ${#WHEELS[@]}: ${WHEELS[*]}"
+            exit 1
+          fi
+          WHEEL="${WHEELS[0]}"
           HASH="$(python -m pip hash "$WHEEL" | sed -n 's/^--hash=sha256://p')"
+          if ! [[ "$HASH" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::pip hash output for $WHEEL did not look like a sha256 hex digest: '${HASH}'"
+            exit 1
+          fi
           echo "mcpg==${VER} --hash=sha256:${HASH}" > /tmp/mcpg-pin.txt
           for i in 1 2 3; do
             if python -m pip install --no-deps \

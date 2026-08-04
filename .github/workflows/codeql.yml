@@ -1,0 +1,55 @@
+name: CodeQL
+
+# Explicit workflow (replaces GitHub's "default setup") for two reasons:
+# 1. Scorecard's SAST check only recognizes a workflow file running
+#    github/codeql-action — "default setup" scans just as thoroughly but
+#    is invisible to that static check (scorecard alert #54).
+# 2. Running on `pull_request` (not just a schedule) gates every PR, not
+#    just periodic scans of main.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "23 8 * * 3"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to upload SARIF results.
+      security-events: write
+      # Required to fetch the source.
+      contents: read
+      # Required for the "actions" language (workflow analysis).
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Matches this repo's actual content — pure Python plus the
+        # workflow files themselves. (Default setup had also flagged
+        # c-cpp from autodetection; there's no C/C++ source in the repo,
+        # only vendored build artifacts under the gitignored .venv/.)
+        language: ["python", "actions"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          category: "/language:${{ matrix.language }}"
