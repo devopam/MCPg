@@ -231,6 +231,12 @@ def test_vault_provider_repr_does_not_leak_token() -> None:
     assert "hvs.this_is_a_root_token_value" not in rendered
     assert "another_secret" not in rendered
     # The non-secret fields stay visible so debug output is still useful.
+    # codeql[py/incomplete-url-substring-sanitization]: not a security
+    # decision — this asserts a hardcoded test literal appears in a debug
+    # repr() string, it does not sanitize/validate an untrusted URL. The
+    # `addr` field is never substring-matched anywhere in production code
+    # (mcpg.secrets passes it straight to hvac.Client(url=...) with no
+    # host-allowlist check), so there is no real bypass surface here.
     assert "vault.example.com" in rendered
 
     # ``provider.token`` must still be accessible for code that needs it.

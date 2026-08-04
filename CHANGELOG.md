@@ -6,6 +6,80 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Code-scanning triage (CodeQL + OpenSSF Scorecard).** Removed the
+  unused, broken `apisec-scan.yml` workflow (pointed at a demo project
+  with no real credentials). Added least-privilege `permissions:` blocks
+  to the three `ci.yml` jobs CodeQL flagged
+  (`actions/missing-workflow-permissions`) — all three only check out the
+  repo and run local commands, so a single top-level `contents: read`
+  covers them. Pinned Docker base images (`Dockerfile`,
+  `local-postgres.Dockerfile`, `.github/ci-postgres-warehousepg.Dockerfile`,
+  `.github/ci-postgres-pg19.Dockerfile`,
+  `scratch/pg_turboquant/docker/Dockerfile.dev`) to `@sha256:` content
+  digests; `.github/ci-postgres.Dockerfile` is intentionally left
+  unpinned (parameterized by `PG_MAJOR` to drive the CI matrix) with a
+  comment explaining the exception. Pinned the unversioned
+  `pip install huggingface_hub` step in `publish.yml`'s (non-blocking)
+  HF-Space-refresh job to `==1.26.0`.
+- **Hardened `SqlDriver`'s query-error log line against clear-text secret
+  leakage (CodeQL `py/clear-text-logging-sensitive-data`, high severity).**
+  `_execute_with_connection`'s exception handler logged the raw `query`
+  text verbatim. Root-caused: this is a real, reachable path —
+  `mcpg.redis_fdw.create_redis_user_mapping` resolves a real secret from
+  the configured secrets backend and interpolates it into a
+  `CREATE USER MAPPING ... OPTIONS (password '...')` statement (SQL
+  literal syntax, no `=` sign) before calling `execute_query`; if that
+  call raises, the literal secret would have reached the log verbatim.
+  `obfuscate_password`'s existing DSN-style patterns (`password=...`)
+  didn't match this `=`-less SQL-literal form. Added a new
+  `obfuscate_password` pattern for bare-keyword SQL literals
+  (`password '...'` / `IDENTIFIED BY '...'`) and routed both the logged
+  `query` and exception text through `obfuscate_password` in
+  `src/mcpg/sql/driver.py`. Regression tests added in
+  `tests/unit/test_sql_kernel_obfuscate.py` and
+  `tests/unit/test_sql_kernel_driver.py` — confirmed against
+  `mcpg.redis_fdw.create_redis_user_mapping`'s actual generated SQL, so
+  the pattern match is exact, not assumed. The `test_sql_kernel_driver.py`
+  regression test as first committed (WIP commit 038b5dd) never actually
+  exercised the fix — it needed two follow-up corrections (a broken mock
+  of the async-context-manager protocol that caused a genuine infinite
+  loop, then a test-isolation fix for cross-test logger-handler leakage
+  from `test_obs_logging.py`) before its redaction assertion could
+  genuinely fire; see the fix commit's message for the full root-cause
+  trail. Verified redacted end-to-end (`password '****'` present, secret
+  absent) as part of a full green `pytest tests/unit tests/contract` run.
+- **Fixed an incomplete-redaction bug in the SQL-literal `obfuscate_password`
+  pattern added above.** Its literal-body group was a plain `[^']+`, which
+  stops at the *first* single quote — but `create_redis_user_mapping`
+  escapes an embedded `'` in the secret by doubling it (standard SQL
+  string-literal syntax: `password.replace("'", "''")`), so a password
+  containing a literal quote (e.g. `it's-a-secret` → `it''s-a-secret`) was
+  only partially redacted (`password '****''s-a-secret'` — the real
+  password's tail leaked in clear text). Changed the group to
+  `(?:[^']|'')*`, which consumes doubled-quote pairs as part of the
+  literal so the whole secret is matched; confirmed not vulnerable to
+  catastrophic backtracking (the two alternatives never overlap at a
+  given position — stress-tested at 50k adversarial chars, ~2ms).
+  Regression test added in `tests/unit/test_sql_kernel_obfuscate.py`.
+- Reviewed the CodeQL `py/incomplete-url-substring-sanitization` alert on
+  `tests/unit/test_secrets.py:234` — a test-only false positive (a
+  hardcoded-literal `assert "vault.example.com" in rendered` debug-repr
+  check, not a URL-sanitization decision on untrusted input); suppressed
+  with an inline `codeql[...]` comment explaining why.
+- Bumped the transitive `cryptography` dependency (pulled in via
+  `pyjwt[crypto]` / `google-auth`, no direct `pyproject.toml` pin) from
+  49.0.0 to 50.0.0, resolving CVE-2026-69247 / GHSA-g6cj-pr64-35w5 (a
+  Bleichenbacher timing oracle in PKCS#7 `EnvelopedData` decryption).
+  `main`'s branch protection requires the `Security audit (SAST &
+  Dependencies)` check (`pip-audit --strict`), which this advisory was
+  failing; `uv.lock` only — verified with the same `uv export --no-dev
+  --no-emit-project --format requirements-txt` + `pip-audit --strict
+  --disable-pip` invocation CI runs, and confirmed no JWT/OIDC test
+  regressions (`tests/unit/test_oidc.py`, `test_http_runtime.py`,
+  `test_config.py`).
+
 ## [0.7.0] - 2026-08-03
 
 ### Fixed

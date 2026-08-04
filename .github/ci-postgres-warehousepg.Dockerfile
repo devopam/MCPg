@@ -19,7 +19,7 @@
 # and rejected: it publishes no pre-built image (build-your-own via a
 # Makefile) and needs an EDB auth token for the RPM-based build, so it can't
 # be used in an unauthenticated public CI pipeline.
-FROM woblerr/warehousepg:7.4.1-WHPG
+FROM woblerr/warehousepg:7.4.1-WHPG@sha256:26d20ec9b9c3db68c670d334d892bf9c45db942f0e59116fc8daf5c925d2fc88
 
 # This image's entrypoint reads GREENPLUM_*-prefixed env vars, NOT the
 # POSTGRES_* ones the ci.yml `docker run` step passes for every other

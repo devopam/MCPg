@@ -10,6 +10,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default for every job below: all three (lint, security
+# audit, test) only check out the repo and run local commands (ruff,
+# mypy, pip-audit, bandit, pytest) — none write to the repo, comment on
+# PRs, or touch packages, so read-only `contents` is sufficient.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint & type-check

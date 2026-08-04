@@ -1,5 +1,5 @@
 # Custom PostgreSQL 17 image with pgvector, postgis, Apache AGE, and pg_turboquant precompiled.
-FROM pgvector/pgvector:pg17
+FROM pgvector/pgvector:pg17@sha256:7ae6051efd0e60444282c27c7e141af07f322ce033300e727a49c3dd11075e38
 
 # Install system dependencies, postgis, and Apache AGE extension
 RUN apt-get update && apt-get install -y --no-install-recommends \

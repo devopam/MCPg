@@ -68,6 +68,30 @@ def obfuscate_password(text: str | None) -> str | None:
     dsn_double_quote = re.compile(r'(password\s*=\s*")([^"]+)(")', re.IGNORECASE)
     text = re.sub(dsn_double_quote, r"\1****\3", text)
 
+    # SQL-literal syntax: a bare keyword + single-quoted literal, no
+    # ``=`` sign — e.g. a foreign-data-wrapper ``OPTIONS (password
+    # '...')`` clause (see ``mcpg.redis_fdw.create_redis_user_mapping``)
+    # or DDL forms like ``ALTER ROLE x WITH PASSWORD '...'`` / MySQL-style
+    # ``IDENTIFIED BY '...'``. None of the ``=``-anchored patterns above
+    # match this form, so it needs its own pattern (CodeQL
+    # py/clear-text-logging-sensitive-data, alert #5).
+    #
+    # The literal body is ``(?:[^']|'')*``, not a plain ``[^']+`` --
+    # ``create_redis_user_mapping`` escapes embedded ``'`` in the secret
+    # by doubling it (standard SQL string-literal syntax:
+    # ``password.replace("'", "''")``), so a password containing a
+    # literal quote (e.g. ``it's-a-secret`` -> ``it''s-a-secret``) is
+    # still one SQL string, not two. A plain ``[^']+`` stops at the
+    # *first* embedded quote and only redacts the prefix, leaking
+    # everything after it (e.g. ``password '****''s-a-secret'``,
+    # verified). This pattern consumes doubled-quote pairs as part of
+    # the literal so the whole secret is matched; it's not vulnerable to
+    # catastrophic backtracking (the two alternatives never overlap at a
+    # given position: unquoted chars vs. a quote pair) -- stress-tested
+    # at 50k adversarial chars in ~2ms.
+    sql_literal_pattern = re.compile(r"((?:password|identified\s+by)\s+')((?:[^']|'')*)(')", re.IGNORECASE)
+    text = re.sub(sql_literal_pattern, r"\1****\3", text)
+
     return text
 
 
@@ -261,5 +285,24 @@ class SqlDriver:
                     await connection.rollback()
                 except Exception as rollback_error:
                     logger.error("Error rolling back transaction: %s", rollback_error)
-            logger.error("Error executing query (%s): %s", query, e)
+            # Route both the query text and the exception through
+            # obfuscate_password before logging. Some real call sites
+            # (e.g. mcpg.redis_fdw.create_redis_user_mapping's ``CREATE
+            # USER MAPPING ... OPTIONS (password '...')`` DDL) interpolate
+            # a real secret straight into the SQL text; if execution then
+            # raises, the query — and potentially the driver's echo of it
+            # back in the exception message — must not reach the log in
+            # clear text (CodeQL py/clear-text-logging-sensitive-data,
+            # alert #5).
+            logger.error(
+                "Error executing query (%s): %s",
+                # codeql[py/clear-text-logging-sensitive-data]: obfuscate_password
+                # IS the sanitizer for this taint flow -- CodeQL's default query
+                # pack doesn't model first-party functions as sanitizers, so it
+                # keeps flagging the pre-sanitization taint even after the fix.
+                # Verified redacted (including the SQL-literal-with-embedded-quote
+                # edge case) in tests/unit/test_sql_kernel_{obfuscate,driver}.py.
+                obfuscate_password(str(query)),
+                obfuscate_password(str(e)),
+            )
             raise

@@ -94,3 +94,63 @@ def test_obfuscate_dsn_format() -> None:
     assert obfuscated is not None
     assert "supersecret" not in obfuscated
     assert 'password="****"' in obfuscated
+
+
+def test_obfuscate_sql_literal_syntax() -> None:
+    """SQL-syntax password literals (no ``=`` sign) must be redacted too.
+
+    Regression test for CodeQL alert #5
+    (py/clear-text-logging-sensitive-data): the real tainted-flow instance
+    traced to ``mcpg.redis_fdw.create_redis_user_mapping``, which builds a
+    ``CREATE USER MAPPING ... OPTIONS (password '...')`` statement by
+    interpolating a real secrets-backend value. That form has no ``=``
+    between the keyword and the quoted literal, so the pre-existing
+    ``password=``-anchored patterns above do not match it.
+    """
+    ddl = "CREATE USER MAPPING IF NOT EXISTS FOR PUBLIC SERVER \"r\" OPTIONS (password 's3cr3t-token')"
+    obfuscated = obfuscate_password(ddl)
+    assert obfuscated is not None
+    assert "s3cr3t-token" not in obfuscated
+    assert "password '****'" in obfuscated
+
+    # MySQL-style ``IDENTIFIED BY '...'`` — same bare-keyword-plus-literal
+    # shape, covered defensively even though no current mcpg call site
+    # emits it.
+    ddl2 = "CREATE USER admin IDENTIFIED BY 'hunter2'"
+    obfuscated2 = obfuscate_password(ddl2)
+    assert obfuscated2 is not None
+    assert "hunter2" not in obfuscated2
+    assert "IDENTIFIED BY '****'" in obfuscated2
+
+
+def test_obfuscate_sql_literal_with_embedded_quote() -> None:
+    """A password containing a literal ``'`` must be fully redacted.
+
+    Regression test: ``mcpg.redis_fdw.create_redis_user_mapping`` escapes
+    an embedded ``'`` in the resolved secret by doubling it, per standard
+    SQL string-literal syntax (``password.replace("'", "''")``), before
+    interpolating it into ``OPTIONS (password '...')``. The
+    ``sql_literal_pattern`` regex's literal-body group previously used a
+    plain ``[^']+``, which stops at the *first* embedded quote and only
+    redacts the prefix — the remainder of the real password (everything
+    after that quote) leaked in clear text into the log. The pattern must
+    consume ``''`` (doubled-quote) pairs as part of the literal so the
+    whole secret is matched and redacted, not just the part before the
+    first embedded quote.
+    """
+    password = "it's-a-secret"
+    escaped = password.replace("'", "''")
+    assert escaped == "it''s-a-secret"
+    ddl = f"CREATE USER MAPPING IF NOT EXISTS FOR PUBLIC SERVER \"r\" OPTIONS (password '{escaped}')"
+
+    obfuscated = obfuscate_password(ddl)
+
+    assert obfuscated is not None
+    # The full secret -- not just the prefix before the embedded quote --
+    # must be gone. "s-a-secret" (the substring after the first embedded
+    # quote) is what the old [^']+ pattern used to leak; check it
+    # explicitly rather than relying only on the whole-password check.
+    assert password not in obfuscated
+    assert "s-a-secret" not in obfuscated
+    assert "it''s-a-secret" not in obfuscated
+    assert "password '****'" in obfuscated
