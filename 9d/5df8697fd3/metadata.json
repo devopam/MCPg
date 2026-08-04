@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "9d5df8697fd3",
+  "strategy": "manual-commit",
+  "branch": "security/sql-kernel-fuzzing",
+  "checkpoints_count": 12,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/9d/5df8697fd3/0/metadata.json",
+      "transcript": "/9d/5df8697fd3/0/full.jsonl",
+      "compact_transcript": "/9d/5df8697fd3/0/transcript.jsonl",
+      "content_hash": "/9d/5df8697fd3/0/content_hash.txt",
+      "prompt": "/9d/5df8697fd3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2472,
+    "cache_creation_tokens": 11124056,
+    "cache_read_tokens": 522605802,
+    "output_tokens": 779548,
+    "api_call_count": 1252
+  }
+}
