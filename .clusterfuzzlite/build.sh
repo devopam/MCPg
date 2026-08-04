@@ -6,7 +6,16 @@
 # Build and install mcpg (using current CFLAGS/CXXFLAGS) so its C-extension
 # deps (pglast wraps libpg_query; psycopg's C extension) are compiled with
 # the sanitizer this run is instrumented with.
-pip3 install .
+#
+# --ignore-requires-python: base-builder-python ships Python 3.11, below
+# this project's declared floor (requires-python >=3.12 in pyproject.toml,
+# set for the wider ~254-tool codebase). The fuzz harness only imports
+# mcpg.sql.safety + its direct deps (mcpg.sql.allowlist, mcpg.sql.driver),
+# none of which use any 3.12-only syntax — verified before adding this
+# flag, not assumed. Loosening pyproject.toml's actual floor for the
+# whole package would be the wrong fix; this scopes the exception to the
+# fuzzing container only.
+pip3 install --ignore-requires-python .
 
 for fuzzer in $(find "$SRC" -name '*_fuzzer.py'); do
   fuzzer_basename=$(basename -s .py "$fuzzer")
