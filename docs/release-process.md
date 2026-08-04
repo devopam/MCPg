@@ -774,7 +774,7 @@ The Claude directory is a **reviewed** submission portal with no
 publish API, so releases can't push to it automatically. Review
 criteria: [Anthropic Software Directory
 Policy](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) —
-re-read it before each re-submission, it can change. After a release
+re-read it before each re-submission; it can change. After a release
 that changes the tool surface or the `.mcpb` in a way worth re-listing:
 
 1. Grab the new `mcpg-<version>.mcpb` from the GitHub release.
@@ -801,8 +801,8 @@ policy's explicit requirements:
   pick 3+ from `docs/tour.md`'s section headings (each is itself a
   literal example prompt, worked end-to-end underneath) — e.g. `"What's
   in this database?"`, `"Is this database healthy?"`, `"Tune pgvector"`.
-  28+ sections exist there; rotate which ones you cite if a resubmission
-  wants fresher examples.
+  28+ sections exist there; rotate which ones you cite if a
+  re-submission wants fresher examples.
 - **Ownership/architecture note**: MCPg is a bring-your-own-database
   tool — it doesn't call a fixed API endpoint the maintainer runs.
   Each user supplies their own PostgreSQL connection string at
