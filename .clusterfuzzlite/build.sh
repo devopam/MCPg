@@ -28,7 +28,12 @@ for fuzzer in $(find "$SRC" -name '*_fuzzer.py'); do
 
   # Execution wrapper: Atheris needs the sanitizer runtime preloaded, and
   # this is the file ClusterFuzzLite actually invokes as the fuzz target.
+  # The "LLVMFuzzerTestOneInput" comment isn't decorative — OSS-Fuzz's
+  # fuzzer-detection step greps wrapper scripts for that literal string
+  # to recognize them as fuzz targets; omitting it fails the build with
+  # "No fuzz targets found" even though the binary built fine.
   echo "#!/bin/sh
+# LLVMFuzzerTestOneInput for fuzzer detection.
 this_dir=\$(dirname \"\$0\")
 LD_PRELOAD=\$this_dir/sanitizer_with_fuzzer.so \
 ASAN_OPTIONS=\$ASAN_OPTIONS:symbolize=1:external_symbolizer_path=\$this_dir/llvm-symbolizer:detect_leaks=0 \
