@@ -25,6 +25,14 @@ jobs:
           language: python
           github-token: ${{ secrets.GITHUB_TOKEN }}
           sanitizer: ${{ matrix.sanitizer }}
+          # Without this, build_fuzzers tries to diff against a coverage
+          # baseline (a `cifuzz-coverage-latest` artifact) to prune
+          # "unaffected" targets before running — which doesn't exist yet
+          # on a fresh integration (chicken-and-egg on the very first
+          # fuzzing PR) and fails the build outright. There's only one
+          # fuzz target in this repo, so the optimization has no upside
+          # anyway; always keep it.
+          keep-unaffected-fuzz-targets: true
       - name: Run Fuzzers (${{ matrix.sanitizer }})
         id: run
         uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
