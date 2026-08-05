@@ -895,3 +895,7 @@ could you please commit the @smithery.yaml also here
 <status>stopped</status>
 <summary>2 background shell command task(s) from the previous session have no completion record. They may have been stopped (via the UI, Monitor timeout, or agent teardown — these leave no transcript marker), or they may have been running when the previous Claude Code process exited. They have been marked stopped. Task ids: b0qq8j8z2, b59pkbsrq. Task ids in this notification beginning with "__orphan_summary" are internal scan markers, not tasks.</summary>
 </task-notification>
+
+---
+
+i squash merged the previous one. you please take care of this one
