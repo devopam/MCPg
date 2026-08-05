@@ -17,7 +17,14 @@
 # fuzzing container only.
 pip3 install --ignore-requires-python .
 
-for fuzzer in $(find "$SRC" -name '*_fuzzer.py'); do
+# -maxdepth 1: the Dockerfile COPYs the harness to $SRC/ directly, but
+# `COPY . $SRC/mcpg` also copies the whole repo (including
+# .clusterfuzzlite/sql_safety_fuzzer.py) underneath it — an unbounded
+# find would match both copies of the same file and build the fuzzer
+# twice, silently overwriting $OUT/sql_safety_fuzzer the second time
+# (both matches share the same basename). Confirmed in a real CI run
+# before this fix landed (two full pyinstaller passes in one build log).
+for fuzzer in $(find "$SRC" -maxdepth 1 -name '*_fuzzer.py'); do
   fuzzer_basename=$(basename -s .py "$fuzzer")
   fuzzer_package=${fuzzer_basename}.pkg
 
