@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.8.42",
+  "checkpoint_id": "fc6e0cd14855",
+  "strategy": "manual-commit",
+  "branch": "security/pin-clusterfuzzlite-dockerfile",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/fc/6e0cd14855/0/metadata.json",
+      "transcript": "/fc/6e0cd14855/0/full.jsonl",
+      "compact_transcript": "/fc/6e0cd14855/0/transcript.jsonl",
+      "content_hash": "/fc/6e0cd14855/0/content_hash.txt",
+      "prompt": "/fc/6e0cd14855/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2728,
+    "cache_creation_tokens": 12353491,
+    "cache_read_tokens": 568976091,
+    "output_tokens": 846868,
+    "api_call_count": 1381
+  }
+}
