@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`server.json` now sets `websiteUrl`** (`https://devopam.github.io/MCPg/`),
+  the field the MCP Registry surfaces as the server's homepage link.
+- **OpenSSF Best Practices badge** added to the README badge row
+  (project [13958](https://www.bestpractices.dev/projects/13958),
+  `passing`).
+
+### Fixed
+
+- **`server.json`'s checked-in version no longer drifts.** It tracked
+  a stale release (last hand-bumped at `0.6.8`) because the registry
+  publish job only patched a version derived from the tag in the CI
+  checkout, never committing it back. Added
+  `tools/sync_server_json_version.py` (mirrors the existing `.mcpb`
+  bundle sync script) plus `tests/unit/test_server_json.py`, which
+  fails CI if the checked-in version stops matching
+  `mcpg.__version__` — same guard pattern as `test_mcpb_bundle.py`.
+  `docs/release-process.md` §4.2 now lists the sync as an explicit
+  release step.
+
 ## [0.7.1] - 2026-08-04
 
 ### Changed

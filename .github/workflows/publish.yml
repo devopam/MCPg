@@ -234,27 +234,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Sync server.json version to the release tag
-        # server.json is checked in with a fixed version (bumped manually at
-        # the 0.6.1 registry launch and never since — every subsequent
-        # release silently re-submitted "0.6.1" and the registry rejected it
-        # as a duplicate). Deriving the version from the tag here means this
-        # step can never go stale again, the same way the sdist/wheel build
-        # derives its version from pyproject.toml rather than a hand-maintained
-        # constant.
+        # server.json's checked-in version is bumped manually as part of
+        # the release (docs/release-process.md §4.2, guarded by
+        # tests/unit/test_server_json.py) via the same
+        # tools/sync_server_json_version.py this step calls. Re-running it
+        # here against the tag is a safety net, not the primary
+        # mechanism — it's what stops a forgotten manual bump from making
+        # the registry reject the release as a duplicate version (the
+        # failure mode from the 0.6.1 launch that motivated this step
+        # originally, when the checked-in version never got re-synced).
         run: |
           VER="${GITHUB_REF_NAME#v}"
-          python3 -c "
-          import json
-          path = 'server.json'
-          with open(path) as f:
-              data = json.load(f)
-          data['version'] = '$VER'
-          for pkg in data.get('packages', []):
-              pkg['version'] = '$VER'
-          with open(path, 'w') as f:
-              json.dump(data, f, indent=2)
-              f.write('\n')
-          "
+          python3 tools/sync_server_json_version.py "$VER"
           cat server.json
       - name: Install mcp-publisher
         run: |

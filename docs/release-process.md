@@ -268,6 +268,20 @@ hatchling reads it from that file, so **bump `__init__.py` and nothing
 else** — the PyPI metadata, `mcpg --version`, and the MCP `serverInfo`
 handshake all derive from that one line and can't drift apart.
 
+Two other checked-in files carry their own copy of the version and
+need syncing in the same commit — both are scripted, not hand-edited,
+and both are guarded by a unit test that fails CI if you forget:
+
+```bash
+python3 packaging/mcpb/sync_version.py X.Y.Z    # .mcpb bundle — test_mcpb_bundle.py
+python3 tools/sync_server_json_version.py X.Y.Z  # MCP registry manifest — test_server_json.py
+```
+
+(The `publish-mcp-registry` CI job re-runs the second script against
+the tag as a belt-and-braces safety net, but that's not a substitute
+for this step — it only fires *after* PyPI publish, by which point a
+stale `server.json` has already been reviewed and merged.)
+
 Then update `CHANGELOG.md`: rename the `[Unreleased]` heading to
 `[X.Y.Z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]` above it.
 
@@ -380,6 +394,11 @@ when running locally.
       /tmp/r.txt` reports no known CVEs.
 - [ ] `__version__` in `src/mcpg/__init__.py` is bumped to the release
       (this is the single source; `pyproject.toml` derives it dynamically).
+- [ ] `.mcpb` bundle + `server.json` re-synced to the release version
+      (§4.2's two `sync_*.py` commands — `tests/unit/test_mcpb_bundle.py`
+      and `tests/unit/test_server_json.py` fail loudly if skipped, so
+      this is covered by the unit-suite gate above, but run it explicitly
+      rather than relying on CI to notice).
 - [ ] `CHANGELOG.md` rolls `[Unreleased]` into the new dated section,
       and a fresh `[Unreleased]` is added on top.
 - [ ] `docs/release-notes-X.Y.Z.md` written (mirror the previous
