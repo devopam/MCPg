@@ -10,6 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 - **`server.json` now sets `websiteUrl`** (`https://devopam.github.io/MCPg/`),
   the field the MCP Registry surfaces as the server's homepage link.
+- **OpenSSF Best Practices badge** added to the README badge row
+  (project [13958](https://www.bestpractices.dev/projects/13958),
+  `passing`).
 
 ### Fixed
 

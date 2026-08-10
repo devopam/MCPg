@@ -15,10 +15,11 @@ import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-_SERVER_JSON = _ROOT / "server.json"
 
 sys.path.insert(0, str(_ROOT / "tools"))
-from sync_server_json_version import sync  # noqa: E402
+from sync_server_json_version import WEBSITE_URL, server_json_path, sync  # noqa: E402
+
+_SERVER_JSON = server_json_path()
 
 
 def test_sync_patches_version_and_every_package(tmp_path: Path) -> None:
@@ -53,4 +54,4 @@ def test_server_json_pins_the_current_release() -> None:
 
 def test_server_json_has_website_url() -> None:
     data = json.loads(_SERVER_JSON.read_text(encoding="utf-8"))
-    assert data["websiteUrl"] == "https://devopam.github.io/MCPg/"
+    assert data["websiteUrl"] == WEBSITE_URL

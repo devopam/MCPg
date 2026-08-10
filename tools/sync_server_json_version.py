@@ -24,7 +24,21 @@ import json
 import sys
 from pathlib import Path
 
-_SERVER_JSON = Path(__file__).resolve().parents[1] / "server.json"
+# The registry-facing homepage link (server.json's `websiteUrl`).
+# tests/unit/test_server_json.py imports this rather than hardcoding a
+# second copy of the literal, so there's exactly one Python-side place
+# to update if the URL ever changes.
+WEBSITE_URL = "https://devopam.github.io/MCPg/"
+
+
+def server_json_path() -> Path:
+    """Return the repo's checked-in server.json path.
+
+    A function rather than a module-level constant so callers (this
+    script and the test suite) share one path-calculation instead of
+    each computing ``parents[N] / "server.json"`` independently.
+    """
+    return Path(__file__).resolve().parents[1] / "server.json"
 
 
 def sync(path: Path, version: str) -> None:
@@ -39,5 +53,5 @@ def sync(path: Path, version: str) -> None:
 if __name__ == "__main__":
     if len(sys.argv) != 2 or not sys.argv[1]:
         raise SystemExit("usage: sync_server_json_version.py <version>")
-    sync(_SERVER_JSON, sys.argv[1])
+    sync(server_json_path(), sys.argv[1])
     print(f"server.json pinned to {sys.argv[1]}")
