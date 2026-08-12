@@ -367,7 +367,11 @@ when running locally.
 
 - [ ] Working tree clean; `git status` reports no dirty files.
 - [ ] On `main`, fully up-to-date with `origin/main`.
-- [ ] `uv sync` resolves cleanly (no version conflicts).
+- [ ] `uv sync` resolves cleanly (no version conflicts), and **`uv sync
+      --locked` passes** — i.e. `uv.lock` is in sync with `pyproject.toml`.
+      CI (and the release build) run `--locked` and fail hard on drift, so a
+      dependency bump that forgot `uv lock` must be caught here. Run `uv lock`
+      and commit the result if it fails.
 - [ ] `uv run ruff check . && uv run ruff format --check .` clean.
 - [ ] `uv run mypy src/mcpg` clean.
 - [ ] `uv run pytest tests/unit -q` — entire unit suite passes.
