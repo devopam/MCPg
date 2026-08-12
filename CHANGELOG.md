@@ -28,6 +28,9 @@ adheres to [Semantic Versioning](https://semver.org/).
     a drifted lockfile.
   - Added a **`CODEOWNERS`** file routing the SQL-safety kernel, access-mode
     policy, and CI/release pipeline to the maintainer.
+- **Bumped `cryptography` 49.0.0 → 50.0.0** (transitive, via `pyjwt[crypto]`)
+  to clear PYSEC-2026-3552, flagged by `pip-audit --strict`. Lockfile-only
+  change; no source impact.
 
 ## [0.6.12] - 2026-07-28
 
