@@ -1,0 +1,19 @@
+# Code ownership for review routing. GitHub requests a review from the
+# owner automatically on any PR touching a matching path, and — when
+# "Require review from Code Owners" branch protection is on — blocks
+# merge until they approve.
+#
+# Last match wins, so the security-sensitive paths below override the
+# catch-all.
+
+# Default owner for everything in the repo.
+*                       @devopam
+
+# Security-sensitive surfaces — the SQL-safety kernel (allowlist +
+# parser walker), the access-mode policy, and the CI/CD + release
+# pipeline. Changes here get explicit maintainer eyes.
+/src/mcpg/sql/          @devopam
+/src/mcpg/policy.py     @devopam
+/.github/workflows/     @devopam
+/packaging/             @devopam
+/SECURITY.md            @devopam

@@ -1,15 +1,19 @@
 # --- Stage 1: Build virtual environment ---
-FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim AS builder
+# Base images are pinned by digest for reproducible, tamper-evident builds
+# (the tag is kept for readability + Dependabot, which updates both).
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim@sha256:7cf77f594be8042dab6daa9fe326f90962252268b4f120a7f5dccce4d947e6c1 AS builder
 
 WORKDIR /app
 
-# Install dependencies and sync packages
+# Install dependencies and sync packages. `--locked` asserts uv.lock is
+# consistent with pyproject.toml (fails the build otherwise), so the image
+# can never be built from a drifted lockfile.
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
-RUN uv sync --frozen --no-dev
+RUN uv sync --locked --no-dev
 
 # --- Stage 2: Runtime environment ---
-FROM python:3.14-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm@sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52 AS runtime
 
 WORKDIR /app
 

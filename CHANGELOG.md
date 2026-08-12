@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Supply-chain / CI-CD hardening (ASPM pre-assessment).** A sweep of the
+  software-supply-chain posture, informed by an OX-Security-style review:
+  - **All GitHub Actions pinned to full commit SHAs** (with a `# vN` comment)
+    across every workflow — including the release-critical
+    `pypa/gh-action-pypi-publish`, previously on the moving `@release/v1`
+    branch. A retagged or compromised action can no longer run with the
+    repo's secrets / OIDC. Dependabot's `github-actions` ecosystem keeps the
+    pins fresh.
+  - **`ci.yml` dropped to least-privilege** `permissions: contents: read`
+    (was inheriting the default token scopes; publish/pages were already
+    scoped).
+  - **CycloneDX SBOM** generated for the runtime dependencies and attached to
+    each GitHub release, plus **GitHub-native build-provenance attestation**
+    (`actions/attest-build-provenance`) for the wheel + sdist — complementing
+    the PEP 740 attestations PyPI Trusted Publishing already emits.
+  - **Shipped Docker image base images pinned by `@sha256` digest**; the image
+    build now uses `uv sync --locked` (was `--frozen`) so it can't build from
+    a drifted lockfile.
+  - Added a **`CODEOWNERS`** file routing the SQL-safety kernel, access-mode
+    policy, and CI/release pipeline to the maintainer.
+
 ## [0.6.12] - 2026-07-28
 
 ### Added
