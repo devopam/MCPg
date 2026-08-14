@@ -69,3 +69,21 @@ def test_tools_json_covers_every_registered_tool() -> None:
 
     assert len(checked_in) == snapshot["_meta"]["tool_count"]
     assert {t["name"] for t in checked_in} == {t["name"] for t in snapshot["tools"]}
+
+
+def test_resolve_type_handles_every_json_schema_shape() -> None:
+    """Covers shapes not currently present in MCPg's own tool surface.
+
+    ``type`` as a list (``["string", "null"]``) is legal JSON Schema
+    2020-12 but isn't emitted by MCPg's Pydantic-generated schemas today
+    (they use ``anyOf`` for ``Optional[X]`` instead) — flagged by review
+    on #310 as an unhandled shape that would otherwise silently degrade to
+    the Python list's ``str()`` repr instead of a clean type string.
+    """
+    generator = _load_generator()
+
+    assert generator._resolve_type({"type": "string"}) == "string"
+    assert generator._resolve_type({"type": ["string", "null"]}) == "string"
+    assert generator._resolve_type({"type": ["null", "integer"]}) == "integer"
+    assert generator._resolve_type({"anyOf": [{"type": "string"}, {"type": "null"}]}) == "string"
+    assert generator._resolve_type({"title": "Untyped"}) == "string"

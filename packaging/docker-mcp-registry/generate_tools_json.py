@@ -59,13 +59,21 @@ _FALLBACK_TYPE = "string"
 def _resolve_type(prop_schema: dict[str, Any]) -> str:
     """Best-effort JSON-Schema-property -> flat type-string mapping.
 
-    Handles the three shapes seen across MCPg's 254-tool surface: a plain
-    ``type`` key, an ``anyOf`` (Pydantic's ``Optional[X]`` rendering, e.g.
-    ``[{"type": "string"}, {"type": "null"}]`` — the first non-null branch
-    wins), and schemas missing ``type`` entirely (Any-typed params).
+    Handles the shapes seen across MCPg's 254-tool surface plus one not
+    currently emitted but legal under JSON Schema 2020-12: a plain ``type``
+    key (string or, per spec, a list like ``["string", "null"]`` — the
+    first non-null entry wins, same rule as ``anyOf`` below), an ``anyOf``
+    (Pydantic's ``Optional[X]`` rendering, e.g.
+    ``[{"type": "string"}, {"type": "null"}]``), and schemas missing
+    ``type`` entirely (Any-typed params).
     """
-    if "type" in prop_schema:
-        return str(prop_schema["type"])
+    raw_type = prop_schema.get("type")
+    if isinstance(raw_type, list):
+        for candidate in raw_type:
+            if candidate and candidate != "null":
+                return str(candidate)
+    elif raw_type is not None:
+        return str(raw_type)
     if "anyOf" in prop_schema:
         for branch in prop_schema["anyOf"]:
             branch_type = branch.get("type")
