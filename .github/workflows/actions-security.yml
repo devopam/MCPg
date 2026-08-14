@@ -1,0 +1,78 @@
+name: Actions Security
+
+# Static-analysis of the GitHub Actions workflows themselves:
+#   * zizmor    — security analysis (template injection, artifact poisoning,
+#                 unpinned/over-privileged actions) → SARIF to code scanning.
+#   * actionlint — workflow linter (syntax, expression + shell-script bugs).
+#
+# Introduced in reporting mode (findings surface without failing the build),
+# matching the Harden-Runner audit rollout. Promote to blocking once the
+# baseline is triaged.
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  schedule:
+    # Weekly, so newly-published zizmor rules catch drift even without a push.
+    - cron: "27 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    name: zizmor (Actions security analysis)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload the SARIF to the code-scanning dashboard
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          python-version: "3.14"
+      - name: Run zizmor
+        # zizmor exits non-zero when it finds issues; keep the job green while
+        # we baseline (findings still upload to the dashboard).
+        # TODO(security): remove `continue-on-error` to make zizmor blocking
+        # once the baseline is triaged to zero High/Medium findings (tracked
+        # as the "zizmor baseline" follow-up PR). Don't let audit mode become
+        # permanent by default.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uvx zizmor@1.9.0 --format sarif . > zizmor.sarif
+      - name: Upload zizmor SARIF
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v3
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+
+  actionlint:
+    name: actionlint (workflow linter)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Run actionlint
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+        with:
+          # Reporting mode for the introduction.
+          # TODO(security): flip to `fail-on-error: true` to gate merges once
+          # the existing workflows are clean of actionlint findings (same
+          # "baseline triage" follow-up as zizmor above).
+          fail-on-error: false
