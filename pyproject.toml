@@ -142,6 +142,9 @@ dev = [
     # rendered metadata, push to PyPI in the publish workflow.
     "build>=1.2",
     "twine>=5.1",
+    # CycloneDX SBOM generation for releases (supply-chain transparency).
+    # Run in the publish workflow to attach an SBOM to the GitHub release.
+    "cyclonedx-bom>=4.0",
     # OpenTelemetry SDK + OTLP HTTP exporter — pinned in dev so the
     # otel-tracing unit tests can use the InMemorySpanExporter and so
     # `mcpg[otel]` round-trips through CI. Production deployments
