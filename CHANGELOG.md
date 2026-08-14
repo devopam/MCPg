@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Release SBOM + build provenance, and a `CODEOWNERS` file.** Cutting a
+  release now generates a **CycloneDX SBOM** (`cyclonedx-bom`, new dev dep)
+  for the runtime dependencies and attaches it to the GitHub release, and
+  attests **GitHub-native build provenance** (`actions/attest-build-provenance`)
+  for the wheel + sdist — complementing the PEP 740 attestations PyPI Trusted
+  Publishing already emits. Added `.github/CODEOWNERS` routing the SQL-safety
+  kernel, access-mode policy, and CI/release pipeline to the maintainer.
+  (Complements the already-landed Actions SHA-pinning, Docker digest pinning,
+  Scorecard, CodeQL, and fuzzing.)
+
 ### Added
 
 - **`server.json` now sets `websiteUrl`** (`https://devopam.github.io/MCPg/`),

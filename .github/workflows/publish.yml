@@ -15,6 +15,13 @@ jobs:
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
+    # Job-level permissions override the top-level default for this job.
+    # `attestations: write` + `id-token: write` let actions/attest-build-
+    # provenance sign a build-provenance attestation for the distributions.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
@@ -43,10 +50,31 @@ jobs:
         run: uv run python -m build
       - name: Inspect rendered metadata
         run: uv run twine check dist/*
+      - name: Generate CycloneDX SBOM
+        # Software Bill of Materials for the release, from the locked runtime
+        # deps. Kept OUT of dist/ so the PyPI upload (which uploads dist/*)
+        # never sees a non-distribution file; attached to the GitHub release
+        # by the github-release job instead.
+        run: |
+          mkdir -p sbom
+          uv export --no-dev --no-emit-project --format requirements-txt > /tmp/mcpg-reqs.txt
+          uv run cyclonedx-py requirements /tmp/mcpg-reqs.txt \
+            > "sbom/mcpg-${GITHUB_REF_NAME#v}.sbom.cdx.json"
+      - name: Attest build provenance for the distributions
+        # GitHub-native, cryptographically verifiable provenance for the
+        # wheel + sdist (complements the PEP 740 attestations PyPI Trusted
+        # Publishing already generates). Verify with `gh attestation verify`.
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: "dist/*"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sbom
+          path: sbom/
 
   publish-testpypi:
     name: Publish → TestPyPI
@@ -185,6 +213,10 @@ jobs:
         with:
           name: dist
           path: dist/
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: sbom
+          path: sbom/
       - name: Build the Claude Desktop extension (.mcpb)
         # One-click-install bundle for Claude Desktop. server.type "uv"
         # keeps it tiny (~2 kB): the host resolves the mcpg==VER pin
@@ -222,7 +254,7 @@ jobs:
             in_section
           ' CHANGELOG.md > /tmp/notes.md
           [ -s /tmp/notes.md ] || echo "See CHANGELOG.md" > /tmp/notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          gh release create "$GITHUB_REF_NAME" dist/* sbom/* \
             --title "MCPg ${GITHUB_REF_NAME}" \
             --notes-file /tmp/notes.md
 
