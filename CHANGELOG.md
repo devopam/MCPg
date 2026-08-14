@@ -58,7 +58,15 @@ adheres to [Semantic Versioning](https://semver.org/).
   Confirmed via a local build that `run.env: MCPG_TRANSPORT: stdio`
   cleanly overrides the image's baked-in `streamable-http` default with a
   real `initialize` + `tools/list` smoke test — no `Dockerfile` change
-  needed. Submission (fork + PR into `docker/mcp-registry`) not yet sent.
+  needed.
+- **Docker MCP Registry submission sent** (roadmap 21.2):
+  [docker/mcp-registry#4689](https://github.com/docker/mcp-registry/pull/4689).
+  Their own validator caught a real, docs-invisible issue: `about.title`
+  can't contain the literal substring `MCP` (case-sensitive), so
+  `about.title: MCPg` failed — retitled to `PostgreSQL` for that field only
+  (the description still says "MCPg" freely). `source.commit` re-pinned to
+  `main`'s tip at submission time rather than the stale commit drafted
+  alongside 21.1.
 
 ### Fixed
 
