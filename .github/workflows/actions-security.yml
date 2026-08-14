@@ -40,8 +40,11 @@ jobs:
           python-version: "3.14"
       - name: Run zizmor
         # zizmor exits non-zero when it finds issues; keep the job green while
-        # we baseline (findings still upload to the dashboard). Drop
-        # continue-on-error to make it blocking later.
+        # we baseline (findings still upload to the dashboard).
+        # TODO(security): remove `continue-on-error` to make zizmor blocking
+        # once the baseline is triaged to zero High/Medium findings (tracked
+        # as the "zizmor baseline" follow-up PR). Don't let audit mode become
+        # permanent by default.
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -68,5 +71,8 @@ jobs:
       - name: Run actionlint
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
         with:
-          # Reporting mode for the introduction — flip to true to gate merges.
+          # Reporting mode for the introduction.
+          # TODO(security): flip to `fail-on-error: true` to gate merges once
+          # the existing workflows are clean of actionlint findings (same
+          # "baseline triage" follow-up as zizmor above).
           fail-on-error: false

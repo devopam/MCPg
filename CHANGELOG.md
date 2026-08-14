@@ -20,8 +20,9 @@ adheres to [Semantic Versioning](https://semver.org/).
 - **Pipeline-security tooling: Harden-Runner, zizmor, actionlint.**
   - **StepSecurity Harden-Runner** added (audit/egress-monitoring mode) as the
     first step of every job across all workflows — captures a runtime egress
-    baseline so outbound traffic can later be allow-listed (block mode). The
-    defence against compromised-Action call-home / exfiltration.
+    baseline so outbound traffic can later be allow-listed (block mode). This
+    provides defence against a compromised Action calling home or exfiltrating
+    secrets.
   - **zizmor** (`.github/workflows/actions-security.yml`) — static security
     analysis of the Actions workflows (template injection, artifact
     credential persistence, over-broad permissions) → SARIF to the
