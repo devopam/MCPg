@@ -319,6 +319,25 @@ API, redesigns per-request tenancy onto `mcp`'s new `ServerMiddleware` model
 | 20.2 | ✅ **Shipped.** **Tenancy redesign onto `ServerMiddleware`.** Replaced the `mcp.server.lowlevel.server.request_ctx` ambient-contextvar hack (removed in mcp 2.0) with a `ServerMiddleware` that sets the existing `current_role` ContextVar per-request — reliable on every transport now that the SDK dispatches each request to its own asyncio task, not just stdio as before. | M | Medium-High | Security-sensitive seam; see `mcpg.tenancy.TenantRoleContextMiddleware`. |
 | 20.3 | ✅ **Shipped.** **Elicitation confirmation for write-tier tools.** `ctx.elicit()`-based confirmation before any non-read-only tool call, gated by `MCPG_ELICIT_CONFIRM_WRITES` (opt-in) and the connected client's declared elicitation capability. Centralized in `AuditedMCPServer.call_tool`; no per-tool changes. | S-M | Medium | First concrete use of an mcp 2.0-only capability (elicitation didn't exist in 1.x `FastMCP`). |
 
+## 21. Docker MCP Registry submission
+
+MCPg ships to PyPI, GHCR, the official MCP registry, Smithery, and an HF
+Spaces demo, but not [Docker's MCP Catalog](https://github.com/docker/mcp-registry)
+— the registry backing Docker Desktop's MCP Toolkit and `docker mcp`
+CLI. A 2026-08-14 eligibility check found no existing general-purpose
+PostgreSQL entry there (only `prisma-postgres`, which is Prisma-specific),
+and MCPg clears every eligibility bar in their `CONTRIBUTING.md`: MIT
+license, a root `Dockerfile`, and a live-verified `run.env:
+MCPG_TRANSPORT: stdio` override (confirmed against a local build — the
+image's baked-in `streamable-http` default is cleanly overridden per-run,
+no `Dockerfile` change needed).
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 21.1 | **In progress.** **`tools.json` bypass generator.** MCPg requires a live, reachable `MCPG_DATABASE_URL` to start (`load_settings` raises otherwise), so Docker's build sandbox can't run the container to auto-discover tools the way it does for DB-less servers. `packaging/docker-mcp-registry/generate_tools_json.py` derives the registry's bypass-file shape (`{name, description, arguments: [{name, type, desc}]}` — confirmed against real registry entries, NOT MCP-native `inputSchema`) from `tests/contract/tool_surface.snapshot.json`, guarded by `tests/contract/test_docker_mcp_registry_tools_json.py` so it can't drift as the tool surface grows. | S | Medium | Generated beats hand-maintained, per this file's own rule — 254 entries, no hand-authoring. |
+| 21.2 | **Open.** **Submit the fork + PR.** `packaging/docker-mcp-registry/server.yaml` drafted (category `database`, `MCPG_DATABASE_URL` as the sole required secret, `MCPG_ACCESS_MODE` exposed read-only-default). Needs: `task validate` / `task build --tools mcpg` run against a real fork of `docker/mcp-registry` (requires the `Task` CLI, not yet installed anywhere this was drafted), then a PR per their `add_mcp_server.md` flow. | S-M | Medium-High | Outward-facing (third-party public repo) — needs explicit go-ahead before the fork/PR, not just the eligibility research. |
+| 21.3 | **Open, known gap.** **254-tool surface size.** Unusually large for a single catalog entry relative to other registry servers; MCPg has no bucket/tool-filter env var today to ship a slimmer default surface (checked `config.py` — doesn't exist). Address proactively in the PR description rather than waiting for reviewer pushback; a follow-up `MCPG_ENABLED_BUCKETS`-style filter is a candidate if Docker's reviewers push back in practice. | — | — | Surfaced during 21.1; not blocking submission, just flagged. |
+
 ---
 
 ## Currently deferred (no commitments)

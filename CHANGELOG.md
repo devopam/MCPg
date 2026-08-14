@@ -46,6 +46,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 - **OpenSSF Best Practices badge** added to the README badge row
   (project [13958](https://www.bestpractices.dev/projects/13958),
   `passing`).
+- **Docker MCP Registry submission prep** (roadmap 21.1). Added
+  `packaging/docker-mcp-registry/` with a `server.yaml` draft and a
+  `generate_tools_json.py` script that derives the registry's `tools.json`
+  bypass file (`{name, description, arguments}` — confirmed against real
+  registry entries, not MCP-native `inputSchema`) from
+  `tests/contract/tool_surface.snapshot.json`, guarded by
+  `tests/contract/test_docker_mcp_registry_tools_json.py` so it can't
+  drift. The bypass is needed because MCPg requires a live
+  `MCPG_DATABASE_URL` to start, which their build sandbox can't supply.
+  Confirmed via a local build that `run.env: MCPG_TRANSPORT: stdio`
+  cleanly overrides the image's baked-in `streamable-http` default with a
+  real `initialize` + `tools/list` smoke test — no `Dockerfile` change
+  needed. Submission (fork + PR into `docker/mcp-registry`) not yet sent.
 
 ### Fixed
 
