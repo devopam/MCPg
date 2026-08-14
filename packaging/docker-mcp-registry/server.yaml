@@ -10,18 +10,19 @@ meta:
     - sql
     - devops
 about:
-  title: MCPg
+  title: PostgreSQL
   description: >-
-    A production-grade PostgreSQL MCP server — 254 tools spanning schema
-    introspection, query execution and EXPLAIN analysis, index/vacuum/config
-    advisors, vector (pgvector) and full-text (pg_search) search, audited
-    DDL/DML, migrations, and multi-database support across PostgreSQL 14-19,
-    TimescaleDB, and WarehousePG. Ships with a read-only default and three
-    graduated access tiers (read-only / restricted / unrestricted).
+    MCPg — a production-grade PostgreSQL server with 254 tools spanning
+    schema introspection, query execution and EXPLAIN analysis,
+    index/vacuum/config advisors, vector (pgvector) and full-text
+    (pg_search) search, audited DDL/DML, migrations, and multi-database
+    support across PostgreSQL 14-19, TimescaleDB, and WarehousePG. Ships
+    with a read-only default and three graduated access tiers (read-only /
+    restricted / unrestricted).
   icon: https://avatars.githubusercontent.com/u/5661555?v=4
 source:
   project: https://github.com/devopam/MCPg
-  commit: 3310154f5971d5c39606fb3f75925fa5748aded7
+  commit: 0ed672bf4c938ecba288277b3a40fb5609b4fde5
 run:
   env:
     MCPG_TRANSPORT: stdio
