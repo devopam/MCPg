@@ -17,6 +17,19 @@ adheres to [Semantic Versioning](https://semver.org/).
   kernel, access-mode policy, and CI/release pipeline to the maintainer.
   (Complements the already-landed Actions SHA-pinning, Docker digest pinning,
   Scorecard, CodeQL, and fuzzing.)
+- **Pipeline-security tooling: Harden-Runner, zizmor, actionlint.**
+  - **StepSecurity Harden-Runner** added (audit/egress-monitoring mode) as the
+    first step of every job across all workflows — captures a runtime egress
+    baseline so outbound traffic can later be allow-listed (block mode). The
+    defence against compromised-Action call-home / exfiltration.
+  - **zizmor** (`.github/workflows/actions-security.yml`) — static security
+    analysis of the Actions workflows (template injection, artifact
+    credential persistence, over-broad permissions) → SARIF to the
+    code-scanning dashboard.
+  - **actionlint** — workflow linter (syntax, expression + shell bugs).
+  - Both scanners start in reporting mode (findings surface without blocking),
+    matching the Harden-Runner audit rollout; promote to blocking after the
+    baseline is triaged.
 
 ### Added
 
