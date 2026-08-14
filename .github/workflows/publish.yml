@@ -4,11 +4,11 @@ on:
   push:
     tags: ["v*.*.*"]
 
-# OIDC token exchange with PyPI Trusted Publishing. ``id-token: write``
-# is the privilege the action trades for a one-time PyPI upload
-# credential; ``contents: read`` is the source checkout.
+# Least-privilege default for every job: read-only checkout. The OIDC
+# ``id-token: write`` privilege (PyPI Trusted Publishing, the MCP-registry
+# login, and the build-provenance attestation) is granted per-job below —
+# only where it's actually used — rather than workflow-wide.
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -28,6 +28,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           python-version: "3.14"
@@ -84,6 +86,9 @@ jobs:
     name: Publish → TestPyPI
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # PyPI Trusted Publishing (OIDC)
     environment:
       name: testpypi
       url: https://test.pypi.org/project/mcpg/
@@ -112,6 +117,8 @@ jobs:
       # ``uv export`` needs the source tree; the smoke install
       # itself runs against the published artifact.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           python-version: "3.14"
@@ -199,6 +206,9 @@ jobs:
     name: Publish → PyPI (gated on maintainer approval)
     needs: smoke-testpypi
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # PyPI Trusted Publishing (OIDC)
     # The ``pypi`` environment is configured with a required
     # reviewer (the maintainer). The workflow pauses on this job
     # until that approval click lands; that's the last chance to
@@ -229,6 +239,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: dist
@@ -282,6 +294,9 @@ jobs:
     name: Publish to MCP Registry
     needs: publish-pypi
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # `mcp-publisher login github-oidc` (OIDC)
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2
@@ -289,6 +304,8 @@ jobs:
           egress-policy: audit
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Sync server.json version to the release tag
         # server.json's checked-in version is bumped manually as part of
         # the release (docs/release-process.md §4.2, guarded by
@@ -328,6 +345,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
@@ -377,6 +396,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.14"

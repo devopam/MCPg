@@ -19,11 +19,10 @@ on:
   # Lets you re-publish from the Actions tab without a content change.
   workflow_dispatch:
 
-# The token scopes actions/deploy-pages needs.
+# Least privilege at the workflow level: only the deploy job needs the
+# elevated Pages scopes, so they're granted there (below), not here.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Serialise Pages deployments. `cancel-in-progress: false` is the
 # GitHub-recommended setting for Pages — an in-flight deploy is allowed
@@ -43,6 +42,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - name: Build with Jekyll
@@ -60,6 +61,11 @@ jobs:
     name: Deploy to GitHub Pages
     needs: build
     runs-on: ubuntu-latest
+    # The Pages deployment (actions/deploy-pages) is the only step that needs
+    # the elevated scopes — grant them here, not workflow-wide.
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
