@@ -31,6 +31,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   - Both scanners start in reporting mode (findings surface without blocking),
     matching the Harden-Runner audit rollout; promote to blocking after the
     baseline is triaged.
+- **zizmor baseline cleared.** Fixed every finding zizmor flagged on the
+  workflows: scoped `id-token: write` from the workflow level down to only the
+  five OIDC jobs that use it (PyPI Trusted Publishing, the MCP-registry login,
+  the build-provenance attestation, and the Pages deploy — `excessive-permissions`),
+  and set `persist-credentials: false` on all repo checkouts so a persisted git
+  credential can't be captured in an artifact (`artipacked`). zizmor now reports
+  no findings.
 
 ### Added
 
