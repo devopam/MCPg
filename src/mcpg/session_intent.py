@@ -36,9 +36,10 @@ has no way to discover what *is* on the wire.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, NamedTuple
 
-from mcpg.about import classify_tool
+from mcpg.about import CAPABILITIES, classify_tool
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -46,8 +47,19 @@ if TYPE_CHECKING:
 
 # Tools that are NEVER removed by the intent filter — without them an
 # agent connecting to a narrowed surface has no way to learn what's on
-# the wire. Both are read-only, no DB access.
-_ALWAYS_KEEP: frozenset[str] = frozenset({"describe_self", "describe_tool"})
+# the wire, or (for the two dynamic-session-intent meta-tools, roadmap
+# 22) to discover/grow its own surface at runtime. All four are
+# read-only, no DB access. Public (not `_`-prefixed): the dynamic
+# layer in `mcpg.dynamic_session_intent` reuses this directly rather
+# than defining its own always-visible set.
+ALWAYS_KEEP: frozenset[str] = frozenset(
+    {
+        "describe_self",
+        "describe_tool",
+        "list_session_intents",
+        "enable_session_intent",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +121,40 @@ INTENT_PRESETS: dict[str, frozenset[str]] = {
 }
 
 
+# Headline-tools-based preset — deliberately NOT a bucket set. About 4x
+# tighter than the coarsest bucket preset (`lookup`, 3 buckets ~56
+# tools): built from `about.py`'s own curated `headline_tools`, so
+# there's one source of truth for "what matters most" shared across
+# this preset, the dynamic session-intent feature (roadmap 22), and
+# `describe_self`'s headline display. Kept in a separate dict from
+# `INTENT_PRESETS` rather than widening that dict's value type —
+# additive, not a breaking change to the existing five entries or
+# their `dict[str, frozenset[str]]` public shape.
+_TOOL_NAME_PRESETS: dict[str, frozenset[str]] = {
+    "core": frozenset(
+        name
+        for cap in CAPABILITIES
+        if cap.id in ("schema_introspection", "query_execution")
+        for name in cap.headline_tools
+    ),
+}
+
+
+class IntentResolution(NamedTuple):
+    """The two independently-checked halves of a resolved intent.
+
+    Kept separate rather than merged into one set: bucket ids and tool
+    names are different namespaces (a bucket preset like ``lookup``
+    names buckets; ``core`` names literal tools), and a merged
+    predicate silently drops every tool-name preset's tools — a
+    bucket-only keep-check never matches a literal tool name against a
+    bucket id. Caught during design, not left as a latent bug.
+    """
+
+    buckets: frozenset[str]
+    tool_names: frozenset[str]
+
+
 def resolve_intent_to_buckets(intent_values: tuple[str, ...]) -> frozenset[str] | None:
     """Expand the configured intent values into the allowed bucket set.
 
@@ -148,35 +194,81 @@ def resolve_intent_to_buckets(intent_values: tuple[str, ...]) -> frozenset[str] 
     return frozenset(allowed)
 
 
+def resolve_intent(intent_values: tuple[str, ...]) -> IntentResolution | None:
+    """Like :func:`resolve_intent_to_buckets`, but also resolves
+    tool-name presets (currently just ``core``). Supersedes
+    ``resolve_intent_to_buckets`` for callers that need tool-name
+    presets; that function is unchanged and still bucket-only.
+
+    Returns ``None`` under the same conditions as
+    ``resolve_intent_to_buckets``: empty input, or the ``admin``
+    sentinel present anywhere in the input.
+    """
+    if not intent_values:
+        return None
+    buckets: set[str] = set()
+    tool_names: set[str] = set()
+    for raw in intent_values:
+        name = raw.strip().lower()
+        if not name:
+            continue
+        if name in INTENT_PRESETS:
+            preset_buckets = INTENT_PRESETS[name]
+            if not preset_buckets:
+                return None  # admin sentinel
+            buckets |= preset_buckets
+        elif name in _TOOL_NAME_PRESETS:
+            tool_names |= _TOOL_NAME_PRESETS[name]
+        else:
+            buckets.add(name)
+    return IntentResolution(buckets=frozenset(buckets), tool_names=frozenset(tool_names))
+
+
+def resolved_tool_names(
+    resolution: IntentResolution,
+    candidate_names: Iterable[str],
+    *,
+    always_keep: frozenset[str] = ALWAYS_KEEP,
+) -> frozenset[str]:
+    """The subset of ``candidate_names`` that survive ``resolution``.
+
+    The one keep-decision both :func:`filter_server_tools` (registry
+    mutation, launch-time) and ``mcpg.dynamic_session_intent``'s
+    response filter (per-session, runtime) apply — kept in exactly one
+    place so the two layers can never silently diverge.
+    """
+    kept: set[str] = set()
+    for name in candidate_names:
+        if name in always_keep or name in resolution.tool_names:
+            kept.add(name)
+        elif classify_tool(name) in resolution.buckets:
+            kept.add(name)
+    return frozenset(kept)
+
+
 def filter_server_tools(
     server: MCPServer,
     allowed_buckets: frozenset[str],
     *,
-    always_keep: frozenset[str] = _ALWAYS_KEEP,
+    allowed_tool_names: frozenset[str] = frozenset(),
+    always_keep: frozenset[str] = ALWAYS_KEEP,
 ) -> list[str]:
-    """Remove every registered tool whose bucket isn't in ``allowed_buckets``.
+    """Remove every registered tool that doesn't survive the resolved intent.
 
-    Tools in ``always_keep`` survive regardless — without them the
-    filtered agent can't introspect the surviving surface.
+    ``allowed_tool_names`` is new (additive) — existing callers that
+    only pass ``allowed_buckets`` positionally are unaffected, since it
+    defaults to empty and every existing preset is bucket-only.
 
-    Returns the list of removed tool names, sorted, so the caller can
-    log / surface the diff. Idempotent — running twice with the same
-    arguments removes nothing the second time.
+    Returns the list of removed tool names, sorted. Idempotent.
     """
-    # MCPServer's ``list_tools`` is async; we use the internal
-    # ``_tool_manager.list_tools()`` instead because the intent filter
-    # runs in synchronous startup code. ``server.remove_tool(name)``
-    # is the public removal API.
+    resolution = IntentResolution(buckets=allowed_buckets, tool_names=allowed_tool_names)
+    all_names = [tool.name for tool in server._tool_manager.list_tools()]
+    keep = resolved_tool_names(resolution, all_names, always_keep=always_keep)
     removed: list[str] = []
-    for tool in list(server._tool_manager.list_tools()):
-        name = tool.name
-        if name in always_keep:
-            continue
-        bucket = classify_tool(name)
-        if bucket in allowed_buckets:
-            continue
-        server.remove_tool(name)
-        removed.append(name)
+    for name in all_names:
+        if name not in keep:
+            server.remove_tool(name)
+            removed.append(name)
     return sorted(removed)
 
 
@@ -192,8 +284,12 @@ def parse_intent_setting(raw: str | None) -> tuple[str, ...]:
 
 
 __all__ = [
+    "ALWAYS_KEEP",
     "INTENT_PRESETS",
+    "IntentResolution",
     "filter_server_tools",
     "parse_intent_setting",
+    "resolve_intent",
     "resolve_intent_to_buckets",
+    "resolved_tool_names",
 ]

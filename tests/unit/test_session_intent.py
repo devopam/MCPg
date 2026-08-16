@@ -160,3 +160,118 @@ def test_every_preset_bucket_id_is_a_real_bucket() -> None:
 def test_admin_preset_is_empty_set_sentinel() -> None:
     """Empty preset set is the 'no filter' sentinel; admin must use it."""
     assert INTENT_PRESETS["admin"] == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# ALWAYS_KEEP (public export)
+# ---------------------------------------------------------------------------
+
+
+def test_always_keep_includes_the_dynamic_meta_tools() -> None:
+    from mcpg.session_intent import ALWAYS_KEEP
+
+    assert ALWAYS_KEEP == {
+        "describe_self",
+        "describe_tool",
+        "list_session_intents",
+        "enable_session_intent",
+    }
+
+
+# ---------------------------------------------------------------------------
+# "core" preset
+# ---------------------------------------------------------------------------
+
+
+def test_core_preset_is_headline_tools_of_schema_and_query_buckets() -> None:
+    from mcpg.about import CAPABILITIES
+    from mcpg.session_intent import _TOOL_NAME_PRESETS
+
+    expected = {
+        name
+        for cap in CAPABILITIES
+        if cap.id in ("schema_introspection", "query_execution")
+        for name in cap.headline_tools
+    }
+    assert _TOOL_NAME_PRESETS["core"] == frozenset(expected)
+    assert len(_TOOL_NAME_PRESETS["core"]) == 12
+
+
+# ---------------------------------------------------------------------------
+# resolve_intent — two-set resolution
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_intent_returns_none_for_empty_input() -> None:
+    from mcpg.session_intent import resolve_intent
+
+    assert resolve_intent(()) is None
+
+
+def test_resolve_intent_bucket_preset_matches_resolve_intent_to_buckets() -> None:
+    from mcpg.session_intent import IntentResolution, resolve_intent
+
+    resolution = resolve_intent(("lookup",))
+    assert resolution == IntentResolution(buckets=INTENT_PRESETS["lookup"], tool_names=frozenset())
+
+
+def test_resolve_intent_admin_short_circuits_to_none() -> None:
+    from mcpg.session_intent import resolve_intent
+
+    assert resolve_intent(("admin",)) is None
+    assert resolve_intent(("lookup", "admin")) is None
+
+
+def test_resolve_intent_core_preset_is_tool_names_only() -> None:
+    from mcpg.session_intent import _TOOL_NAME_PRESETS, resolve_intent
+
+    resolution = resolve_intent(("core",))
+    assert resolution is not None
+    assert resolution.buckets == frozenset()
+    assert resolution.tool_names == _TOOL_NAME_PRESETS["core"]
+
+
+def test_resolve_intent_combines_bucket_and_tool_name_presets() -> None:
+    from mcpg.session_intent import _TOOL_NAME_PRESETS, resolve_intent
+
+    resolution = resolve_intent(("core", "monitor"))
+    assert resolution is not None
+    assert resolution.buckets == INTENT_PRESETS["monitor"]
+    assert resolution.tool_names == _TOOL_NAME_PRESETS["core"]
+
+
+def test_resolve_intent_unknown_name_falls_back_to_raw_bucket_id() -> None:
+    from mcpg.session_intent import IntentResolution, resolve_intent
+
+    resolution = resolve_intent(("vector_search",))
+    assert resolution == IntentResolution(buckets=frozenset({"vector_search"}), tool_names=frozenset())
+
+
+# ---------------------------------------------------------------------------
+# resolved_tool_names — the shared keep-decision Layer 1 and Layer 2 both use
+# ---------------------------------------------------------------------------
+
+
+def test_resolved_tool_names_regression_core_keeps_14_not_0() -> None:
+    """The bug caught during design: passing a tool-name-only resolution
+    through a bucket-only keep-check kept 0 of 14 tools, not 14. This must
+    pass against the fixed implementation."""
+    from mcpg.session_intent import _TOOL_NAME_PRESETS, resolve_intent, resolved_tool_names
+
+    resolution = resolve_intent(("core",))
+    assert resolution is not None
+    candidates = _TOOL_NAME_PRESETS["core"] | {"describe_self", "describe_tool", "run_ddl_unrelated_tool"}
+    kept = resolved_tool_names(resolution, candidates)
+    assert kept == _TOOL_NAME_PRESETS["core"] | {"describe_self", "describe_tool"}
+
+
+def test_resolved_tool_names_bucket_preset_still_works() -> None:
+    from mcpg.session_intent import resolve_intent, resolved_tool_names
+
+    resolution = resolve_intent(("lookup",))
+    assert resolution is not None
+    candidates = ["list_tables", "run_ddl", "describe_self"]
+    kept = resolved_tool_names(resolution, candidates)
+    # list_tables -> schema_introspection (in lookup); run_ddl -> query_execution (in lookup);
+    # describe_self -> always_keep regardless.
+    assert kept == frozenset({"list_tables", "run_ddl", "describe_self"})
