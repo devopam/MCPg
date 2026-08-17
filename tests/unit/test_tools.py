@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakePool
 from _mcp_test_helpers import create_connected_server_and_client_session
+from mcp.server.mcpserver import MCPServer
 
 from mcpg import __version__
 from mcpg.config import AccessMode, load_settings
@@ -13,9 +14,10 @@ from mcpg.cursors import CursorManager
 from mcpg.database import Database
 from mcpg.listen import ListenManager
 from mcpg.server import create_server
-from mcpg.tools import ServerInfo, build_server_info
+from mcpg.tools import ServerInfo, build_server_info, register_tools
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+_FIXTURE_DB_URL = "postgresql://snapshot:snapshot@127.0.0.1:5432/snapshot"
 
 _READ_TOOLS = {
     "get_server_info",
@@ -479,3 +481,51 @@ async def test_session_intent_core_actually_narrows_the_surface() -> None:
     expected_all = expected_core | expected_always_keep
 
     assert names == expected_all, f"Expected {sorted(expected_all)}, got {sorted(names)}"
+
+
+async def test_dynamic_session_intent_tools_not_registered_by_default() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _FIXTURE_DB_URL})
+    server: MCPServer = MCPServer("mcpg-dynamic-off-fixture")
+    register_tools(server, settings)
+    names = {t.name for t in await server.list_tools()}
+    assert "list_session_intents" not in names
+    assert "enable_session_intent" not in names
+
+
+async def test_dynamic_session_intent_tools_registered_when_enabled() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _FIXTURE_DB_URL, "MCPG_DYNAMIC_SESSION_INTENT": "true"})
+    server: MCPServer = MCPServer("mcpg-dynamic-on-fixture")
+    register_tools(server, settings)
+    names = {t.name for t in await server.list_tools()}
+    assert "list_session_intents" in names
+    assert "enable_session_intent" in names
+
+
+async def test_dynamic_session_intent_tools_survive_a_narrow_static_intent() -> None:
+    """The ordering/ALWAYS_KEEP guarantee: under MCPG_SESSION_INTENT=core,
+    the two meta-tools must still survive -- otherwise a session under a
+    narrow static intent would have no way to discover or grow its own
+    surface.
+
+    ``core`` (not a bucket preset like ``lookup``) is the case that
+    actually exercises ALWAYS_KEEP: it's a tool-name preset resolved
+    with an *empty* bucket set (see ``session_intent.resolve_intent``),
+    so ``resolved_tool_names`` only keeps ALWAYS_KEEP names plus the 12
+    explicit core tool names -- the observability bucket these two
+    meta-tools classify into is never consulted. Every bucket preset
+    (``lookup``/``migration``/``vector_rag``/``monitor``) includes the
+    ``observability`` bucket already, so using one of those here would
+    pass regardless of whether ALWAYS_KEEP or ordering worked at all --
+    verified empirically, not assumed."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _FIXTURE_DB_URL,
+            "MCPG_SESSION_INTENT": "core",
+            "MCPG_DYNAMIC_SESSION_INTENT": "true",
+        }
+    )
+    server: MCPServer = MCPServer("mcpg-dynamic-and-static-fixture")
+    register_tools(server, settings)
+    names = {t.name for t in await server.list_tools()}
+    assert "list_session_intents" in names
+    assert "enable_session_intent" in names

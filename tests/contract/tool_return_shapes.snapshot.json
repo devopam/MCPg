@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 254
+    "tool_count": 256
   },
   "tools": {
     "add_compression_policy": {
@@ -565,6 +565,9 @@
         "name"
       ],
       "kind": "scalar"
+    },
+    "enable_session_intent": {
+      "kind": "opaque"
     },
     "explain_query": {
       "dataclass": "ExplainResult",
@@ -1425,6 +1428,9 @@
         "start_value"
       ],
       "kind": "list"
+    },
+    "list_session_intents": {
+      "kind": "opaque"
     },
     "list_subscriptions": {
       "dataclass": "SubscriptionInfo",
