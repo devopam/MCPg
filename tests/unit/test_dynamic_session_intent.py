@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from mcp.types import ListToolsResult, Tool
+from mcp_types import ListToolsResult, Tool
 
 from mcpg.dynamic_session_intent import (
     STDIO_SESSION_KEY,

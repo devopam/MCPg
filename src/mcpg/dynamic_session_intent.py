@@ -48,7 +48,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from mcp.server.context import CallNext, ServerRequestContext
-from mcp.types import ListToolsResult
+from mcp_types import ListToolsResult
 
 from mcpg.about import BUCKET_IDS
 from mcpg.session_intent import _TOOL_NAME_PRESETS, INTENT_PRESETS, resolve_intent, resolved_tool_names
