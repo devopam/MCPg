@@ -121,10 +121,15 @@ export MCPG_DYNAMIC_SESSION_INTENT=true  # opt-in: sessions can grow past it
   `MCPG_SESSION_INTENT` is unset. (`core`, not "no filter", is the
   dynamic layer's default starting point: setting
   `MCPG_DYNAMIC_SESSION_INTENT=1` by itself, with nothing else
-  configured, still narrows a fresh session's `tools/list` down to the
-  same 12 tools `MCPG_SESSION_INTENT=core` gives you — just
-  non-destructively: the full surface stays registered server-side,
-  and the session can grow from there.)
+  configured, still narrows a fresh session's `tools/list` down to
+  14 tools — the 10 core survivors plus all 4 always-kept tools
+  (`describe_self`, `describe_tool`, and, because the flag is on, the
+  two meta-tools themselves) — rather than the 186-tool read-only
+  default. That's 2 more than the 12 tools `MCPG_SESSION_INTENT=core`
+  alone gives you with the flag off, since the meta-tools aren't
+  registered — and therefore aren't kept — in that case. Either way,
+  the full surface stays registered server-side; the session grows
+  from its starting point, non-destructively.)
 - Two always-visible meta-tools let a session grow itself:
   `list_session_intents()` lists every bucket/tool-name preset, its
   resolved tool count against what's currently registered, and
