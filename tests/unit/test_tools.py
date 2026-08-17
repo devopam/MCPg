@@ -453,6 +453,8 @@ async def test_session_intent_core_actually_narrows_the_surface() -> None:
     must narrow the registered surface to ~12 tools, not to 2 (the bug
     this task fixes) and not leave it at 254 (the bug of not switching
     the call site at all)."""
+    from mcpg.session_intent import ALWAYS_KEEP, _TOOL_NAME_PRESETS
+
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
@@ -465,11 +467,15 @@ async def test_session_intent_core_actually_narrows_the_surface() -> None:
         tools = await client.list_tools()
 
     names = {t.name for t in tools.tools}
-    assert "describe_self" in names
-    assert "describe_tool" in names
-    assert "run_ddl" not in names  # not permitted under read-only access_mode anyway
-    assert "run_write" not in names  # requires WRITE capability, not in read-only
-    assert "list_tables" in names
-    assert "run_select" in names
-    # 12 core headline tools - 2 (run_ddl, run_write; filtered by access mode) + 2 (always-keep) = 12 total
-    assert 10 <= len(names) <= 14
+
+    # Core preset includes 12 headline tools, but run_ddl and run_write are
+    # never registered in read-only mode (gated by capability checks before
+    # session_intent filtering). Expected: 10 core tools + 2 always-keep tools.
+    # Note: ALWAYS_KEEP includes 4 tools, but list_session_intents and
+    # enable_session_intent are not yet implemented (roadmap 22), so we only
+    # expect describe_self and describe_tool.
+    expected_core = _TOOL_NAME_PRESETS["core"] - {"run_ddl", "run_write"}
+    expected_always_keep = ALWAYS_KEEP - {"list_session_intents", "enable_session_intent"}
+    expected_all = expected_core | expected_always_keep
+
+    assert names == expected_all, f"Expected {sorted(expected_all)}, got {sorted(names)}"
