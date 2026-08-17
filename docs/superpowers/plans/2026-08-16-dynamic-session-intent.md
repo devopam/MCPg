@@ -1067,7 +1067,15 @@ async def test_middleware_filters_tools_list_to_default_intent() -> None:
         return ListToolsResult(
             tools=[
                 _tool("list_tables"),
-                _tool("run_ddl"),
+                # list_pending_migrations, not run_ddl: run_ddl IS one of
+                # core's 12 declared headline names (query_execution),
+                # so it would survive this filter -- it's only excluded
+                # from a REAL server's registered surface by a separate,
+                # access-mode-based gate (Layer 1's Capability checks,
+                # not simulated by this fake call_next). Caught during
+                # Task 5: the plan's earlier draft assumed core excludes
+                # run_ddl outright, which is false.
+                _tool("list_pending_migrations"),
                 _tool("describe_self"),
             ]
         )
@@ -1137,12 +1145,15 @@ async def test_middleware_noop_on_stdio_where_request_is_none() -> None:
     ctx = _FakeCtx(method="tools/list", request=None)
 
     async def call_next(_ctx: object) -> ListToolsResult:
-        return ListToolsResult(tools=[_tool("list_tables"), _tool("run_ddl")])
+        # list_pending_migrations, not run_ddl -- see the comment in
+        # test_middleware_filters_tools_list_to_default_intent above:
+        # run_ddl is genuinely part of core's declared tool_names.
+        return ListToolsResult(tools=[_tool("list_tables"), _tool("list_pending_migrations")])
 
     result = await middleware(ctx, call_next)  # type: ignore[arg-type]
     names = {t.name for t in result.tools}  # type: ignore[union-attr]
     assert "list_tables" in names
-    assert "run_ddl" not in names  # still filtered to core -- stdio just uses the sentinel session key
+    assert "list_pending_migrations" not in names  # still filtered to core -- stdio just uses the sentinel session key
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
