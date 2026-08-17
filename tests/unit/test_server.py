@@ -462,3 +462,24 @@ async def test_elicit_gate_is_noop_when_context_is_none() -> None:
     result = await server.call_tool("fake_write_tool", {}, context=None)
 
     assert result.is_error is False
+
+
+# --- dynamic session intent middleware registration ---
+
+
+def test_dynamic_session_intent_middleware_registered_when_enabled() -> None:
+    from mcpg.dynamic_session_intent import DynamicSessionIntentMiddleware
+
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_DYNAMIC_SESSION_INTENT": "true"})
+    server = create_server(settings)
+
+    assert any(isinstance(m, DynamicSessionIntentMiddleware) for m in server._lowlevel_server.middleware)
+
+
+def test_dynamic_session_intent_middleware_absent_by_default() -> None:
+    from mcpg.dynamic_session_intent import DynamicSessionIntentMiddleware
+
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    server = create_server(settings)
+
+    assert not any(isinstance(m, DynamicSessionIntentMiddleware) for m in server._lowlevel_server.middleware)

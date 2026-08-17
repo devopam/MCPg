@@ -334,12 +334,18 @@ def create_server(
     ar = analytical_runner if settings.enable_analytical_queries else None
     if ar is None and database is None and settings.enable_analytical_queries:
         ar = AnalyticalRunner(settings)
+    middleware: list[Any] = [TenantRoleContextMiddleware()]
+    if settings.dynamic_session_intent:
+        from mcpg.dynamic_session_intent import DynamicSessionIntentMiddleware
+
+        middleware.append(DynamicSessionIntentMiddleware())
+
     server: AuditedMCPServer = AuditedMCPServer(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
         version=__version__,
         lifespan=make_lifespan(settings, db, lm, cm, ar),
-        middleware=[TenantRoleContextMiddleware()],
+        middleware=middleware,
     )
     server.mcpg_settings = settings
     server.otel_tracer = setup_tracing(settings)
