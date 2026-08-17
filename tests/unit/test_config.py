@@ -120,6 +120,21 @@ def test_invalid_allow_ddl_raises() -> None:
         load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_DDL": "maybe"})
 
 
+def test_dynamic_session_intent_defaults_to_false() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.dynamic_session_intent is False
+
+
+def test_dynamic_session_intent_true_parses() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_DYNAMIC_SESSION_INTENT": "true"})
+    assert settings.dynamic_session_intent is True
+
+
+def test_dynamic_session_intent_false_parses() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_DYNAMIC_SESSION_INTENT": "false"})
+    assert settings.dynamic_session_intent is False
+
+
 def test_allow_listen_defaults_to_false_and_parses_booleans() -> None:
     assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).allow_listen is False
     assert load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_LISTEN": "true"}).allow_listen is True
