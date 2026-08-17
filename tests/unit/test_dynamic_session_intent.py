@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import pytest
+from mcp.types import ListToolsResult, Tool
 
 from mcpg.dynamic_session_intent import (
     STDIO_SESSION_KEY,
     DynamicIntentError,
+    DynamicSessionIntentMiddleware,
     enable_intent,
     enabled_intents,
     session_key_from_headers,
@@ -180,3 +182,155 @@ async def test_visible_tool_names_never_exceeds_registered() -> None:
     registered = frozenset({"list_tables", "describe_self", "describe_tool"})
     visible = visible_tool_names(session_key, default_intent=("core",), registered=registered)
     assert visible <= registered
+
+
+# ---------------------------------------------------------------------------
+# DynamicSessionIntentMiddleware
+# ---------------------------------------------------------------------------
+
+
+def _tool(name: str) -> Tool:
+    """A minimal real `Tool` instance -- `ListToolsResult.tools` is a
+    pydantic-validated `list[Tool]` field, so a plain fake object with
+    just a `.name` attribute would fail construction (`input_schema`
+    is a required field with no default). This gives every field
+    pydantic actually requires and nothing more."""
+    return Tool(name=name, input_schema={"type": "object", "properties": {}})
+
+
+class _FakeSettings:
+    def __init__(self, session_intent: tuple[str, ...] = ()) -> None:
+        self.session_intent = session_intent
+
+
+class _FakeLifespanContext:
+    def __init__(self, settings: _FakeSettings) -> None:
+        self.settings = settings
+
+
+class _FakeRequest:
+    def __init__(self, headers: dict[str, str] | None) -> None:
+        self.headers = headers
+
+
+class _FakeCtx:
+    def __init__(
+        self,
+        *,
+        method: str,
+        request: object | None,
+        settings: _FakeSettings | None = None,
+    ) -> None:
+        self.method = method
+        self.request = request
+        self.lifespan_context = _FakeLifespanContext(settings or _FakeSettings())
+
+
+@pytest.mark.asyncio
+async def test_middleware_passes_through_non_tools_list_requests() -> None:
+    middleware = DynamicSessionIntentMiddleware()
+    ctx = _FakeCtx(method="tools/call", request=_FakeRequest({"mcp-session-id": "s1"}))
+
+    async def call_next(_ctx: object) -> dict[str, str]:
+        return {"untouched": "yes"}
+
+    result = await middleware(ctx, call_next)  # type: ignore[arg-type]
+    assert result == {"untouched": "yes"}
+
+
+@pytest.mark.asyncio
+async def test_middleware_filters_tools_list_to_default_intent() -> None:
+    middleware = DynamicSessionIntentMiddleware()
+    ctx = _FakeCtx(method="tools/list", request=_FakeRequest({"mcp-session-id": "s2"}))
+
+    async def call_next(_ctx: object) -> ListToolsResult:
+        return ListToolsResult(
+            tools=[
+                _tool("list_tables"),
+                # list_pending_migrations, not run_ddl: run_ddl IS one of
+                # core's 12 declared headline names (query_execution),
+                # so it would survive this filter -- it's only excluded
+                # from a REAL server's registered surface by a separate,
+                # access-mode-based gate (Layer 1's Capability checks,
+                # not simulated by this fake call_next). Caught during
+                # Task 5: the plan's earlier draft assumed core excludes
+                # run_ddl outright, which is false.
+                _tool("list_pending_migrations"),
+                _tool("describe_self"),
+            ]
+        )
+
+    result = await middleware(ctx, call_next)  # type: ignore[arg-type]
+    assert isinstance(result, ListToolsResult)
+    names = {t.name for t in result.tools}
+    # Exact set, not just presence/absence -- "no more, no less" (spec section 6).
+    assert names == {"list_tables", "describe_self"}
+
+
+@pytest.mark.asyncio
+async def test_middleware_uses_configured_static_intent_as_default() -> None:
+    middleware = DynamicSessionIntentMiddleware()
+    ctx = _FakeCtx(
+        method="tools/list",
+        request=_FakeRequest({"mcp-session-id": "s3"}),
+        settings=_FakeSettings(session_intent=("monitor",)),
+    )
+
+    async def call_next(_ctx: object) -> ListToolsResult:
+        return ListToolsResult(
+            tools=[
+                _tool("list_active_queries"),  # operations_and_health -> in monitor
+                _tool("list_tables"),  # schema_introspection -> NOT in monitor
+                _tool("describe_self"),
+            ]
+        )
+
+    result = await middleware(ctx, call_next)  # type: ignore[arg-type]
+    names = {t.name for t in result.tools}  # type: ignore[union-attr]
+    assert "list_active_queries" in names
+    assert "list_tables" not in names
+    assert "describe_self" in names
+
+
+@pytest.mark.asyncio
+async def test_middleware_is_isolated_per_session() -> None:
+    from mcpg.dynamic_session_intent import enable_intent
+
+    middleware = DynamicSessionIntentMiddleware()
+    await enable_intent("s4-A", "monitor")
+
+    async def call_next(_ctx: object) -> ListToolsResult:
+        return ListToolsResult(
+            tools=[
+                _tool("list_active_queries"),
+                _tool("list_tables"),
+            ]
+        )
+
+    ctx_a = _FakeCtx(method="tools/list", request=_FakeRequest({"mcp-session-id": "s4-A"}))
+    ctx_b = _FakeCtx(method="tools/list", request=_FakeRequest({"mcp-session-id": "s4-B"}))
+
+    result_a = await middleware(ctx_a, call_next)  # type: ignore[arg-type]
+    result_b = await middleware(ctx_b, call_next)  # type: ignore[arg-type]
+
+    names_a = {t.name for t in result_a.tools}  # type: ignore[union-attr]
+    names_b = {t.name for t in result_b.tools}  # type: ignore[union-attr]
+    assert "list_active_queries" in names_a  # session A enabled monitor
+    assert "list_active_queries" not in names_b  # session B never did
+
+
+@pytest.mark.asyncio
+async def test_middleware_noop_on_stdio_where_request_is_none() -> None:
+    middleware = DynamicSessionIntentMiddleware()
+    ctx = _FakeCtx(method="tools/list", request=None)
+
+    async def call_next(_ctx: object) -> ListToolsResult:
+        # list_pending_migrations, not run_ddl -- see the comment in
+        # test_middleware_filters_tools_list_to_default_intent above:
+        # run_ddl is genuinely part of core's declared tool_names.
+        return ListToolsResult(tools=[_tool("list_tables"), _tool("list_pending_migrations")])
+
+    result = await middleware(ctx, call_next)  # type: ignore[arg-type]
+    names = {t.name for t in result.tools}  # type: ignore[union-attr]
+    assert "list_tables" in names
+    assert "list_pending_migrations" not in names  # still filtered to core -- stdio just uses the sentinel session key

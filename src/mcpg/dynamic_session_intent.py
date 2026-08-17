@@ -15,11 +15,11 @@ Response filtering, not registry mutation
 concurrent ``streamable-http`` sessions share one ``MCPServer``
 instance. Mutating the registry per session is therefore not an
 option (session A's growth would leak into session B's view). Instead
-``DynamicSessionIntentMiddleware`` (added in a follow-up change to
-this module) lets every tool register normally (or survive whatever
-``session_intent``'s static filter left) and narrows only the
-*response* to each session's own ``tools/list`` call, keyed by the
-transport's own ``Mcp-Session-Id`` header.
+``DynamicSessionIntentMiddleware`` (below) lets every tool register
+normally (or survive whatever ``session_intent``'s static filter
+left) and narrows only the *response* to each session's own
+``tools/list`` call, keyed by the transport's own ``Mcp-Session-Id``
+header.
 
 Not an authorization boundary
 ==============================
@@ -45,6 +45,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+from typing import TYPE_CHECKING, Any
+
+from mcp.server.context import CallNext, ServerRequestContext
+from mcp.types import ListToolsResult
 
 from mcpg.about import BUCKET_IDS
 from mcpg.session_intent import _TOOL_NAME_PRESETS, INTENT_PRESETS, resolve_intent, resolved_tool_names
@@ -160,9 +164,50 @@ async def enable_intent_and_notify(
     await notify()
 
 
+class DynamicSessionIntentMiddleware:
+    """Filters ``tools/list`` responses to each session's visible surface.
+
+    Registered only when ``MCPG_DYNAMIC_SESSION_INTENT`` is enabled
+    (see ``mcpg.server``). All other request kinds pass through
+    untouched — this only ever narrows what a ``tools/list`` call
+    returns, never what a ``tools/call`` can invoke (see the module
+    docstring's "Not an authorization boundary" section).
+    """
+
+    async def __call__(
+        self,
+        ctx: ServerRequestContext[Any, Any],
+        call_next: CallNext,
+    ) -> Any:
+        result = await call_next(ctx)
+        if ctx.method != "tools/list" or not isinstance(result, ListToolsResult):
+            return result
+
+        settings = ctx.lifespan_context.settings
+        default_intent = settings.session_intent or ("core",)
+        request = getattr(ctx, "request", None)
+        headers = getattr(request, "headers", None)
+        session_key = session_key_from_headers(headers)
+
+        registered = frozenset(tool.name for tool in result.tools)
+        visible = visible_tool_names(session_key, default_intent=default_intent, registered=registered)
+        return result.model_copy(update={"tools": [tool for tool in result.tools if tool.name in visible]})
+
+
+# Static structural-conformance check: DynamicSessionIntentMiddleware must
+# match the ServerMiddleware Protocol's call signature. Never evaluated at
+# runtime -- mypy checks the assignment, nothing constructs this. Mirrors the
+# exact pattern mcpg.tenancy uses for TenantRoleContextMiddleware.
+if TYPE_CHECKING:
+    from mcp.server.context import ServerMiddleware
+
+    _dynamic_intent_middleware_matches_protocol: ServerMiddleware[Any] = DynamicSessionIntentMiddleware()
+
+
 __all__ = [
     "STDIO_SESSION_KEY",
     "DynamicIntentError",
+    "DynamicSessionIntentMiddleware",
     "enable_intent",
     "enable_intent_and_notify",
     "enabled_intents",
