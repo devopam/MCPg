@@ -7127,8 +7127,8 @@ def register_tools(
     # we then remove whatever the configured intent doesn't allow.
     # describe_self / describe_tool are always kept (see session_intent).
     if settings.session_intent:
-        from mcpg.session_intent import filter_server_tools, resolve_intent_to_buckets
+        from mcpg.session_intent import filter_server_tools, resolve_intent
 
-        allowed = resolve_intent_to_buckets(settings.session_intent)
-        if allowed is not None:
-            filter_server_tools(server, allowed)
+        resolution = resolve_intent(settings.session_intent)
+        if resolution is not None:
+            filter_server_tools(server, resolution.buckets, allowed_tool_names=resolution.tool_names)

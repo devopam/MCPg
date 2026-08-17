@@ -446,3 +446,30 @@ async def test_heavy_diagnostics_caching(monkeypatch: pytest.MonkeyPatch) -> Non
         # should only have been invoked once.
         assert second.content == first.content
         assert calls["count"] == 1
+
+
+async def test_session_intent_core_actually_narrows_the_surface() -> None:
+    """Regression test for the call-site switch: MCPG_SESSION_INTENT=core
+    must narrow the registered surface to ~12 tools, not to 2 (the bug
+    this task fixes) and not leave it at 254 (the bug of not switching
+    the call site at all)."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_SESSION_INTENT": "core",
+        }
+    )
+    server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        tools = await client.list_tools()
+
+    names = {t.name for t in tools.tools}
+    assert "describe_self" in names
+    assert "describe_tool" in names
+    assert "run_ddl" not in names  # not permitted under read-only access_mode anyway
+    assert "run_write" not in names  # requires WRITE capability, not in read-only
+    assert "list_tables" in names
+    assert "run_select" in names
+    # 12 core headline tools - 2 (run_ddl, run_write; filtered by access mode) + 2 (always-keep) = 12 total
+    assert 10 <= len(names) <= 14
