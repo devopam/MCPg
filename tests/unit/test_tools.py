@@ -453,7 +453,7 @@ async def test_session_intent_core_actually_narrows_the_surface() -> None:
     must narrow the registered surface to ~12 tools, not to 2 (the bug
     this task fixes) and not leave it at 254 (the bug of not switching
     the call site at all)."""
-    from mcpg.session_intent import ALWAYS_KEEP, _TOOL_NAME_PRESETS
+    from mcpg.session_intent import _TOOL_NAME_PRESETS, ALWAYS_KEEP
 
     settings = load_settings(
         {
