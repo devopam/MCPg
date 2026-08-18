@@ -241,7 +241,9 @@ class Settings:
     # wire). When set, MCPg removes tools whose bucket isn't in the
     # resolved allow-set BEFORE the first ``tools/list`` request so the
     # narrowed surface is structural, not policy-checked at call time.
-    # ``describe_self`` and ``describe_tool`` are always kept regardless.
+    # ``session_intent.ALWAYS_KEEP`` (``describe_self``, ``describe_tool``,
+    # and, when ``MCPG_DYNAMIC_SESSION_INTENT`` is also on, the two
+    # dynamic-session-intent meta-tools) is always kept regardless.
     session_intent: tuple[str, ...] = ()
     # Opt-in runtime extension of session_intent (roadmap 22): lets a
     # session grow its own visible tool surface at runtime via the

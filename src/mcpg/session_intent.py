@@ -24,14 +24,20 @@ Presets
 =======
 
 ``MCPG_SESSION_INTENT`` accepts a comma-separated list. Each entry is
-either a **preset name** (resolved via :data:`INTENT_PRESETS` below)
-or a **raw bucket id** from :mod:`mcpg.about`. Bucket ids let callers
-opt into combinations the presets don't cover; presets give the
-common shapes one-word names so the env var stays readable.
+either a **preset name** (resolved via :data:`INTENT_PRESETS` below —
+``lookup`` / ``migration`` / ``vector_rag`` / ``monitor`` / ``admin``,
+plus the finer, headline-tools-based ``core`` preset in
+:data:`_TOOL_NAME_PRESETS`) or a **raw bucket id** from
+:mod:`mcpg.about`. Bucket ids let callers opt into combinations the
+presets don't cover; presets give the common shapes one-word names so
+the env var stays readable.
 
-The escape hatch — ``describe_self`` and ``describe_tool`` — is
-**always** kept regardless of intent. Without them the filtered agent
-has no way to discover what *is* on the wire.
+The escape hatch — :data:`ALWAYS_KEEP` (``describe_self``,
+``describe_tool``, and, when ``MCPG_DYNAMIC_SESSION_INTENT`` is also
+enabled, the two dynamic-session-intent meta-tools ``list_session_intents``
+/ ``enable_session_intent``) — is **always** kept regardless of intent.
+Without them the filtered agent has no way to discover what *is* on
+the wire, or to grow its own view of it at runtime.
 """
 
 from __future__ import annotations

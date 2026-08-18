@@ -473,9 +473,11 @@ async def test_session_intent_core_actually_narrows_the_surface() -> None:
     # Core preset includes 12 headline tools, but run_ddl and run_write are
     # never registered in read-only mode (gated by capability checks before
     # session_intent filtering). Expected: 10 core tools + 2 always-keep tools.
-    # Note: ALWAYS_KEEP includes 4 tools, but list_session_intents and
-    # enable_session_intent are not yet implemented (roadmap 22), so we only
-    # expect describe_self and describe_tool.
+    # Note: ALWAYS_KEEP includes 4 tools, but this fixture doesn't set
+    # MCPG_DYNAMIC_SESSION_INTENT, so list_session_intents and
+    # enable_session_intent are never registered here in the first place
+    # (see _register_dynamic_session_intent's conditional registration) --
+    # we only expect describe_self and describe_tool to survive the filter.
     expected_core = _TOOL_NAME_PRESETS["core"] - {"run_ddl", "run_write"}
     expected_always_keep = ALWAYS_KEEP - {"list_session_intents", "enable_session_intent"}
     expected_all = expected_core | expected_always_keep
