@@ -37,7 +37,7 @@ _MUST_NOT_BE_READ_ONLY = {"run_ddl", "terminate_backend", "cancel_query", "resto
 _OPEN_WORLD = {"translate_nl_to_sql"}
 
 
-def _build_server(access_mode: str) -> MCPServer:
+def _build_server(access_mode: str, *, dynamic_session_intent: bool = False) -> MCPServer:
     settings = load_settings(
         {
             "MCPG_DATABASE_URL": _FIXTURE_DB_URL,
@@ -47,6 +47,7 @@ def _build_server(access_mode: str) -> MCPServer:
                 if access_mode == "unrestricted"
                 else {}
             ),
+            **({"MCPG_DYNAMIC_SESSION_INTENT": "true"} if dynamic_session_intent else {}),
         }
     )
     server: MCPServer = MCPServer(f"mcpg-annotations-fixture-{access_mode}")
@@ -147,6 +148,28 @@ def test_sweep_preserves_annotations_a_registration_set_explicitly() -> None:
     assert annotations.destructive_hint is False  # preserved
     assert annotations.read_only_hint is False  # explicit False beats the derived True
     assert annotations.open_world_hint is False  # unset -> filled by the derivation
+
+
+def test_dynamic_session_intent_meta_tools_are_hinted_read_only() -> None:
+    """Roadmap-22 final-review Finding 3: both meta-tools are registered
+    after the READ-capability ``read_only_names`` snapshot, so without an
+    explicit fix they'd default to ``readOnlyHint=False`` /
+    ``destructiveHint=True`` -- gating tools whose entire purpose is
+    convenience behind an unnecessary client confirmation prompt. Neither
+    touches the database: ``list_session_intents`` only reads in-memory
+    state, ``enable_session_intent`` only mutates session-local state.
+    """
+    server = _build_server("unrestricted", dynamic_session_intent=True)
+    by_name = {t.name: t for t in server._tool_manager.list_tools()}
+    for name in ("list_session_intents", "enable_session_intent"):
+        assert name in by_name, f"expected {name} to be registered with MCPG_DYNAMIC_SESSION_INTENT=1"
+        annotations = by_name[name].annotations
+        assert annotations is not None, name
+        assert annotations.read_only_hint is True, name
+        # Meaningless for read-only tools per the MCP spec -- stays unset,
+        # same convention as every other read-only tool (see
+        # test_destructive_hint_is_explicit_on_writes_and_absent_on_reads).
+        assert annotations.destructive_hint is None, name
 
 
 def test_destructive_partition_exactly_covers_the_write_surface() -> None:

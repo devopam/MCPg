@@ -7199,13 +7199,24 @@ def register_tools(
 
     if settings.dynamic_session_intent:
         _register_dynamic_session_intent(server, settings)
+        # Both meta-tools are pure read/session-local: list_session_intents
+        # only reads in-memory state and enable_session_intent only mutates
+        # session-scoped state, neither touches the database. They were
+        # registered after the read_only_names snapshot above (taken right
+        # after the READ-capability block), so without this they'd fall
+        # through _apply_tool_wire_metadata's default and ship as
+        # readOnlyHint=false / destructiveHint=true -- gating tools whose
+        # entire purpose is to make things easier behind an unnecessary
+        # client confirmation prompt.
+        read_only_names |= {"list_session_intents", "enable_session_intent"}
 
     _apply_tool_wire_metadata(server, read_only_names)
 
     # Session-intent surface filter (roadmap 8.8). Runs LAST so every
     # tool that would otherwise be registered has already been added —
     # we then remove whatever the configured intent doesn't allow.
-    # describe_self / describe_tool are always kept (see session_intent).
+    # describe_self, describe_tool, list_session_intents, and
+    # enable_session_intent are always kept (see session_intent.ALWAYS_KEEP).
     if settings.session_intent:
         from mcpg.session_intent import filter_server_tools, resolve_intent
 
