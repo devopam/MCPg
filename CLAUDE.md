@@ -28,7 +28,7 @@ a read-only HF Spaces demo.
   bundle pins are synced by `packaging/mcpb/sync_version.py`;
   `tests/unit/test_mcpb_bundle.py` enforces the match. A release bumps
   exactly one line.
-- **Tool surface:** `tests/contract/tool_surface.snapshot.json` (252
+- **Tool surface:** `tests/contract/tool_surface.snapshot.json` (256
   tools) is the contract. `about.py`'s `tool_count = len(tool_names)`.
   Two contract snapshots (surface + return shapes) — regenerate with
   `MCPG_REGENERATE_TOOL_SNAPSHOT=1` / `MCPG_REGENERATE_TOOL_RETURN_SHAPES=1`

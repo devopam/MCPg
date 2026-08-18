@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-19
+
 ### Security
 
 - **Release SBOM + build provenance, and a `CODEOWNERS` file.** Cutting a

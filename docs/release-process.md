@@ -449,7 +449,7 @@ against the actual code / CLI before shipping:
 | `docs/installation.md` | Python / PostgreSQL version ranges match `pyproject.toml` + `ci.yml`; env-var scenarios current; secrets-backend vars correct. |
 | `docs/integrations.md` | One-click install links work; provider/model examples name real models; NL→SQL key env vars match `nl2sql.py`. |
 | `docs/tools.md` | **Guarded** by `test_doc_tables.py` (index). Prose sections: capability gates + "requires X mode" match `policy.py`. |
-| `docs/tour.md` | Hard-coded tool count (`252`) matches the snapshot; specialist-area caveat still accurate; sample params match tool signatures. |
+| `docs/tour.md` | Hard-coded tool count matches the snapshot (and the `#tool-index-N-tools` anchor it links to in `tools.md`); specialist-area caveat still accurate; sample params match tool signatures. |
 | `docs/cookbook.md` | Every recipe's tool call — names, params, return keys — matches `tools.py` (copy-paste must actually run). |
 | `docs/architecture.md` | **Guarded** by `test_doc_tables.py` (module map). Prose: access-mode table matches `policy.py`; CI-matrix + test-suite facts match `ci.yml`; the Mermaid diagram still reflects the request path. |
 | `docs/user-guide.md` | Access-mode + capability-gate tables match `policy.py`; **the NL→SQL provider table (names / env vars / default models) matches `nl2sql.py`'s `_PROVIDERS`** (see the quarterly model sweep in [§9](#9-recurring-chores)); TOC covers every `##` heading. |
