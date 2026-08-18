@@ -367,13 +367,19 @@ one (see §7).
   fallback).
 - Unrecognized name → clean `DynamicIntentError`, not a stack trace.
 - **Layered composition:** `MCPG_SESSION_INTENT=lookup` +
-  `MCPG_DYNAMIC_SESSION_INTENT=1` together — session starts at `core`
-  intersected with `lookup`'s registered set, and
+  `MCPG_DYNAMIC_SESSION_INTENT=1` together — a fresh session starts at
+  *all* of `lookup`'s registered tools (its configured static intent
+  — `core` only applies as the default when no static intent is
+  configured at all; see §5 step 2), and
   `enable_session_intent("vector_rag")` reveals nothing (since
   `vector_rag`'s buckets were never registered under the `lookup`
   ceiling) rather than erroring or silently exceeding the ceiling.
   This is the test that proves the §3 ceiling claim is real, not
-  aspirational.
+  aspirational. (An earlier draft of this bullet incorrectly said the
+  session starts at `core` intersected with `lookup` — caught during
+  Task 11 of the implementation plan, when that wrong claim had
+  already propagated into shipped user-guide docs; §5's data-flow
+  narrative had the correct behavior the whole time.)
 - Two concurrent sessions (two different `Mcp-Session-Id` values
   against one running server) have independent enabled-preset state —
   the concurrency/isolation property this design exists to get right.
