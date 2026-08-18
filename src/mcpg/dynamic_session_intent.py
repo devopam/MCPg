@@ -44,11 +44,11 @@ zero behavior change for existing deployments, with or without
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from mcp.server.context import CallNext, ServerRequestContext
-from mcp_types import ListToolsResult
 
 from mcpg.about import BUCKET_IDS
 from mcpg.session_intent import _TOOL_NAME_PRESETS, INTENT_PRESETS, resolve_intent, resolved_tool_names
@@ -69,7 +69,21 @@ STDIO_SESSION_KEY = "__stdio__"
 # enabled_intents) — there's no separate "initialize" step to get
 # wrong. Guarded by _lock since enable_intent can race across
 # concurrent requests on the same session.
-_session_intents: dict[str, set[str]] = {}
+#
+# Bounded LRU, not an unbounded dict: this is process-lifetime state and
+# the SDK has no session-teardown hook this module could reliably attach
+# to (verified against mcp.server.streamable_http_manager — no per-session
+# close callback is exposed to application code), so left unbounded this
+# would be a slow memory leak on a long-lived streamable-http deployment
+# serving many distinct sessions over time (design spec §4). An entry is
+# only created when a session actually calls ``enable_intent``, so growth
+# is inherently slow -- a simple insertion-order cap is enough; no need for
+# a real TTL. Eviction happens only in ``enable_intent`` (the sole writer,
+# already under ``_lock``); ``enabled_intents`` stays a pure, unlocked read
+# and never reorders the dict, so a `tools/list` call can't race the
+# eviction policy.
+_session_intents: OrderedDict[str, set[str]] = OrderedDict()
+_MAX_SESSION_INTENTS_ENTRIES = 4096
 _lock = asyncio.Lock()
 
 
@@ -142,7 +156,15 @@ async def enable_intent(session_key: str, name: str) -> None:
             "Call list_session_intents() to see the available names."
         )
     async with _lock:
-        _session_intents.setdefault(session_key, set()).add(normalized)
+        if session_key in _session_intents:
+            # Touch: mark as most-recently-used so an active session is
+            # never the one evicted.
+            _session_intents.move_to_end(session_key)
+            _session_intents[session_key].add(normalized)
+        else:
+            _session_intents[session_key] = {normalized}
+            if len(_session_intents) > _MAX_SESSION_INTENTS_ENTRIES:
+                _session_intents.popitem(last=False)  # evict the least-recently-used session
 
 
 async def enable_intent_and_notify(
@@ -180,7 +202,14 @@ class DynamicSessionIntentMiddleware:
         call_next: CallNext,
     ) -> Any:
         result = await call_next(ctx)
-        if ctx.method != "tools/list" or not isinstance(result, ListToolsResult):
+        # By the time middleware sees it, a `tools/list` result has already
+        # been serialized to its wire shape by `ServerRunner._serialize`
+        # (a plain `dict[str, Any]` with a `"tools"` key holding a list of
+        # tool dicts) -- `call_next` never hands middleware a `ListToolsResult`
+        # pydantic instance. See the module docstring / roadmap-22 final
+        # review for why an `isinstance(result, ListToolsResult)` guard here
+        # is unsatisfiable and silently no-ops the whole filter.
+        if ctx.method != "tools/list" or not isinstance(result, dict) or "tools" not in result:
             return result
 
         settings = ctx.lifespan_context.settings
@@ -189,9 +218,11 @@ class DynamicSessionIntentMiddleware:
         headers = getattr(request, "headers", None)
         session_key = session_key_from_headers(headers)
 
-        registered = frozenset(tool.name for tool in result.tools)
+        tools = result["tools"]
+        registered = frozenset(entry["name"] for entry in tools)
         visible = visible_tool_names(session_key, default_intent=default_intent, registered=registered)
-        return result.model_copy(update={"tools": [tool for tool in result.tools if tool.name in visible]})
+        filtered = [entry for entry in tools if entry["name"] in visible]
+        return {**result, "tools": filtered}
 
 
 # Static structural-conformance check: DynamicSessionIntentMiddleware must

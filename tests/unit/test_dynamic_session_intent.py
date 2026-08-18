@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
-from mcp_types import ListToolsResult, Tool
+from typing import Any
 
+import pytest
+from _fakes import FakeDatabase, FakeDriver
+from _mcp_test_helpers import create_connected_server_and_client_session
+
+import mcpg.dynamic_session_intent as dynamic_session_intent
+from mcpg.config import load_settings
 from mcpg.dynamic_session_intent import (
     STDIO_SESSION_KEY,
     DynamicIntentError,
@@ -14,6 +19,24 @@ from mcpg.dynamic_session_intent import (
     session_key_from_headers,
     visible_tool_names,
 )
+from mcpg.server import create_server
+from mcpg.session_intent import ALWAYS_KEEP
+
+
+@pytest.fixture(autouse=True)
+def _reset_dynamic_intent_state() -> Any:
+    """Every test in this module shares the module-level `_session_intents`
+    dict. Most tests use a unique session key per test so collisions are
+    unlikely, but the end-to-end tests below all dispatch through stdio
+    (`request=None`), which collapses to the single `STDIO_SESSION_KEY`
+    sentinel -- so they'd silently accumulate state across each other (and
+    across whatever test order pytest picks) without this. Clearing before
+    and after every test makes the module's test isolation an explicit
+    guarantee rather than an accident of key naming or file order."""
+    dynamic_session_intent._session_intents.clear()
+    yield
+    dynamic_session_intent._session_intents.clear()
+
 
 # ---------------------------------------------------------------------------
 # session_key_from_headers
@@ -132,6 +155,45 @@ async def test_sessions_are_isolated() -> None:
 
 
 # ---------------------------------------------------------------------------
+# _session_intents bounded LRU (final-review Finding 4) -- the design spec
+# (§4) anticipated the SDK giving no clean session-teardown signal and
+# specified a bounded LRU/TTL fallback so a long-lived streamable-http
+# deployment doesn't leak memory one entry per distinct session forever.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_intents_state_is_capped_evicting_oldest_first() -> None:
+    cap = dynamic_session_intent._MAX_SESSION_INTENTS_ENTRIES
+    try:
+        dynamic_session_intent._MAX_SESSION_INTENTS_ENTRIES = 5
+        for i in range(5):
+            await enable_intent(f"lru-session-{i}", "core")
+        assert len(dynamic_session_intent._session_intents) == 5
+
+        # One more distinct session pushes past the cap -- the LEAST
+        # recently touched entry ("lru-session-0") must be evicted, not an
+        # arbitrary or newest one.
+        await enable_intent("lru-session-5", "core")
+        assert len(dynamic_session_intent._session_intents) == 5
+        assert "lru-session-0" not in dynamic_session_intent._session_intents
+        assert "lru-session-5" in dynamic_session_intent._session_intents
+        for i in range(1, 5):
+            assert f"lru-session-{i}" in dynamic_session_intent._session_intents
+
+        # A subsequent enable_intent call for an already-tracked session
+        # counts as a touch: it must not itself be evicted next, even
+        # though it's numerically the "oldest" remaining key by insertion
+        # order.
+        await enable_intent("lru-session-1", "monitor")
+        await enable_intent("lru-session-6", "core")
+        assert "lru-session-1" in dynamic_session_intent._session_intents  # touched, survived
+        assert "lru-session-2" not in dynamic_session_intent._session_intents  # now the true LRU, evicted
+    finally:
+        dynamic_session_intent._MAX_SESSION_INTENTS_ENTRIES = cap
+
+
+# ---------------------------------------------------------------------------
 # visible_tool_names
 # ---------------------------------------------------------------------------
 
@@ -189,13 +251,14 @@ async def test_visible_tool_names_never_exceeds_registered() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _tool(name: str) -> Tool:
-    """A minimal real `Tool` instance -- `ListToolsResult.tools` is a
-    pydantic-validated `list[Tool]` field, so a plain fake object with
-    just a `.name` attribute would fail construction (`input_schema`
-    is a required field with no default). This gives every field
-    pydantic actually requires and nothing more."""
-    return Tool(name=name, input_schema={"type": "object", "properties": {}})
+def _tool(name: str) -> dict[str, Any]:
+    """A minimal wire-shaped tool dict -- what `call_next` actually hands
+    the middleware for a `tools/list` request in production. By the time
+    middleware sees it, `ServerRunner._serialize` has already dumped the
+    handler's `ListToolsResult` into a plain `dict[str, Any]`; middleware
+    never receives a `ListToolsResult` pydantic instance. See
+    `DynamicSessionIntentMiddleware.__call__`'s comment."""
+    return {"name": name, "inputSchema": {"type": "object", "properties": {}}}
 
 
 class _FakeSettings:
@@ -243,9 +306,9 @@ async def test_middleware_filters_tools_list_to_default_intent() -> None:
     middleware = DynamicSessionIntentMiddleware()
     ctx = _FakeCtx(method="tools/list", request=_FakeRequest({"mcp-session-id": "s2"}))
 
-    async def call_next(_ctx: object) -> ListToolsResult:
-        return ListToolsResult(
-            tools=[
+    async def call_next(_ctx: object) -> dict[str, Any]:
+        return {
+            "tools": [
                 _tool("list_tables"),
                 # list_pending_migrations, not run_ddl: run_ddl IS one of
                 # core's 12 declared headline names (query_execution),
@@ -258,11 +321,11 @@ async def test_middleware_filters_tools_list_to_default_intent() -> None:
                 _tool("list_pending_migrations"),
                 _tool("describe_self"),
             ]
-        )
+        }
 
     result = await middleware(ctx, call_next)  # type: ignore[arg-type]
-    assert isinstance(result, ListToolsResult)
-    names = {t.name for t in result.tools}
+    assert isinstance(result, dict)
+    names = {t["name"] for t in result["tools"]}
     # Exact set, not just presence/absence -- "no more, no less" (spec section 6).
     assert names == {"list_tables", "describe_self"}
 
@@ -276,17 +339,17 @@ async def test_middleware_uses_configured_static_intent_as_default() -> None:
         settings=_FakeSettings(session_intent=("monitor",)),
     )
 
-    async def call_next(_ctx: object) -> ListToolsResult:
-        return ListToolsResult(
-            tools=[
+    async def call_next(_ctx: object) -> dict[str, Any]:
+        return {
+            "tools": [
                 _tool("list_active_queries"),  # operations_and_health -> in monitor
                 _tool("list_tables"),  # schema_introspection -> NOT in monitor
                 _tool("describe_self"),
             ]
-        )
+        }
 
     result = await middleware(ctx, call_next)  # type: ignore[arg-type]
-    names = {t.name for t in result.tools}  # type: ignore[union-attr]
+    names = {t["name"] for t in result["tools"]}
     assert "list_active_queries" in names
     assert "list_tables" not in names
     assert "describe_self" in names
@@ -299,13 +362,13 @@ async def test_middleware_is_isolated_per_session() -> None:
     middleware = DynamicSessionIntentMiddleware()
     await enable_intent("s4-A", "monitor")
 
-    async def call_next(_ctx: object) -> ListToolsResult:
-        return ListToolsResult(
-            tools=[
+    async def call_next(_ctx: object) -> dict[str, Any]:
+        return {
+            "tools": [
                 _tool("list_active_queries"),
                 _tool("list_tables"),
             ]
-        )
+        }
 
     ctx_a = _FakeCtx(method="tools/list", request=_FakeRequest({"mcp-session-id": "s4-A"}))
     ctx_b = _FakeCtx(method="tools/list", request=_FakeRequest({"mcp-session-id": "s4-B"}))
@@ -313,8 +376,8 @@ async def test_middleware_is_isolated_per_session() -> None:
     result_a = await middleware(ctx_a, call_next)  # type: ignore[arg-type]
     result_b = await middleware(ctx_b, call_next)  # type: ignore[arg-type]
 
-    names_a = {t.name for t in result_a.tools}  # type: ignore[union-attr]
-    names_b = {t.name for t in result_b.tools}  # type: ignore[union-attr]
+    names_a = {t["name"] for t in result_a["tools"]}
+    names_b = {t["name"] for t in result_b["tools"]}
     assert "list_active_queries" in names_a  # session A enabled monitor
     assert "list_active_queries" not in names_b  # session B never did
 
@@ -324,13 +387,138 @@ async def test_middleware_noop_on_stdio_where_request_is_none() -> None:
     middleware = DynamicSessionIntentMiddleware()
     ctx = _FakeCtx(method="tools/list", request=None)
 
-    async def call_next(_ctx: object) -> ListToolsResult:
+    async def call_next(_ctx: object) -> dict[str, Any]:
         # list_pending_migrations, not run_ddl -- see the comment in
         # test_middleware_filters_tools_list_to_default_intent above:
         # run_ddl is genuinely part of core's declared tool_names.
-        return ListToolsResult(tools=[_tool("list_tables"), _tool("list_pending_migrations")])
+        return {"tools": [_tool("list_tables"), _tool("list_pending_migrations")]}
 
     result = await middleware(ctx, call_next)  # type: ignore[arg-type]
-    names = {t.name for t in result.tools}  # type: ignore[union-attr]
+    names = {t["name"] for t in result["tools"]}
     assert "list_tables" in names
     assert "list_pending_migrations" not in names  # still filtered to core -- stdio just uses the sentinel session key
+
+
+# ---------------------------------------------------------------------------
+# End-to-end regression test through REAL MCP dispatch (final-review Finding
+# 1). Every test above exercises the middleware directly with a hand-built
+# `call_next` -- exactly the shape that let the middleware's original
+# `isinstance(result, ListToolsResult)` guard go unnoticed as unsatisfiable
+# for 6+ reviews: those tests encode the bug's own (wrong) assumption about
+# what `call_next` hands back. This test instead stands up a real
+# `MCPServer`, drives it through the real dispatch stack (`ServerRunner`,
+# which serializes `tools/list` to a wire dict BEFORE any middleware runs --
+# see `DynamicSessionIntentMiddleware.__call__`'s comment) via a real
+# `ClientSession`, and asserts on what a real client actually sees. This is
+# the test that would have caught the bug.
+# ---------------------------------------------------------------------------
+
+
+def _dynamic_settings() -> Any:
+    return load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_DYNAMIC_SESSION_INTENT": "true",
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_e2e_fresh_session_tools_list_is_narrowed_to_core() -> None:
+    """A fresh session with MCPG_DYNAMIC_SESSION_INTENT=1 alone (no static
+    MCPG_SESSION_INTENT) sees only the `core` default -- not the full
+    read-only surface. Matches docs/user-guide.md's documented 14-tool
+    claim (10 core survivors + all 4 ALWAYS_KEEP tools, in default
+    read-only mode) -- verified empirically here, not hardcoded blindly."""
+    server = create_server(_dynamic_settings(), database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        listed = await client.list_tools()
+
+    names = {t.name for t in listed.tools}
+    assert len(names) == 14, f"expected 14 tools, got {len(names)}: {sorted(names)}"
+    assert "list_session_intents" in names  # ALWAYS_KEEP, and the flag is on
+    assert "enable_session_intent" in names
+    assert "describe_self" in names
+    assert "list_tables" in names  # a core headline tool
+    # A non-core, non-always-kept tool must NOT be visible yet.
+    assert "list_active_queries" not in names  # operations_and_health, not in core
+
+
+@pytest.mark.asyncio
+async def test_e2e_enable_session_intent_grows_the_real_tools_list() -> None:
+    """The full round trip the bug hid: enabling an intent through a real
+    `enable_session_intent` tool call must actually change a subsequent real
+    `tools/list` response. Before the Finding-1 fix this stayed flat at the
+    unfiltered count (187 observed against this fixture) instead of 14 -> 61.
+
+    Note on semantics: once a session calls `enable_session_intent` at all,
+    its visible set becomes exactly the union of every preset/bucket it has
+    *explicitly* enabled (`monitor` here) plus `ALWAYS_KEEP` -- the implicit
+    starting `default_intent` (`core`) is a fallback for a session that has
+    never called `enable_session_intent`, not something unioned in
+    thereafter (see `enabled_intents`, and the plan's own
+    `test_enable_intent_then_enabled_intents_reflects_it`). So `monitor`
+    (whose buckets don't overlap `core`'s schema/query headline tools) does
+    *not* produce a superset of the `core` view -- only `ALWAYS_KEEP` is
+    guaranteed to survive both. That's the already-reviewed, already-tested
+    contract this test checks against, not a new assumption."""
+    server = create_server(_dynamic_settings(), database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        before = await client.list_tools()
+        before_names = {t.name for t in before.tools}
+
+        result = await client.call_tool("enable_session_intent", {"name": "monitor"})
+        assert result.is_error is False
+        assert result.structured_content == {"ok": True, "enabled": ["monitor"]}
+
+        after = await client.list_tools()
+        after_names = {t.name for t in after.tools}
+
+    assert len(before_names) == 14
+    assert len(after_names) == 61, f"expected 61 tools after enabling monitor, got {len(after_names)}"
+    assert before_names != after_names  # the tools/list response genuinely changed
+    assert ALWAYS_KEEP <= before_names  # the escape hatch survives the default view too
+    assert ALWAYS_KEEP <= after_names  # ... and survives enabling a different intent
+    assert "list_active_queries" in after_names  # operations_and_health, now visible via monitor
+    assert "list_active_queries" not in before_names  # not visible under the core default
+
+
+@pytest.mark.asyncio
+async def test_e2e_enable_session_intent_admin_reveals_everything_registered() -> None:
+    """`visible_tool_names`'s "resolution is None" branch (the admin/no-filter
+    sentinel) has no direct test anywhere else -- verify it through real
+    dispatch: enabling "admin" must reveal every tool Layer 1 left
+    registered, i.e. the full unfiltered read-only surface."""
+    server = create_server(_dynamic_settings(), database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        unfiltered = {t.name for t in (await server.list_tools())}
+
+        result = await client.call_tool("enable_session_intent", {"name": "admin"})
+        assert result.is_error is False
+        assert result.structured_content is not None
+        assert result.structured_content["ok"] is True
+
+        listed = await client.list_tools()
+
+    names = {t.name for t in listed.tools}
+    assert names == unfiltered
+
+
+@pytest.mark.asyncio
+async def test_e2e_dynamic_intent_error_path_returns_structured_error() -> None:
+    """Cheap coverage of the already-verified `DynamicIntentError` path
+    through the same real-dispatch infrastructure this fix adds: an unknown
+    intent name comes back as a structured `{"ok": false, ...}` payload with
+    `isError=false`, not a protocol-level tool-call error."""
+    server = create_server(_dynamic_settings(), database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool("enable_session_intent", {"name": "not_a_real_preset_or_bucket"})
+
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["ok"] is False
+    assert "not_a_real_preset_or_bucket" in result.structured_content["error"]
