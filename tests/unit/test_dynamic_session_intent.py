@@ -67,9 +67,13 @@ async def test_enabled_intents_defaults_when_nothing_enabled() -> None:
 
 @pytest.mark.asyncio
 async def test_enable_intent_then_enabled_intents_reflects_it() -> None:
+    """`enabled_intents` is a union with `default_intent`, not a replace --
+    "sessions only grow their visible surface" per the design spec, not
+    "sessions swap their surface for whatever they last enabled". Enabling
+    `vector_rag` must not cost the session its starting `core` default."""
     session_key = "session-2"
     await enable_intent(session_key, "vector_rag")
-    assert enabled_intents(session_key, default_intent=("core",)) == frozenset({"vector_rag"})
+    assert enabled_intents(session_key, default_intent=("core",)) == frozenset({"vector_rag", "core"})
 
 
 @pytest.mark.asyncio
@@ -77,7 +81,7 @@ async def test_enable_intent_accumulates_multiple_calls() -> None:
     session_key = "session-3"
     await enable_intent(session_key, "vector_rag")
     await enable_intent(session_key, "monitor")
-    assert enabled_intents(session_key, default_intent=("core",)) == frozenset({"vector_rag", "monitor"})
+    assert enabled_intents(session_key, default_intent=("core",)) == frozenset({"vector_rag", "monitor", "core"})
 
 
 @pytest.mark.asyncio
@@ -85,7 +89,39 @@ async def test_enable_intent_is_idempotent() -> None:
     session_key = "session-4"
     await enable_intent(session_key, "core")
     await enable_intent(session_key, "core")
-    assert enabled_intents(session_key, default_intent=("lookup",)) == frozenset({"core"})
+    assert enabled_intents(session_key, default_intent=("lookup",)) == frozenset({"core", "lookup"})
+
+
+@pytest.mark.asyncio
+async def test_growth_from_default_intent_is_additive_not_a_replace() -> None:
+    """Regression test for a bug caught in a second final-review pass on
+    top of roadmap 22: `enabled_intents` must UNION whatever a session
+    explicitly enables with its starting `default_intent`, never drop the
+    default the moment anything else gets enabled. "Sessions only grow
+    their visible surface, no disable in v1" (the design spec, and
+    `enable_session_intent`'s own tool description) is a real guarantee
+    -- a session that starts implicit at `core` and then enables one more
+    preset must never lose tools it already had.
+
+    Uses `monitor` deliberately, not `vector_rag`: `vector_rag`'s buckets
+    (`schema_introspection` / `query_execution` / ...) happen to overlap
+    `core`'s own headline-tool buckets, so a session that lost its
+    `default_intent` entirely would still *look* like it grew when probed
+    with `vector_rag` -- the tools survive via bucket overlap, not because
+    the default was actually preserved. `monitor`'s buckets
+    (`operations_and_health` / `advisors` / `observability` /
+    `audit_trail`) have zero overlap with `core`, so this test can't be
+    fooled the same way."""
+    session_key = "session-growth-1"
+    default_intent = ("core",)
+    assert enabled_intents(session_key, default_intent=default_intent) == frozenset({"core"})
+
+    await enable_intent(session_key, "monitor")
+
+    enabled = enabled_intents(session_key, default_intent=default_intent)
+    assert "core" in enabled, "the implicit starting default must survive enabling something else"
+    assert "monitor" in enabled
+    assert enabled == frozenset({"core", "monitor"})
 
 
 @pytest.mark.asyncio
@@ -150,8 +186,8 @@ async def test_sessions_are_isolated() -> None:
     """The concurrency/isolation property this whole feature exists for."""
     await enable_intent("session-A", "vector_rag")
     await enable_intent("session-B", "monitor")
-    assert enabled_intents("session-A", default_intent=("core",)) == frozenset({"vector_rag"})
-    assert enabled_intents("session-B", default_intent=("core",)) == frozenset({"monitor"})
+    assert enabled_intents("session-A", default_intent=("core",)) == frozenset({"vector_rag", "core"})
+    assert enabled_intents("session-B", default_intent=("core",)) == frozenset({"monitor", "core"})
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +267,35 @@ async def test_visible_tool_names_grows_after_enable_intent() -> None:
     await enable_intent(session_key, "migration")  # migration includes the migrations bucket
     after = visible_tool_names(session_key, default_intent=("core",), registered=registered)
     assert "list_pending_migrations" in after
+
+
+@pytest.mark.asyncio
+async def test_visible_tool_names_growth_never_drops_the_default_intent() -> None:
+    """`visible_tool_names`-level counterpart to
+    `test_growth_from_default_intent_is_additive_not_a_replace`: growth
+    must be strictly additive at the actual function the middleware calls
+    on every `tools/list`, not just at the `enabled_intents` layer beneath
+    it. Uses `monitor` (zero bucket overlap with `core`) so a session that
+    silently lost its `core` default couldn't hide behind bucket overlap
+    the way `migration` (used in the test above, which shares
+    `schema_introspection`/`query_execution` with `core`) could."""
+    session_key = "session-growth-visible-1"
+    registered = frozenset(
+        {"list_tables", "run_select", "describe_self", "describe_tool", "list_active_queries", "run_advisors"}
+    )
+    before = visible_tool_names(session_key, default_intent=("core",), registered=registered)
+    assert "list_tables" in before  # core headline tool
+    assert "run_select" in before  # core headline tool
+    assert "list_active_queries" not in before  # operations_and_health, not in core
+
+    await enable_intent(session_key, "monitor")
+    after = visible_tool_names(session_key, default_intent=("core",), registered=registered)
+
+    assert before <= after, f"lost tools after enabling monitor: {sorted(before - after)}"
+    assert "list_tables" in after  # still visible -- the core default must survive
+    assert "run_select" in after  # still visible -- the core default must survive
+    assert "list_active_queries" in after  # newly visible via monitor
+    assert "run_advisors" in after  # newly visible via monitor (advisors bucket)
 
 
 @pytest.mark.asyncio
@@ -450,19 +515,24 @@ async def test_e2e_enable_session_intent_grows_the_real_tools_list() -> None:
     """The full round trip the bug hid: enabling an intent through a real
     `enable_session_intent` tool call must actually change a subsequent real
     `tools/list` response. Before the Finding-1 fix this stayed flat at the
-    unfiltered count (187 observed against this fixture) instead of 14 -> 61.
+    unfiltered count (187 observed against this fixture) instead of 14 -> 71.
 
-    Note on semantics: once a session calls `enable_session_intent` at all,
-    its visible set becomes exactly the union of every preset/bucket it has
-    *explicitly* enabled (`monitor` here) plus `ALWAYS_KEEP` -- the implicit
-    starting `default_intent` (`core`) is a fallback for a session that has
-    never called `enable_session_intent`, not something unioned in
-    thereafter (see `enabled_intents`, and the plan's own
-    `test_enable_intent_then_enabled_intents_reflects_it`). So `monitor`
-    (whose buckets don't overlap `core`'s schema/query headline tools) does
-    *not* produce a superset of the `core` view -- only `ALWAYS_KEEP` is
-    guaranteed to survive both. That's the already-reviewed, already-tested
-    contract this test checks against, not a new assumption."""
+    Note on semantics: `enabled_intents` unions whatever a session
+    explicitly enables (`monitor` here) with its starting `default_intent`
+    (`core`) -- it never drops the default just because something else got
+    enabled. "Sessions only grow their visible surface" (the design spec,
+    and `enable_session_intent`'s own tool description) is a real
+    guarantee: growth must be strictly additive, or a session could
+    silently lose tools it already had by enabling one more preset. An
+    earlier version of this fix (and this test) got this backwards --
+    `enabled_intents` returned the explicitly-enabled set alone once
+    anything had been enabled, dropping `default_intent` entirely; caught
+    in a second final-review pass after `vector_rag` (bucket-overlapping
+    with `core`) had masked the loss in an earlier regression attempt.
+    `monitor`'s buckets (`operations_and_health` / `advisors` /
+    `observability` / `audit_trail`) have zero overlap with `core`'s
+    schema/query headline tools, so this test can't be fooled the same
+    way: every one of `before_names` must still be in `after_names`."""
     server = create_server(_dynamic_settings(), database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
 
     async with create_connected_server_and_client_session(server) as client:
@@ -471,18 +541,19 @@ async def test_e2e_enable_session_intent_grows_the_real_tools_list() -> None:
 
         result = await client.call_tool("enable_session_intent", {"name": "monitor"})
         assert result.is_error is False
-        assert result.structured_content == {"ok": True, "enabled": ["monitor"]}
+        assert result.structured_content == {"ok": True, "enabled": ["core", "monitor"]}
 
         after = await client.list_tools()
         after_names = {t.name for t in after.tools}
 
     assert len(before_names) == 14
-    assert len(after_names) == 61, f"expected 61 tools after enabling monitor, got {len(after_names)}"
-    assert before_names != after_names  # the tools/list response genuinely changed
-    assert ALWAYS_KEEP <= before_names  # the escape hatch survives the default view too
-    assert ALWAYS_KEEP <= after_names  # ... and survives enabling a different intent
-    assert "list_active_queries" in after_names  # operations_and_health, now visible via monitor
-    assert "list_active_queries" not in before_names  # not visible under the core default
+    assert len(after_names) == 71, f"expected 71 tools after enabling monitor, got {len(after_names)}"
+    assert before_names < after_names  # strict growth: every core/always-kept tool survives, nothing lost
+    assert ALWAYS_KEEP <= before_names
+    assert ALWAYS_KEEP <= after_names
+    assert "list_tables" in after_names  # a core headline tool -- must still be visible after enabling monitor
+    assert "list_active_queries" in after_names  # operations_and_health, newly visible via monitor
+    assert "list_active_queries" not in before_names  # not visible under the core default alone
 
 
 @pytest.mark.asyncio

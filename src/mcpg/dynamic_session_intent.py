@@ -107,13 +107,29 @@ def session_key_from_headers(headers: Mapping[str, str] | None) -> str:
 def enabled_intents(session_key: str, *, default_intent: tuple[str, ...]) -> frozenset[str]:
     """The intent names currently enabled for ``session_key``.
 
-    A session that hasn't called ``enable_intent`` yet resolves to
-    ``default_intent`` — whatever ``MCPG_SESSION_INTENT`` was
-    configured with, or ``("core",)`` when that's unset (the caller
-    decides which; see ``DynamicSessionIntentMiddleware``).
+    Always includes ``default_intent`` — whatever ``MCPG_SESSION_INTENT``
+    was configured with, or ``("core",)`` when that's unset (the caller
+    decides which; see ``DynamicSessionIntentMiddleware``) — unioned with
+    whatever the session has explicitly enabled via ``enable_intent``, if
+    anything. A session that hasn't called ``enable_intent`` yet simply
+    has nothing to union in, so this resolves to ``default_intent`` alone.
+
+    Union, not replace: "sessions only grow their visible surface" (the
+    design spec, and ``enable_session_intent``'s own tool description) is
+    a real guarantee, not just additive *within* the explicitly-enabled
+    set — enabling one more preset must never cost a session tools it
+    already had via its starting default. An earlier version of this
+    function returned ``enabled`` alone once anything had been enabled,
+    silently dropping ``default_intent`` the moment a session touched
+    ``enable_intent`` at all; caught in the roadmap-22 final review after
+    a first regression attempt happened to pick ``vector_rag`` as the
+    probe intent, whose buckets coincidentally overlap ``core``'s and
+    masked the loss (see ``test_growth_from_default_intent_is_additive_not_a_replace``,
+    which deliberately uses ``monitor`` instead — zero bucket overlap with
+    ``core``, so the regression can't hide the same way twice).
     """
-    enabled = _session_intents.get(session_key)
-    return frozenset(enabled) if enabled else frozenset(default_intent)
+    enabled = _session_intents.get(session_key) or set()
+    return frozenset(enabled) | frozenset(default_intent)
 
 
 def visible_tool_names(
