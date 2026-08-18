@@ -46,6 +46,7 @@ PKG = ROOT / "src" / "mcpg"
 # dedup pass below keeps every tool appearing exactly once, first-seen wins.
 _TOOL_ROWS: list[tuple[str, list[str], str]] = [
     ("Server & self-description", ["_register_server_info"], "read"),
+    ("Dynamic session intent", ["_register_dynamic_session_intent"], "read"),
     ("Catalog — schemas / tables / columns", ["@catalog"], "read"),
     ("Catalog — compact", ["get_compact_schema"], "read"),
     ("Visualisation & structural diff", ["_register_diagrams", "_register_schema_diff"], "read"),

@@ -516,6 +516,14 @@ BUCKET_IDS: frozenset[str] = frozenset(c.id for c in CAPABILITIES)
 # Specific tools whose name pattern would otherwise put them in the wrong
 # bucket. Kept compact — only add an entry when the pattern can't classify.
 _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
+    # list_session_intents / enable_session_intent are the dynamic
+    # session-intent meta-tools (roadmap 22). Both need an explicit
+    # override: "list_session_intents" would otherwise be caught by
+    # the generic ^list_ catch-all pattern below (schema_introspection)
+    # rather than landing in observability where it belongs, and
+    # "enable_session_intent" matches no existing pattern at all.
+    "list_session_intents": "observability",
+    "enable_session_intent": "observability",
     # list_audit_events isn't catalogue introspection.
     "list_audit_events": "audit_trail",
     # list_active_queries / list_locks are operational, not catalogue.

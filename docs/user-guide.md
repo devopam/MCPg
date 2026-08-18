@@ -14,24 +14,25 @@ first time, skim it as a reference after.
 
 1. [What MCPg is](#what-mcpg-is)
 2. [Access modes & capability gates](#access-modes--capability-gates)
-3. [Connecting an MCP client](#connecting-an-mcp-client)
-4. [Working with the tools](#working-with-the-tools)
-5. [Multi-tenancy](#multi-tenancy)
-6. [Read-replica routing](#read-replica-routing)
-7. [Natural-language SQL](#natural-language-sql)
-8. [Server-side cursors](#server-side-cursors)
-9. [Data movement](#data-movement)
-10. [Reactive workflows: LISTEN / NOTIFY](#reactive-workflows-listen--notify)
-11. [Staged migrations](#staged-migrations)
-12. [Migration history](#migration-history)
-13. [ORM bridges](#orm-bridges)
-14. [Audit trail](#audit-trail)
-15. [Observability](#observability)
-16. [Rate limiting](#rate-limiting)
-17. [Caching](#caching)
-18. [Feature Flags](#feature-flags)
-19. [Security defaults](#security-defaults)
-20. [Troubleshooting](#troubleshooting)
+3. [Dynamic session intent (opt-in runtime growth)](#dynamic-session-intent-opt-in-runtime-growth)
+4. [Connecting an MCP client](#connecting-an-mcp-client)
+5. [Working with the tools](#working-with-the-tools)
+6. [Multi-tenancy](#multi-tenancy)
+7. [Read-replica routing](#read-replica-routing)
+8. [Natural-language SQL](#natural-language-sql)
+9. [Server-side cursors](#server-side-cursors)
+10. [Data movement](#data-movement)
+11. [Reactive workflows: LISTEN / NOTIFY](#reactive-workflows-listen--notify)
+12. [Staged migrations](#staged-migrations)
+13. [Migration history](#migration-history)
+14. [ORM bridges](#orm-bridges)
+15. [Audit trail](#audit-trail)
+16. [Observability](#observability)
+17. [Rate limiting](#rate-limiting)
+18. [Caching](#caching)
+19. [Feature Flags](#feature-flags)
+20. [Security defaults](#security-defaults)
+21. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -70,6 +71,113 @@ families come along:
 Read-only is the default because the typical agent workflow is
 **inspect first, modify second**. Each gate is a deliberate opt-in
 so an experimentation deployment can't drop a table by accident.
+
+---
+
+## Dynamic session intent (opt-in runtime growth)
+
+`MCPG_SESSION_INTENT` (roadmap 8.8) narrows the tool surface MCPg
+advertises to a stated goal: the operator declares intent once at
+server start, and MCPg removes every tool outside that intent from
+the registry before the first `tools/list` request is answered. Five
+built-in presets ship — `lookup`, `migration`, `vector_rag`, `monitor`,
+and `admin` (the no-filter sentinel) — plus raw capability-bucket ids
+for finer control (see `mcpg.session_intent` for the bucket
+membership).
+
+### The `core` preset
+
+`MCPG_SESSION_INTENT=core` is a sixth, tighter preset — no new flag
+needed, just this preset name. Instead of a bucket of tools it's a
+curated list of ten headline schema/query tools (`list_tables`,
+`describe_table`, `get_compact_schema`, `list_indexes`,
+`list_foreign_keys`, `compare_schemas`, `run_select`, `explain_query`,
+`analyze_query_plan`, `translate_nl_to_sql`) plus the two
+always-kept introspection tools (`describe_self`, `describe_tool`).
+On a default (`read-only`, nothing else set) deployment, that's **12
+tools total — down from the 186-tool read-only default**. (`core`
+declares two further tool names, `run_ddl` and `run_write`, that only
+materialize under `MCPG_ACCESS_MODE=unrestricted` — a separate,
+pre-existing access-mode gate that `session_intent` filtering doesn't
+touch; under `unrestricted` with every gate on, `core` resolves to 14
+tools instead of 12. The full catalogue tops out at 254 tools at that
+same maximal ceiling — 186 is what a real default deployment sees.)
+
+### Growing the surface at runtime: `MCPG_DYNAMIC_SESSION_INTENT`
+
+By default a session's tool surface is fixed for the life of the
+server process — the only way to see more tools is to restart with a
+wider (or unset) `MCPG_SESSION_INTENT`. Setting
+`MCPG_DYNAMIC_SESSION_INTENT=1` turns that into a per-session, runtime
+decision instead, without a restart and without affecting any other
+concurrent session:
+
+```bash
+export MCPG_SESSION_INTENT=core          # optional: the static starting point
+export MCPG_DYNAMIC_SESSION_INTENT=true  # opt-in: sessions can grow past it
+```
+
+- Every session starts at the configured static intent — or `core` if
+  `MCPG_SESSION_INTENT` is unset. (`core`, not "no filter", is the
+  dynamic layer's default starting point: setting
+  `MCPG_DYNAMIC_SESSION_INTENT=1` by itself, with nothing else
+  configured, still narrows a fresh session's `tools/list` down to
+  14 tools — the 10 core survivors plus all 4 always-kept tools
+  (`describe_self`, `describe_tool`, and, because the flag is on, the
+  two meta-tools themselves) — rather than the 186-tool read-only
+  default. That's 2 more than the 12 tools `MCPG_SESSION_INTENT=core`
+  alone gives you with the flag off, since the meta-tools aren't
+  registered — and therefore aren't kept — in that case. Either way,
+  the full surface stays registered server-side; the session grows
+  from its starting point, non-destructively.)
+- Two always-visible meta-tools let a session grow itself:
+  `list_session_intents()` lists every bucket/tool-name preset, its
+  resolved tool count against what's currently registered, and
+  whether it's already enabled for this session; `enable_session_intent(name)`
+  adds a preset name or raw bucket id to the session's enabled set.
+- Growth is additive and idempotent — there's no `disable` — and
+  scoped to one session (keyed on the transport's `Mcp-Session-Id`
+  header; stdio sessions share one implicit key since stdio is
+  inherently single-session-per-process).
+- The two meta-tools add to the ceiling: the full maximal surface
+  (every `MCPG_ALLOW_*` gate on) is 254 tools without this flag, 256
+  once `MCPG_DYNAMIC_SESSION_INTENT=1` is also on.
+
+### Security note: visibility, not authorization
+
+This is a **visibility** filter, not an **authorization** boundary. A
+client that already knows a filtered-out tool's name and schema can
+still call it directly — `tools/call` is never filtered by the
+dynamic layer, only `tools/list` responses are narrowed.
+`MCPG_ACCESS_MODE` (and the `MCPG_ALLOW_*` capability gates) are
+completely unaffected by either layer and remain the real permission
+boundary: a smaller tool list is not narrower permissions.
+
+The static `MCPG_SESSION_INTENT` filter (Layer 1) is the stronger
+guarantee — it physically removes tools from the registry at launch,
+so a session under `lookup` (whose buckets are `schema_introspection`,
+`query_execution`, and `observability`) truly cannot call
+`prepare_migration` — a `migrations`-bucket tool that's never
+registered under that intent, even under `MCPG_ACCESS_MODE=unrestricted`
+where it would otherwise be available. The dynamic layer (Layer 2)
+can't make that same claim, and isn't documented as if it could — it
+only filters what a given `tools/list` response shows.
+
+### How the two layers combine
+
+If both are configured, Layer 2 can only ever reveal tools Layer 1
+already left registered. For example, `MCPG_SESSION_INTENT=lookup`
+plus `MCPG_DYNAMIC_SESSION_INTENT=1` starts a session already at all
+of `lookup`'s registered tools (56 under a default read-only
+deployment: the 54 tools `lookup` alone would register, plus the 2
+always-kept meta-tools, since they're registered before the static
+filter runs and so survive it too) — its configured static intent,
+not `core`; `core` is only the dynamic layer's default starting point
+when no static intent is configured at all. Calling
+`enable_session_intent("vector_rag")` still reveals nothing, since
+`vector_rag`'s tools were never registered under the `lookup` ceiling
+in the first place — rather than erroring or silently exceeding the
+static ceiling.
 
 ---
 

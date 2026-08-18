@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 254
+    "tool_count": 256
   },
   "tools": [
     {
@@ -2278,6 +2278,23 @@
         "type": "object"
       },
       "name": "enable_redis_fdw"
+    },
+    {
+      "description": "Grow this session's visible tool surface by enabling an additional session-intent preset or raw capability-bucket id. Additive and idempotent -- sessions only grow, there's no disable. Call `list_session_intents()` first to see the available names. Not an authorization change: a tool that isn't yet visible via `tools/list` may still exist server-side if a caller already knows its name.",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "enable_session_intentArguments",
+        "type": "object"
+      },
+      "name": "enable_session_intent"
     },
     {
       "description": "Return the PostgreSQL execution plan for a query. By default uses `EXPLAIN (FORMAT JSON)` — plan only, the query is not executed. Set `io=true` to switch to `EXPLAIN (ANALYZE, BUFFERS, TIMING)` — runs the query and includes buffer + I/O timing per node (PG 19 additionally surfaces asynchronous-I/O block counts). Validated by the same safety allowlist as `run_select`, so writes / DDL are rejected.\n\nExample: `explain_query(sql='SELECT * FROM orders WHERE customer_id = 42', io=true)`",
@@ -5220,6 +5237,15 @@
         "type": "object"
       },
       "name": "list_sequences"
+    },
+    {
+      "description": "List every session-intent preset (bucket-based presets like `lookup`/`migration`/`vector_rag`/`monitor`/`admin`, plus the finer headline-based `core` preset), each one's resolved tool count against the currently registered surface, and whether it's enabled for this session. A raw capability-bucket id is also accepted by `enable_session_intent` for coverage a preset doesn't offer. Call this before `enable_session_intent` to see what's available; the session starts at `core` (or whatever MCPG_SESSION_INTENT was configured with) until you enable more.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_session_intentsArguments",
+        "type": "object"
+      },
+      "name": "list_session_intents"
     },
     {
       "description": "List logical-replication subscriptions; requires superuser to see any rows.",

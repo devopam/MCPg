@@ -43,6 +43,7 @@ async def _registered_tool_names() -> list[str]:
             "MCPG_ALLOW_DDL": "true",
             "MCPG_ALLOW_SHELL": "true",
             "MCPG_ALLOW_LISTEN": "true",
+            "MCPG_DYNAMIC_SESSION_INTENT": "true",
         }
     )
     server: MCPServer = MCPServer("mcpg-test")
@@ -182,3 +183,14 @@ def test_capability_summary_handles_empty_tool_list() -> None:
         assert cap["tool_count"] == 0
         assert cap["all_tools"] == []
         assert cap["headline_tools"] == []
+
+
+def test_list_session_intents_is_not_caught_by_the_list_prefix_pattern() -> None:
+    """Regression guard: `list_session_intents` starts with `list_`, which
+    the generic schema_introspection catch-all pattern would otherwise
+    match. It needs an explicit override to land in `observability`."""
+    assert classify_tool("list_session_intents") == "observability"
+
+
+def test_enable_session_intent_is_classified() -> None:
+    assert classify_tool("enable_session_intent") == "observability"

@@ -67,6 +67,25 @@ adheres to [Semantic Versioning](https://semver.org/).
   (the description still says "MCPg" freely). `source.commit` re-pinned to
   `main`'s tip at submission time rather than the stale commit drafted
   alongside 21.1.
+- **Dynamic session intent** (roadmap 22, extends 8.8). A sixth
+  `MCPG_SESSION_INTENT` preset, `"core"`, built from `about.py`'s curated
+  headline tools rather than capability buckets: it narrows a default
+  (`read-only`) deployment to 12 tools — the ten headline schema/query
+  tools plus the two always-kept introspection tools — down from the
+  186-tool read-only default, no new flag needed. On top of it, a new
+  opt-in `MCPG_DYNAMIC_SESSION_INTENT` flag lets a session grow its own
+  visible tool surface at runtime, without a restart and without
+  affecting any other concurrent session: two new always-visible
+  meta-tools, `list_session_intents()` and `enable_session_intent(name)`,
+  let a session move from its starting intent (`core` by default) up to
+  whatever the static `MCPG_SESSION_INTENT` filter already left
+  registered. This is a **visibility** filter, not an **authorization**
+  boundary — `tools/call` is never filtered by it, and `MCPG_ACCESS_MODE`
+  / capability gating remain the real permission boundary, unaffected by
+  either layer. Off by default; adds the 2 meta-tools to the maximal
+  254-tool ceiling (→ 256) only when enabled. Lives in
+  `mcpg.session_intent` and the new `mcpg.dynamic_session_intent`.
+  Documented in the user guide's "Dynamic session intent" section.
 
 ### Fixed
 

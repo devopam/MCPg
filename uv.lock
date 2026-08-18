@@ -1336,6 +1336,7 @@ source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
+    { name = "mcp-types" },
     { name = "pglast" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
@@ -1390,6 +1391,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "hvac", marker = "extra == 'vault'", specifier = ">=1.0" },
     { name = "mcp", extras = ["cli"], specifier = ">=2.0.0" },
+    { name = "mcp-types", specifier = ">=2.0.0" },
     { name = "opentelemetry-api", marker = "extra == 'otel'", specifier = ">=1.27" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'otel'", specifier = ">=1.27" },
     { name = "opentelemetry-sdk", marker = "extra == 'otel'", specifier = ">=1.27" },

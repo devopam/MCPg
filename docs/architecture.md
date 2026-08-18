@@ -64,7 +64,7 @@ flowchart TD
 ---
 
 <!-- BEGIN generated: module-map (python tools/generate_doc_tables.py --modules) -->
-## Module map (104 modules)
+## Module map (105 modules)
 
 Every `mcpg.*` module and what it owns, alphabetical. The layered
 request path through these lives in the [Overview](#overview) diagram;
@@ -97,6 +97,7 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.diagrams` | Schema-visualisation helpers. |
 | `mcpg.diesel` | Schema → Diesel ORM (Rust) exporter. |
 | `mcpg.drizzle` | Schema → Drizzle ORM (TypeScript) exporter. |
+| `mcpg.dynamic_session_intent` | Dynamic session-intent — grow a session's visible tool surface at runtime. |
 | `mcpg.ecto` | Schema → Ecto (Elixir) schema exporter. |
 | `mcpg.ent` | Schema → Ent (Go) schema exporter. |
 | `mcpg.extensions` | PostgreSQL extension management. |

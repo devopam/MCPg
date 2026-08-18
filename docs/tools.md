@@ -37,7 +37,7 @@ plumbing:
 | `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config — 22 built-in providers + custom (`MCPG_NL2SQL_CUSTOM_PROVIDERS`). |
 
 <!-- BEGIN generated: tool-index (python tools/generate_doc_tables.py --tools) -->
-## Tool index (254 tools)
+## Tool index (256 tools)
 
 Grouped by feature area. The **Gate** column shows the capability
 each tool needs — plain `read` tools are available in every access
@@ -48,6 +48,7 @@ need `unrestricted` **plus** the matching `MCPG_ALLOW_*` opt-in (see
 | Category | Gate | Tools |
 |---|---|---|
 | **Server & self-description** | read | `get_server_info`, `describe_self`, `describe_tool`, `get_metrics_exposition` |
+| **Dynamic session intent** | read | `list_session_intents`, `enable_session_intent` |
 | **Catalog — schemas / tables / columns** | read | `list_schemas`, `list_tables`, `describe_table`, `list_indexes`, `list_constraints`, `list_foreign_keys`, `list_views`, `list_functions`, `list_triggers`, `list_partitions`, `list_roles`, `list_grants`, `list_policies`, `list_sequences`, `list_enums`, `list_domains`, `list_composite_types`, `list_foreign_data_wrappers`, `list_foreign_servers`, `list_foreign_tables`, `list_user_mappings`, `list_publications`, `list_subscriptions`, `list_extensions`, `list_available_extensions`, `list_generated_columns` |
 | **Catalog — compact** | read | `get_compact_schema` |
 | **Visualisation & structural diff** | read | `generate_schema_diagram`, `generate_fk_cascade_graph`, `generate_schema_docs`, `compare_schemas` |

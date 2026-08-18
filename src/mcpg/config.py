@@ -241,8 +241,17 @@ class Settings:
     # wire). When set, MCPg removes tools whose bucket isn't in the
     # resolved allow-set BEFORE the first ``tools/list`` request so the
     # narrowed surface is structural, not policy-checked at call time.
-    # ``describe_self`` and ``describe_tool`` are always kept regardless.
+    # ``session_intent.ALWAYS_KEEP`` (``describe_self``, ``describe_tool``,
+    # and, when ``MCPG_DYNAMIC_SESSION_INTENT`` is also on, the two
+    # dynamic-session-intent meta-tools) is always kept regardless.
     session_intent: tuple[str, ...] = ()
+    # Opt-in runtime extension of session_intent (roadmap 22): lets a
+    # session grow its own visible tool surface at runtime via the
+    # list_session_intents / enable_session_intent meta-tools, instead
+    # of being fixed to whatever MCPG_SESSION_INTENT resolved at
+    # startup. Visibility-only -- see mcpg.dynamic_session_intent's
+    # module docstring for why this is not an authorization boundary.
+    dynamic_session_intent: bool = False
     http_max_body_bytes: int = 1048576
     http_allowed_origins: tuple[str, ...] = ()
     http_hsts_max_age: int = 31536000
@@ -1226,6 +1235,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
         session_intent = parse_intent_setting(raw)
 
+    dynamic_session_intent = False
+    if (raw := env.get("MCPG_DYNAMIC_SESSION_INTENT")) is not None:
+        dynamic_session_intent = _parse_bool("MCPG_DYNAMIC_SESSION_INTENT", raw)
+
     return Settings(
         database_url=database_url,
         access_mode=access_mode,
@@ -1317,4 +1330,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         audit_integrity=audit_integrity,
         secrets_backend=secrets_backend,
         session_intent=session_intent,
+        dynamic_session_intent=dynamic_session_intent,
     )

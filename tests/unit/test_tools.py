@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakePool
 from _mcp_test_helpers import create_connected_server_and_client_session
+from mcp.server.mcpserver import MCPServer
 
 from mcpg import __version__
 from mcpg.config import AccessMode, load_settings
@@ -13,9 +14,10 @@ from mcpg.cursors import CursorManager
 from mcpg.database import Database
 from mcpg.listen import ListenManager
 from mcpg.server import create_server
-from mcpg.tools import ServerInfo, build_server_info
+from mcpg.tools import ServerInfo, build_server_info, register_tools
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+_FIXTURE_DB_URL = "postgresql://snapshot:snapshot@127.0.0.1:5432/snapshot"
 
 _READ_TOOLS = {
     "get_server_info",
@@ -446,3 +448,192 @@ async def test_heavy_diagnostics_caching(monkeypatch: pytest.MonkeyPatch) -> Non
         # should only have been invoked once.
         assert second.content == first.content
         assert calls["count"] == 1
+
+
+async def test_session_intent_core_actually_narrows_the_surface() -> None:
+    """Regression test for the call-site switch: MCPG_SESSION_INTENT=core
+    must narrow the registered surface to ~12 tools, not to 2 (the bug
+    this task fixes) and not leave it at 254 (the bug of not switching
+    the call site at all)."""
+    from mcpg.session_intent import _TOOL_NAME_PRESETS, ALWAYS_KEEP
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_SESSION_INTENT": "core",
+        }
+    )
+    server = create_server(settings, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        tools = await client.list_tools()
+
+    names = {t.name for t in tools.tools}
+
+    # Core preset includes 12 headline tools, but run_ddl and run_write are
+    # never registered in read-only mode (gated by capability checks before
+    # session_intent filtering). Expected: 10 core tools + 2 always-keep tools.
+    # Note: ALWAYS_KEEP includes 4 tools, but this fixture doesn't set
+    # MCPG_DYNAMIC_SESSION_INTENT, so list_session_intents and
+    # enable_session_intent are never registered here in the first place
+    # (see _register_dynamic_session_intent's conditional registration) --
+    # we only expect describe_self and describe_tool to survive the filter.
+    expected_core = _TOOL_NAME_PRESETS["core"] - {"run_ddl", "run_write"}
+    expected_always_keep = ALWAYS_KEEP - {"list_session_intents", "enable_session_intent"}
+    expected_all = expected_core | expected_always_keep
+
+    assert names == expected_all, f"Expected {sorted(expected_all)}, got {sorted(names)}"
+
+
+async def test_dynamic_session_intent_tools_not_registered_by_default() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _FIXTURE_DB_URL})
+    server: MCPServer = MCPServer("mcpg-dynamic-off-fixture")
+    register_tools(server, settings)
+    names = {t.name for t in await server.list_tools()}
+    assert "list_session_intents" not in names
+    assert "enable_session_intent" not in names
+
+
+async def test_dynamic_session_intent_tools_registered_when_enabled() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _FIXTURE_DB_URL, "MCPG_DYNAMIC_SESSION_INTENT": "true"})
+    server: MCPServer = MCPServer("mcpg-dynamic-on-fixture")
+    register_tools(server, settings)
+    names = {t.name for t in await server.list_tools()}
+    assert "list_session_intents" in names
+    assert "enable_session_intent" in names
+
+
+async def test_dynamic_session_intent_tools_survive_a_narrow_static_intent() -> None:
+    """The ordering/ALWAYS_KEEP guarantee: under MCPG_SESSION_INTENT=core,
+    the two meta-tools must still survive -- otherwise a session under a
+    narrow static intent would have no way to discover or grow its own
+    surface.
+
+    ``core`` (not a bucket preset like ``lookup``) is the case that
+    actually exercises ALWAYS_KEEP: it's a tool-name preset resolved
+    with an *empty* bucket set (see ``session_intent.resolve_intent``),
+    so ``resolved_tool_names`` only keeps ALWAYS_KEEP names plus the 12
+    explicit core tool names -- the observability bucket these two
+    meta-tools classify into is never consulted. Every bucket preset
+    (``lookup``/``migration``/``vector_rag``/``monitor``) includes the
+    ``observability`` bucket already, so using one of those here would
+    pass regardless of whether ALWAYS_KEEP or ordering worked at all --
+    verified empirically, not assumed."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _FIXTURE_DB_URL,
+            "MCPG_SESSION_INTENT": "core",
+            "MCPG_DYNAMIC_SESSION_INTENT": "true",
+        }
+    )
+    server: MCPServer = MCPServer("mcpg-dynamic-and-static-fixture")
+    register_tools(server, settings)
+    names = {t.name for t in await server.list_tools()}
+    assert "list_session_intents" in names
+    assert "enable_session_intent" in names
+
+
+async def test_default_settings_tool_surface_is_unchanged() -> None:
+    """Parity test: with every new flag unset, the registered surface must
+    be byte-for-byte the same tools as before this feature existed --
+    neither of the two new meta-tools, and no change to any existing
+    tool's registration.
+
+    ``MCPG_DATABASE_URL`` alone leaves ``MCPG_ACCESS_MODE`` at its default
+    (``read-only``), which has always exposed a subset of the full
+    catalogue -- 186 tools, not the 254-tool *maximal* surface (every gate
+    flag on; see ``tests/contract/test_tool_surface_snapshot.py``). Verified
+    empirically against the pre-plan baseline (commit 0ed672b, before this
+    feature's first commit): default settings there also registered 186
+    tools. 186 is therefore the correct default-parity number, not 254 --
+    the plan's example test text conflated the two.
+    """
+    settings = load_settings({"MCPG_DATABASE_URL": _FIXTURE_DB_URL})
+    server: MCPServer = MCPServer("mcpg-default-parity-fixture")
+    register_tools(server, settings)
+    names = {t.name for t in await server.list_tools()}
+    assert "list_session_intents" not in names
+    assert "enable_session_intent" not in names
+    assert len(names) == 186
+
+
+async def test_maximal_settings_tool_surface_is_unchanged_with_dynamic_flag_off() -> None:
+    """Parity test at the *other* ceiling: every gate flag on (unrestricted
+    + allow_ddl/shell/listen) except MCPG_DYNAMIC_SESSION_INTENT, which
+    stays unset. This is the 254-tool number the plan's example text
+    actually meant -- it's the maximal surface
+    ``tests/contract/tool_surface.snapshot.json`` was generated from before
+    Task 9 added the two meta-tools behind the dynamic flag. Confirms the
+    new feature is fully opt-in: even at the maximal ceiling, the meta-tools
+    stay absent until the flag is explicitly enabled.
+    """
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _FIXTURE_DB_URL,
+            "MCPG_ACCESS_MODE": "unrestricted",
+            "MCPG_ALLOW_DDL": "true",
+            "MCPG_ALLOW_SHELL": "true",
+            "MCPG_ALLOW_LISTEN": "true",
+        }
+    )
+    server: MCPServer = MCPServer("mcpg-maximal-parity-fixture")
+    register_tools(server, settings)
+    names = {t.name for t in await server.list_tools()}
+    assert "list_session_intents" not in names
+    assert "enable_session_intent" not in names
+    assert len(names) == 254
+
+
+async def test_static_session_intent_only_is_unchanged() -> None:
+    """Layer 2 disabled, Layer 1 alone: must match session_intent.py's
+    pre-existing, already-tested behavior exactly -- every surviving
+    tool classifies into one of `lookup`'s buckets, or is one of the
+    two always-kept introspection tools, with no other tool escaping
+    the filter."""
+    from mcpg.about import classify_tool
+    from mcpg.session_intent import ALWAYS_KEEP, INTENT_PRESETS
+
+    settings = load_settings({"MCPG_DATABASE_URL": _FIXTURE_DB_URL, "MCPG_SESSION_INTENT": "lookup"})
+    server: MCPServer = MCPServer("mcpg-static-only-fixture")
+    register_tools(server, settings)
+    names = {t.name for t in await server.list_tools()}
+    assert "list_session_intents" not in names  # Layer 2 never enabled
+    expected_always_keep = ALWAYS_KEEP - {"list_session_intents", "enable_session_intent"}
+    for name in names:
+        assert classify_tool(name) in INTENT_PRESETS["lookup"] or name in expected_always_keep
+
+
+async def test_layered_composition_dynamic_cannot_exceed_static_ceiling() -> None:
+    """The test that proves the Layer 1/Layer 2 ceiling relationship
+    (spec section 3 and section 6) is real, not just described.
+
+    MCPG_SESSION_INTENT=lookup registers only the lookup-bucket tools
+    (plus describe_self/describe_tool/the two meta-tools). Enabling a
+    dynamic intent whose tools were never registered under that ceiling
+    must reveal nothing new for them via visible_tool_names -- this
+    tests the *resolver*, since exercising it through the live
+    MCPServer's tools/list dispatch requires a running session; the
+    resolver-level test is what Task 5/6 already establish, and this
+    test wires it to a real, fully-registered server's tool set to
+    confirm the intersection basis is correct end-to-end."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _FIXTURE_DB_URL,
+            "MCPG_SESSION_INTENT": "lookup",
+            "MCPG_DYNAMIC_SESSION_INTENT": "true",
+        }
+    )
+    server: MCPServer = MCPServer("mcpg-layered-fixture")
+    register_tools(server, settings)
+    registered = frozenset(t.name for t in await server.list_tools())
+
+    from mcpg.dynamic_session_intent import enable_intent, visible_tool_names
+
+    session_key = "layered-test-session"
+    await enable_intent(session_key, "vector_rag")  # vector_rag was never registered under lookup
+    visible = visible_tool_names(session_key, default_intent=("core",), registered=registered)
+    assert visible <= registered  # never exceeds what Layer 1 left
+    # vector_rag's own tools (e.g. vector_search) were never in `registered`
+    # in the first place under MCPG_SESSION_INTENT=lookup, so they can't
+    # appear in `visible` either -- the intersection makes this automatic.
+    assert "vector_search" not in visible

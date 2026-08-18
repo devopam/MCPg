@@ -74,6 +74,7 @@ def _build_maximal_server() -> MCPServer:
             "MCPG_ALLOW_DDL": "true",
             "MCPG_ALLOW_SHELL": "true",
             "MCPG_ALLOW_LISTEN": "true",
+            "MCPG_DYNAMIC_SESSION_INTENT": "true",
         }
     )
     server: MCPServer = MCPServer("mcpg-snapshot")

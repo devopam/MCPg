@@ -373,6 +373,83 @@ def _register_server_info(server: MCPServer[AppContext]) -> None:
         return render_prometheus()
 
 
+def _register_dynamic_session_intent(server: MCPServer[AppContext], settings: Settings) -> None:
+    from mcpg.about import classify_tool
+    from mcpg.dynamic_session_intent import (
+        DynamicIntentError,
+        enable_intent_and_notify,
+        enabled_intents,
+        session_key_from_headers,
+    )
+    from mcpg.session_intent import _TOOL_NAME_PRESETS, INTENT_PRESETS
+
+    default_intent = settings.session_intent or ("core",)
+
+    @server.tool(
+        name="list_session_intents",
+        description=(
+            "List every session-intent preset (bucket-based presets like "
+            "`lookup`/`migration`/`vector_rag`/`monitor`/`admin`, plus the "
+            "finer headline-based `core` preset), each one's resolved tool "
+            "count against the currently registered surface, and whether "
+            "it's enabled for this session. A raw capability-bucket id is "
+            "also accepted by `enable_session_intent` for coverage a preset "
+            "doesn't offer. Call this before `enable_session_intent` to see "
+            "what's available; the session starts at `core` (or whatever "
+            "MCPG_SESSION_INTENT was configured with) until you enable more."
+        ),
+    )
+    async def list_session_intents(ctx: _Ctx) -> dict[str, Any]:
+        registered = {t.name for t in await server.list_tools()}
+        session_key = session_key_from_headers(ctx.headers)
+        enabled = enabled_intents(session_key, default_intent=default_intent)
+
+        entries: list[dict[str, Any]] = []
+        for preset_name, buckets in INTENT_PRESETS.items():
+            if buckets:
+                count = sum(1 for name in registered if classify_tool(name) in buckets)
+            else:
+                count = len(registered)  # "admin" -- no filter
+            entries.append(
+                {
+                    "name": preset_name,
+                    "kind": "bucket_preset",
+                    "tool_count": count,
+                    "enabled": preset_name in enabled,
+                }
+            )
+        for preset_name, tool_names in _TOOL_NAME_PRESETS.items():
+            entries.append(
+                {
+                    "name": preset_name,
+                    "kind": "tool_name_preset",
+                    "tool_count": len(tool_names & registered),
+                    "enabled": preset_name in enabled,
+                }
+            )
+        return {"intents": entries}
+
+    @server.tool(
+        name="enable_session_intent",
+        description=(
+            "Grow this session's visible tool surface by enabling an "
+            "additional session-intent preset or raw capability-bucket id. "
+            "Additive and idempotent -- sessions only grow, there's no "
+            "disable. Call `list_session_intents()` first to see the "
+            "available names. Not an authorization change: a tool that "
+            "isn't yet visible via `tools/list` may still exist server-side "
+            "if a caller already knows its name."
+        ),
+    )
+    async def enable_session_intent(name: str, ctx: _Ctx) -> dict[str, Any]:
+        session_key = session_key_from_headers(ctx.headers)
+        try:
+            await enable_intent_and_notify(session_key, name, notify=ctx.session.send_tool_list_changed)
+        except DynamicIntentError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "enabled": sorted(enabled_intents(session_key, default_intent=default_intent))}
+
+
 def _register_introspection(server: MCPServer[AppContext]) -> None:
     @server.tool(
         name="list_schemas",
@@ -7120,15 +7197,29 @@ def register_tools(
     if is_permitted(settings.access_mode, Capability.LISTEN) and settings.allow_listen:
         _register_listen(server)
 
+    if settings.dynamic_session_intent:
+        _register_dynamic_session_intent(server, settings)
+        # Both meta-tools are pure read/session-local: list_session_intents
+        # only reads in-memory state and enable_session_intent only mutates
+        # session-scoped state, neither touches the database. They were
+        # registered after the read_only_names snapshot above (taken right
+        # after the READ-capability block), so without this they'd fall
+        # through _apply_tool_wire_metadata's default and ship as
+        # readOnlyHint=false / destructiveHint=true -- gating tools whose
+        # entire purpose is to make things easier behind an unnecessary
+        # client confirmation prompt.
+        read_only_names |= {"list_session_intents", "enable_session_intent"}
+
     _apply_tool_wire_metadata(server, read_only_names)
 
     # Session-intent surface filter (roadmap 8.8). Runs LAST so every
     # tool that would otherwise be registered has already been added —
     # we then remove whatever the configured intent doesn't allow.
-    # describe_self / describe_tool are always kept (see session_intent).
+    # describe_self, describe_tool, list_session_intents, and
+    # enable_session_intent are always kept (see session_intent.ALWAYS_KEEP).
     if settings.session_intent:
-        from mcpg.session_intent import filter_server_tools, resolve_intent_to_buckets
+        from mcpg.session_intent import filter_server_tools, resolve_intent
 
-        allowed = resolve_intent_to_buckets(settings.session_intent)
-        if allowed is not None:
-            filter_server_tools(server, allowed)
+        resolution = resolve_intent(settings.session_intent)
+        if resolution is not None:
+            filter_server_tools(server, resolution.buckets, allowed_tool_names=resolution.tool_names)

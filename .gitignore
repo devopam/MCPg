@@ -31,3 +31,6 @@ _site/
 # packages) — per-plan working state, not part of the shipped repo.
 .superpowers/
 .gstack/
+
+# Local git worktrees used for isolated plan execution.
+.worktrees/
