@@ -167,12 +167,17 @@ only filters what a given `tools/list` response shows.
 
 If both are configured, Layer 2 can only ever reveal tools Layer 1
 already left registered. For example, `MCPG_SESSION_INTENT=lookup`
-plus `MCPG_DYNAMIC_SESSION_INTENT=1` starts a session at `core` (or
-whatever static intent is configured) intersected with `lookup`'s
-registered set; calling `enable_session_intent("vector_rag")` reveals
-nothing, since `vector_rag`'s tools were never registered under the
-`lookup` ceiling in the first place — rather than erroring or
-silently exceeding the static ceiling.
+plus `MCPG_DYNAMIC_SESSION_INTENT=1` starts a session already at all
+of `lookup`'s registered tools (56 under a default read-only
+deployment: the 54 tools `lookup` alone would register, plus the 2
+always-kept meta-tools, since they're registered before the static
+filter runs and so survive it too) — its configured static intent,
+not `core`; `core` is only the dynamic layer's default starting point
+when no static intent is configured at all. Calling
+`enable_session_intent("vector_rag")` still reveals nothing, since
+`vector_rag`'s tools were never registered under the `lookup` ceiling
+in the first place — rather than erroring or silently exceeding the
+static ceiling.
 
 ---
 
