@@ -1,12 +1,12 @@
 # MCPg v0.8.0 — release notes
 
 **Released:** 2026-08-19
-**Tool surface:** **254** tools across 19 capability buckets at the
-maximal (all flags on) ceiling — unchanged in count from 0.7.1. This
-release adds 2 new always-visible meta-tools gated behind the new
-`MCPG_DYNAMIC_SESSION_INTENT` flag, which only raise the ceiling to 256
-when explicitly enabled; the default (read-only, nothing else set)
-surface is unaffected by them.
+**Tool surface:** **254** tools — the same ceiling as 0.7.1 for every
+existing deployment, unchanged unless you opt into something new. This
+release adds 2 new always-visible meta-tools behind the new, off-by-default
+`MCPG_DYNAMIC_SESSION_INTENT` flag, which raises the true all-flags-on
+maximal to **256** only when that flag is explicitly enabled; the default
+(read-only, nothing else set) surface stays at 186 either way.
 **Tests:** 2909 passed, 3 skipped in the full unit suite, plus contract
 snapshots, on this exact commit ahead of the tag; the full `ci.yml`
 matrix (lint, mypy, security audit, PG 14–19 + WarehousePG integration)
@@ -34,10 +34,13 @@ rather than replacing it.
 ## New: opt-in dynamic session-intent growth
 
 **`MCPG_DYNAMIC_SESSION_INTENT`** (default `false`): when set, a session
-starts at its static intent (`core` by default) and can grow its own
-visible tool surface at runtime — without a server restart, and without
-affecting any other concurrent session. Two new always-visible
-meta-tools:
+starts at whatever `MCPG_SESSION_INTENT` already declares — or, if that's
+left unset (its own default), the dynamic layer falls back to `core`
+specifically as its own starting point, rather than the unfiltered full
+surface an unset `MCPG_SESSION_INTENT` would otherwise mean. From there
+the session can grow its own visible tool surface at runtime — without a
+server restart, and without affecting any other concurrent session. Two
+new always-visible meta-tools:
 
 - `list_session_intents()` — shows which named intents (`lookup`,
   `migration`, `vector_rag`, `monitor`, `admin`) are available and which
@@ -55,9 +58,9 @@ permission boundary, unaffected by either the static or dynamic
 session-intent layer. See the user guide's "Dynamic session intent"
 section for the full model.
 
-Off by default; adds the 2 meta-tools to the maximal 254-tool ceiling
-(→ 256) only when enabled. Lives in `mcpg.session_intent` and the new
-`mcpg.dynamic_session_intent`.
+Off by default; adds the 2 meta-tools to the existing 254-tool ceiling
+(→ 256, the new all-flags-on maximal) only when enabled. Lives in
+`mcpg.session_intent` and the new `mcpg.dynamic_session_intent`.
 
 ## New: Docker MCP Registry submission
 
@@ -104,8 +107,9 @@ surface contract snapshot — needed because MCPg requires a live
 
 - **No breaking changes.** All new behaviour is opt-in
   (`MCPG_SESSION_INTENT=core`, `MCPG_DYNAMIC_SESSION_INTENT=1`); an
-  unconfigured deployment sees the same 186-tool read-only /
-  254-tool maximal surface as before.
+  unconfigured deployment sees the same 186-tool read-only / 254-tool
+  all-flags-on-except-dynamic surface as before (256 only if the new
+  dynamic flag is also turned on).
 - Deployments that want a smaller default surface for a given
   connection profile (e.g. a read-only lookup client) can now set
   `MCPG_SESSION_INTENT=core` without waiting for a per-session dynamic
