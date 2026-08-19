@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
 
+# Least-privilege default: none of these jobs push commits, create releases,
+# or need an OIDC token — build/test/coverage/SonarQube all only need to
+# read the checked-out source. (zizmor `excessive-permissions`.)
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -13,7 +19,9 @@ jobs:
         postgresql_version: [16, 17]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Add PostgreSQL apt repository
         run: |
@@ -69,7 +77,9 @@ jobs:
             pgvector_ref: v0.8.1
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Add PostgreSQL apt repository
         run: |
@@ -121,7 +131,9 @@ jobs:
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Add PostgreSQL apt repository
         run: |
@@ -174,7 +186,9 @@ jobs:
       PG_CONFIG: /usr/lib/postgresql/17/bin/pg_config
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Add PostgreSQL apt repository
         run: |
@@ -232,7 +246,7 @@ jobs:
         run: gcovr -a coverage_integration.json -a coverage_unit.json --sonarqube coverage.xml -r . -f 'src/'
 
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage
           path: |
@@ -244,18 +258,19 @@ jobs:
     runs-on: mayflower-k8s-runners
     needs: [build-and-test, compatibility-matrix, sanitizer, coverage]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download coverage artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: coverage
           path: .
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v6
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_BASE_URL }}

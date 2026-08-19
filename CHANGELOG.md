@@ -39,7 +39,22 @@ adheres to [Semantic Versioning](https://semver.org/).
   the MCP-registry login, the build-provenance attestation, and the Pages
   deploy (`excessive-permissions`) — and set `persist-credentials: false` on all
   repo checkouts so a persisted git credential can't be captured in an artifact
-  (`artipacked`). zizmor now reports no findings.
+  (`artipacked`).
+- **zizmor baseline cleared, round 2 — the vendored `pg_turboquant` workflow.**
+  `actions-security.yml` invokes zizmor against `.` (repo root), which
+  recursively picks up **every** nested `.github/workflows/*.yml`, including
+  `scratch/pg_turboquant/.github/workflows/ci.yml` — a first-party PostgreSQL
+  extension's own CI config, checked in whole but never actually triggered by
+  GitHub Actions (nested `.github` dirs aren't discovered as workflow sources).
+  Round 1 missed it; the code-scanning dashboard still showed 12 open
+  findings (1 `unpinned-uses`, 6 `excessive-permissions`, 5 `artipacked`)
+  against it. Applied the same hardening as round 1 — pinned
+  `actions/checkout`, `actions/upload-artifact`, `actions/download-artifact`,
+  and `SonarSource/sonarqube-scan-action` to SHAs, added a workspace-level
+  `permissions: contents: read`, and `persist-credentials: false` on every
+  checkout. Verified clean with the exact same `uvx zizmor@1.9.0` invocation
+  CI uses. zizmor now genuinely reports no findings across the whole repo
+  tree, not just the top-level workflows.
 
 ### Added
 

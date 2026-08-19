@@ -90,9 +90,13 @@ surface contract snapshot — needed because MCPg requires a live
 - **Pipeline-security tooling**: StepSecurity Harden-Runner (egress
   monitoring on every job), zizmor (static analysis of the Actions
   workflows), and actionlint — all in reporting mode initially.
-- **zizmor baseline cleared**: scoped `id-token: write` down to only the
-  five OIDC jobs that need it, and set `persist-credentials: false` on
-  all checkouts. zizmor now reports no findings.
+- **zizmor baseline cleared, including a vendored nested workflow**: scoped
+  `id-token: write` down to only the five OIDC jobs that need it, and set
+  `persist-credentials: false` on all checkouts. A second pass caught 12
+  findings zizmor's recursive `.` scan picked up in
+  `scratch/pg_turboquant/.github/workflows/ci.yml` (a first-party extension's
+  own, never-triggered CI config) that round 1 missed — same hardening
+  applied there too. zizmor now reports no findings, repo-wide.
 
 ## Fixed
 
