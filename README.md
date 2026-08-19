@@ -20,6 +20,7 @@ graph queries, data movement, live ops, and more.
 [![Stars](https://img.shields.io/github/stars/devopam/MCPg)](https://github.com/devopam/MCPg)
 [![smithery badge](https://smithery.ai/badge/devopam/mcpg)](https://smithery.ai/servers/devopam/mcpg)
 [![MCPg MCP server](https://glama.ai/mcp/servers/devopam/MCPg/badges/score.svg)](https://glama.ai/mcp/servers/devopam/MCPg)
+[![AllMCPs](https://allmcps.com/api/badge/devopam-mcpg)](https://allmcps.com/mcp/devopam-mcpg)
 
 > **Try it live:** point an MCP client — or the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) — at the hosted, read-only demo endpoint `https://devopam-mcpg-demo.hf.space/mcp`. It serves read tools against throwaway demo data; for real use, run MCPg next to your own database (see [Quick start](#quick-start)).
 
