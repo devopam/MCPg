@@ -6,8 +6,8 @@
 
 ## Current state
 
-- **Phase:** post-v0.6.10. Every Batch (A–G) from the original
-  shortlist plus the 0.6.x waves have shipped — security (IP
+- **Phase:** post-v0.8.0. Every Batch (A–G) from the original
+  shortlist plus the 0.6.x/0.7.x/0.8.x waves have shipped — security (IP
   allowlist, TLS/mTLS, cloud secrets backends), observability
   (slow-call logging + OpenTelemetry), staged migrations + history,
   pgvector analytics, BM25/`pg_search`, `pg_turboquant`, the RAG
@@ -15,13 +15,16 @@
   `WAIT FOR LSN`, data-checksum/logical-rep toggles, partition
   merge/split), WarehousePG (MPP) coverage, Redis FDW, `pg_prewarm`,
   the 22-provider NL→SQL fleet, the generated-doc-table drift guard,
-  and the **first-party SQL-safety kernel** (18.1 de-vendor complete —
-  no vendored runtime code remains).
-- **Last updated:** 2026-07-09
+  the **first-party SQL-safety kernel** (18.1 de-vendor complete — no
+  vendored runtime code remains), the `mcp` 2.0 SDK migration (0.7.0),
+  the Docker MCP Registry submission (21.1/21.2), and **dynamic session
+  intent** (roadmap 22 — a `core` session-intent preset plus an opt-in
+  runtime tool-surface growth layer).
+- **Last updated:** 2026-08-19
 - **Branch:** `main`
-- **Tool count:** 252 (source of truth:
+- **Tool count:** 256 maximal / 186 default read-only (source of truth:
   `tests/contract/tool_surface.snapshot.json`)
-- **Released:** v0.6.10 (2026-07-09)
+- **Released:** v0.8.0 (2026-08-19)
 
 > **Note on this log.** The dated session log below is a historical
 > record that trails off at **2026-05-26** (~90 tools). The nine
@@ -32,12 +35,14 @@
 
 ## Next action
 
-> Trunk is at 0.6.10. The feature roadmap (`docs/feature-shortlist.md`
-> §1–18) is fully shipped. The next concrete item is the **0.6.11
-> per-request-tenancy fix** for the HTTP/SSE transports (the
-> `X-MCPG-Role` / OIDC override is pinned to a session's first request;
-> see the known-limitation note in `docs/security-hardening.md`). Beyond
-> that, pick from any newly-surfaced rows in `docs/feature-shortlist.md`.
+> Trunk is at 0.8.0. The feature roadmap (`docs/feature-shortlist.md`
+> §1–22) is fully shipped; the per-request-tenancy fix for HTTP/SSE
+> landed in 0.7.0 (tenancy redesigned onto `ServerMiddleware`). Two
+> open, non-urgent todos live in agent memory rather than as roadmap
+> rows: evaluating `mcp-failure-lab` as an MCPg testing tool, and
+> investigating the `warehousepg-latest` CI job's consistently high
+> latency. Otherwise, pick from any newly-surfaced rows in
+> `docs/feature-shortlist.md`.
 
 ## Phase 0 — Spike & foundation  ✅ COMPLETE
 
