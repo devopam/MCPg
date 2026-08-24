@@ -1,0 +1,124 @@
+name: Auto-merge bot PRs
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge-bot-prs:
+    name: Auto-merge unsigned bot PRs
+    runs-on: ubuntu-latest
+    if: |
+      github.actor == 'dependabot[bot]' ||
+      github.actor == 'renovate[bot]' ||
+      github.actor == 'github-actions[bot]' ||
+      endsWith(github.actor, '[bot]')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Wait for status checks
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            
+            console.log(`Waiting for status checks on PR #${pr.number}`);
+            
+            // Poll for status checks to complete
+            let attempts = 0;
+            const maxAttempts = 60; // 10 minutes with 10s intervals
+            let allChecksPassed = false;
+            
+            while (attempts < maxAttempts && !allChecksPassed) {
+              const checkRuns = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref: pr.head.sha,
+              });
+              
+              const statuses = await github.rest.repos.getCombinedStatusForRef({
+                owner,
+                repo,
+                ref: pr.head.sha,
+              });
+              
+              console.log(`Attempt ${attempts + 1}/${maxAttempts}`);
+              console.log(`Check runs state: ${checkRuns.data.check_runs.length} total`);
+              console.log(`Combined status: ${statuses.data.state}`);
+              
+              // Check if all checks are complete and passed
+              const completedChecks = checkRuns.data.check_runs.filter(
+                c => c.status === 'completed'
+              );
+              
+              const statusPassed = statuses.data.state === 'success' || 
+                                   statuses.data.state === 'pending' || 
+                                   statuses.data.statuses.length === 0;
+              
+              if (completedChecks.length === checkRuns.data.check_runs.length && statusPassed) {
+                allChecksPassed = true;
+                console.log('✓ All checks passed!');
+              } else {
+                console.log(`✗ Waiting... (${completedChecks.length}/${checkRuns.data.check_runs.length} checks complete)`);
+                await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s
+              }
+              
+              attempts++;
+            }
+            
+            if (!allChecksPassed) {
+              throw new Error('Timeout waiting for checks to pass or checks failed');
+            }
+      
+      - name: Merge pull request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            
+            console.log(`Merging PR #${pr.number}`);
+            
+            try {
+              const result = await github.rest.pulls.merge({
+                owner,
+                repo,
+                pull_number: pr.number,
+                merge_method: 'squash', // or 'merge' or 'rebase'
+              });
+              
+              console.log(`✓ PR #${pr.number} merged successfully`);
+              console.log(`Merge commit: ${result.data.sha}`);
+            } catch (error) {
+              if (error.status === 405) {
+                console.log('PR cannot be merged (might already be merged or have conflicts)');
+              } else {
+                throw error;
+              }
+            }
+      
+      - name: Handle merge failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pr.number,
+              body: '⚠️ Auto-merge workflow failed. Manual review required.',
+            })
