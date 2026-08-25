@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
     describe_table,
@@ -34,7 +35,7 @@ from mcpg.sql import SqlDriver
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class DieselExportError(Exception):
+class DieselExportError(MCPgError):
     """Raised when a Diesel export call is rejected or fails."""
 
 

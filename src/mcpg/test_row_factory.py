@@ -58,13 +58,14 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import ColumnInfo, describe_table
 from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class TestRowFactoryError(Exception):
+class TestRowFactoryError(MCPgError):
     """Raised when the factory is rejected or cannot produce a row."""
 
     __test__ = False  # opt out of pytest collection — class name starts with Test

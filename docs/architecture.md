@@ -64,7 +64,7 @@ flowchart TD
 ---
 
 <!-- BEGIN generated: module-map (python tools/generate_doc_tables.py --modules) -->
-## Module map (105 modules)
+## Module map (106 modules)
 
 Every `mcpg.*` module and what it owns, alphabetical. The layered
 request path through these lives in the [Overview](#overview) diagram;
@@ -100,6 +100,7 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.dynamic_session_intent` | Dynamic session-intent — grow a session's visible tool surface at runtime. |
 | `mcpg.ecto` | Schema → Ecto (Elixir) schema exporter. |
 | `mcpg.ent` | Schema → Ent (Go) schema exporter. |
+| `mcpg.errors` | The common ancestor for every MCPg-raised exception. |
 | `mcpg.extensions` | PostgreSQL extension management. |
 | `mcpg.graph` | Apache AGE Graph Introspection and Parsing. |
 | `mcpg.graph_diagram` | Apache AGE Graph Schema Visualisation. |

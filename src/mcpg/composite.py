@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
     ConstraintInfo,
@@ -41,7 +42,7 @@ from mcpg.sql import SqlDriver
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class CompositeError(Exception):
+class CompositeError(MCPgError):
     """Raised when a composite tool's inputs are invalid."""
 
 

@@ -13,6 +13,7 @@ from types import TracebackType
 from typing import Any
 
 from mcpg.config import Settings
+from mcpg.errors import MCPgError
 from mcpg.multidb import PRIMARY_DATABASE_ID, make_read_only_driver, resolve_primary_id
 from mcpg.replicas import ReplicaPool, RoutedSqlDriver, _make_driver_for_pool
 from mcpg.sql import DbConnPool, SqlDriver, obfuscate_password
@@ -20,7 +21,7 @@ from mcpg.sql import DbConnPool, SqlDriver, obfuscate_password
 logger = logging.getLogger(__name__)
 
 
-class DatabaseError(Exception):
+class DatabaseError(MCPgError):
     """Raised when the database cannot be connected to or used."""
 
 

@@ -49,6 +49,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -102,7 +103,7 @@ _THRESHOLD_RANKING_DEGRADED_SPEARMAN = 0.50
 _THRESHOLD_PRUNING_INEFFECTIVE = 0.10
 
 
-class VectorEfficiencyError(Exception):
+class VectorEfficiencyError(MCPgError):
     """Raised when a vector-efficiency analysis cannot complete."""
 
 

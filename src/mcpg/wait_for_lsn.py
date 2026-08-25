@@ -50,6 +50,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # PG 19 ships WAIT FOR LSN. The version-num boundary.
@@ -61,7 +62,7 @@ _MIN_PG19_WAIT_VERSION = 190000
 _LSN_PATTERN = re.compile(r"^[0-9A-Fa-f]+/[0-9A-Fa-f]+$")
 
 
-class WaitForLsnError(Exception):
+class WaitForLsnError(MCPgError):
     """Raised when a WAIT FOR LSN request is rejected or fails."""
 
 

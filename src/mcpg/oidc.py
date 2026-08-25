@@ -38,6 +38,8 @@ import httpx
 import jwt
 from jwt import PyJWKClient
 
+from mcpg.errors import MCPgError
+
 logger = logging.getLogger(__name__)
 
 ALLOWED_ALGORITHMS = ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512")
@@ -46,7 +48,7 @@ DEFAULT_JWKS_CACHE_SECONDS = 3600.0
 DEFAULT_VERIFY_LEEWAY_SECONDS = 30.0
 
 
-class OIDCError(Exception):
+class OIDCError(MCPgError):
     """Raised when OIDC configuration is wrong or a token fails to verify."""
 
 

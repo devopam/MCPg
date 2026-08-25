@@ -59,13 +59,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # PG 19 ships both forms. The version-num boundary.
 _MIN_PG19_PARTITIONS_VERSION = 190000
 
 
-class Pg19PartitionsError(Exception):
+class Pg19PartitionsError(MCPgError):
     """Raised when a PG 19 partition reorganisation cannot complete."""
 
 

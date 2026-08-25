@@ -42,6 +42,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # Status codes shared across the audit tools — same vocabulary as
@@ -55,7 +56,7 @@ _VALID_WORKLOADS = frozenset({"web", "oltp", "dw", "desktop", "mixed"})
 _VALID_STORAGE = frozenset({"ssd", "hdd", "san"})
 
 
-class ConfigAdvisorError(Exception):
+class ConfigAdvisorError(MCPgError):
     """Raised when a config-advisor argument fails validation."""
 
 

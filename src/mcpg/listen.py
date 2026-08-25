@@ -29,6 +29,8 @@ from dataclasses import dataclass, field, replace
 from types import TracebackType
 from typing import Any, Protocol
 
+from mcpg.errors import MCPgError
+
 logger = logging.getLogger(__name__)
 
 # PostgreSQL identifier policy for channel names. Matches the rest of
@@ -39,7 +41,7 @@ logger = logging.getLogger(__name__)
 _CHANNEL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class ListenError(Exception):
+class ListenError(MCPgError):
     """Raised when a LISTEN/NOTIFY tool call is rejected or fails."""
 
 

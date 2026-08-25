@@ -40,13 +40,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # PG 19 ships REPACK; older versions don't recognise the keyword.
 _MIN_REPACK_VERSION = 190000
 
 
-class RepackError(Exception):
+class RepackError(MCPgError):
     """Raised when a REPACK request is rejected or fails."""
 
 

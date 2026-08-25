@@ -28,6 +28,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SafeSqlDriver, SqlDriver
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ DEFAULT_FETCH_BATCH = 100
 HARD_FETCH_BATCH = 10_000
 
 
-class CursorError(Exception):
+class CursorError(MCPgError):
     """Raised when a cursor operation fails or is rejected."""
 
 

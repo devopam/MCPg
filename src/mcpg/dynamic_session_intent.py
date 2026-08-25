@@ -51,10 +51,11 @@ from typing import TYPE_CHECKING, Any
 from mcp.server.context import CallNext, ServerRequestContext
 
 from mcpg.about import BUCKET_IDS
+from mcpg.errors import MCPgError
 from mcpg.session_intent import _TOOL_NAME_PRESETS, INTENT_PRESETS, resolve_intent, resolved_tool_names
 
 
-class DynamicIntentError(ValueError):
+class DynamicIntentError(MCPgError, ValueError):
     """Raised when :func:`enable_intent` is given an unrecognized name."""
 
 

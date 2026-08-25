@@ -42,6 +42,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 _FRAMEWORKS = frozenset({"alembic", "flyway", "liquibase"})
@@ -76,7 +77,7 @@ _PREVIEW_BYTES = 4096
 _FIRST_COMMENT_CAP = 200
 
 
-class MigrationIngestionError(Exception):
+class MigrationIngestionError(MCPgError):
     """Raised when a migration-ingestion request is rejected."""
 
 

@@ -38,6 +38,7 @@ from mcpg.audit_nl2sql import _check_identifier as _shared_check_identifier
 from mcpg.audit_nl2sql import _check_interval as _shared_check_interval
 from mcpg.audit_nl2sql import detect_backend as _detect_backend
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 _SCHEMA_NAME = "mcpg_rag"
@@ -109,7 +110,7 @@ _PROBE_INDEX_SQL = (
 )
 
 
-class RagTelemetryError(Exception):
+class RagTelemetryError(MCPgError):
     """Raised when a RAG telemetry operation cannot complete."""
 
 

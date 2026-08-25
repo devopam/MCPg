@@ -43,10 +43,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from mcpg.errors import MCPgError
+
 _SUPPORTED_BACKENDS = frozenset({"env", "file", "vault", "aws", "gcp"})
 
 
-class SecretsError(Exception):
+class SecretsError(MCPgError):
     """Raised when the secrets backend is misconfigured or unreadable."""
 
 

@@ -33,6 +33,7 @@ from mcpg.audit_nl2sql import _check_identifier as _shared_check_identifier
 from mcpg.audit_nl2sql import _check_interval as _shared_check_interval
 from mcpg.audit_nl2sql import detect_backend as _detect_backend
 from mcpg.config import _parse_bool
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver, obfuscate_password
 
@@ -56,7 +57,7 @@ _QUALIFIED_CHAIN_TIP = f"{AUDIT_SCHEMA}.{CHAIN_TIP_TABLE}"
 _MASK = "****"
 
 
-class AuditTrailError(Exception):
+class AuditTrailError(MCPgError):
     """Raised when an audit-trail maintenance operation is rejected."""
 
 

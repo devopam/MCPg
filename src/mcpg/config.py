@@ -15,6 +15,7 @@ from os import environ
 from os.path import isabs
 from urllib.parse import urlparse
 
+from mcpg.errors import MCPgError
 from mcpg.nl2sql import AUTO_PICK_ORDER, VENDOR_ENV_VAR_HINT, VENDOR_KEY_ENV_VARS
 from mcpg.secrets import SecretsError, build_secrets_provider
 from mcpg.sql import obfuscate_password
@@ -35,7 +36,7 @@ _TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
 _FALSE_VALUES = frozenset({"false", "0", "no", "off"})
 
 
-class ConfigError(Exception):
+class ConfigError(MCPgError):
     """Raised when the environment configuration is missing or invalid."""
 
 

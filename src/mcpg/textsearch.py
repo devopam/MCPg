@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -41,7 +42,7 @@ _VECTOR_METRICS = {"l2": "<->", "cosine": "<=>", "inner_product": "<#>"}
 DEFAULT_VECTOR_METRIC = "l2"
 
 
-class SearchError(Exception):
+class SearchError(MCPgError):
     """Raised when a search request is invalid."""
 
 

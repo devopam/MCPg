@@ -29,6 +29,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.query import QueryError, run_select
 from mcpg.shell import ShellError, SubprocessLimits, run_pg_binary
 from mcpg.sql import SqlDriver
@@ -44,7 +45,7 @@ EXPORT_FORMATS = frozenset({"csv", "json"})
 DEFAULT_EXPORT_LIMIT = 10_000
 
 
-class ExportError(Exception):
+class ExportError(MCPgError):
     """Raised when an export call is rejected or fails."""
 
 
@@ -578,7 +579,7 @@ def _tail(buf: bytes, *, max_bytes: int = 4096) -> str:
 
 
 # --- bulk imports (in-process; gated behind WRITE) -----------------------
-class ImportDataError(Exception):
+class ImportDataError(MCPgError):
     """Raised when an import call is rejected or fails.
 
     Named ``ImportDataError`` so it does not shadow the builtin

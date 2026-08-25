@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SafeSqlDriver, SqlDriver
 
 # Default per-query execution timeout, in seconds.
@@ -34,7 +35,7 @@ _MEMORY_SIZE_RE = re.compile(r"^\d+(kB|MB|GB)$", re.IGNORECASE)
 _MEMORY_CAP_KB = 2 * 1024 * 1024  # 2 GiB expressed in kB
 
 
-class QueryError(Exception):
+class QueryError(MCPgError):
     """Raised when a query is rejected as unsafe or fails to execute."""
 
 

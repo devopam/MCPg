@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import describe_table, list_constraints, list_indexes, list_tables
 from mcpg.schema_diff import SchemaDiff, compare_schemas
 from mcpg.sql import SqlDriver
@@ -34,7 +35,7 @@ _SHADOW_PREFIX = "mcpg_shadow_"
 _NAME_SUFFIX_RE = re.compile(r"[^A-Za-z0-9_]")
 
 
-class MigrationError(Exception):
+class MigrationError(MCPgError):
     """Raised when a migration tool call is rejected or fails."""
 
 

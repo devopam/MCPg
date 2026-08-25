@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any
 from mcp.server.context import CallNext, HandlerResult, ServerMiddleware, ServerRequestContext
 from psycopg.rows import dict_row
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ current_role: ContextVar[str | None] = ContextVar("mcpg_current_role", default=N
 _ROLE_SCOPE_KEY = "mcpg.tenant_role"
 
 
-class TenancyError(ValueError):
+class TenancyError(MCPgError, ValueError):
     """Raised when a role name fails validation."""
 
 

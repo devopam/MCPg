@@ -31,10 +31,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from mcpg.about import CAPABILITIES, classify_tool
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 
-class HeadlineCuratorError(Exception):
+class HeadlineCuratorError(MCPgError):
     """Raised when the recommender's arguments fail validation."""
 
 

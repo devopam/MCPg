@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 
 # Accepted operation -> the SQL command it maps to.
 _OPERATIONS = {
@@ -21,7 +22,7 @@ _OPERATIONS = {
 }
 
 
-class MaintenanceError(Exception):
+class MaintenanceError(MCPgError):
     """Raised when a maintenance request is rejected or fails."""
 
 

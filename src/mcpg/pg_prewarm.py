@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -52,7 +53,7 @@ _DEFAULT_LIMIT = 20
 _AUTOWARM_JOB_NAME = "mcpg_autowarm"
 
 
-class PrewarmError(Exception):
+class PrewarmError(MCPgError):
     """Raised when a pg_prewarm operation cannot complete."""
 
 

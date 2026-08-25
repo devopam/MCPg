@@ -35,6 +35,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Final
 
+from mcpg.errors import MCPgError
+
 try:  # POSIX-only; absent on Windows. Guarded so the import never breaks startup.
     import resource
 except ImportError:  # pragma: no cover - exercised only on non-POSIX platforms
@@ -68,7 +70,7 @@ _SECRET_ENV_VARS: Final[frozenset[str]] = frozenset({"PGPASSWORD"})
 _REDACTED_VALUE = "****"
 
 
-class ShellError(Exception):
+class ShellError(MCPgError):
     """Raised when a subprocess invocation is rejected or fails."""
 
 

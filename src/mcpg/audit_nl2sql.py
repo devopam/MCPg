@@ -47,6 +47,7 @@ from datetime import UTC, datetime, timedelta
 from os import environ
 from typing import Any, Literal
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver, obfuscate_password
 
@@ -84,7 +85,7 @@ _KNOWN_BACKENDS: frozenset[str] = frozenset({"timescaledb", "pg_partman", "nativ
 _NATIVE_WINDOW_DAYS = 7
 
 
-class NL2SQLAuditError(Exception):
+class NL2SQLAuditError(MCPgError):
     """Raised when the NL→SQL audit subsystem can't satisfy a request."""
 
 

@@ -34,6 +34,7 @@ from __future__ import annotations
 import re
 from xml.sax.saxutils import escape
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
     describe_table,
@@ -47,7 +48,7 @@ _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _EXCLUDED_TABLE_PATTERN = "mcpg_audit\\..*|mcpg_migrations\\..*"
 
 
-class JooqExportError(Exception):
+class JooqExportError(MCPgError):
     """Raised when a jOOQ export call is rejected or fails."""
 
 

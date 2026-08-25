@@ -24,6 +24,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from mcpg import introspection
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -80,7 +81,7 @@ _CV_FLAT_THRESHOLD = 0.05
 _NORM_TOLERANCE = 0.02
 
 
-class VectorOpsError(Exception):
+class VectorOpsError(MCPgError):
     """Raised when a vector-analytics request is rejected."""
 
 

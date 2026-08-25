@@ -39,13 +39,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # PG 19 ships the new pg_get_*def() functions. The version-num boundary.
 _MIN_PG19_DDL_VERSION = 190000
 
 
-class Pg19DdlError(Exception):
+class Pg19DdlError(MCPgError):
     """Raised when a PG 19 DDL helper operation cannot complete."""
 
 

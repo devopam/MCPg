@@ -67,6 +67,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -76,7 +77,7 @@ from mcpg.sql import SqlDriver
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class PgSearchError(Exception):
+class PgSearchError(MCPgError):
     """Raised when a pg_search operation cannot complete."""
 
 

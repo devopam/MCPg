@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `mcpg.errors.MCPgError`, a common base class every domain-specific exception (`ConfigError`,
+  `DatabaseError`, `CursorError`, and 62 others — 65 exception classes across 64 modules in total)
+  now subclasses — lets calling code catch "any MCPg-internal error" with one type instead of an
+  enumerated list. No existing exception's name, message, or call sites changed. Two of the 65
+  (`TenancyError`, `DynamicIntentError`) previously subclassed `ValueError` rather than `Exception`;
+  they now subclass both `MCPgError` and `ValueError`, so anything catching them as `ValueError`
+  today keeps working.
+
 ### Fixed
 
 - **`py.typed` marker was missing despite the `Typing :: Typed` classifier.** Added `src/mcpg/py.typed`

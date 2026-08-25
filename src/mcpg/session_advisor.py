@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # Tools that return small, well-defined slices of the catalogue — calling
@@ -60,7 +61,7 @@ REASON_HOT_REPEATED_CALL = "hot_repeated_call"
 REASON_IDLE_SESSION = "idle_session"
 
 
-class SessionAdvisorError(Exception):
+class SessionAdvisorError(MCPgError):
     """Raised when the advisor can't run — e.g. the audit table is missing."""
 
 

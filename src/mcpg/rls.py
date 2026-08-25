@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
@@ -31,7 +32,7 @@ _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 DEFAULT_RLS_SAMPLE_SIZE = 25
 
 
-class RLSError(Exception):
+class RLSError(MCPgError):
     """Raised when an RLS-tester input fails validation or execution fails."""
 
 

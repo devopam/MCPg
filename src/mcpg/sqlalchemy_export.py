@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
     ForeignKeyInfo,
@@ -31,7 +32,7 @@ _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _SERIAL_DEFAULT_RE = re.compile(r"nextval\(['\"]([^'\"]+)['\"]")
 
 
-class SqlAlchemyExportError(Exception):
+class SqlAlchemyExportError(MCPgError):
     """Raised when a SQLAlchemy export call is rejected or fails."""
 
 

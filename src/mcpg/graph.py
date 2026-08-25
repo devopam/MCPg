@@ -13,9 +13,10 @@ from typing import Any, TypedDict
 
 from mcpg.context import AppContext
 from mcpg.database import DatabaseError
+from mcpg.errors import MCPgError
 
 
-class GraphError(Exception):
+class GraphError(MCPgError):
     """Raised on invalid input or invariant violations across the
     Apache AGE graph integration.
 

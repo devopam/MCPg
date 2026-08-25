@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import httpx
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import describe_table, list_foreign_keys, list_tables
 from mcpg.query import DEFAULT_MAX_ROWS, QueryError, explain_query, run_select
 from mcpg.sql import SqlDriver, obfuscate_password
@@ -290,7 +291,7 @@ DEFAULT_SCHEMA_DENYLIST: frozenset[str] = frozenset(
 _DEFAULT_EXPR_MAX_CHARS = 80
 
 
-class NL2SQLError(Exception):
+class NL2SQLError(MCPgError):
     """Raised when NL→SQL translation is rejected or fails."""
 
 

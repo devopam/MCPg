@@ -37,6 +37,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.introspection import _parse_options
 from mcpg.secrets import SecretsProvider
@@ -62,7 +63,7 @@ _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-class RedisFdwError(Exception):
+class RedisFdwError(MCPgError):
     """Raised when a redis_fdw operation cannot complete."""
 
 

@@ -32,6 +32,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import ColumnInfo, describe_table
 from mcpg.sql import SqlDriver
 
@@ -41,7 +42,7 @@ DEFAULT_ROW_COUNT = 10
 HARD_ROW_CAP = 10_000
 
 
-class TestDataError(Exception):
+class TestDataError(MCPgError):
     """Raised when test-data generation is rejected or fails."""
 
     # Pytest treats classes named ``Test*`` as test collection targets;

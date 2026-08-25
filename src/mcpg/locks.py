@@ -17,10 +17,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 
-class LocksError(Exception):
+class LocksError(MCPgError):
     """Raised on invalid input to a lock-inspection function.
 
     Matches the ``*Error``-per-module convention every other surface

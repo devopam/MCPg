@@ -30,6 +30,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
 
 from mcpg.config import Settings
+from mcpg.errors import MCPgError
 from mcpg.observability import render_prometheus
 from mcpg.oidc import OIDCError, OIDCVerifier
 from mcpg.tenancy import _ROLE_SCOPE_KEY, TenancyError, current_role, validate_role
@@ -440,7 +441,7 @@ class _SecurityHeadersMiddleware:
         await self._app(scope, receive, send_wrapper)  # type: ignore[operator]
 
 
-class _RequestTooLargeError(Exception):
+class _RequestTooLargeError(MCPgError):
     """Raised when the request body exceeds the configured maximum size."""
 
     pass

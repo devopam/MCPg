@@ -43,6 +43,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # PG 19 ships the AIO subsystem. The version-num probe is the boundary
@@ -73,7 +74,7 @@ _HIGH_READ_RATE_THRESHOLD = 5_000.0
 _MIN_STATS_WINDOW_SECONDS = 300.0
 
 
-class AioError(Exception):
+class AioError(MCPgError):
     """Raised when an AIO operation cannot complete."""
 
 

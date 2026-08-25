@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
     ForeignKeyInfo,
@@ -33,7 +34,7 @@ from mcpg.sql import SqlDriver
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class DrizzleError(Exception):
+class DrizzleError(MCPgError):
     """Raised when a Drizzle export call is rejected or fails."""
 
 

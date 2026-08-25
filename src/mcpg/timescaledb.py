@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -30,7 +31,7 @@ _INTERVAL = re.compile(
 )
 
 
-class TimescaleError(Exception):
+class TimescaleError(MCPgError):
     """Raised when a TimescaleDB tool call is rejected or fails."""
 
 

@@ -22,6 +22,7 @@ from typing import Any
 import pglast
 
 from mcpg.audit_trail import SchemaDiffSnapshot, capture_columns, record_audit
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # pglast statement node names accepted by run_write.
@@ -47,7 +48,7 @@ _DDL_STATEMENTS = frozenset(
 )
 
 
-class WriteError(Exception):
+class WriteError(MCPgError):
     """Raised when a write is rejected or fails to execute."""
 
 

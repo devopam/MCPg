@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -22,7 +23,7 @@ from mcpg.sql import SqlDriver
 _PARTITION_TYPES = frozenset({"range", "list", "native"})
 
 
-class PartmanError(Exception):
+class PartmanError(MCPgError):
     """Raised when a pg_partman operation cannot complete."""
 
 

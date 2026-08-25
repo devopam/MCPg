@@ -29,6 +29,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
     EnumInfo,
@@ -90,7 +91,7 @@ _UNIQUE_COLUMNS = re.compile(r"UNIQUE \(([^)]+)\)", re.IGNORECASE)
 _LITERAL_DEFAULT = re.compile(r"^'((?:[^']|'')*)'::")
 
 
-class PrismaError(Exception):
+class PrismaError(MCPgError):
     """Raised when a Prisma schema cannot be emitted."""
 
 

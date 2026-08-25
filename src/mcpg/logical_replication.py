@@ -52,6 +52,7 @@ import re
 from dataclasses import dataclass
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 
 # Unquoted PostgreSQL identifier: starts with letter / underscore,
 # then letters / digits / underscores. Same shape as
@@ -60,7 +61,7 @@ from mcpg.database import Database
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class LogicalReplicationError(Exception):
+class LogicalReplicationError(MCPgError):
     """Raised when a logical-replication write is rejected or fails."""
 
 

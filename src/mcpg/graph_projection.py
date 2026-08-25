@@ -39,6 +39,7 @@ import numbers
 import re
 from dataclasses import dataclass
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import ColumnInfo, describe_table, list_foreign_keys
 from mcpg.sql import SqlDriver
 
@@ -93,7 +94,7 @@ _NUMERIC_TYPES = frozenset(
 _BOOLEAN_TYPES = frozenset({"boolean", "bool"})
 
 
-class GraphProjectionError(Exception):
+class GraphProjectionError(MCPgError):
     """Raised when a graph-projection request is rejected."""
 
 

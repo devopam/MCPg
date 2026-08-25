@@ -37,6 +37,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.sql import DbConnPool, SqlDriver, obfuscate_password
 from mcpg.tenancy import TenantSqlDriver
 
@@ -49,7 +50,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_DEGRADED_RETRY_SECONDS = 30.0
 
 
-class ReplicaError(Exception):
+class ReplicaError(MCPgError):
     """Raised when replica configuration is invalid."""
 
 
