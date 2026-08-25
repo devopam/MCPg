@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `/readyz` readiness endpoint on the HTTP transport — reports 503 when the DB pool can't currently serve
+  a connection, distinct from `/healthz`'s liveness-only check. Previously reserved in the auth-exemption
+  set but never mounted. Reads `Database.is_connected` (no fresh connection attempted on every poll);
+  `create_server` now stashes the primary `Database` on the server object (`server.mcpg_database`,
+  alongside the existing `mcpg_settings`/`otel_tracer`/`rate_limiter`) so `build_http_app` can reach it.
+
 - `mcpg.errors.MCPgError`, a common base class every domain-specific exception (`ConfigError`,
   `DatabaseError`, `CursorError`, and 62 others — 65 exception classes across 64 modules in total)
   now subclasses — lets calling code catch "any MCPg-internal error" with one type instead of an

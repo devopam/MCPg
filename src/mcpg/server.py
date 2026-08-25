@@ -75,6 +75,12 @@ class AuditedMCPServer(MCPServer[AppContext]):
 
     rate_limiter: RateLimiter
     mcpg_settings: Settings
+    # The primary Database, so the HTTP transport's /readyz probe can read
+    # Database.is_connected without threading a new constructor parameter
+    # through create_server -> AuditedMCPServer -> build_http_app. Same
+    # "stash it directly on the server object" pattern as mcpg_settings /
+    # otel_tracer / rate_limiter below.
+    mcpg_database: Database
     in_flight_calls: int = 0
     # OpenTelemetry tracer. ``None`` when MCPG_OTEL_ENABLED=false or
     # the ``mcpg[otel]`` extra isn't installed — :func:`tool_span`
@@ -348,6 +354,7 @@ def create_server(
         middleware=middleware,
     )
     server.mcpg_settings = settings
+    server.mcpg_database = db
     server.otel_tracer = setup_tracing(settings)
     # Instantiate and register the RateLimiter
     server.rate_limiter = RateLimiter(

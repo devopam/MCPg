@@ -200,6 +200,62 @@ def test_build_http_app_serves_healthz_unauthenticated() -> None:
     assert response.text.startswith("ok")
 
 
+def test_readyz_returns_200_when_database_is_connected() -> None:
+    """/readyz reports ready once Database.is_connected is True."""
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+    class _FakeDatabase:
+        is_connected = True
+
+    class _Stub:
+        mcpg_database = _FakeDatabase()
+
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    with TestClient(wrapped) as client:
+        response = client.get("/readyz")
+    assert response.status_code == 200
+    assert response.text.startswith("ready")
+
+
+def test_readyz_returns_503_when_database_is_not_connected() -> None:
+    """/readyz reports not-ready when Database.is_connected is False."""
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+    class _FakeDatabase:
+        is_connected = False
+
+    class _Stub:
+        mcpg_database = _FakeDatabase()
+
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    with TestClient(wrapped) as client:
+        response = client.get("/readyz")
+    assert response.status_code == 503
+    assert response.text.startswith("not ready")
+
+
+def test_readyz_returns_200_when_server_never_wired_a_database() -> None:
+    """A build_http_app caller that never set mcpg_database (e.g. the bare
+    stubs used elsewhere in this file) has nothing to assess, so /readyz
+    reports ready rather than failing a check that was never wired up."""
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    with TestClient(wrapped) as client:
+        response = client.get("/readyz")
+    assert response.status_code == 200
+
+
 def test_build_http_app_with_token_blocks_unauthenticated_requests() -> None:
     settings = load_settings(
         {
@@ -456,10 +512,12 @@ def test_build_http_app_in_oidc_mode_blocks_requests_without_a_valid_jwt() -> No
         # Wrong token → 401 (verification fails — discovery never reached).
         response = client.get("/", headers={"Authorization": "Bearer not.a.real.jwt"})
         assert response.status_code == 401
-        # /metrics and /healthz still bypass auth.
+        # /metrics, /healthz, and /readyz still bypass auth.
         response = client.get("/metrics")
         assert response.status_code == 200
         response = client.get("/healthz")
+        assert response.status_code == 200
+        response = client.get("/readyz")
         assert response.status_code == 200
 
 

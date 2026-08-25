@@ -42,6 +42,8 @@ if TYPE_CHECKING:
     from starlette.requests import Request
     from starlette.responses import Response
 
+    from mcpg.database import Database
+
 logger = logging.getLogger(__name__)
 
 # Standard Prometheus text-format content type. Compatible with both
@@ -72,6 +74,38 @@ def _health_response_factory() -> Callable[[Request], Awaitable[Response]]:
         return PlainTextResponse("ok\n")
 
     return healthz
+
+
+def _readiness_response_factory(database: Database | None) -> Callable[[Request], Awaitable[Response]]:
+    """Build the /readyz handler: ready once the DB pool has served a live connection.
+
+    Distinct from /healthz (liveness — "is the process alive"): this reports
+    whether the process can currently do useful work, so an orchestrator can
+    pull a degraded instance out of rotation without restarting it. Reads
+    ``Database.is_connected`` (``self._connected and self._pool.is_valid`` —
+    see ``mcpg.database.Database``), the same side-effect-free signal
+    ``tools.py``'s ``server_info`` already uses to decide whether to attach a
+    live driver. No fresh connection is attempted on every poll.
+
+    ``database`` is ``None`` when the wrapped app wasn't built by
+    ``create_server`` (e.g. a test stub that only implements
+    ``streamable_http_app``/``sse_app``) — there is nothing to assess, so we
+    report ready rather than failing a check that was never wired up.
+
+    Note: ``is_connected`` only reflects the pool's state as of the last
+    ``pool_connect()``/``close()`` call — a database that answered at startup
+    and then dies mid-flight isn't detected until something next exercises
+    the pool. This still distinguishes "never came up" from "process alive",
+    which is /readyz's job here.
+    """
+    from starlette.responses import PlainTextResponse
+
+    async def readyz(_request: Request) -> Response:
+        if database is not None and not database.is_connected:
+            return PlainTextResponse("not ready\n", status_code=503)
+        return PlainTextResponse("ready\n")
+
+    return readyz
 
 
 class _BearerAuthMiddleware:
@@ -580,6 +614,13 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
     # subclassing.
     app.router.routes.append(Route("/metrics", _metrics_response_factory(), methods=["GET"]))
     app.router.routes.append(Route("/healthz", _health_response_factory(), methods=["GET"]))
+    # ``server`` is typed ``object`` (tests pass bare stubs implementing only
+    # streamable_http_app/sse_app), so mcpg_database is read defensively —
+    # getattr rather than an isinstance/Protocol check, matching this
+    # function's existing style of type: ignore'd attribute access on
+    # ``server`` (see the streamable_http_app/sse_app calls just above).
+    database: Database | None = getattr(server, "mcpg_database", None)
+    app.router.routes.append(Route("/readyz", _readiness_response_factory(database), methods=["GET"]))
 
     # Middleware stack ordering:
     #   In OIDC mode, the OIDC middleware verifies the JWT AND stashes
