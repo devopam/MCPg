@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`py.typed` marker was missing despite the `Typing :: Typed` classifier.** Added `src/mcpg/py.typed`
+  and verified it ships in the built wheel.
+- **`license-files` in `pyproject.toml` pointed at `src/mcpg/_vendor/LICENSE`, which hasn't existed since
+  the SQL kernel was de-vendored (ADR-0007).** Removed the stale entry.
 - **Broken readiness probe on the `warehousepg-latest` CI lane was
   burning ~6 minutes of dead time on every run.** The lane's readiness
   poll used `docker exec mcpg-db pg_isready -U gpadmin`, but
@@ -21,6 +25,10 @@ adheres to [Semantic Versioning](https://semver.org/).
   step accounted for ~6-6.5 min of the lane's ~9-10 min total vs.
   ~20-30s on every other PG version; the `pytest` step itself was
   already the same duration as any other lane).
+
+### Changed
+
+- Pinned `hatchling>=1.26` as the build-system floor (previously unpinned).
 
 ### Security
 

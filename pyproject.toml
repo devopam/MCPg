@@ -9,7 +9,7 @@ description = "A production-grade PostgreSQL Model Context Protocol (MCP) server
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
-license-files = ["LICENSE", "src/mcpg/_vendor/LICENSE"]
+license-files = ["LICENSE"]
 authors = [
     {name = "Devopam Mittra", email = "devopam@gmail.com"},
 ]
@@ -103,7 +103,7 @@ Security = "https://github.com/devopam/MCPg/blob/main/SECURITY.md"
 mcpg = "mcpg.__main__:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 
 # Single source of truth for the version: hatchling reads ``__version__``
@@ -115,6 +115,7 @@ path = "src/mcpg/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcpg"]
+include = ["src/mcpg/py.typed"]
 
 # Keep the sdist tight — ship the source tree + the prose a user
 # actually wants when they unpack from PyPI, and leave dev-only
