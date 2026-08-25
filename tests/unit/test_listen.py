@@ -337,11 +337,14 @@ async def test_close_logs_debug_when_connection_close_fails(caplog: pytest.LogCa
     finally:
         root_logger.propagate = old_propagate
 
-    assert any(
-        "Best-effort connection close" in r.message and r.levelno == logging.DEBUG
+    matches = [
+        r
         for r in caplog.records
-        if r.name == "mcpg.listen"
-    )
+        if r.name == "mcpg.listen" and "Best-effort connection close" in r.message and r.levelno == logging.DEBUG
+    ]
+    assert len(matches) == 1
+    # exc_info=True must actually attach a traceback, not just the message.
+    assert matches[0].exc_info is not None
 
 
 async def test_subscribe_after_close_raises() -> None:

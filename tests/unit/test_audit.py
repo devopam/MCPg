@@ -422,10 +422,13 @@ async def test_get_version_and_db_logs_debug_on_query_failure(caplog) -> None:
 
         assert version == "PostgreSQL Unknown"
         assert dbname == "unknown"
-        assert any(
-            "Version/dbname query failed" in r.message and r.levelno == logging.DEBUG
+        matches = [
+            r
             for r in caplog.records
-            if r.name == "mcpg.audit"
-        )
+            if r.name == "mcpg.audit" and "Version/dbname query failed" in r.message and r.levelno == logging.DEBUG
+        ]
+        assert len(matches) == 1
+        # exc_info=True must actually attach a traceback, not just the message.
+        assert matches[0].exc_info is not None
     finally:
         logger.propagate = old_propagate

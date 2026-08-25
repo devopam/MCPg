@@ -142,7 +142,6 @@ class ReplicaPool:
                     obfuscate_password(state.dsn),
                     state.last_error,
                     self._degraded_retry_seconds,
-                    exc_info=True,
                 )
 
     async def close(self) -> None:
@@ -355,7 +354,6 @@ class RoutedSqlDriver(SqlDriver):
                 "Replica %d query failed; falling back to primary: %s",
                 candidate.index,
                 obfuscate_password(str(exc)),
-                exc_info=True,
             )
             return await self._primary.execute_query(query, params, force_readonly)
 

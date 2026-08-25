@@ -420,11 +420,14 @@ async def test_record_audit_treats_malformed_integrity_flag_as_disabled(
     params = insert[1]
     assert params is not None
     assert params[7] is None  # event_hmac stays NULL
-    assert any(
-        "MCPG_AUDIT_INTEGRITY" in r.message and r.levelno == logging.DEBUG
+    matches = [
+        r
         for r in caplog.records
-        if r.name == "mcpg.audit_trail"
-    )
+        if r.name == "mcpg.audit_trail" and "MCPG_AUDIT_INTEGRITY" in r.message and r.levelno == logging.DEBUG
+    ]
+    assert len(matches) == 1
+    # exc_info=True must actually attach a traceback, not just the message.
+    assert matches[0].exc_info is not None
 
 
 async def test_record_audit_leaves_hmac_columns_null_when_integrity_disabled(monkeypatch: pytest.MonkeyPatch) -> None:

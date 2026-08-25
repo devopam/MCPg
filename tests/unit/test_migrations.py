@@ -240,11 +240,14 @@ async def test_prepare_migration_logs_debug_when_shadow_cleanup_also_fails(
     finally:
         root_logger.propagate = old_propagate
 
-    assert any(
-        "shadow schema" in r.message.lower() and r.levelno == logging.DEBUG
+    matches = [
+        r
         for r in caplog.records
-        if r.name == "mcpg.migrations"
-    )
+        if r.name == "mcpg.migrations" and "shadow schema" in r.message.lower() and r.levelno == logging.DEBUG
+    ]
+    assert len(matches) == 1
+    # exc_info=True must actually attach a traceback, not just the message.
+    assert matches[0].exc_info is not None
 
 
 # --- validate_migration (Phase 9.2) -------------------------------

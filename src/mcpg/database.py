@@ -118,7 +118,6 @@ class Database:
                     "Secondary database %r failed to open: %s",
                     name,
                     obfuscate_password(str(exc)),
-                    exc_info=True,
                 )
             else:
                 self._secondary_available[name] = True

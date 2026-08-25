@@ -331,11 +331,14 @@ async def test_timescaledb_migrate_logs_debug_when_compression_policy_fails(
         root_logger.propagate = old_propagate
 
     assert compression_enabled is False
-    assert any(
-        "add_compression_policy" in r.message and r.levelno == logging.DEBUG
+    matches = [
+        r
         for r in caplog.records
-        if r.name == "mcpg.audit_trail"
-    )
+        if r.name == "mcpg.audit_trail" and "add_compression_policy" in r.message and r.levelno == logging.DEBUG
+    ]
+    assert len(matches) == 1
+    # exc_info=True must actually attach a traceback, not just the message.
+    assert matches[0].exc_info is not None
 
 
 async def test_timescaledb_migrate_logs_debug_when_retention_policy_fails(
@@ -366,8 +369,11 @@ async def test_timescaledb_migrate_logs_debug_when_retention_policy_fails(
         root_logger.propagate = old_propagate
 
     assert "add_retention_policy" not in " | ".join(statements)
-    assert any(
-        "add_retention_policy" in r.message and r.levelno == logging.DEBUG
+    matches = [
+        r
         for r in caplog.records
-        if r.name == "mcpg.audit_trail"
-    )
+        if r.name == "mcpg.audit_trail" and "add_retention_policy" in r.message and r.levelno == logging.DEBUG
+    ]
+    assert len(matches) == 1
+    # exc_info=True must actually attach a traceback, not just the message.
+    assert matches[0].exc_info is not None

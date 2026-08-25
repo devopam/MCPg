@@ -105,10 +105,14 @@ async def test_optimize_query_logs_debug_when_sequential_scan_advisory_fails(
 
         # The function completes normally — the failure is swallowed, not raised.
         assert res.original_sql == "SELECT * FROM large_table;"
-        assert any(
-            "sequential-scan advisory" in record.message and record.levelno == logging.DEBUG
+        matches = [
+            record
             for record in caplog.records
-        )
+            if "sequential-scan advisory" in record.message and record.levelno == logging.DEBUG
+        ]
+        assert len(matches) == 1
+        # exc_info=True must actually attach a traceback, not just the message.
+        assert matches[0].exc_info is not None
     finally:
         root_logger.propagate = old_propagate
 

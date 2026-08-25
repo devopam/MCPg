@@ -1074,13 +1074,11 @@ async def _explain_preflight(driver: SqlDriver, sql: str) -> str | None:
         msg = str(exc)
         lowered = msg.lower()
         if "statement timeout" in lowered or "canceling statement" in lowered:
-            logger.warning(
-                "NL→SQL EXPLAIN pre-flight timed out; proceeding: %s", obfuscate_password(msg), exc_info=True
-            )
+            logger.warning("NL→SQL EXPLAIN pre-flight timed out; proceeding: %s", obfuscate_password(msg))
             return None
         return f"query invalid: {obfuscate_password(msg)}"
     except Exception as exc:  # pragma: no cover - unexpected; degrade to skip
-        logger.warning("NL→SQL EXPLAIN pre-flight skipped: %s", obfuscate_password(str(exc)), exc_info=True)
+        logger.warning("NL→SQL EXPLAIN pre-flight skipped: %s", obfuscate_password(str(exc)))
     return None
 
 
