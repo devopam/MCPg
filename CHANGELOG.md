@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Broken readiness probe on the `warehousepg-latest` CI lane was
+  burning ~6 minutes of dead time on every run.** The lane's readiness
+  poll used `docker exec mcpg-db pg_isready -U gpadmin`, but
+  `woblerr/warehousepg:7.4.1-WHPG` doesn't ship `pg_isready` on PATH —
+  every poll attempt failed with `exec: "pg_isready": executable file
+  not found in $PATH`, so the loop could never observe success and
+  always waited out its full 90 × 4s = 360s budget regardless of how
+  fast the database actually came up. Swapped the probe to `psql`
+  against the published port, the same path pytest itself uses —
+  identified from real `gh run view` timings (the "Start PostgreSQL"
+  step accounted for ~6-6.5 min of the lane's ~9-10 min total vs.
+  ~20-30s on every other PG version; the `pytest` step itself was
+  already the same duration as any other lane).
+
+### Security
+
+- **Bumped transitive `pip` 26.1.2 → 26.2.1 (PYSEC-2026-3721).**
+  `pip-audit`'s own `pip_api` dependency pulled in a `pip` version with
+  a known vulnerability, flagged by the local pre-commit hook's
+  dependency audit.
+
 ## [0.8.0] - 2026-08-19
 
 ### Security

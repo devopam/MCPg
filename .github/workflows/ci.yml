@@ -198,21 +198,46 @@ jobs:
             -e POSTGRES_DB=mcpg_test mcpg-ci-db
           if [ "${{ matrix.postgres }}" = "warehousepg-latest" ]; then
             DB_USER=gpadmin
-            # A single-node Greenplum-family coordinator+segment cluster
-            # takes much longer to initialize than a plain postgres
-            # container, so this lane gets a longer, coarser poll.
-            max_attempts=90
-            sleep_secs=4
           else
             DB_USER=postgres
-            max_attempts=30
-            sleep_secs=2
           fi
           echo "DB_USER=$DB_USER" >> "$GITHUB_ENV"
-          for _ in $(seq 1 "$max_attempts"); do
-            docker exec mcpg-db pg_isready -U "$DB_USER" && break
-            sleep "$sleep_secs"
-          done
+          if [ "${{ matrix.postgres }}" = "warehousepg-latest" ]; then
+            # `woblerr/warehousepg` doesn't ship `pg_isready` on PATH — not
+            # documented upstream, confirmed by direct observation: every
+            # poll attempt with the pg_isready-based probe below fails with
+            # "executable file not found in $PATH", so it can never detect
+            # readiness and always burns its full poll budget (previously
+            # 90 * 4s = 360s) as dead time regardless of how fast the
+            # database actually comes up. Probe with `psql` instead — the
+            # runner's default client works here (see the "Install
+            # PostgreSQL client tools" step above, which skips a custom
+            # client for this lane on purpose) — connecting straight
+            # through the published port, the same path pytest itself
+            # uses. This also doubles as a stronger check than
+            # `pg_isready`: it only succeeds once the target database
+            # actually accepts queries, not just once the postmaster
+            # process is up. Keep the longer, coarser poll ceiling as a
+            # safety net — a single-node Greenplum-family
+            # coordinator+segment cluster can still legitimately take
+            # longer to initialize than a plain postgres container — but
+            # now the loop breaks as soon as it's actually ready instead
+            # of always waiting out the full ceiling.
+            max_attempts=90
+            sleep_secs=4
+            for _ in $(seq 1 "$max_attempts"); do
+              PGPASSWORD=postgres psql -h localhost -U "$DB_USER" -d mcpg_test -c 'SELECT 1' -q \
+                >/dev/null 2>&1 && break
+              sleep "$sleep_secs"
+            done
+          else
+            max_attempts=30
+            sleep_secs=2
+            for _ in $(seq 1 "$max_attempts"); do
+              docker exec mcpg-db pg_isready -U "$DB_USER" && break
+              sleep "$sleep_secs"
+            done
+          fi
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
