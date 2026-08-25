@@ -251,7 +251,7 @@ class ListenManager:
             try:
                 await asyncio.wait_for(conn.close(), timeout=2.0)
             except Exception:
-                pass
+                logger.debug("Best-effort connection close during shutdown failed", exc_info=True)
         if task is not None:
             task.cancel()
             try:

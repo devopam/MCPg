@@ -118,6 +118,7 @@ class Database:
                     "Secondary database %r failed to open: %s",
                     name,
                     obfuscate_password(str(exc)),
+                    exc_info=True,
                 )
             else:
                 self._secondary_available[name] = True
@@ -131,7 +132,7 @@ class Database:
             try:
                 await pool.close()
             except Exception as exc:
-                logger.warning("Error closing secondary database %r pool: %s", name, exc)
+                logger.warning("Error closing secondary database %r pool: %s", name, exc, exc_info=True)
         await self._pool.close()
         self._connected = False
 

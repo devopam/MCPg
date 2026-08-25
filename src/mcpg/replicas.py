@@ -142,6 +142,7 @@ class ReplicaPool:
                     obfuscate_password(state.dsn),
                     state.last_error,
                     self._degraded_retry_seconds,
+                    exc_info=True,
                 )
 
     async def close(self) -> None:
@@ -149,7 +150,7 @@ class ReplicaPool:
             try:
                 await state.pool.close()
             except Exception as exc:
-                logger.warning("Error closing replica %d pool: %s", state.index, exc)
+                logger.warning("Error closing replica %d pool: %s", state.index, exc, exc_info=True)
 
     async def next_healthy(self) -> _ReplicaState | None:
         """Return the next healthy replica, or ``None`` if all are degraded.
@@ -354,6 +355,7 @@ class RoutedSqlDriver(SqlDriver):
                 "Replica %d query failed; falling back to primary: %s",
                 candidate.index,
                 obfuscate_password(str(exc)),
+                exc_info=True,
             )
             return await self._primary.execute_query(query, params, force_readonly)
 

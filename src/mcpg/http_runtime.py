@@ -166,7 +166,7 @@ class _OIDCAuthMiddleware:
         try:
             verified = await self._verifier.verify(token)
         except OIDCError as exc:
-            logger.warning("OIDC verification failed: %s", exc)
+            logger.warning("OIDC verification failed: %s", exc, exc_info=True)
             await _send_401(send, "invalid bearer token")
             return
 
@@ -180,7 +180,7 @@ class _OIDCAuthMiddleware:
         try:
             validate_role(verified.role)
         except TenancyError:
-            logger.warning("OIDC role claim has unsafe identifier: %r", verified.role)
+            logger.warning("OIDC role claim has unsafe identifier: %r", verified.role, exc_info=True)
             await _send_401(send, "role claim contains an invalid identifier")
             return
 

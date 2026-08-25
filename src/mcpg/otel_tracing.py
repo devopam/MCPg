@@ -193,7 +193,8 @@ def setup_tracing(settings: Settings) -> TracerHandle | None:
         except ImportError:
             _logger.warning(
                 "OpenTelemetry is enabled but the OTLP HTTP exporter is not installed. "
-                "Spans will be created but not exported."
+                "Spans will be created but not exported.",
+                exc_info=True,
             )
 
     # ``trace.set_tracer_provider`` is set-once-per-process; calling it

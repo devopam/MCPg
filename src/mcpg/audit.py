@@ -246,7 +246,7 @@ async def _get_version_and_db(driver: SqlDriver) -> tuple[str, str]:
             short_ver = ver.split(",")[0] if "," in ver else ver
             return short_ver, str(rows[0].cells["dbname"])
     except Exception:
-        pass
+        audit_logger.debug("Version/dbname query failed; falling back to 'PostgreSQL Unknown'", exc_info=True)
     return "PostgreSQL Unknown", "unknown"
 
 

@@ -18,6 +18,7 @@ which is a documented limitation for v1.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 import uuid
@@ -29,6 +30,8 @@ from mcpg.errors import MCPgError
 from mcpg.introspection import describe_table, list_constraints, list_indexes, list_tables
 from mcpg.schema_diff import SchemaDiff, compare_schemas
 from mcpg.sql import SqlDriver
+
+logger = logging.getLogger(__name__)
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _SHADOW_PREFIX = "mcpg_shadow_"
@@ -348,7 +351,7 @@ async def prepare_migration(
         try:
             await driver.execute_query(f'DROP SCHEMA IF EXISTS "{shadow_schema}" CASCADE')
         except Exception:
-            pass
+            logger.debug("Failed to drop half-built shadow schema %r during cleanup", shadow_schema, exc_info=True)
         raise
 
     # Persist the staged row. INSERT through a parametrised statement so

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
@@ -188,6 +189,62 @@ async def test_prepare_migration_rejects_unsafe_target_schema() -> None:
             target_schema='app"; DROP TABLE x; --',
             candidate_sql="ALTER TABLE w ADD c int",
         )
+
+
+class _FailingDropSchemaDriver:
+    """FakeRoutingDriver-alike whose ``DROP SCHEMA`` statements always
+    raise — used to exercise the "shadow cleanup itself fails" branch of
+    ``prepare_migration``'s except handler, on top of an outer failure
+    (a non-transactional candidate statement) that triggers the cleanup
+    in the first place."""
+
+    def __init__(self) -> None:
+        self.calls: list[Any] = []
+
+    async def execute_query(self, query: str, params: Any = None, force_readonly: bool = False) -> Any:
+        self.calls.append((query, params, force_readonly))
+        if "DROP SCHEMA" in query:
+            raise RuntimeError("cannot drop schema: schema is being accessed by other users")
+        return []
+
+
+async def test_prepare_migration_logs_debug_when_shadow_cleanup_also_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When the candidate SQL fails to apply AND the shadow-schema cleanup
+    itself fails, the cleanup failure is now logged at debug (not
+    silently), and the original error still propagates via the trailing
+    ``raise``."""
+    import logging
+
+    from mcpg.migrations import prepare_migration
+
+    driver = _FailingDropSchemaDriver()
+
+    root_logger = logging.getLogger("mcpg")
+    old_propagate = root_logger.propagate
+    root_logger.propagate = True
+    try:
+        caplog.set_level(logging.DEBUG, logger="mcpg.migrations")
+
+        # VACUUM cannot run inside a transaction block — _execute_in_schema
+        # rejects it immediately, entering prepare_migration's cleanup path
+        # without needing a real connection pool.
+        with pytest.raises(MigrationError, match="cannot run inside a transaction"):
+            await prepare_migration(
+                driver,  # type: ignore[arg-type]
+                name="bad_vacuum",
+                target_schema="app",
+                candidate_sql="VACUUM;",
+            )
+    finally:
+        root_logger.propagate = old_propagate
+
+    assert any(
+        "shadow schema" in r.message.lower() and r.levelno == logging.DEBUG
+        for r in caplog.records
+        if r.name == "mcpg.migrations"
+    )
 
 
 # --- validate_migration (Phase 9.2) -------------------------------

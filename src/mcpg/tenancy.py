@@ -243,5 +243,9 @@ async def _execute_with_role(
                 # actually unwinds; never swallow it inside a fallback.
                 raise
             except Exception as rollback_error:
-                logger.error("Error rolling back transaction during role-wrapped execute: %s", rollback_error)
+                logger.error(
+                    "Error rolling back transaction during role-wrapped execute: %s",
+                    rollback_error,
+                    exc_info=True,
+                )
         raise

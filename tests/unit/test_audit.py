@@ -403,3 +403,29 @@ def test_audit_record_redacts_password_in_error_text(caplog) -> None:
         assert "db.internal" in messages  # non-secret host is preserved
     finally:
         logger.propagate = old_propagate
+
+
+async def test_get_version_and_db_logs_debug_on_query_failure(caplog) -> None:
+    """A failed version()/current_database() probe logs at debug and falls back."""
+    import logging
+
+    from mcpg.audit import _get_version_and_db
+
+    driver = FakeDriver(fail=True)
+    logger = logging.getLogger("mcpg")
+    old_propagate = logger.propagate
+    logger.propagate = True
+    try:
+        caplog.set_level(logging.DEBUG, logger="mcpg.audit")
+
+        version, dbname = await _get_version_and_db(driver)  # type: ignore[arg-type]
+
+        assert version == "PostgreSQL Unknown"
+        assert dbname == "unknown"
+        assert any(
+            "Version/dbname query failed" in r.message and r.levelno == logging.DEBUG
+            for r in caplog.records
+            if r.name == "mcpg.audit"
+        )
+    finally:
+        logger.propagate = old_propagate

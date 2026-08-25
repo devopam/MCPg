@@ -281,7 +281,7 @@ class CursorManager:
         try:
             await active.connection.close()
         except Exception as exc:
-            logger.warning("Error closing cursor %s connection: %s", cursor_id, exc)
+            logger.warning("Error closing cursor %s connection: %s", cursor_id, exc, exc_info=True)
         return True
 
     async def _sweep_expired(self) -> None:

@@ -104,7 +104,7 @@ async def generate_graph_diagram(
                     }
                 )
         except Exception as exc:
-            logger.warning("failed to fetch vertices from label %s: %s", tbl, exc)
+            logger.warning("failed to fetch vertices from label %s: %s", tbl, exc, exc_info=True)
 
     # 6. Fetch edges
     edges: list[dict[str, Any]] = []
@@ -125,7 +125,7 @@ async def generate_graph_diagram(
                     }
                 )
         except Exception as exc:
-            logger.warning("failed to fetch edges from label %s: %s", tbl, exc)
+            logger.warning("failed to fetch edges from label %s: %s", tbl, exc, exc_info=True)
 
     # 7. Render Mermaid Flowchart
     lines = ["flowchart TD"]

@@ -21,6 +21,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from os import environ
@@ -36,6 +37,8 @@ from mcpg.config import _parse_bool
 from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver, obfuscate_password
+
+logger = logging.getLogger(__name__)
 
 _AUDIT_LOCK: asyncio.Lock | None = None
 
@@ -250,7 +253,10 @@ async def record_audit(
                 try:
                     audit_integrity = _parse_bool("MCPG_AUDIT_INTEGRITY", raw)
                 except Exception:
-                    pass
+                    logger.debug(
+                        "Malformed MCPG_AUDIT_INTEGRITY env value; defaulting audit_integrity to False",
+                        exc_info=True,
+                    )
 
             key_str = environ.get("MCPG_AUDIT_HMAC_KEY", "").strip()
             audit_hmac_key = key_str if key_str else None
@@ -838,7 +844,7 @@ async def _events_migrate_timescaledb(
         statements.append(sql_compress_pol)
         compression_enabled = True
     except Exception:
-        pass
+        logger.debug("TimescaleDB add_compression_policy failed; continuing without compression", exc_info=True)
 
     if retention_days is not None:
         # HMAC chain anchors on the oldest event. Operator opt-in is
@@ -851,7 +857,7 @@ async def _events_migrate_timescaledb(
             await driver.execute_query(sql_retention, force_readonly=False)
             statements.append(sql_retention)
         except Exception:
-            pass
+            logger.debug("TimescaleDB add_retention_policy failed; continuing without retention", exc_info=True)
 
     return row_count, compression_enabled, statements
 

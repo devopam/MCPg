@@ -358,7 +358,7 @@ async def ensure_nl2sql_audit_table(
                 statements.append(sql_compress_policy)
                 compression_enabled = True
             except Exception as exc:  # pragma: no cover - depends on TSDB version
-                logger.warning("add_compression_policy raised, continuing: %s", exc)
+                logger.warning("add_compression_policy raised, continuing: %s", exc, exc_info=True)
 
             sql_retention = (
                 f"SELECT add_retention_policy('{_QUALIFIED}', INTERVAL '{retention_days} days', if_not_exists => TRUE)"
@@ -367,7 +367,7 @@ async def ensure_nl2sql_audit_table(
                 await driver.execute_query(sql_retention, force_readonly=False)
                 statements.append(sql_retention)
             except Exception as exc:  # pragma: no cover
-                logger.warning("add_retention_policy raised, continuing: %s", exc)
+                logger.warning("add_retention_policy raised, continuing: %s", exc, exc_info=True)
         elif backend == "pg_partman":
             # pg_partman is the partition manager; LZ4 TOAST compression
             # is the storage-level codec. Both are independent layers.

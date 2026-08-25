@@ -23,12 +23,15 @@ reviewer flag this?" rather than "is this provably wrong?".
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from mcpg.query import QueryError, analyze_query_plan
 from mcpg.sql import SqlDriver
+
+logger = logging.getLogger(__name__)
 
 # Stable rule identifiers — agents may filter by these.
 RULE_MISSING_PRIMARY_KEY = "missing_primary_key"
@@ -795,7 +798,7 @@ async def optimize_query(driver: SqlDriver, sql: str) -> OptimizationResult:
                 "- Consider adding indexes on columns used in WHERE or JOIN clauses for tables with Seq Scan."
             )
     except Exception:
-        pass
+        logger.debug("Skipping sequential-scan advisory line; plan inspection failed", exc_info=True)
 
     rationale = (
         "\n".join(rationale_parts)

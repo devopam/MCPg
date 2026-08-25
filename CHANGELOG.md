@@ -35,6 +35,19 @@ adheres to [Semantic Versioning](https://semver.org/).
   step accounted for ~6-6.5 min of the lane's ~9-10 min total vs.
   ~20-30s on every other PG version; the `pytest` step itself was
   already the same duration as any other lane).
+- **Seven `except Exception: pass` sites now log at `debug` level with `exc_info=True`** instead of
+  swallowing silently — `advisors.py`, `audit.py`, `audit_trail.py` (×3), `listen.py`, `migrations.py`.
+  No control flow changed; these were already best-effort/cleanup paths and remain so, now with
+  observability into how often they actually fire.
+- **Error-logging call sites inside `except` blocks now preserve tracebacks** (`exc_info=True`, added
+  to the existing `logger.error`/`logger.warning` calls) where they previously logged only the
+  exception's string form and lost the traceback — audited every `logger.error`/`logger.warning` call
+  across `src/mcpg` (33 candidate sites), 23 sites fixed across `audit_nl2sql.py` (×2), `cache.py` (×6),
+  `cursors.py`, `database.py` (×2), `graph_diagram.py` (×2), `http_runtime.py` (×2), `nl2sql.py` (×3),
+  `otel_tracing.py`, `replicas.py` (×3), and `tenancy.py`. The remaining 10 sites were left unchanged:
+  one (`listen.py`) already carried `exc_info=True`; nine log about something other than the exception
+  just caught, or aren't inside an `except` block at all (e.g. a slow-call warning, an audit-event
+  record, an egress notice, a config-collision warning).
 
 ### Changed
 
