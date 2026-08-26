@@ -5,12 +5,13 @@ from __future__ import annotations
 import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
 
-from mcpg.config import Settings
+from mcpg.config import AccessMode, Settings
 from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
 from mcpg.database import DatabaseError
 from mcpg.graph import GraphError, describe_graph, list_graphs, parse_agtype
 from mcpg.listen import ListenManager
+from mcpg.policy import Capability
 
 
 def test_parse_agtype_strips_vertex_edge_path() -> None:
@@ -165,3 +166,80 @@ async def test_describe_graph_fetches_stats() -> None:
     assert len(stats["edge_labels"]) == 1
     assert stats["edge_labels"][0]["label"] == "KNOWS"
     assert stats["edge_labels"][0]["count"] == 15
+
+    # The per-label row-count query must run READ ONLY.
+    count_calls = [c for c in fake_routing.calls if '"my_graph"."Person"' in c[0]]
+    assert count_calls and count_calls[0][2] is True
+
+
+async def test_describe_graph_rejects_malicious_label_name() -> None:
+    """A label name read back from ag_catalog.ag_label is not identifier-safe.
+
+    AGE/Postgres quoted identifiers can contain arbitrary characters,
+    including embedded double quotes. describe_graph interpolates the
+    label name directly into an f-string SQL query
+    (``FROM "{graph_name}"."{name}"``), so a label such as
+    ``Person"; DROP TABLE secrets; --`` must be rejected before it ever
+    reaches that query — not silently degrade to a zero count.
+    """
+    malicious_name = 'Person"; DROP TABLE secrets; --'
+    fake_routing = FakeRoutingDriver(
+        {
+            "ag_label": [
+                {"name": malicious_name, "kind": "v"},
+            ],
+            "ag_graph": [{"name": "my_graph", "namespace": "my_graph"}],
+        }
+    )
+    fake_db = FakeDatabase(fake_routing)  # type: ignore[arg-type]
+    url = "postgresql://localhost/db"
+    settings = Settings(database_url=url)
+    context = AppContext(
+        settings=settings,
+        database=fake_db,  # type: ignore[arg-type]
+        listen_manager=ListenManager(url),
+        cursor_manager=CursorManager(url),
+    )
+
+    with pytest.raises(GraphError, match="invalid label name"):
+        await describe_graph(context, "my_graph")
+
+    # No query built from the malicious label name may have reached the driver.
+    assert not any("DROP TABLE" in str(call[0]) for call in fake_routing.calls)
+
+
+async def test_describe_graph_enforces_access_mode_capability(monkeypatch: pytest.MonkeyPatch) -> None:
+    """describe_graph must gate on the same READ capability as its sibling
+    graph-read tools (cypher.run_cypher's read path, generate_graph_diagram).
+
+    Capability.READ is permitted in every current access mode, so this
+    cannot be proven by a mode that actually blocks the call — instead we
+    spy on mcpg.graph.check_permission to confirm describe_graph invokes
+    the gate at all (it did not, prior to this fix).
+    """
+    calls: list[tuple[Capability, AccessMode]] = []
+
+    def _spy(capability: Capability, access_mode: AccessMode) -> None:
+        calls.append((capability, access_mode))
+
+    monkeypatch.setattr("mcpg.graph.check_permission", _spy)
+
+    fake_routing = FakeRoutingDriver(
+        {
+            "ag_label": [],
+            "ag_graph": [{"name": "my_graph", "namespace": "my_graph"}],
+        }
+    )
+    fake_db = FakeDatabase(fake_routing)  # type: ignore[arg-type]
+    url = "postgresql://localhost/db"
+    settings = Settings(database_url=url, access_mode=AccessMode.READ_ONLY)
+    context = AppContext(
+        settings=settings,
+        database=fake_db,  # type: ignore[arg-type]
+        listen_manager=ListenManager(url),
+        cursor_manager=CursorManager(url),
+    )
+
+    await describe_graph(context, "my_graph")
+
+    assert calls == [(Capability.READ, AccessMode.READ_ONLY)]

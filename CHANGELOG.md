@@ -106,6 +106,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **Fixed a SQL injection defect in `describe_graph` and `generate_graph_diagram`.** Both read Apache
+  AGE vertex/edge label names back from `ag_catalog.ag_label` and interpolated them directly into
+  f-string SQL (`FROM "{graph}"."{label}"`) with no identifier validation. Postgres/AGE quoted
+  identifiers can contain arbitrary characters, including embedded double quotes, so a label name
+  created via a prior `run_cypher` write could carry attacker-controlled SQL into that later
+  re-interpolation. Every catalog-derived label name is now identifier-validated
+  (`[A-Za-z_][A-Za-z0-9_]*`) before it reaches a generated SQL string or the diagram's Mermaid output;
+  an invalid name aborts the call with a `GraphError` instead of being silently used, matching the
+  existing `graph_projection` precedent for catalog-derived identifiers. Both tools' backing count/fetch
+  queries also now run under `force_readonly=True`, and `describe_graph` gained the same
+  `Capability.READ` access-mode gate its sibling read tools (`run_cypher`'s read path,
+  `generate_graph_diagram`) already had.
 - **BREAKING: rate limiting (`MCPG_RATE_LIMIT_ENABLED`) now defaults to `true`** (previously `false`).
   Set it to `false` explicitly to restore the previous unlimited behavior.
 - **BREAKING: the HTTP transport now refuses to start unauthenticated by default.** Previously it started

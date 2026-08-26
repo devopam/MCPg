@@ -14,6 +14,7 @@ from typing import Any, TypedDict
 from mcpg.context import AppContext
 from mcpg.database import DatabaseError
 from mcpg.errors import MCPgError
+from mcpg.policy import Capability, check_permission
 
 
 class GraphError(MCPgError):
@@ -28,6 +29,29 @@ class GraphError(MCPgError):
     other surface follows: PgSearchError, TurboQuantError,
     SecretsError, …).
     """
+
+
+# Catalog-derived identifiers (label/table names read back from
+# ``ag_catalog.ag_label``) are NOT validated by Postgres/AGE — a quoted
+# identifier can contain arbitrary characters, including embedded double
+# quotes. Every such name is checked against this pattern immediately
+# before it is interpolated into a SQL string, mirroring
+# ``graph_projection._check_identifier``.
+_LABEL_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
+
+
+def _check_label_identifier(name: str) -> None:
+    """Raise :class:`GraphError` if ``name`` is not a plain SQL identifier.
+
+    Guards every catalog-derived label/table name (from ``ag_label``)
+    before it is interpolated into an f-string SQL query. Aborts the
+    whole call rather than silently skipping the offending label — same
+    precedent as ``graph_projection.generate_graph_projection``, which
+    raises on the first invalid catalog-derived table name instead of
+    dropping it and continuing.
+    """
+    if not _LABEL_IDENTIFIER.match(name):
+        raise GraphError(f"invalid label name {name!r}; must match [A-Za-z_][A-Za-z0-9_]*")
 
 
 class GraphInfo(TypedDict):
@@ -116,6 +140,10 @@ async def describe_graph(context: AppContext, graph_name: str) -> GraphDescripti
     if not graph_name.replace("_", "").isalnum() or graph_name[0].isdigit():
         raise GraphError(f"invalid graph name: {graph_name!r}")
 
+    # Read-only introspection — same capability gate as the other graph
+    # read tools (cypher.run_cypher's read path, graph_diagram.generate_graph_diagram).
+    check_permission(Capability.READ, context.settings.access_mode)
+
     driver = context.database.driver()
 
     # 1. Fetch graph metadata to ensure it exists
@@ -158,11 +186,17 @@ async def describe_graph(context: AppContext, graph_name: str) -> GraphDescripti
         # but we must avoid internal '_ag_label_vertex' and '_ag_label_edge' tables.
         if name.startswith("_ag_label"):
             continue
+        # Catalog-derived name — validated before it reaches the f-string
+        # below. Raises (aborting describe_graph) rather than silently
+        # skipping, so a corrupted/malicious label surfaces as an error
+        # instead of a quietly wrong report.
+        _check_label_identifier(name)
 
         try:
             # Query row counts of the backing label table under the graph's schema
             count_rows = await driver.execute_query(
-                f'SELECT COALESCE(COUNT(*), 0) as cnt FROM "{graph_name}"."{name}";'
+                f'SELECT COALESCE(COUNT(*), 0) as cnt FROM "{graph_name}"."{name}";',
+                force_readonly=True,
             )
             cnt = int(count_rows[0].cells["cnt"]) if count_rows else 0
         except Exception:

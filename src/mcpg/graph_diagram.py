@@ -12,7 +12,7 @@ from typing import Any, TypedDict
 
 from mcpg.context import AppContext
 from mcpg.database import DatabaseError
-from mcpg.graph import GraphError
+from mcpg.graph import GraphError, _check_label_identifier
 from mcpg.policy import Capability, check_permission
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,12 @@ async def generate_graph_diagram(
         kind = str(row.cells["kind"])
         if name.startswith("_ag_label"):
             continue
+        # Catalog-derived name — validated up front, before it can reach
+        # either the interpolated SQL below or the generated Mermaid text
+        # (subgraph/edge labels). Raises (aborting the whole diagram),
+        # matching graph.describe_graph and graph_projection's precedent
+        # of aborting rather than silently dropping the offending label.
+        _check_label_identifier(name)
         if kind == "v":
             vertex_tables.append(name)
         elif kind == "e":
@@ -92,6 +98,7 @@ async def generate_graph_diagram(
             v_rows = await driver.execute_query(
                 f'SELECT id, properties::text as props FROM "{graph_name}"."{tbl}" LIMIT %s;',
                 [limit - len(nodes)],
+                force_readonly=True,
             )
             for vr in v_rows or []:
                 raw_props = vr.cells.get("props") or "{}"
@@ -115,6 +122,7 @@ async def generate_graph_diagram(
             e_rows = await driver.execute_query(
                 f'SELECT start_id, end_id, properties::text as props FROM "{graph_name}"."{tbl}" LIMIT %s;',
                 [limit - len(edges)],
+                force_readonly=True,
             )
             for er in e_rows or []:
                 edges.append(
