@@ -113,6 +113,12 @@ class Settings:
     # When unset, the HTTP transport runs without auth (current
     # behaviour). stdio is never gated.
     http_auth_token: str | None = None
+    # When True, explicitly opts out of the fail-closed startup check in
+    # ``build_http_app`` that otherwise raises ``ConfigError`` when the
+    # HTTP transport would start with neither ``http_auth_token`` nor
+    # ``auth_mode == "oidc"`` configured. Setting this is a deliberate,
+    # loudly-logged choice — not the default.
+    http_allow_unauthenticated: bool = False
     # HTTP transport authentication mode. ``static`` (the default) does
     # constant-time comparison against ``http_auth_token``. ``oidc``
     # validates the bearer JWT against the configured OIDC provider's
@@ -679,6 +685,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         if not stripped:
             raise ConfigError("MCPG_HTTP_AUTH_TOKEN must not be blank when set")
         http_auth_token = stripped
+
+    http_allow_unauthenticated = False
+    if (raw := secrets.get("MCPG_HTTP_ALLOW_UNAUTHENTICATED")) is not None:
+        http_allow_unauthenticated = _parse_bool("MCPG_HTTP_ALLOW_UNAUTHENTICATED", raw)
 
     auth_mode = "static"
     if (raw := env.get("MCPG_AUTH_MODE")) is not None:
@@ -1274,6 +1284,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
         http_auth_token=http_auth_token,
+        http_allow_unauthenticated=http_allow_unauthenticated,
         auth_mode=auth_mode,
         oidc_issuer=oidc_issuer,
         oidc_audience=oidc_audience,

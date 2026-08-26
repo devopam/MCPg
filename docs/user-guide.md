@@ -205,6 +205,13 @@ static ceiling.
 
 ### Streamable HTTP (Cursor, Continue, custom web clients, etc.)
 
+The HTTP transport refuses to start unless it's authenticated — set
+either `MCPG_HTTP_AUTH_TOKEN` (static bearer, below) or
+`MCPG_AUTH_MODE=oidc` (next). If you deliberately need it unauthenticated
+(e.g. behind a proxy that already enforces auth), set
+`MCPG_HTTP_ALLOW_UNAUTHENTICATED=true` — this is loudly logged on every
+startup and not recommended.
+
 ```bash
 export MCPG_DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
 export MCPG_TRANSPORT=streamable-http
@@ -839,9 +846,13 @@ MCPg ships with defence-in-depth defaults:
 - **Per-session timeouts** (`MCPG_STATEMENT_TIMEOUT_MS`, default
   30 s; `MCPG_LOCK_TIMEOUT_MS`, default 5 s) self-terminate
   runaway queries and lock waits.
-- **HTTP authn.** Static bearer (`MCPG_HTTP_AUTH_TOKEN`) with
-  constant-time compare, or OIDC JWT validation against the
-  issuer's JWKS (asymmetric algorithms only).
+- **HTTP authn enforced on startup.** The HTTP transport refuses to
+  start unless authenticated: static bearer (`MCPG_HTTP_AUTH_TOKEN`)
+  with constant-time compare, or OIDC JWT validation against the
+  issuer's JWKS (asymmetric algorithms only). Use
+  `MCPG_HTTP_ALLOW_UNAUTHENTICATED=true` to explicitly opt out
+  (loudly logged; not recommended). The default `stdio` transport is
+  unaffected.
 - **Audit redaction** as documented above.
 - **Graceful shutdown draining** (controlled by `MCPG_SHUTDOWN_DRAIN_SECONDS`, default 30 s) ensures the server lifespan exit drains all in-flight tool calls before releasing database connection pools.
 - **Multi-tenancy via `SET ROLE`.** One process can serve many

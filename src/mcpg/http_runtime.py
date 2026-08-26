@@ -29,7 +29,7 @@ import sys
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
 
-from mcpg.config import Settings
+from mcpg.config import ConfigError, Settings
 from mcpg.errors import MCPgError
 from mcpg.observability import render_prometheus
 from mcpg.oidc import OIDCError, OIDCVerifier
@@ -647,12 +647,18 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
             app.add_middleware(_TenantRoleMiddleware, allowed_roles=settings.allowed_roles)
         if settings.http_auth_token is not None:
             app.add_middleware(_BearerAuthMiddleware, token=settings.http_auth_token)
-        else:
+        elif settings.http_allow_unauthenticated:
             logger.warning(
-                "MCPg HTTP transport %s is running without auth. "
-                "Set MCPG_HTTP_AUTH_TOKEN or MCPG_AUTH_MODE=oidc to require "
-                "bearer tokens on every request.",
+                "MCPg HTTP transport %s is running WITHOUT AUTH — MCPG_HTTP_ALLOW_UNAUTHENTICATED=true "
+                "was set explicitly. This is your deliberate choice; if it wasn't, unset that variable "
+                "and set MCPG_HTTP_AUTH_TOKEN or MCPG_AUTH_MODE=oidc instead.",
                 kind,
+            )
+        else:
+            raise ConfigError(
+                f"MCPg HTTP transport ({kind}) refuses to start unauthenticated. Set "
+                "MCPG_HTTP_AUTH_TOKEN, set MCPG_AUTH_MODE=oidc, or set "
+                "MCPG_HTTP_ALLOW_UNAUTHENTICATED=true to explicitly opt out (not recommended)."
             )
 
     # Outer middlewares (processed first on request)

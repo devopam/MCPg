@@ -189,6 +189,11 @@ and every call is validated and audited.
   present a valid cert chaining to the configured CA. Setting the
   flag without `CA_CERTS` is rejected — there'd be nothing to
   verify against.
+- **Fail closed by default.** `build_http_app` raises `ConfigError` at
+  startup — it refuses to serve — when neither `MCPG_HTTP_AUTH_TOKEN`
+  nor `MCPG_AUTH_MODE=oidc` is configured. `MCPG_HTTP_ALLOW_UNAUTHENTICATED=true`
+  is the only way to opt back into serving unauthenticated, and doing
+  so logs a warning on every startup. `stdio` is unaffected.
 - **Static bearer.** `MCPG_HTTP_AUTH_TOKEN` enforces
   `Authorization: Bearer <token>` with `hmac.compare_digest`
   constant-time comparison. `/metrics`, `/healthz`, `/readyz` are

@@ -73,6 +73,11 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **BREAKING: the HTTP transport now refuses to start unauthenticated by default.** Previously it started
+  anyway and only logged a warning if neither `MCPG_HTTP_AUTH_TOKEN` nor `MCPG_AUTH_MODE=oidc` was set.
+  Deployments that relied on the unauthenticated default must now either configure auth or set
+  `MCPG_HTTP_ALLOW_UNAUTHENTICATED=true` to explicitly opt back in (loudly logged when set). The default
+  `stdio` transport is unaffected.
 - **Bumped transitive `pip` 26.1.2 → 26.2.1 (PYSEC-2026-3721).**
   `pip-audit`'s own `pip_api` dependency pulled in a `pip` version with
   a known vulnerability, flagged by the local pre-commit hook's

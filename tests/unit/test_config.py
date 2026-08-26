@@ -1076,3 +1076,18 @@ def test_http_request_timeout_rejects_negative() -> None:
                 "MCPG_HTTP_REQUEST_TIMEOUT_SECONDS": "-5",
             }
         )
+
+
+def test_http_allow_unauthenticated_defaults_false() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.http_allow_unauthenticated is False
+
+
+def test_http_allow_unauthenticated_env_var_parses() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
+    assert settings.http_allow_unauthenticated is True

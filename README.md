@@ -210,9 +210,11 @@ mcpg
 ```
 
 Then point any MCP-aware client at `http://localhost:8000/mcp` (or
-`/sse` for the SSE transport). Set
-`MCPG_HTTP_AUTH_TOKEN=...` for a static bearer, or
-`MCPG_AUTH_MODE=oidc` for full JWT validation against an OIDC issuer.
+`/sse` for the SSE transport). The HTTP transport refuses to start
+unless it's authenticated — set `MCPG_HTTP_AUTH_TOKEN=...` for a static
+bearer, or `MCPG_AUTH_MODE=oidc` for full JWT validation against an
+OIDC issuer. To deliberately run without auth (not recommended), set
+`MCPG_HTTP_ALLOW_UNAUTHENTICATED=true`.
 
 ---
 
@@ -262,7 +264,8 @@ are one-shot commands, not configuration). The only required one is
 | Variable | Default | Description |
 |---|---|---|
 | `MCPG_AUTH_MODE` | `static` | `static` (compare bearer to `MCPG_HTTP_AUTH_TOKEN`) \| `oidc` (full JWT validation). |
-| `MCPG_HTTP_AUTH_TOKEN` | — | Required bearer token when `MCPG_AUTH_MODE=static`. Constant-time compare. |
+| `MCPG_HTTP_AUTH_TOKEN` | — | Required bearer token when `MCPG_AUTH_MODE=static`. Constant-time compare. The HTTP transport refuses to start (`ConfigError`) unless this, `MCPG_AUTH_MODE=oidc`, or `MCPG_HTTP_ALLOW_UNAUTHENTICATED=true` is set. |
+| `MCPG_HTTP_ALLOW_UNAUTHENTICATED` | `false` | Explicit opt-out of the HTTP transport's fail-closed auth check. Loudly logged on every startup when set; not recommended. |
 | `MCPG_OIDC_ISSUER` | — | OIDC issuer URL (required when `MCPG_AUTH_MODE=oidc`). |
 | `MCPG_OIDC_AUDIENCE` | — | Expected `aud` claim (required when `MCPG_AUTH_MODE=oidc`). |
 | `MCPG_OIDC_JWKS_URL` | discovered | Override JWKS endpoint (auto-discovered from issuer's `.well-known` otherwise). |

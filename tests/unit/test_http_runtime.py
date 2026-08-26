@@ -171,7 +171,12 @@ def test_build_http_app_serves_metrics_with_observability_payload() -> None:
     # Record one observation so the /metrics body has something to assert on.
     get_metrics().record_call("smoke_test", "ok", 0.05)
 
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     class _Stub:
         def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
@@ -187,7 +192,12 @@ def test_build_http_app_serves_metrics_with_observability_payload() -> None:
 
 
 def test_build_http_app_serves_healthz_unauthenticated() -> None:
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     class _Stub:
         def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
@@ -202,7 +212,12 @@ def test_build_http_app_serves_healthz_unauthenticated() -> None:
 
 def test_readyz_returns_200_when_database_is_connected() -> None:
     """/readyz reports ready once Database.is_connected is True."""
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     class _FakeDatabase:
         is_connected = True
@@ -222,7 +237,12 @@ def test_readyz_returns_200_when_database_is_connected() -> None:
 
 def test_readyz_returns_503_when_database_is_not_connected() -> None:
     """/readyz reports not-ready when Database.is_connected is False."""
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     class _FakeDatabase:
         is_connected = False
@@ -244,7 +264,12 @@ def test_readyz_returns_200_when_server_never_wired_a_database() -> None:
     """A build_http_app caller that never set mcpg_database (e.g. the bare
     stubs used elsewhere in this file) has nothing to assess, so /readyz
     reports ready rather than failing a check that was never wired up."""
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     class _Stub:
         def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
@@ -282,6 +307,37 @@ def test_build_http_app_with_token_blocks_unauthenticated_requests() -> None:
         # /metrics still works without a token.
         response = client.get("/metrics")
         assert response.status_code == 200
+
+
+def test_build_http_app_raises_without_auth_or_opt_out() -> None:
+    """HTTP transport refuses to start unauthenticated unless explicitly opted out."""
+    from mcpg.config import ConfigError
+
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    with pytest.raises(ConfigError, match="unauthenticated"):
+        build_http_app(_Stub(), settings, kind="streamable-http")
+
+
+def test_build_http_app_starts_with_explicit_opt_out() -> None:
+    """The MCPG_HTTP_ALLOW_UNAUTHENTICATED escape hatch still works, loudly logged."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    app = build_http_app(_Stub(), settings, kind="streamable-http")
+    assert app is not None
 
 
 # --- per-request role multi-tenancy (Phase 1.4) --------------------------
@@ -442,6 +498,7 @@ def test_build_http_app_with_tenant_role_returns_403_for_unknown_role() -> None:
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_DEFAULT_ROLE": "tenant_a",
             "MCPG_ALLOWED_ROLES": "tenant_a,tenant_b",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -566,6 +623,7 @@ def test_cors_middleware_integration() -> None:
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_ALLOWED_ORIGINS": "http://localhost:3000, https://app.example.com",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -655,6 +713,7 @@ def test_cors_middleware_negative_and_default_config() -> None:
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_ALLOWED_ORIGINS": "",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -677,6 +736,7 @@ def test_cors_middleware_negative_and_default_config() -> None:
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_ALLOWED_ORIGINS": "https://app.example.com",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
     wrapped_allowlist = build_http_app(_Stub(), settings_allowlist, kind="streamable-http")
@@ -875,6 +935,7 @@ def test_build_http_app_passes_configured_host_to_streamable_http_app() -> None:
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_HOST": "0.0.0.0",
             "MCPG_HTTP_PORT": "9999",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -899,6 +960,7 @@ def test_build_http_app_passes_configured_host_to_sse_app() -> None:
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_HOST": "0.0.0.0",
             "MCPG_HTTP_PORT": "9999",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -915,7 +977,12 @@ def test_build_http_app_passes_configured_host_to_sse_app() -> None:
 
 
 def test_build_http_app_supports_sse_kind() -> None:
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     class _Stub:
         def sse_app(self, *, host: str = "127.0.0.1") -> Starlette:
@@ -935,6 +1002,7 @@ def test_run_http_builds_app_and_serves_via_uvicorn(monkeypatch: pytest.MonkeyPa
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_HOST": "0.0.0.0",
             "MCPG_HTTP_PORT": "9999",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -977,7 +1045,12 @@ def test_run_http_falls_back_to_private_policy_name_when_public_name_raises(
 
     from mcpg import http_runtime
 
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     captured_kwargs: dict[str, object] = {}
 
@@ -1022,7 +1095,12 @@ def test_run_http_pins_selector_loop_on_windows(monkeypatch: pytest.MonkeyPatch)
 
     from mcpg import http_runtime
 
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     captured_kwargs: dict[str, object] = {}
 
@@ -1063,7 +1141,12 @@ def test_run_http_leaves_the_event_loop_alone_off_windows(monkeypatch: pytest.Mo
 
     from mcpg import http_runtime
 
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     captured_kwargs: dict[str, object] = {}
 
@@ -1343,7 +1426,10 @@ def test_settings_rejects_nonexistent_cert_path() -> None:
 
 
 def test_build_http_app_installs_request_timeout_only_when_positive() -> None:
-    base = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"}
+    base = {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+    }
 
     class _Stub:
         def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
@@ -1502,7 +1588,10 @@ async def test_ip_allowlist_middleware_passes_non_http_scopes_through() -> None:
 
 
 def test_build_http_app_installs_ip_allowlist_only_when_configured() -> None:
-    base = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"}
+    base = {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+    }
 
     class _Stub:
         def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
