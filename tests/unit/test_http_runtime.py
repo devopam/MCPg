@@ -123,7 +123,7 @@ def test_bearer_middleware_exempts_metrics_path_even_without_token() -> None:
     asyncio.run(middleware(scope, receive, send))
 
     # The middleware passed through to the inner app without checking auth.
-    assert inner_invoked
+    assert inner_invoked is True
     assert sent_messages[0]["status"] == 200
 
 
@@ -144,7 +144,7 @@ def test_bearer_middleware_passes_non_http_scopes_through_unmodified() -> None:
 
     asyncio.run(middleware(scope, lambda: None, lambda _: None))  # type: ignore[arg-type]
 
-    assert inner_invoked
+    assert inner_invoked is True
 
 
 def test_auth_exempt_paths_includes_metrics_and_health_endpoints() -> None:
@@ -490,7 +490,7 @@ def test_tenant_role_middleware_exempts_health_paths() -> None:
 
     asyncio.run(middleware(scope, receive, send))
 
-    assert inner_invoked
+    assert inner_invoked is True
 
 
 def test_build_http_app_with_tenant_role_returns_403_for_unknown_role() -> None:

@@ -298,7 +298,7 @@ async def test_describe_ao_table_passes_schema_and_table_as_parameters() -> None
     driver = FakeRoutingDriver(routes)
     await describe_ao_table(driver, "warehouse", "fact_events")
     ao_calls = [c for c in driver.calls if "pg_appendonly" in c[0]]
-    assert ao_calls
+    assert len(ao_calls) >= 1
     assert ao_calls[0][1] == ["warehouse", "fact_events"]
 
 

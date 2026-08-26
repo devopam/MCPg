@@ -45,7 +45,7 @@ def test_referential_integrity_of_generated_rows() -> None:
         assert 1 <= product_id <= len(dataset.products)
         assert 1 <= customer_id <= len(dataset.customers)
         assert 1 <= rating <= 5
-        assert text
+        assert len(text) > 0
         assert source in {"web", "mobile", "email_campaign"}
 
 
