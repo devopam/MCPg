@@ -300,7 +300,10 @@ class TranslationResult:
     """Result of :func:`translate_nl_to_sql`.
 
     ``sql`` is the generated query; empty when parsing failed.
-    ``explanation`` is the model's natural-language rationale. When
+    ``explanation`` is the model's natural-language rationale.
+    ``schema_context`` is the rendered schema brief the model actually
+    saw for this call — empty only on the (currently nonexistent) path
+    where the result is built before schema-gathering runs. When
     ``execute=True`` and the SQL passed the safety check, ``rows`` /
     ``columns`` / ``row_count`` are populated and ``executed`` is
     ``True``. On safety / execution failure, ``error`` carries the
@@ -311,6 +314,11 @@ class TranslationResult:
     explanation: str
     model: str
     provider: str
+    # The rendered schema brief actually sent to the model as part of the
+    # prompt for this translation (see ``_build_schema_brief``) — kept so a
+    # generated query's provenance is traceable to the schema evidence that
+    # informed it, not just which model/provider produced it.
+    schema_context: str
     executed: bool
     rows: list[dict[str, Any]]
     columns: list[str]
@@ -1215,6 +1223,7 @@ async def translate_nl_to_sql(
             explanation=explanation or refusal_reason,
             model=model,
             provider=provider.name,
+            schema_context=schema_brief,
             executed=False,
             rows=[],
             columns=[],
@@ -1233,6 +1242,7 @@ async def translate_nl_to_sql(
             explanation=explanation,
             model=model,
             provider=provider.name,
+            schema_context=schema_brief,
             executed=False,
             rows=[],
             columns=[],
@@ -1247,6 +1257,7 @@ async def translate_nl_to_sql(
             explanation=explanation,
             model=model,
             provider=provider.name,
+            schema_context=schema_brief,
             executed=False,
             rows=[],
             columns=[],
@@ -1268,6 +1279,7 @@ async def translate_nl_to_sql(
                 explanation=explanation,
                 model=model,
                 provider=provider.name,
+                schema_context=schema_brief,
                 executed=True,
                 rows=exec_result.rows,
                 columns=exec_result.columns,
@@ -1287,6 +1299,7 @@ async def translate_nl_to_sql(
                 explanation=explanation,
                 model=model,
                 provider=provider.name,
+                schema_context=schema_brief,
                 executed=False,
                 rows=[],
                 columns=[],

@@ -535,6 +535,24 @@ async def test_translate_nl_to_sql_records_provider_and_model_on_the_result() ->
     assert result.provider == "stub"
 
 
+async def test_translation_result_records_the_schema_context_it_saw() -> None:
+    """A caller can trace generated SQL back to the schema evidence the model was given."""
+    provider = _StubProvider(response='{"sql": "SELECT count(*) FROM public.widget", "explanation": "row count"}')
+
+    result = await translate_nl_to_sql(
+        FakeRoutingDriver(_routes_for_simple_schema()),  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="m",
+        question="how many widgets are there?",
+        schema="public",
+    )
+
+    assert result.schema_context  # non-empty
+    assert "widget" in result.schema_context  # the table the question is actually about was included
+    # It's the exact brief sent to the model, not a re-derived copy.
+    assert result.schema_context in provider.captured_user
+
+
 async def test_translate_nl_to_sql_reports_the_providers_token_usage() -> None:
     """The internal provider call's tokens never go through a caller's own
     model loop — TranslationResult is the only place they're visible, so

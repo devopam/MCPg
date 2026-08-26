@@ -25,6 +25,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Optional `TrustedHostMiddleware` support via `MCPG_HTTP_TRUSTED_HOSTS` (comma-separated), off by
   default, matching the existing `MCPG_HTTP_ALLOWED_ORIGINS` convention.
 
+- `TranslationResult` (NL→SQL) now records `schema_context` — the schema evidence actually sent to the
+  model for that translation — so a generated query's provenance is traceable, not just which
+  model/provider produced it.
+
 ### Fixed
 
 - **`run_select` / `run_select_tuned` fully materialized a query's entire result set into Python
