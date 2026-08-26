@@ -35,6 +35,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   request timeout. A tripped breaker still surfaces as the module's existing error type (`NL2SQLError` /
   `OIDCError`), never a bare `CircuitBreakerError`, so calling code's exception handling is unaffected.
 
+- Retry with exponential backoff + jitter (`tenacity`) around the same NL→SQL provider calls and OIDC
+  discovery fetch, layered *inside* the circuit breaker added above (up to 3 attempts, ~0.1-2s apart) —
+  a single dropped connection or transient 5xx is retried transparently instead of surfacing as an
+  error. Because retry sits inside the breaker, an exhausted retry cycle counts as exactly one breaker
+  failure (not one per retry attempt), and a call that fails twice then succeeds never touches the
+  breaker's failure count at all.
+
 ### Fixed
 
 - **`run_select` / `run_select_tuned` fully materialized a query's entire result set into Python

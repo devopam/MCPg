@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import httpx
 from circuitbreaker import CircuitBreakerError, circuit
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
 from mcpg.errors import MCPgError
 from mcpg.introspection import describe_table, list_foreign_keys, list_tables
@@ -245,6 +246,26 @@ DEFAULT_TIMEOUT_SECONDS = 60.0
 # breaker failure, not one per retry.
 NL2SQL_CIRCUIT_FAILURE_THRESHOLD = 5
 NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS = 30.0
+
+# Retry tuning for each provider's ``complete()`` HTTP call — a handful of
+# quick attempts with exponential backoff + jitter before giving up, so a
+# single dropped connection or transient 5xx doesn't surface as a user-
+# facing failure. `@retry` is applied *inside* `@circuit` below (i.e.
+# `@circuit` is the outer decorator) deliberately, not by accident of
+# decorator-stacking order: `circuitbreaker.call_async` (see the installed
+# package's source) does `with self: return await func(...)` and counts
+# exactly one failure per invocation of whatever it wraps. With retry
+# innermost, all `NL2SQL_RETRY_STOP_ATTEMPTS` attempts happen *inside* that
+# one `with self:` block, so an exhausted retry cycle counts as ONE breaker
+# failure. Stacked the other way (`@retry` outer, `@circuit` inner — as a
+# stale draft of this task's brief showed), each retry attempt would
+# separately enter/exit the breaker's `with self:`, so 3 quick retries
+# would burn 3 of the breaker's `failure_threshold` slots for a single
+# logical call — letting retries alone trip the breaker.
+NL2SQL_RETRY_STOP_ATTEMPTS = 3
+NL2SQL_RETRY_WAIT_INITIAL_SECONDS = 0.1
+NL2SQL_RETRY_WAIT_MAX_SECONDS = 2.0
+NL2SQL_RETRY_WAIT_JITTER_SECONDS = 0.1
 
 _SUPPORTED_PROVIDERS = frozenset(DEFAULT_MODELS)
 
@@ -464,6 +485,19 @@ class AnthropicProvider:
         recovery_timeout=NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
         expected_exception=httpx.HTTPError,
     )
+    @retry(
+        reraise=True,  # load-bearing: without it, exhaustion raises
+        # tenacity.RetryError instead of the original httpx.HTTPError, which
+        # wouldn't match @circuit's expected_exception above — the breaker
+        # would silently never count a retry-exhausted call as a failure.
+        stop=stop_after_attempt(NL2SQL_RETRY_STOP_ATTEMPTS),
+        wait=wait_exponential_jitter(
+            initial=NL2SQL_RETRY_WAIT_INITIAL_SECONDS,
+            max=NL2SQL_RETRY_WAIT_MAX_SECONDS,
+            jitter=NL2SQL_RETRY_WAIT_JITTER_SECONDS,
+        ),
+        retry=retry_if_exception_type(httpx.HTTPError),
+    )
     async def complete(
         self,
         *,
@@ -527,6 +561,19 @@ class OpenAIProvider:
         recovery_timeout=NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
         expected_exception=httpx.HTTPError,
     )
+    @retry(
+        reraise=True,  # load-bearing: without it, exhaustion raises
+        # tenacity.RetryError instead of the original httpx.HTTPError, which
+        # wouldn't match @circuit's expected_exception above — the breaker
+        # would silently never count a retry-exhausted call as a failure.
+        stop=stop_after_attempt(NL2SQL_RETRY_STOP_ATTEMPTS),
+        wait=wait_exponential_jitter(
+            initial=NL2SQL_RETRY_WAIT_INITIAL_SECONDS,
+            max=NL2SQL_RETRY_WAIT_MAX_SECONDS,
+            jitter=NL2SQL_RETRY_WAIT_JITTER_SECONDS,
+        ),
+        retry=retry_if_exception_type(httpx.HTTPError),
+    )
     async def complete(
         self,
         *,
@@ -580,6 +627,19 @@ class GeminiProvider:
         failure_threshold=NL2SQL_CIRCUIT_FAILURE_THRESHOLD,
         recovery_timeout=NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
         expected_exception=httpx.HTTPError,
+    )
+    @retry(
+        reraise=True,  # load-bearing: without it, exhaustion raises
+        # tenacity.RetryError instead of the original httpx.HTTPError, which
+        # wouldn't match @circuit's expected_exception above — the breaker
+        # would silently never count a retry-exhausted call as a failure.
+        stop=stop_after_attempt(NL2SQL_RETRY_STOP_ATTEMPTS),
+        wait=wait_exponential_jitter(
+            initial=NL2SQL_RETRY_WAIT_INITIAL_SECONDS,
+            max=NL2SQL_RETRY_WAIT_MAX_SECONDS,
+            jitter=NL2SQL_RETRY_WAIT_JITTER_SECONDS,
+        ),
+        retry=retry_if_exception_type(httpx.HTTPError),
     )
     async def complete(
         self,

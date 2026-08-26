@@ -548,3 +548,36 @@ async def test_ensure_jwks_client_opens_circuit_after_repeated_discovery_failure
     with pytest.raises(OIDCError):
         await verifier._ensure_jwks_client()
     assert call_count == calls_before_open, "breaker should short-circuit without re-invoking the discovery fetch"
+
+
+# --- retry with backoff on JWKS discovery (audit remediation, Task 16) ----
+
+
+async def test_resolve_jwks_url_retries_transient_failures_before_giving_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A discovery fetch that fails twice then succeeds is retried
+    transparently — not immediately surfaced as an error."""
+    attempts = 0
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {"jwks_uri": "https://idp.example/jwks"}
+
+    async def _flaky_get(_url: str, **_kwargs: Any) -> Any:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise httpx.ConnectError("transient", request=None)
+        return _FakeResponse()
+
+    verifier = OIDCVerifier(issuer="https://idp.example", audience="mcpg")
+    monkeypatch.setattr(verifier._client, "get", _flaky_get)
+
+    url = await verifier._resolve_jwks_url()
+
+    assert attempts == 3
+    assert url == "https://idp.example/jwks"

@@ -38,6 +38,7 @@ import httpx
 import jwt
 from circuitbreaker import CircuitBreakerError, circuit
 from jwt import PyJWKClient
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
 from mcpg.errors import MCPgError
 
@@ -59,6 +60,22 @@ DEFAULT_VERIFY_LEEWAY_SECONDS = 30.0
 # retries counts as one breaker failure, not one per retry.
 OIDC_CIRCUIT_FAILURE_THRESHOLD = 5
 OIDC_CIRCUIT_RECOVERY_TIMEOUT_SECONDS = 30.0
+
+# Retry tuning for the discovery-document fetch — a handful of quick
+# attempts with exponential backoff + jitter before giving up, so a single
+# dropped connection doesn't fail a request that would have succeeded on a
+# retry. `@retry` is applied *inside* `@circuit` below (i.e. `@circuit` is
+# the outer decorator) deliberately: `circuitbreaker.call_async` (see the
+# installed package's source) does `with self: return await func(...)` and
+# counts exactly one failure per invocation of whatever it wraps. With
+# retry innermost, all `OIDC_RETRY_STOP_ATTEMPTS` attempts happen *inside*
+# that one `with self:` block, so an exhausted retry cycle counts as ONE
+# breaker failure — not one per retry, which is what stacking the two
+# decorators the other way around would produce.
+OIDC_RETRY_STOP_ATTEMPTS = 3
+OIDC_RETRY_WAIT_INITIAL_SECONDS = 0.1
+OIDC_RETRY_WAIT_MAX_SECONDS = 2.0
+OIDC_RETRY_WAIT_JITTER_SECONDS = 0.1
 
 
 class OIDCError(MCPgError):
@@ -182,6 +199,19 @@ class OIDCVerifier:
         failure_threshold=OIDC_CIRCUIT_FAILURE_THRESHOLD,
         recovery_timeout=OIDC_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
         expected_exception=OIDCError,
+    )
+    @retry(
+        reraise=True,  # load-bearing: without it, exhaustion raises
+        # tenacity.RetryError instead of OIDCError, which wouldn't match
+        # @circuit's expected_exception above — the breaker would silently
+        # never count a retry-exhausted call as a failure.
+        stop=stop_after_attempt(OIDC_RETRY_STOP_ATTEMPTS),
+        wait=wait_exponential_jitter(
+            initial=OIDC_RETRY_WAIT_INITIAL_SECONDS,
+            max=OIDC_RETRY_WAIT_MAX_SECONDS,
+            jitter=OIDC_RETRY_WAIT_JITTER_SECONDS,
+        ),
+        retry=retry_if_exception_type(OIDCError),
     )
     async def _resolve_jwks_url(self) -> str:
         """Return the JWKS URL — explicit override wins, else discovery."""

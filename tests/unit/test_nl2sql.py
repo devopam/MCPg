@@ -1512,3 +1512,44 @@ async def test_anthropic_complete_opens_circuit_after_repeated_failures(
         assert call_count == calls_before_open, "breaker should short-circuit without re-invoking the HTTP request"
     finally:
         _reset_shared_http_client()
+
+
+# --- retry with backoff on provider HTTP calls (audit remediation, Task 16)
+
+
+async def test_anthropic_complete_retries_transient_failures_before_giving_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A provider call that fails twice then succeeds is retried
+    transparently — not immediately surfaced as an error."""
+    _reset_shared_http_client()
+    attempts = 0
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {"content": [{"type": "text", "text": "ok"}], "usage": {}}
+
+    class _FlakyAsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def post(self, *args: Any, **kwargs: Any) -> Any:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise httpx.ConnectError("transient", request=None)
+            return _FakeResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FlakyAsyncClient)
+    try:
+        result = await AnthropicProvider(api_key="k").complete(
+            system_prompt="sys", user_prompt="user", model="m", max_tokens=10, timeout=5
+        )
+    finally:
+        _reset_shared_http_client()
+
+    assert attempts == 3
+    assert result.text == "ok"
