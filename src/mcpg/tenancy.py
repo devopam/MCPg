@@ -175,11 +175,14 @@ class TenantSqlDriver(SqlDriver):
         query,
         params,
         force_readonly,
+        row_limit=None,
     ):
         role = resolve_role(self._default_role)
         if role is None:
-            return await super()._execute_with_connection(connection, query, params, force_readonly)
-        return await _execute_with_role(connection, query, params, force_readonly, role)
+            return await super()._execute_with_connection(
+                connection, query, params, force_readonly, row_limit=row_limit
+            )
+        return await _execute_with_role(connection, query, params, force_readonly, role, row_limit=row_limit)
 
 
 async def _execute_with_role(
@@ -188,6 +191,7 @@ async def _execute_with_role(
     params: Any,
     force_readonly: bool,
     role: str,
+    row_limit: int | None = None,
 ) -> Any:
     """Run ``query`` inside an explicit transaction with ``SET LOCAL ROLE``.
 
@@ -227,7 +231,7 @@ async def _execute_with_role(
                 transaction_started = False
                 return None
 
-            rows = await cursor.fetchall()
+            rows = await cursor.fetchmany(row_limit) if row_limit is not None else await cursor.fetchall()
             if force_readonly:
                 await cursor.execute("ROLLBACK")
             else:

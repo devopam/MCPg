@@ -100,10 +100,11 @@ class ReadOnlySqlDriver(SqlDriver):
         query: Any,
         params: list[Any] | None = None,
         force_readonly: bool = False,
+        row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult] | None:
         # Ignore the caller's flag — a secondary is read-only, full stop.
         del force_readonly
-        return await super().execute_query(query, params, force_readonly=True)
+        return await super().execute_query(query, params, force_readonly=True, row_limit=row_limit)
 
     async def _execute_with_connection(  # type: ignore[no-untyped-def]
         self,
@@ -111,6 +112,7 @@ class ReadOnlySqlDriver(SqlDriver):
         query,
         params,
         force_readonly,
+        row_limit=None,
     ):
         if not getattr(connection, "_timeouts_configured", False):
             async with connection.cursor() as cursor:
@@ -121,7 +123,7 @@ class ReadOnlySqlDriver(SqlDriver):
                 connection._timeouts_configured = True
             except AttributeError:
                 pass
-        return await super()._execute_with_connection(connection, query, params, force_readonly)
+        return await super()._execute_with_connection(connection, query, params, force_readonly, row_limit=row_limit)
 
 
 # NOTE: these two return shapes intentionally avoid ``slots=True`` and field

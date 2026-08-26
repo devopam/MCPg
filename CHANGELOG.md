@@ -24,6 +24,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`run_select` / `run_select_tuned` fully materialized a query's entire result set into Python
+  `dict`/`RowResult` objects before truncating to `max_rows`,** rather than bounding the fetch itself —
+  a query without its own `LIMIT` against a large table could build millions of row objects into memory
+  before the truncation line ever ran. `SqlDriver.execute_query` / `SafeSqlDriver.execute_query` (and the
+  tenancy-role-wrapped execute path) now take an optional `row_limit` parameter and use
+  `cursor.fetchmany(row_limit)` instead of `cursor.fetchall()`; both call sites in `query.py` now pass
+  `max_rows + 1`. Note the precise scope: `psycopg`'s regular (client-side) cursor already pulls the whole
+  result set into libpq's buffer during `cursor.execute()`, so this bounds how many rows are converted to
+  Python objects, not the server-side network transfer — a true wire-level bound would need a named
+  server-side cursor or an injected `LIMIT`, which is out of scope here (a server-side cursor can't
+  support `run_select_tuned`'s `SET LOCAL ...; SELECT ...` two-statement pattern or the SHOW/EXPLAIN/VACUUM
+  paths `SafeSqlDriver` also allows).
 - **`py.typed` marker was missing despite the `Typing :: Typed` classifier.** Added `src/mcpg/py.typed`
   and verified it ships in the built wheel.
 - **`license-files` in `pyproject.toml` pointed at `src/mcpg/_vendor/LICENSE`, which hasn't existed since

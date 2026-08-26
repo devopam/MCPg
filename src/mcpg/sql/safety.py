@@ -168,8 +168,16 @@ class SafeSqlDriver(SqlDriver):
         query: LiteralString,
         params: list[Any] | None = None,
         force_readonly: bool = True,  # ignored — SafeSqlDriver always forces read-only
+        row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult] | None:
-        """Validate ``query`` is safe, then execute it read-only."""
+        """Validate ``query`` is safe, then execute it read-only.
+
+        ``row_limit``, when given, is threaded through to the wrapped
+        driver so the fetch itself is bounded (``fetchmany``) rather than
+        materializing the full result set before any caller-side
+        truncation runs. ``None`` preserves the historical full-fetch
+        behaviour.
+        """
         self._validate(query)
 
         # Always force read-only regardless of the argument.
@@ -180,6 +188,7 @@ class SafeSqlDriver(SqlDriver):
                         f"/* crystaldba */ {query}",
                         params=params,
                         force_readonly=True,
+                        row_limit=row_limit,
                     )
             except TimeoutError as e:
                 logger.warning("Query execution timed out after %s seconds: %s...", self.timeout, query[:100])
@@ -194,6 +203,7 @@ class SafeSqlDriver(SqlDriver):
             f"/* crystaldba */ {query}",
             params=params,
             force_readonly=True,
+            row_limit=row_limit,
         )
 
     @staticmethod

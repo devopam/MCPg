@@ -20,6 +20,7 @@ from mcpg.query import (
     run_select_tuned,
 )
 from mcpg.server import create_server
+from mcpg.sql import SqlDriver
 
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
@@ -64,6 +65,45 @@ async def test_run_select_not_truncated_when_under_the_cap() -> None:
 async def test_run_select_rejects_non_positive_max_rows() -> None:
     with pytest.raises(QueryError, match="max_rows"):
         await run_select(FakeDriver(), "SELECT 1", max_rows=0)
+
+
+async def test_run_select_does_not_fetch_beyond_max_rows_plus_one() -> None:
+    """A query matching far more rows than max_rows only pulls max_rows+1 from the driver.
+
+    A test that only checks ``len(result.rows) <= max_rows`` would already
+    pass today (the pre-fix code slices *after* fetching everything) and
+    wouldn't catch the bug. This test instead observes the ``row_limit``
+    the driver was actually asked for — proving the fetch itself, not just
+    the returned slice, is bounded.
+    """
+
+    class _CountingFakeDriver(SqlDriver):
+        def __init__(self) -> None:
+            self.requested_row_limits: list[int | None] = []
+
+        async def execute_query(
+            self,
+            query: str,
+            params: list[Any] | None = None,
+            force_readonly: bool = True,
+            row_limit: int | None = None,
+        ) -> list[SqlDriver.RowResult]:
+            self.requested_row_limits.append(row_limit)
+            # A real driver bounded by row_limit never materializes the
+            # full table -- simulate that by only ever producing up to
+            # row_limit rows (or the full 1,000,000-row table if no bound
+            # was passed, which is what the pre-fix code did).
+            n = row_limit if row_limit is not None else 1_000_000
+            return [SqlDriver.RowResult(cells={"n": i}) for i in range(n)]
+
+    driver = _CountingFakeDriver()
+
+    result = await run_select(driver, "SELECT * FROM huge_table", max_rows=5)
+
+    assert result.truncated is True
+    assert result.row_count == 5
+    # max_rows + 1 = 6, not the full 1,000,000-row table.
+    assert driver.requested_row_limits == [6]
 
 
 @pytest.mark.parametrize(
@@ -161,6 +201,33 @@ async def test_run_select_tuned_accepts_the_2gb_boundary() -> None:
     result = await run_select_tuned(driver, "SELECT 1 AS x", work_mem="2GB")
 
     assert result.row_count == 1
+
+
+async def test_run_select_tuned_does_not_fetch_beyond_max_rows_plus_one() -> None:
+    """Same bound as run_select, for run_select_tuned's own execute_query call."""
+
+    class _CountingFakeDriver(SqlDriver):
+        def __init__(self) -> None:
+            self.requested_row_limits: list[int | None] = []
+
+        async def execute_query(
+            self,
+            query: str,
+            params: list[Any] | None = None,
+            force_readonly: bool = True,
+            row_limit: int | None = None,
+        ) -> list[SqlDriver.RowResult]:
+            self.requested_row_limits.append(row_limit)
+            n = row_limit if row_limit is not None else 1_000_000
+            return [SqlDriver.RowResult(cells={"n": i}) for i in range(n)]
+
+    driver = _CountingFakeDriver()
+
+    result = await run_select_tuned(driver, "SELECT * FROM huge_table", work_mem="64MB", max_rows=5)
+
+    assert result.truncated is True
+    assert result.row_count == 5
+    assert driver.requested_row_limits == [6]
 
 
 async def test_run_select_tuned_validates_maintenance_work_mem_too() -> None:

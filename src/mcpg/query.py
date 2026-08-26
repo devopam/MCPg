@@ -127,8 +127,14 @@ async def run_select(
 
     safe_driver = SafeSqlDriver(sql_driver=driver, timeout=timeout)
     try:
-        # SafeSqlDriver parses and validates this runtime SQL before running it.
-        rows = await safe_driver.execute_query(sql)
+        # SafeSqlDriver parses and validates this runtime SQL before running
+        # it. row_limit bounds how many rows are converted to Python objects
+        # (fetchmany(max_rows + 1) instead of fetchall()) instead of
+        # materializing the whole result set. Note: psycopg's client-side
+        # cursor already pulls the full result set into libpq's buffer
+        # during cursor.execute(), so this bounds Python-side object
+        # allocation, not the server-side network transfer.
+        rows = await safe_driver.execute_query(sql, row_limit=max_rows + 1)
     except Exception as exc:
         if _is_timeout_exc(exc):
             raise QueryTimeoutError(str(exc)) from exc
@@ -230,9 +236,12 @@ async def run_select_tuned(
     try:
         # One call so SET LOCAL and the SELECT share a transaction;
         # force_readonly wraps it in BEGIN READ ONLY. Reinstate the timeout
-        # bound the raw driver doesn't apply itself.
+        # bound the raw driver doesn't apply itself. row_limit bounds how
+        # many rows are converted to Python objects (max_rows + 1) instead
+        # of materializing everything — see run_select's comment above for
+        # the client-side-cursor caveat.
         rows = await asyncio.wait_for(
-            driver.execute_query(tuned_sql, force_readonly=True),
+            driver.execute_query(tuned_sql, force_readonly=True, row_limit=max_rows + 1),
             timeout=timeout,
         )
     except Exception as exc:

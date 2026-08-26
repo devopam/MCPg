@@ -211,6 +211,7 @@ class SqlDriver:
         query: LiteralString,
         params: list[Any] | None = None,
         force_readonly: bool = False,
+        row_limit: int | None = None,
     ) -> list[RowResult] | None:
         """Run ``query`` and return its rows (or ``None`` for no result set).
 
@@ -219,6 +220,12 @@ class SqlDriver:
         connection is checked out per call; on error the pool is marked
         invalid (or a direct connection is dropped) and the exception
         re-raised.
+
+        ``row_limit``, when given, bounds the fetch itself: at most
+        ``row_limit`` rows are pulled from the cursor via ``fetchmany``
+        instead of materializing the entire result set with ``fetchall``.
+        ``None`` (the default) preserves the historical full-fetch
+        behaviour for callers that rely on it.
         """
         try:
             if self.conn is None:
@@ -229,9 +236,11 @@ class SqlDriver:
             if self.is_pool:  # pragma: no cover - real pool checkout; integration-tested
                 pool = await self.conn.pool_connect()
                 async with pool.connection() as connection:
-                    return await self._execute_with_connection(connection, query, params, force_readonly=force_readonly)
+                    return await self._execute_with_connection(
+                        connection, query, params, force_readonly=force_readonly, row_limit=row_limit
+                    )
             return await self._execute_with_connection(  # pragma: no cover - real connection; integration-tested
-                self.conn, query, params, force_readonly=force_readonly
+                self.conn, query, params, force_readonly=force_readonly, row_limit=row_limit
             )
         except Exception as e:
             # A connection-level failure invalidates the pool / drops the conn.
@@ -243,7 +252,7 @@ class SqlDriver:
             raise
 
     async def _execute_with_connection(  # pragma: no cover - real psycopg execution; integration-tested
-        self, connection: Any, query: Any, params: Any, force_readonly: bool
+        self, connection: Any, query: Any, params: Any, force_readonly: bool, row_limit: int | None = None
     ) -> list[RowResult] | None:
         """Execute on a specific connection with read-only + txn handling."""
         transaction_started = False
@@ -270,7 +279,7 @@ class SqlDriver:
                         transaction_started = False
                     return None
 
-                rows = await cursor.fetchall()
+                rows = await cursor.fetchmany(row_limit) if row_limit is not None else await cursor.fetchall()
 
                 if not force_readonly:
                     await cursor.execute("COMMIT")

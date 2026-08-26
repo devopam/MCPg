@@ -127,7 +127,9 @@ async def test_safe_execute_prefixes_marker_and_forces_readonly() -> None:
     safe = SafeSqlDriver(inner)
 
     await safe.execute_query("SELECT 1")
-    inner.execute_query.assert_awaited_once_with("/* crystaldba */ SELECT 1", params=None, force_readonly=True)
+    inner.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ SELECT 1", params=None, force_readonly=True, row_limit=None
+    )
 
 
 async def test_safe_execute_with_timeout_success() -> None:

@@ -221,6 +221,7 @@ class TimeoutSqlDriver(SqlDriver):
         query,
         params,
         force_readonly,
+        row_limit=None,
     ):
         if not getattr(connection, "_timeouts_configured", False):
             async with connection.cursor() as cursor:
@@ -231,7 +232,7 @@ class TimeoutSqlDriver(SqlDriver):
                 connection._timeouts_configured = True
             except AttributeError:
                 pass
-        return await super()._execute_with_connection(connection, query, params, force_readonly)
+        return await super()._execute_with_connection(connection, query, params, force_readonly, row_limit=row_limit)
 
 
 class TenantTimeoutSqlDriver(TenantSqlDriver):
@@ -254,6 +255,7 @@ class TenantTimeoutSqlDriver(TenantSqlDriver):
         query,
         params,
         force_readonly,
+        row_limit=None,
     ):
         if not getattr(connection, "_timeouts_configured", False):
             async with connection.cursor() as cursor:
@@ -264,7 +266,9 @@ class TenantTimeoutSqlDriver(TenantSqlDriver):
                 connection._timeouts_configured = True
             except AttributeError:
                 pass
-        return await super()._execute_with_connection(connection, query, params, force_readonly)  # type: ignore[no-untyped-call]
+        return await super()._execute_with_connection(  # type: ignore[no-untyped-call]
+            connection, query, params, force_readonly, row_limit=row_limit
+        )
 
 
 def _make_driver_for_pool(
@@ -329,6 +333,7 @@ class RoutedSqlDriver(SqlDriver):
         query: str,
         params: list[Any] | None = None,
         force_readonly: bool = False,
+        row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult] | None:
         from mcpg.observability import get_metrics
 
@@ -336,17 +341,17 @@ class RoutedSqlDriver(SqlDriver):
 
         if not force_readonly:
             metrics.record_call("__replica_route", "primary", 0.0)
-            return await self._primary.execute_query(query, params, force_readonly)
+            return await self._primary.execute_query(query, params, force_readonly, row_limit=row_limit)
 
         candidate = await self._replica_pool.next_healthy()
         if candidate is None:
             # Every replica degraded — fall through to primary.
             metrics.record_call("__replica_route", "primary_no_healthy", 0.0)
-            return await self._primary.execute_query(query, params, force_readonly)
+            return await self._primary.execute_query(query, params, force_readonly, row_limit=row_limit)
 
         replica_driver = self._replicas[candidate.index]
         try:
-            result = await replica_driver.execute_query(query, params, force_readonly)
+            result = await replica_driver.execute_query(query, params, force_readonly, row_limit=row_limit)
         except Exception as exc:
             await self._replica_pool.mark_degraded(candidate.index, str(exc))
             metrics.record_call("__replica_route", "fallback", 0.0)
@@ -355,7 +360,7 @@ class RoutedSqlDriver(SqlDriver):
                 candidate.index,
                 obfuscate_password(str(exc)),
             )
-            return await self._primary.execute_query(query, params, force_readonly)
+            return await self._primary.execute_query(query, params, force_readonly, row_limit=row_limit)
 
         metrics.record_call("__replica_route", f"replica_{candidate.index}", 0.0)
         return result
