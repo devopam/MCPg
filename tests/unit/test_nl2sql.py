@@ -20,6 +20,7 @@ from mcpg.nl2sql import (
     DEFAULT_SCHEMA_DENYLIST,
     HARD_MAX_BRIEF_CHARS,
     HARD_MAX_TOKENS,
+    NL2SQL_CIRCUIT_FAILURE_THRESHOLD,
     OPENAI_COMPATIBLE_BASE_URLS,
     VENDOR_ENV_VAR_HINT,
     VENDOR_KEY_ENV_VARS,
@@ -1553,3 +1554,61 @@ async def test_anthropic_complete_retries_transient_failures_before_giving_up(
 
     assert attempts == 3
     assert result.text == "ok"
+
+
+# --- CircuitBreakerError translation at the translate_nl_to_sql level -----
+#
+# The two tests above call AnthropicProvider(...).complete(...) directly,
+# bypassing translate_nl_to_sql entirely — they never exercise its
+# `except CircuitBreakerError` branch (nl2sql.py's sibling to the existing
+# `except httpx.HTTPError`). This test drives a tripped breaker through
+# translate_nl_to_sql itself, matching what the CHANGELOG entry advertises:
+# a tripped breaker surfaces as NL2SQLError, never a bare CircuitBreakerError.
+
+
+async def test_translate_nl_to_sql_surfaces_open_circuit_as_nl2sqlerror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Once the provider's breaker is open, translate_nl_to_sql must still
+    raise its own NL2SQLError — not let a bare CircuitBreakerError escape
+    to the caller."""
+    _reset_shared_http_client()
+
+    class _FailingAsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def post(self, *args: Any, **kwargs: Any) -> Any:
+            raise httpx.ConnectError("simulated outage", request=None)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FailingAsyncClient)
+    driver = FakeRoutingDriver(_routes_for_simple_schema())
+    try:
+        # Trip the breaker via translate_nl_to_sql itself (not
+        # provider.complete() directly) — each failing call here already
+        # raises NL2SQLError via the existing `except httpx.HTTPError`
+        # branch, since the breaker is still closed for these attempts.
+        for _ in range(NL2SQL_CIRCUIT_FAILURE_THRESHOLD):
+            with pytest.raises(NL2SQLError):
+                await translate_nl_to_sql(
+                    driver,  # type: ignore[arg-type]
+                    provider=AnthropicProvider(api_key="k"),
+                    model="m",
+                    question="how many widgets?",
+                    schema="public",
+                )
+
+        # The breaker should now be open. The next call must still surface
+        # NL2SQLError (via the `except CircuitBreakerError` branch) — a
+        # bare CircuitBreakerError leaking out here would be a regression.
+        with pytest.raises(NL2SQLError, match="circuit open") as excinfo:
+            await translate_nl_to_sql(
+                driver,  # type: ignore[arg-type]
+                provider=AnthropicProvider(api_key="k"),
+                model="m",
+                question="how many widgets?",
+                schema="public",
+            )
+        assert excinfo.type is NL2SQLError
+    finally:
+        _reset_shared_http_client()
