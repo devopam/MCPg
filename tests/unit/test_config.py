@@ -1091,3 +1091,18 @@ def test_http_allow_unauthenticated_env_var_parses() -> None:
         }
     )
     assert settings.http_allow_unauthenticated is True
+
+
+def test_rate_limit_enabled_defaults_true() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.rate_limit_enabled is True
+
+
+def test_rate_limit_enabled_can_still_be_disabled_explicitly() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_RATE_LIMIT_ENABLED": "false",
+        }
+    )
+    assert settings.rate_limit_enabled is False

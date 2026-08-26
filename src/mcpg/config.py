@@ -196,7 +196,7 @@ class Settings:
     nl2sql_audit_compress_after: str = "7 days"
     nl2sql_audit_rls: bool = True
     nl2sql_audit_reader_role: str | None = None
-    rate_limit_enabled: bool = False
+    rate_limit_enabled: bool = True
     rate_limit_max_requests: int = 60
     rate_limit_window_seconds: int = 60
     rate_limit_heavy_max: int = 5
@@ -1006,7 +1006,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             raise ConfigError("MCPG_NL2SQL_AUDIT_READER_ROLE must not be blank when set")
         nl2sql_audit_reader_role = stripped
 
-    rate_limit_enabled = False
+    rate_limit_enabled = True
     if (raw := env.get("MCPG_RATE_LIMIT_ENABLED")) is not None:
         rate_limit_enabled = _parse_bool("MCPG_RATE_LIMIT_ENABLED", raw)
 

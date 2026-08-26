@@ -355,7 +355,7 @@ falls back to the env var, so partial files work.
 
 | Variable | Default | Description |
 |---|---|---|
-| `MCPG_RATE_LIMIT_ENABLED` | `false` | Enable token-bucket per-tool rate limiting. |
+| `MCPG_RATE_LIMIT_ENABLED` | `true` | Token-bucket per-tool rate limiting. Set to `false` to restore the pre-breaking-change unlimited behavior. |
 | `MCPG_RATE_LIMIT_MAX_REQUESTS` | `60` | Global cap per window across all tools. |
 | `MCPG_RATE_LIMIT_WINDOW_SECONDS` | `60` | Window length for the global quota. |
 | `MCPG_RATE_LIMIT_HEAVY_MAX` | `5` | Cap for heavy tools (`run_write`, `run_ddl`, `dump_database`, etc.). |

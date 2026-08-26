@@ -73,6 +73,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **BREAKING: rate limiting (`MCPG_RATE_LIMIT_ENABLED`) now defaults to `true`** (previously `false`).
+  Set it to `false` explicitly to restore the previous unlimited behavior.
 - **BREAKING: the HTTP transport now refuses to start unauthenticated by default.** Previously it started
   anyway and only logged a warning if neither `MCPG_HTTP_AUTH_TOKEN` nor `MCPG_AUTH_MODE=oidc` was set.
   Deployments that relied on the unauthenticated default must now either configure auth or set
