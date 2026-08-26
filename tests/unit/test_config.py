@@ -956,7 +956,7 @@ def test_new_config_parameters_loads_and_validates() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
     assert settings.http_max_body_bytes == 1048576
     assert settings.http_allowed_origins == ()
-    assert settings.http_hsts_max_age == 31536000
+    assert settings.http_hsts_max_age == 63072000
     assert settings.shutdown_drain_seconds == 30
     assert settings.audit_hmac_key is None
     assert settings.audit_integrity is False

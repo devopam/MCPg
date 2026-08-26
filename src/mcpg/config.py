@@ -261,7 +261,15 @@ class Settings:
     dynamic_session_intent: bool = False
     http_max_body_bytes: int = 1048576
     http_allowed_origins: tuple[str, ...] = ()
-    http_hsts_max_age: int = 31536000
+    http_hsts_max_age: int = 63072000
+    # Host-header validation (Starlette's TrustedHostMiddleware) for the
+    # HTTP transports. Empty (default) = no host-header gate (current
+    # behaviour) — matches the http_allowed_origins/CORS convention.
+    # When set, each entry is an allowed host (wildcards like
+    # ``*.example.com`` are supported by TrustedHostMiddleware itself);
+    # requests with a Host header that doesn't match get a 400.
+    # ``MCPG_HTTP_TRUSTED_HOSTS=`` comma-separated.
+    http_trusted_hosts: tuple[str, ...] = ()
     # IP allowlist for the HTTP transports. Empty (default) = no
     # network-level gate (current behaviour). When set, each entry is
     # an IP address or CIDR range that the client's connecting IP
@@ -372,6 +380,7 @@ class Settings:
             f"http_allowed_origins={self.http_allowed_origins!r}, "
             f"http_ip_allowlist={self.http_ip_allowlist!r}, "
             f"http_hsts_max_age={self.http_hsts_max_age}, "
+            f"http_trusted_hosts={self.http_trusted_hosts!r}, "
             f"http_tls_certfile={self.http_tls_certfile!r}, "
             f"http_tls_keyfile={self.http_tls_keyfile!r}, "
             f"http_tls_ca_certs={self.http_tls_ca_certs!r}, "
@@ -1169,7 +1178,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
                 raise ConfigError(f"MCPG_HTTP_IP_ALLOWLIST entry is not a valid IP / CIDR (got {part!r})") from exc
         http_ip_allowlist = tuple(parts)
 
-    http_hsts_max_age = 31536000
+    http_hsts_max_age = 63072000
     if (raw := env.get("MCPG_HTTP_HSTS_MAX_AGE")) is not None:
         try:
             val = int(raw)
@@ -1178,6 +1187,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             http_hsts_max_age = val
         except ValueError:
             raise ConfigError(f"MCPG_HTTP_HSTS_MAX_AGE must be a non-negative integer (got {raw!r})") from None
+
+    http_trusted_hosts: tuple[str, ...] = ()
+    if (raw := env.get("MCPG_HTTP_TRUSTED_HOSTS")) is not None:
+        http_trusted_hosts = tuple(h.strip() for h in raw.split(",") if h.strip())
 
     # HTTP TLS / mTLS. Parsed together so we can enforce the
     # invariant "if either cert or key is set, the other must be too"
@@ -1332,6 +1345,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_allowed_origins=http_allowed_origins,
         http_ip_allowlist=http_ip_allowlist,
         http_hsts_max_age=http_hsts_max_age,
+        http_trusted_hosts=http_trusted_hosts,
         http_tls_certfile=http_tls_certfile,
         http_tls_keyfile=http_tls_keyfile,
         http_tls_ca_certs=http_tls_ca_certs,

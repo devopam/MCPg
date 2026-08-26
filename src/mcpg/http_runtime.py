@@ -441,7 +441,7 @@ class _IPAllowlistMiddleware:
 class _SecurityHeadersMiddleware:
     """ASGI middleware that enforces standard security headers."""
 
-    def __init__(self, app: object, *, hsts_max_age: int = 31536000) -> None:
+    def __init__(self, app: object, *, hsts_max_age: int = 63072000) -> None:
         self._app = app
         self._hsts_max_age = hsts_max_age
 
@@ -678,6 +678,10 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    if settings.http_trusted_hosts:
+        from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.http_trusted_hosts))
 
     # IP allowlist sits at the OUTERMOST layer (added last → processed
     # first per Starlette's middleware stacking) so denied clients

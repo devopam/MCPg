@@ -1610,6 +1610,33 @@ def test_build_http_app_installs_ip_allowlist_only_when_configured() -> None:
     assert any(m.cls.__name__ == "_IPAllowlistMiddleware" for m in on.user_middleware)
 
 
+def test_build_http_app_installs_trusted_host_middleware_only_when_configured() -> None:
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    base = {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+    }
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    # No trusted hosts configured -> middleware not installed.
+    off = build_http_app(_Stub(), load_settings(base), kind="streamable-http")
+    off_classes = [m.cls for m in off.user_middleware]
+    assert TrustedHostMiddleware not in off_classes
+
+    # Trusted hosts configured -> middleware installed.
+    on = build_http_app(
+        _Stub(),
+        load_settings({**base, "MCPG_HTTP_TRUSTED_HOSTS": "api.example.com"}),
+        kind="streamable-http",
+    )
+    on_classes = [m.cls for m in on.user_middleware]
+    assert TrustedHostMiddleware in on_classes
+
+
 def test_settings_rejects_invalid_ip_allowlist_entry() -> None:
     from mcpg.config import ConfigError
 

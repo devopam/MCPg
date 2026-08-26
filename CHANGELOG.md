@@ -22,6 +22,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   they now subclass both `MCPgError` and `ValueError`, so anything catching them as `ValueError`
   today keeps working.
 
+- Optional `TrustedHostMiddleware` support via `MCPG_HTTP_TRUSTED_HOSTS` (comma-separated), off by
+  default, matching the existing `MCPG_HTTP_ALLOWED_ORIGINS` convention.
+
 ### Fixed
 
 - **`run_select` / `run_select_tuned` fully materialized a query's entire result set into Python
@@ -70,6 +73,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Pinned `hatchling>=1.26` as the build-system floor (previously unpinned).
+- HSTS `max-age` default bumped from 31536000 (1 year) to 63072000 (2 years), OWASP's current
+  recommendation — the old value remains the `hstspreload.org` minimum-eligibility floor, not the target.
 
 ### Security
 

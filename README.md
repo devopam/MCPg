@@ -277,8 +277,9 @@ are one-shot commands, not configuration). The only required one is
 |---|---|---|
 | `MCPG_HTTP_MAX_BODY_BYTES` | `1048576` | (1 MiB) Request bodies above this get a `413`. Counts streamed bytes, so a missing/lying `Content-Length` can't bypass it. |
 | `MCPG_HTTP_ALLOWED_ORIGINS` | — | Comma-separated CORS allowlist. Unset = no CORS middleware (no cross-origin headers emitted). |
-| `MCPG_HTTP_HSTS_MAX_AGE` | `31536000` | `Strict-Transport-Security` max-age. `0` disables the HSTS header. Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) are always added unless the app already set them. |
+| `MCPG_HTTP_HSTS_MAX_AGE` | `63072000` | `Strict-Transport-Security` max-age (2 years, OWASP's current recommendation). `0` disables the HSTS header. Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) are always added unless the app already set them. |
 | `MCPG_HTTP_REQUEST_TIMEOUT_SECONDS` | `0` | Per-request wall-clock cap (`504` on expiry). `0` = disabled. Leave off if you rely on long-lived SSE / streamable-http streams — a hard cap also severs those. |
+| `MCPG_HTTP_TRUSTED_HOSTS` | — | Comma-separated list of allowed `Host` header values (wildcards like `*.example.com` supported). Unset = no host-header validation (current behaviour). When set, requests with a non-matching Host get a `400` via Starlette's `TrustedHostMiddleware`. |
 
 #### Multi-tenancy (`SET ROLE`)
 
