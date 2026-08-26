@@ -95,11 +95,12 @@ def test_bearer_middleware_returns_401_for_wrong_token() -> None:
 def test_bearer_middleware_exempts_metrics_path_even_without_token() -> None:
     """A Prometheus scraper hits /metrics without the MCP bearer token."""
     sent_messages: list[dict[str, object]] = []
-    inner_invoked = False
+    captured_args: dict[str, object] = {}
 
-    async def inner(_scope: object, _receive: object, send_fn: object) -> None:
-        nonlocal inner_invoked
-        inner_invoked = True
+    async def inner(scope: object, receive: object, send_fn: object) -> None:
+        captured_args["scope"] = scope
+        captured_args["receive"] = receive
+        captured_args["send_fn"] = send_fn
         await send_fn(  # type: ignore[operator]
             {
                 "type": "http.response.start",
@@ -122,17 +123,21 @@ def test_bearer_middleware_exempts_metrics_path_even_without_token() -> None:
 
     asyncio.run(middleware(scope, receive, send))
 
-    # The middleware passed through to the inner app without checking auth.
-    assert inner_invoked is True
+    # The middleware passed through to the inner app without checking auth,
+    # and without modifying the scope/receive/send objects.
+    assert captured_args["scope"] is scope
+    assert captured_args["receive"] is receive
+    assert captured_args["send_fn"] is send
     assert sent_messages[0]["status"] == 200
 
 
 def test_bearer_middleware_passes_non_http_scopes_through_unmodified() -> None:
-    inner_invoked = False
+    captured_args: dict[str, object] = {}
 
-    async def inner(scope: object, _receive: object, _send: object) -> None:
-        nonlocal inner_invoked
-        inner_invoked = True
+    async def inner(scope: object, receive: object, send: object) -> None:
+        captured_args["scope"] = scope
+        captured_args["receive"] = receive
+        captured_args["send"] = send
         # Lifespan scopes must reach the underlying ASGI app or the
         # server never starts up.
         assert scope["type"] == "lifespan"  # type: ignore[index]
@@ -140,11 +145,20 @@ def test_bearer_middleware_passes_non_http_scopes_through_unmodified() -> None:
     middleware = _BearerAuthMiddleware(inner, token="s3cr3t")
     scope = {"type": "lifespan"}
 
+    async def receive_fn() -> dict[str, object]:
+        return {}
+
+    async def send_fn(_message: dict[str, object]) -> None:
+        pass
+
     import asyncio
 
-    asyncio.run(middleware(scope, lambda: None, lambda _: None))  # type: ignore[arg-type]
+    asyncio.run(middleware(scope, receive_fn, send_fn))  # type: ignore[arg-type]
 
-    assert inner_invoked is True
+    # Verify non-HTTP scope is passed through unmodified, without wrapping.
+    assert captured_args["scope"] is scope
+    assert captured_args["receive"] is receive_fn
+    assert captured_args["send"] is send_fn
 
 
 def test_auth_exempt_paths_includes_metrics_and_health_endpoints() -> None:
@@ -465,11 +479,12 @@ def test_tenant_role_middleware_passes_through_when_header_is_absent() -> None:
 
 def test_tenant_role_middleware_exempts_health_paths() -> None:
     """A probe to /healthz doesn't need the X-MCPG-Role header."""
-    inner_invoked = False
+    captured_args: dict[str, object] = {}
 
-    async def inner(_scope: object, _receive: object, send_fn: object) -> None:
-        nonlocal inner_invoked
-        inner_invoked = True
+    async def inner(scope: object, receive: object, send_fn: object) -> None:
+        captured_args["scope"] = scope
+        captured_args["receive"] = receive
+        captured_args["send_fn"] = send_fn
         await send_fn(  # type: ignore[operator]
             {"type": "http.response.start", "status": 200, "headers": []}
         )
@@ -490,7 +505,10 @@ def test_tenant_role_middleware_exempts_health_paths() -> None:
 
     asyncio.run(middleware(scope, receive, send))
 
-    assert inner_invoked is True
+    # Verify health paths are exempt and pass through unmodified.
+    assert captured_args["scope"] is scope
+    assert captured_args["receive"] is receive
+    assert captured_args["send_fn"] is send
 
 
 def test_build_http_app_with_tenant_role_returns_403_for_unknown_role() -> None:
