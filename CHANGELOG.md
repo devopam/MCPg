@@ -115,9 +115,11 @@ adheres to [Semantic Versioning](https://semver.org/).
   `pip-audit`'s own `pip_api` dependency pulled in a `pip` version with
   a known vulnerability, flagged by the local pre-commit hook's
   dependency audit.
-- Added a centralized log-redaction filter (`RedactionFilter`) as a backstop for any log call that
-  reaches a handler without having explicitly redacted a connection string first — complements, doesn't
-  replace, the existing per-call-site `obfuscate_password()` discipline.
+- Added a centralized log-redaction filter (`RedactionFilter`) as a backstop for a log call's message
+  or `%`-style arguments reaching a handler without having explicitly redacted a connection string
+  first — complements, doesn't replace, the existing per-call-site `obfuscate_password()` discipline.
+  Does not cover exception tracebacks attached via `exc_info` (e.g. `logger.exception(...)`) — those
+  are rendered separately by `logging.Formatter.formatException()`, which bypasses this filter.
 
 ## [0.8.0] - 2026-08-19
 

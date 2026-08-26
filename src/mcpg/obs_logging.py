@@ -15,13 +15,21 @@ if TYPE_CHECKING:
 
 
 class RedactionFilter(logging.Filter):
-    """Backstop redaction: scrubs any password-bearing connection string that reaches a log
-    call without having been passed through obfuscate_password() at the call site.
+    """Backstop redaction: scrubs a password-bearing connection string out of a log call's
+    message or %-style arguments when a call site reaches a handler without having passed
+    it through obfuscate_password() first.
 
     Not a replacement for calling obfuscate_password() explicitly where a value is known to
     carry credentials — that per-call-site discipline still matters for accuracy (this filter
     only recognizes the same connection-string shapes obfuscate_password() already does). This
     is the centralized enforcement layer for the case a future call site forgets.
+
+    Scope: covers only `record.msg` / `record.args` (the log call's own message and its
+    lazy-formatting arguments). It does NOT cover `record.exc_info` — an exception's traceback
+    (e.g. from `logger.exception(...)`) is rendered separately by
+    `logging.Formatter.formatException()`, which never passes through this filter, so a
+    password embedded in an exception's message can still leak via a formatter's "exception"
+    output even with this filter attached.
 
     Runs before formatting (logging.Filter operates on the LogRecord, not rendered output), so
     it renders any lazy %-style args via getMessage() up front and clears record.args — this

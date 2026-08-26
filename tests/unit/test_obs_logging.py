@@ -210,6 +210,41 @@ def test_redaction_filter_passes_through_already_obfuscated_message(
     assert caplog.records[0].getMessage() == already_safe
 
 
+def test_setup_logging_redacts_end_to_end_through_json_formatter(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A DSN logged without calling obfuscate_password() is redacted in the actual stderr output
+    emitted through the real setup_logging() -> handler -> JSONFormatter chain.
+
+    This exercises the full pipeline together (not RedactionFilter or JSONFormatter each tested
+    in isolation), so a future refactor of either one — e.g. JSONFormatter reading record.msg
+    directly instead of via getMessage() — can't silently reintroduce a leak that the isolated
+    unit tests above wouldn't catch.
+    """
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_LOG_LEVEL": "INFO",
+            "MCPG_LOG_FORMAT": "json",
+        }
+    )
+
+    logger = logging.getLogger("mcpg")
+    logger.handlers.clear()
+    logger.propagate = True
+
+    setup_logging(settings)
+    capsys.readouterr()  # discard anything emitted by setup_logging itself
+
+    logging.getLogger("mcpg.test_e2e_redaction").info("connecting to %s", "postgresql://user:hunter2@host/db")
+
+    emitted = capsys.readouterr().err.strip()
+    assert emitted, "expected a JSON log line on stderr"
+    data = json.loads(emitted.splitlines()[-1])  # real JSONFormatter output; must parse cleanly
+    assert "hunter2" not in data["message"]
+    assert "****" in data["message"]
+
+
 def test_setup_logging_attaches_redaction_filter_to_its_handler() -> None:
     settings = load_settings(
         {
