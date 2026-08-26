@@ -29,6 +29,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   model for that translation — so a generated query's provenance is traceable, not just which
   model/provider produced it.
 
+- Circuit breaker (`circuitbreaker`) around each NL→SQL provider's `complete()` call and the OIDC
+  discovery-document fetch (`OIDCVerifier._resolve_jwks_url`) — after 5 consecutive failures against a
+  degraded vendor/IdP, further calls fail fast for 30s instead of each one separately paying the full
+  request timeout. A tripped breaker still surfaces as the module's existing error type (`NL2SQLError` /
+  `OIDCError`), never a bare `CircuitBreakerError`, so calling code's exception handling is unaffected.
+
 ### Fixed
 
 - **`run_select` / `run_select_tuned` fully materialized a query's entire result set into Python

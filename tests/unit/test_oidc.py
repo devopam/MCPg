@@ -19,6 +19,30 @@ from mcpg.oidc import (
     VerifiedToken,
 )
 
+# --- fixtures --------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_circuit_breakers():
+    """Reset every registered circuit breaker before/after each test.
+
+    ``@circuit`` decorates ``OIDCVerifier._resolve_jwks_url`` once at class
+    definition time, so the breaker's failure count is a single object
+    shared across *every* ``OIDCVerifier`` instance for the life of the test
+    process — not per-instance state. Without this reset, a test that trips
+    the breaker open would leave it open for every unrelated test that runs
+    afterward in the same session (including tests in test_nl2sql.py, which
+    registers its own separately-named breakers alongside this module's).
+    """
+    from circuitbreaker import CircuitBreakerMonitor
+
+    for cb in CircuitBreakerMonitor.get_circuits():
+        cb.reset()
+    yield
+    for cb in CircuitBreakerMonitor.get_circuits():
+        cb.reset()
+
+
 # --- helpers -------------------------------------------------------------
 
 
@@ -487,3 +511,40 @@ async def test_verifier_aclose_closes_the_underlying_client() -> None:
         await verifier.aclose()
 
     assert closed == [True]
+
+
+# --- circuit breaker on JWKS discovery (audit remediation, Task 15) -------
+
+
+async def test_ensure_jwks_client_opens_circuit_after_repeated_discovery_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After enough consecutive discovery-fetch failures, the breaker opens
+    and further calls fail fast (as OIDCError, not a bare CircuitBreakerError)
+    without hitting the network again.
+
+    Loops only just past the failure threshold (6, not 10) to keep this fast
+    — the invariant only needs one call past the point the breaker opens.
+    """
+    verifier = OIDCVerifier(issuer="https://idp.example", audience="mcpg")
+    call_count = 0
+
+    async def _always_fails(_url: str, **_kwargs: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        raise httpx.ConnectError("simulated outage", request=None)
+
+    monkeypatch.setattr(verifier._client, "get", _always_fails)
+
+    for _ in range(6):
+        with pytest.raises(OIDCError):
+            await verifier._ensure_jwks_client()
+
+    # The breaker should have opened well before the 6th iteration — assert
+    # relatively (not against an absolute call count), since Task 16 layers
+    # retry *inside* the breaker and changes how many real network calls
+    # happen per logical failure.
+    calls_before_open = call_count
+    with pytest.raises(OIDCError):
+        await verifier._ensure_jwks_client()
+    assert call_count == calls_before_open, "breaker should short-circuit without re-invoking the discovery fetch"

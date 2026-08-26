@@ -44,6 +44,28 @@ from mcpg.nl2sql import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _reset_circuit_breakers():
+    """Reset every registered circuit breaker before/after each test.
+
+    ``@circuit`` decorates each provider's ``complete`` once at class
+    definition time, so the breaker's failure count is a single object
+    shared across every provider *instance* for the life of the test
+    process (production builds a fresh provider per call — see
+    ``build_provider`` — so per-instance state wouldn't accumulate
+    failures at all; the shared-at-class-level design is intentional).
+    Without this reset, a test that trips a breaker open would leave it
+    open for every unrelated test that runs afterward in the same session.
+    """
+    from circuitbreaker import CircuitBreakerMonitor
+
+    for cb in CircuitBreakerMonitor.get_circuits():
+        cb.reset()
+    yield
+    for cb in CircuitBreakerMonitor.get_circuits():
+        cb.reset()
+
+
 @dataclass
 class _StubProvider:
     """LLMProvider double — returns whatever ``response`` was given.
@@ -1445,3 +1467,48 @@ async def test_providers_reuse_one_shared_httpx_client_across_build_provider_cal
     assert len(constructed) == 1, (
         f"expected exactly one httpx.AsyncClient construction across two build_provider() calls; got {len(constructed)}"
     )
+
+
+# --- circuit breaker on provider HTTP calls (audit remediation, Task 15) --
+
+
+async def test_anthropic_complete_opens_circuit_after_repeated_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After enough consecutive HTTP failures, the breaker opens and further
+    calls fail fast without re-invoking the underlying HTTP request.
+
+    Loops only just past the failure threshold (6, not 10) to keep this
+    fast — the invariant only needs one call past the point the breaker
+    opens. Uses a *fresh provider instance* each iteration (mirroring
+    production's ``build_provider``-per-call pattern) to prove the breaker's
+    state lives at the class level, not on any one instance.
+    """
+    _reset_shared_http_client()
+    call_count = 0
+
+    class _FailingAsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def post(self, *args: Any, **kwargs: Any) -> Any:
+            nonlocal call_count
+            call_count += 1
+            raise httpx.ConnectError("simulated outage", request=None)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FailingAsyncClient)
+    try:
+        for _ in range(6):
+            with pytest.raises(Exception):  # noqa: B017 - either httpx.HTTPError or CircuitBreakerError
+                await AnthropicProvider(api_key="k").complete(
+                    system_prompt="sys", user_prompt="user", model="m", max_tokens=10, timeout=5
+                )
+
+        calls_before_open = call_count
+        with pytest.raises(Exception):  # noqa: B017
+            await AnthropicProvider(api_key="k").complete(
+                system_prompt="sys", user_prompt="user", model="m", max_tokens=10, timeout=5
+            )
+        assert call_count == calls_before_open, "breaker should short-circuit without re-invoking the HTTP request"
+    finally:
+        _reset_shared_http_client()

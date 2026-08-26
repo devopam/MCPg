@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import httpx
+from circuitbreaker import CircuitBreakerError, circuit
 
 from mcpg.errors import MCPgError
 from mcpg.introspection import describe_table, list_foreign_keys, list_tables
@@ -232,6 +233,18 @@ HARD_MAX_TOKENS = 16_384
 # Default request timeout. Most NL→SQL completions finish in under
 # 30s; pad for slow networks / slower models.
 DEFAULT_TIMEOUT_SECONDS = 60.0
+
+# Circuit breaker tuning for each provider's ``complete()`` HTTP call —
+# after this many consecutive failures, further calls to that *class* (not
+# instance — see the ``@circuit`` note on each provider below) fail fast
+# with ``CircuitBreakerError`` for ``recovery_timeout`` seconds instead of
+# each one separately paying the full ``timeout`` cost against a degraded
+# vendor. Threshold counts once per logical call even once retry-with-
+# backoff is layered *inside* the breaker (see each ``complete``'s
+# ``@retry``) — only an attempt that exhausts all its retries counts as one
+# breaker failure, not one per retry.
+NL2SQL_CIRCUIT_FAILURE_THRESHOLD = 5
+NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS = 30.0
 
 _SUPPORTED_PROVIDERS = frozenset(DEFAULT_MODELS)
 
@@ -437,6 +450,20 @@ class AnthropicProvider:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
 
+    # ``@circuit`` decorates the plain function object at class-definition
+    # time, so its failure count is one object shared by every
+    # ``AnthropicProvider`` instance for the process's lifetime — not
+    # per-instance state. That's intentional: `build_provider` constructs a
+    # fresh provider on every `translate_nl_to_sql` call (see its
+    # module-level docstring), so per-instance breaker state would never
+    # accumulate a single failure across calls. `expected_exception` is
+    # scoped to `httpx.HTTPError` (network/timeout/non-2xx) so a bug in our
+    # own response parsing can't trip the *network* breaker.
+    @circuit(  # type: ignore[untyped-decorator]
+        failure_threshold=NL2SQL_CIRCUIT_FAILURE_THRESHOLD,
+        recovery_timeout=NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
+        expected_exception=httpx.HTTPError,
+    )
     async def complete(
         self,
         *,
@@ -489,6 +516,17 @@ class OpenAIProvider:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
 
+    # See the matching comment on ``AnthropicProvider.complete`` — shared
+    # class-level breaker state is intentional given per-call construction.
+    # Note this one breaker covers every OpenAI-compatible vendor (the
+    # `OPENAI_COMPATIBLE_BASE_URLS` fleet all route through this class), so
+    # a run of failures against one vendor's endpoint trips the same
+    # breaker as another OpenAI-compatible vendor would.
+    @circuit(  # type: ignore[untyped-decorator]
+        failure_threshold=NL2SQL_CIRCUIT_FAILURE_THRESHOLD,
+        recovery_timeout=NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
+        expected_exception=httpx.HTTPError,
+    )
     async def complete(
         self,
         *,
@@ -537,6 +575,12 @@ class GeminiProvider:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
 
+    # See the matching comment on ``AnthropicProvider.complete``.
+    @circuit(  # type: ignore[untyped-decorator]
+        failure_threshold=NL2SQL_CIRCUIT_FAILURE_THRESHOLD,
+        recovery_timeout=NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
+        expected_exception=httpx.HTTPError,
+    )
     async def complete(
         self,
         *,
@@ -1253,6 +1297,12 @@ async def translate_nl_to_sql(
         )
     except httpx.HTTPError as exc:
         raise NL2SQLError(f"NL→SQL provider request failed: {exc}") from exc
+    except CircuitBreakerError as exc:
+        # The breaker on `provider.complete` is open (too many recent
+        # failures) — translate to the module's own error type so callers
+        # only ever see `NL2SQLError` from this function, tripped breaker
+        # or not.
+        raise NL2SQLError(f"NL→SQL provider request failed: circuit open ({exc})") from exc
 
     raw = completion.text
     tokens_in, tokens_out = completion.tokens_in, completion.tokens_out
