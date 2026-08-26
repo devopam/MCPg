@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Dev dependencies: `pytest-mock`, `pytest-randomly` (test-order randomization — active by default once
+  installed), `pytest-socket` (available for opt-in per-test network blocking, not globally enabled),
+  `time-machine`, `pytest-rerunfailures`.
+
 - License enumeration (`pip-licenses`) added to CI as a non-blocking report step.
 
 - `/readyz` readiness endpoint on the HTTP transport — reports 503 when the DB pool can't currently serve
