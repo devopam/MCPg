@@ -8,6 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- License enumeration (`pip-licenses`) added to CI as a non-blocking report step.
+
 - `/readyz` readiness endpoint on the HTTP transport — reports 503 when the DB pool can't currently serve
   a connection, distinct from `/healthz`'s liveness-only check. Previously reserved in the auth-exemption
   set but never mounted. Reads `Database.is_connected` (no fresh connection attempted on every poll);

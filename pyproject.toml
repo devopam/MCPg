@@ -158,6 +158,7 @@ dev = [
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
+    "pip-licenses>=5.5.5",
 ]
 # Benchmark suite (roadmap 19) — dev-only. Keeps the shipped package lean;
 # `duckdb` generates the TPC-H dataset for benchmarks/datasets/load_tpch.py,
