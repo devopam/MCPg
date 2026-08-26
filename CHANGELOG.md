@@ -79,6 +79,15 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Pinned `hatchling>=1.26` as the build-system floor (previously unpinned).
 - HSTS `max-age` default bumped from 31536000 (1 year) to 63072000 (2 years), OWASP's current
   recommendation — the old value remains the `hstspreload.org` minimum-eligibility floor, not the target.
+- NL→SQL providers (`AnthropicProvider`, `OpenAIProvider`, `GeminiProvider`) now reuse one process-wide
+  `httpx.AsyncClient` instead of opening `async with httpx.AsyncClient(...)` fresh on every
+  `translate_nl_to_sql` call. A new provider instance is still built per call (provider selection can
+  vary per-request via `provider=`), so the client lives at module scope rather than on the instance —
+  closed via `mcpg.nl2sql.aclose_shared_client()`, wired into `make_lifespan`'s existing shutdown path.
+  The OIDC discovery-document fetch similarly moves from a per-fetch client to one held for
+  `OIDCVerifier`'s lifetime (`aclose()` closes it); since the verifier is constructed after
+  `make_lifespan`'s closure already exists, `build_http_app` wraps the ASGI app's own lifespan to close it
+  on shutdown instead. Each avoids paying a fresh TCP/TLS handshake per call/fetch.
 
 ### Security
 

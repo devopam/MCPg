@@ -282,6 +282,14 @@ def make_lifespan(
 
             await cache_manager.close()
 
+            # NL→SQL providers share one process-wide httpx.AsyncClient
+            # (see mcpg.nl2sql._get_shared_http_client) rather than each
+            # opening a fresh client per translate_nl_to_sql call — close
+            # it out symmetrically so it doesn't leak past shutdown.
+            from mcpg.nl2sql import aclose_shared_client
+
+            await aclose_shared_client()
+
             # Flush pending OTel spans so a clean shutdown doesn't
             # drop the last batch of traces. Tracer is process-wide
             # global but the provider hung off the server lets us

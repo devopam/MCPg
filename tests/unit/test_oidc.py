@@ -427,3 +427,63 @@ async def test_verifier_offloads_jwks_fetch_to_a_worker_thread() -> None:
     assert verified.claims["sub"] == "user-42"
     # PyJWKClient.get_signing_key_from_jwt is the method we offloaded.
     assert "get_signing_key_from_jwt" in observed
+
+
+# --- shared httpx.AsyncClient reuse (perf audit remediation, Task 9) ------
+
+
+async def test_verifier_reuses_one_httpx_client_across_discovery_fetches() -> None:
+    """The discovery-document fetch reuses one ``httpx.AsyncClient`` held
+    for the verifier's whole lifetime, rather than opening ``async with
+    httpx.AsyncClient(...)`` fresh on every fetch. ``jwks_cache_seconds=0``
+    forces the cache to be treated as expired immediately, so two direct
+    ``_resolve_jwks_url()`` calls both actually hit the network path."""
+    issuer = "https://issuer.example"
+    discovery = {"issuer": issuer, "jwks_uri": f"{issuer}/.well-known/jwks.json"}
+    constructed: list[object] = []
+
+    class _AsyncResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return discovery
+
+    class _AsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            constructed.append(self)
+
+        async def get(self, url: str, **_kwargs: Any) -> _AsyncResponse:
+            return _AsyncResponse()
+
+    with patch(
+        "mcpg.oidc.httpx",
+        type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
+    ):
+        verifier = OIDCVerifier(issuer=issuer, audience="mcpg", jwks_cache_seconds=0.0)
+        url_one = await verifier._resolve_jwks_url()
+        url_two = await verifier._resolve_jwks_url()
+
+    assert url_one == url_two == discovery["jwks_uri"]
+    assert len(constructed) == 1, f"expected exactly one httpx.AsyncClient construction; got {len(constructed)}"
+
+
+async def test_verifier_aclose_closes_the_underlying_client() -> None:
+    """``aclose()`` closes the verifier's held HTTP client."""
+    closed: list[bool] = []
+
+    class _AsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def aclose(self) -> None:
+            closed.append(True)
+
+    with patch(
+        "mcpg.oidc.httpx",
+        type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
+    ):
+        verifier = OIDCVerifier(issuer="https://issuer.example", audience="mcpg")
+        await verifier.aclose()
+
+    assert closed == [True]

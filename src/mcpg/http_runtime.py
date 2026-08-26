@@ -27,6 +27,7 @@ import json
 import logging
 import sys
 from collections.abc import Iterable
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, cast
 
 from mcpg.config import ConfigError, Settings
@@ -36,7 +37,8 @@ from mcpg.oidc import OIDCError, OIDCVerifier
 from mcpg.tenancy import _ROLE_SCOPE_KEY, TenancyError, current_role, validate_role
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import AsyncIterator, Awaitable, Callable
+    from contextlib import AbstractAsyncContextManager
 
     from starlette.applications import Starlette
     from starlette.requests import Request
@@ -574,6 +576,33 @@ class _RequestTimeoutMiddleware:
                 await _send_504(send, f"request exceeded {self._timeout}s")
 
 
+def _close_oidc_verifier_on_lifespan_shutdown(app: Starlette, verifier: OIDCVerifier) -> None:
+    """Make the ASGI lifespan close ``verifier``'s HTTP client on shutdown.
+
+    ``streamable_http_app()``/``sse_app()`` already install their own
+    lifespan (the MCP SDK's session-manager ``run()``, which itself
+    enters MCPg's ``make_lifespan`` closure — see ``mcpg.server``). That
+    closure is built by ``create_server`` *before* this function (and
+    the verifier) exist, so there's no way to reach it from here to add
+    a teardown call. Wrapping ``app.router.lifespan_context`` directly
+    is the one real hook available at this point: it runs inside the
+    same ASGI lifespan scope, alongside (not instead of) the SDK's own
+    teardown, and fires for both the streamable-http and sse transports
+    since both go through this function.
+    """
+    inner_lifespan: Callable[[Starlette], AbstractAsyncContextManager[Any]] = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def _lifespan_with_oidc_close(started_app: Starlette) -> AsyncIterator[Any]:
+        try:
+            async with inner_lifespan(started_app) as state:
+                yield state
+        finally:
+            await verifier.aclose()
+
+    app.router.lifespan_context = _lifespan_with_oidc_close
+
+
 def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlette:
     """Wrap an MCPServer HTTP app with metrics + optional auth.
 
@@ -642,6 +671,7 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
             allowed_roles=settings.allowed_roles,
         )
         app.add_middleware(_OIDCAuthMiddleware, verifier=verifier)
+        _close_oidc_verifier_on_lifespan_shutdown(app, verifier)
     else:
         if settings.default_role is not None or settings.allowed_roles:
             app.add_middleware(_TenantRoleMiddleware, allowed_roles=settings.allowed_roles)

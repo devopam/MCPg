@@ -149,6 +149,12 @@ class OIDCVerifier:
 
         self._discovery: _DiscoveryCache | None = None
         self._jwks_client: PyJWKClient | None = None
+        # Held for this verifier's lifetime rather than opened fresh per
+        # discovery-document fetch — construction is cheap (no I/O), so
+        # this is safe even though discovery itself is infrequent (cached
+        # for jwks_cache_seconds, and skipped entirely when jwks_url is
+        # supplied explicitly).
+        self._client = httpx.AsyncClient(timeout=self._discovery_timeout)
 
     async def _resolve_jwks_url(self) -> str:
         """Return the JWKS URL — explicit override wins, else discovery."""
@@ -158,8 +164,7 @@ class OIDCVerifier:
             return self._discovery.jwks_uri
         url = f"{self._issuer}/.well-known/openid-configuration"
         try:
-            async with httpx.AsyncClient(timeout=self._discovery_timeout) as client:
-                response = await client.get(url)
+            response = await self._client.get(url)
             response.raise_for_status()
             doc = response.json()
         except Exception as exc:
@@ -169,6 +174,10 @@ class OIDCVerifier:
             raise OIDCError(f"OIDC discovery doc at {url} has no jwks_uri")
         self._discovery = _DiscoveryCache(jwks_uri=jwks_uri, fetched_at=time.monotonic())
         return jwks_uri
+
+    async def aclose(self) -> None:
+        """Close the underlying HTTP client. Call once when the verifier is no longer needed."""
+        await self._client.aclose()
 
     async def _ensure_jwks_client(self) -> PyJWKClient:
         url = await self._resolve_jwks_url()

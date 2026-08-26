@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import patch
@@ -31,6 +33,7 @@ from mcpg.nl2sql import (
     _assert_single_statement,
     _parse_response,
     _reset_egress_notice_cache,
+    _reset_shared_http_client,
     _resolve_schema_policy,
     _sanitize_default_expr,
     _validate_schema_name,
@@ -1274,8 +1277,18 @@ def test_parse_response_extracts_fence_body_over_outer_garbage() -> None:
 # provider classes' usage-block parsing is actually exercised.
 
 
-def _mock_post_response(body: dict[str, Any]):
-    """Patch ``mcpg.nl2sql.httpx`` so any POST returns ``body`` as JSON."""
+@contextmanager
+def _mock_post_response(body: dict[str, Any]) -> Iterator[None]:
+    """Patch ``mcpg.nl2sql.httpx`` so any POST returns ``body`` as JSON.
+
+    Also resets the module-level shared httpx client
+    (``mcpg.nl2sql._get_shared_http_client``) around the patch. The
+    providers now share one lazily-constructed client at module scope
+    instead of opening one per call — without the reset, a client
+    cached by an earlier test would still be the real (or differently-
+    mocked) instance from that test, and this test's mock would never
+    actually be hit.
+    """
 
     class _AsyncResponse:
         def __init__(self, body: dict[str, Any]) -> None:
@@ -1301,10 +1314,15 @@ def _mock_post_response(body: dict[str, Any]):
         async def post(self, url: str, **_kwargs: Any) -> _AsyncResponse:
             return _AsyncResponse(body)
 
-    return patch.multiple(
-        "mcpg.nl2sql",
-        httpx=type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
-    )
+    _reset_shared_http_client()
+    try:
+        with patch.multiple(
+            "mcpg.nl2sql",
+            httpx=type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
+        ):
+            yield
+    finally:
+        _reset_shared_http_client()
 
 
 async def test_anthropic_provider_parses_usage_from_the_real_response_shape() -> None:
@@ -1359,3 +1377,71 @@ async def test_provider_usage_missing_or_malformed_defaults_to_zero_not_a_crash(
         )
     assert result.tokens_in == 0
     assert result.tokens_out == 0
+
+
+# --- shared httpx.AsyncClient reuse (perf audit remediation, Task 9) ------
+#
+# NOTE on test shape: `build_provider` is called fresh on EVERY
+# `translate_nl_to_sql` tool invocation in production (see
+# `mcpg.tools._register_nl2sql`) — a new provider instance every call.
+# A test that instead calls `.complete()` twice on one hand-held
+# provider instance would go green the moment `__init__` held a client,
+# even though production still built a fresh provider (and thus a
+# fresh client) on every call — the defect this task fixes would
+# survive untouched. This test instead calls `build_provider()` twice,
+# matching the real per-call construction pattern, and asserts the two
+# resulting (distinct) provider instances still share one underlying
+# `httpx.AsyncClient`.
+
+
+async def test_providers_reuse_one_shared_httpx_client_across_build_provider_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two separate `build_provider()` calls share one `httpx.AsyncClient`.
+
+    Providers hold no client of their own — `complete()` reaches into
+    `mcpg.nl2sql`'s module-level, lazily-constructed shared client
+    (`_get_shared_http_client`) instead of opening `async with
+    httpx.AsyncClient(...)` per call.
+    """
+    _reset_shared_http_client()
+    constructed: list[object] = []
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {"content": [{"type": "text", "text": "{}"}], "usage": {}}
+
+    class _FakeAsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            constructed.append(self)
+
+        async def post(self, *args: Any, **kwargs: Any) -> _FakeResponse:
+            return _FakeResponse()
+
+    # Patch the real `httpx.AsyncClient` attribute (not
+    # `mcpg.nl2sql.httpx` wholesale) so `_get_shared_http_client`'s
+    # `httpx.AsyncClient()` call resolves to the fake at call time,
+    # tracking every construction regardless of which provider/call
+    # triggers it.
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+    try:
+        provider_one = build_provider("anthropic", "key-one")
+        result_one = await provider_one.complete(
+            system_prompt="sys", user_prompt="user", model="m", max_tokens=10, timeout=5
+        )
+        provider_two = build_provider("anthropic", "key-two")
+        result_two = await provider_two.complete(
+            system_prompt="sys", user_prompt="user", model="m", max_tokens=10, timeout=5
+        )
+    finally:
+        _reset_shared_http_client()
+
+    assert provider_one is not provider_two  # two distinct instances, matching production
+    assert result_one.text == "{}"
+    assert result_two.text == "{}"
+    assert len(constructed) == 1, (
+        f"expected exactly one httpx.AsyncClient construction across two build_provider() calls; got {len(constructed)}"
+    )

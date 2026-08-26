@@ -377,6 +377,57 @@ class LLMProvider(Protocol):
         ...
 
 
+# Process-wide client shared by all three provider classes below.
+#
+# `build_provider` is called fresh on every `translate_nl_to_sql` tool
+# invocation (provider selection can vary per-call via the `provider=`
+# argument), so holding a client on each provider *instance* wouldn't
+# help — a new instance still means a new client. Sharing one client at
+# module scope instead means every call, regardless of how many
+# providers get constructed, reuses the same keep-alive connection pool
+# rather than paying a fresh TCP/TLS handshake per call. httpx already
+# pools connections per-host internally, so one client shared across
+# vendors (each with its own host) is correct usage, not a compromise.
+#
+# Lazily created on first use so importing this module never opens a
+# client; closed via `aclose_shared_client()`, which the server's
+# lifespan hook (`mcpg.server.make_lifespan`) calls on shutdown.
+_shared_http_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_http_client() -> httpx.AsyncClient:
+    """Return the process-wide ``httpx.AsyncClient`` shared by all providers."""
+    global _shared_http_client
+    if _shared_http_client is None:
+        _shared_http_client = httpx.AsyncClient()
+    return _shared_http_client
+
+
+async def aclose_shared_client() -> None:
+    """Close the shared HTTP client, if one was ever constructed.
+
+    Call once at server shutdown. Safe to call when no provider call
+    has happened yet (no-op) and safe to call more than once.
+    """
+    global _shared_http_client
+    if _shared_http_client is not None:
+        await _shared_http_client.aclose()
+        _shared_http_client = None
+
+
+def _reset_shared_http_client() -> None:
+    """Test-only: drop the cached shared client without closing it.
+
+    Each async test runs its own event loop (pytest-asyncio,
+    function-scoped), and an ``httpx.AsyncClient`` built against one
+    loop breaks if reused from another. Tests that mock the transport
+    per-call must reset this between tests so they don't inherit a
+    prior test's cached (and differently-mocked) client instance.
+    """
+    global _shared_http_client
+    _shared_http_client = None
+
+
 class AnthropicProvider:
     """Anthropic Messages API caller — `POST /v1/messages`."""
 
@@ -395,21 +446,22 @@ class AnthropicProvider:
         max_tokens: int,
         timeout: float,
     ) -> ProviderCompletion:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{self._base_url}/v1/messages",
-                headers={
-                    "x-api-key": self._api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "system": system_prompt,
-                    "messages": [{"role": "user", "content": user_prompt}],
-                },
-            )
+        client = _get_shared_http_client()
+        response = await client.post(
+            f"{self._base_url}/v1/messages",
+            headers={
+                "x-api-key": self._api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_prompt}],
+            },
+            timeout=timeout,
+        )
         response.raise_for_status()
         body = response.json()
         usage = body.get("usage") or {}
@@ -446,23 +498,24 @@ class OpenAIProvider:
         max_tokens: int,
         timeout: float,
     ) -> ProviderCompletion:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{self._base_url}/chat/completions",
-                headers={
-                    "authorization": f"Bearer {self._api_key}",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "response_format": {"type": "json_object"},
-                },
-            )
+        client = _get_shared_http_client()
+        response = await client.post(
+            f"{self._base_url}/chat/completions",
+            headers={
+                "authorization": f"Bearer {self._api_key}",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "response_format": {"type": "json_object"},
+            },
+            timeout=timeout,
+        )
         response.raise_for_status()
         body = response.json()
         usage = body.get("usage") or {}
@@ -495,22 +548,23 @@ class GeminiProvider:
     ) -> ProviderCompletion:
         # Gemini accepts the API key as a query string or `x-goog-api-key`
         # header — we use the header to avoid logging-route leakage.
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{self._base_url}/v1beta/models/{model}:generateContent",
-                headers={
-                    "x-goog-api-key": self._api_key,
-                    "content-type": "application/json",
+        client = _get_shared_http_client()
+        response = await client.post(
+            f"{self._base_url}/v1beta/models/{model}:generateContent",
+            headers={
+                "x-goog-api-key": self._api_key,
+                "content-type": "application/json",
+            },
+            json={
+                "systemInstruction": {"parts": [{"text": system_prompt}]},
+                "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": max_tokens,
+                    "responseMimeType": "application/json",
                 },
-                json={
-                    "systemInstruction": {"parts": [{"text": system_prompt}]},
-                    "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-                    "generationConfig": {
-                        "maxOutputTokens": max_tokens,
-                        "responseMimeType": "application/json",
-                    },
-                },
-            )
+            },
+            timeout=timeout,
+        )
         response.raise_for_status()
         body = response.json()
         usage = body.get("usageMetadata") or {}

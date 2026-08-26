@@ -16,6 +16,7 @@ from mcpg.http_runtime import (
     build_http_app,
 )
 from mcpg.observability import get_metrics, reset_metrics
+from mcpg.oidc import OIDCVerifier
 from mcpg.tenancy import current_role
 
 
@@ -576,6 +577,49 @@ def test_build_http_app_in_oidc_mode_blocks_requests_without_a_valid_jwt() -> No
         assert response.status_code == 200
         response = client.get("/readyz")
         assert response.status_code == 200
+
+
+def test_build_http_app_in_oidc_mode_closes_the_verifier_client_on_lifespan_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The OIDCVerifier is built inside build_http_app — after
+    mcpg.server.make_lifespan's closure already exists — so there's no
+    way to reach it from that closure's own `finally`. build_http_app
+    instead wraps the app's own `router.lifespan_context` so the
+    verifier's HTTP client still gets closed when the ASGI lifespan
+    (entered by TestClient's context manager here, uvicorn in
+    production) shuts down."""
+    closed: list[bool] = []
+
+    class _TrackedVerifier(OIDCVerifier):
+        async def aclose(self) -> None:
+            closed.append(True)
+            await super().aclose()
+
+    import mcpg.http_runtime as http_runtime
+
+    monkeypatch.setattr(http_runtime, "OIDCVerifier", _TrackedVerifier)
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_AUTH_MODE": "oidc",
+            "MCPG_OIDC_ISSUER": "https://issuer.example",
+            "MCPG_OIDC_AUDIENCE": "mcpg",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    assert closed == []  # not yet closed while the app is "running"
+    with TestClient(wrapped) as client:
+        client.get("/metrics")
+        assert closed == []
+
+    assert closed == [True]
 
 
 # --- HTTP hardening middlewares (Security headers, CORS, request size limit) ---
