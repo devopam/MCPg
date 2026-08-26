@@ -8,8 +8,32 @@ import sys
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from mcpg.sql import obfuscate_password
+
 if TYPE_CHECKING:
     from mcpg.config import Settings
+
+
+class RedactionFilter(logging.Filter):
+    """Backstop redaction: scrubs any password-bearing connection string that reaches a log
+    call without having been passed through obfuscate_password() at the call site.
+
+    Not a replacement for calling obfuscate_password() explicitly where a value is known to
+    carry credentials — that per-call-site discipline still matters for accuracy (this filter
+    only recognizes the same connection-string shapes obfuscate_password() already does). This
+    is the centralized enforcement layer for the case a future call site forgets.
+
+    Runs before formatting (logging.Filter operates on the LogRecord, not rendered output), so
+    it renders any lazy %-style args via getMessage() up front and clears record.args — this
+    both avoids leaving unredacted args sitting on the record and prevents a formatter that
+    calls getMessage() again (e.g. JSONFormatter) from re-applying % substitution to the
+    already-rendered, now-static message string.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = obfuscate_password(record.getMessage())
+        record.args = ()
+        return True
 
 
 class JSONFormatter(logging.Formatter):
@@ -73,6 +97,7 @@ def setup_logging(settings: Settings) -> None:
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
     handler.setFormatter(formatter)
+    handler.addFilter(RedactionFilter())
     logger.addHandler(handler)
 
     # Disable propagation to prevent double-logging if root has handlers
