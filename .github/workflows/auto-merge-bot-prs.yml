@@ -17,6 +17,11 @@ jobs:
       github.actor == 'dependabot[bot]' ||
       github.actor == 'renovate[bot]' ||
       github.actor == 'github-actions[bot]' ||
+      # The `[bot]`-suffix username namespace is reserved for GitHub App identities
+      # (confirmed via `gh api users/dependabot%5Bbot%5D` — `type: Bot`); a human account
+      # cannot register one, so this clause doesn't broaden trust beyond the three named
+      # bots above in practice. Re-verify this assumption if GitHub's account-namespace
+      # rules ever change.
       endsWith(github.actor, '[bot]')
     
     steps:
