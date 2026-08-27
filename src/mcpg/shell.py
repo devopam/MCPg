@@ -33,6 +33,7 @@ import tempfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Final
 
 from mcpg.errors import MCPgError
@@ -142,7 +143,7 @@ def _resolve_binary(name: str, bin_allowlist: tuple[str, ...] = ()) -> str:
         # e.g. /usr/bin/pg_dump -> pg_wrapper outside the bin dir. We only
         # normalise the directory for symlinks so a PATH shim in an
         # untrusted dir is still rejected.
-        resolved_dir = os.path.realpath(os.path.dirname(resolved))
+        resolved_dir = os.path.realpath(Path(resolved).parent)
         allowed = {os.path.realpath(d) for d in bin_allowlist}
         if resolved_dir not in allowed:
             raise ShellError(

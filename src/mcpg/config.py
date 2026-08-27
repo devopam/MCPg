@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from os import environ
-from os.path import isabs
+from pathlib import Path
 from urllib.parse import urlparse
 
 from mcpg.errors import MCPgError
@@ -561,7 +561,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if (raw := env.get("MCPG_SUBPROCESS_BIN_ALLOWLIST")) is not None:
         dirs = tuple(d.strip() for d in raw.split(",") if d.strip())
         for d in dirs:
-            if not isabs(d):
+            if not Path(d).is_absolute():
                 raise ConfigError(f"MCPG_SUBPROCESS_BIN_ALLOWLIST entries must be absolute paths (got {d!r})")
         subprocess_bin_allowlist = dirs
 
@@ -1124,7 +1124,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
         parts = [piece.strip() for piece in raw.split(pathsep) if piece.strip()]
         for part in parts:
-            if not isabs(part):
+            if not Path(part).is_absolute():
                 raise ConfigError(f"MCPG_MIGRATION_SCRIPTS_ROOTS entries must be absolute paths (got {part!r})")
         migration_scripts_roots = tuple(parts)
 
@@ -1217,11 +1217,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         ("MCPG_HTTP_TLS_KEYFILE", http_tls_keyfile),
         ("MCPG_HTTP_TLS_CA_CERTS", http_tls_ca_certs),
     ):
-        if path is not None:
-            from os.path import isfile
-
-            if not isfile(path):
-                raise ConfigError(f"{env_var} points to a non-existent file: {path!r}")
+        if path is not None and not Path(path).is_file():
+            raise ConfigError(f"{env_var} points to a non-existent file: {path!r}")
 
     http_request_timeout_seconds = 0
     if (raw := env.get("MCPG_HTTP_REQUEST_TIMEOUT_SECONDS")) is not None:

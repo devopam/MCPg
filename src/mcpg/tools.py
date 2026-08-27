@@ -406,10 +406,8 @@ def _register_dynamic_session_intent(server: MCPServer[AppContext], settings: Se
 
         entries: list[dict[str, Any]] = []
         for preset_name, buckets in INTENT_PRESETS.items():
-            if buckets:
-                count = sum(1 for name in registered if classify_tool(name) in buckets)
-            else:
-                count = len(registered)  # "admin" -- no filter
+            # "admin" -- no filter
+            count = sum(1 for name in registered if classify_tool(name) in buckets) if buckets else len(registered)
             entries.append(
                 {
                     "name": preset_name,

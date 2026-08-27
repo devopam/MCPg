@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 from unittest.mock import patch
 
 import httpx
@@ -1150,7 +1150,7 @@ async def test_translate_nl_to_sql_emits_egress_warning_once_per_provider() -> N
     # Exactly one provider — "stub" — is in the cache; if the warning
     # fired twice, the set membership doesn't change but the test
     # below would catch any logic that bypassed the cache.
-    assert nl2sql_mod._EGRESS_NOTICE_LOGGED == {"stub"}
+    assert {"stub"} == nl2sql_mod._EGRESS_NOTICE_LOGGED
 
 
 async def test_translate_nl_to_sql_egress_warning_fires_per_distinct_provider() -> None:
@@ -1171,7 +1171,7 @@ async def test_translate_nl_to_sql_egress_warning_fires_per_distinct_provider() 
             question="x",
             schema="public",
         )
-    assert nl2sql_mod._EGRESS_NOTICE_LOGGED == {"anthropic_x", "openai_x", "gemini_x"}
+    assert {"anthropic_x", "openai_x", "gemini_x"} == nl2sql_mod._EGRESS_NOTICE_LOGGED
 
 
 # --- P2 #6 — QueryError redaction ----------------------------------------
@@ -1328,7 +1328,7 @@ def _mock_post_response(body: dict[str, Any]) -> Iterator[None]:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> _AsyncClient:
+        async def __aenter__(self) -> Self:
             return self
 
         async def __aexit__(self, *exc_info: object) -> None:

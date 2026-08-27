@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 from mcpg.sql import SqlDriver
 
@@ -163,7 +163,7 @@ class FakeDatabase:
         self.execute_many_calls.append((sql, rows))
         return self._execute_many_rowcount if self._execute_many_rowcount is not None else len(rows)
 
-    async def __aenter__(self) -> FakeDatabase:
+    async def __aenter__(self) -> Self:
         await self.connect()
         return self
 

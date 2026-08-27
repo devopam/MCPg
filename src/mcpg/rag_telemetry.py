@@ -995,10 +995,7 @@ async def _rag_data_range(driver: SqlDriver, spec: _RagTableSpec) -> tuple[datet
 
 def _rag_native_monthly_partition_sql(spec: _RagTableSpec, month_start: datetime) -> str:
     start = month_start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1)
-    else:
-        end = start.replace(month=start.month + 1)
+    end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
     return (
         f"CREATE TABLE IF NOT EXISTS {_SCHEMA_NAME}.{spec.table}_p{start.strftime('%Y%m')} "
         f"PARTITION OF {_SCHEMA_NAME}.{spec.table} "

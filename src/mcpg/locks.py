@@ -286,7 +286,7 @@ def _normalize_cycle(cycle: list[int]) -> tuple[int, ...]:
     min_val = min(cycle)
     min_idx = cycle.index(min_val)
     normalized = cycle[min_idx:] + cycle[:min_idx]
-    return tuple([*normalized, min_val])
+    return (*normalized, min_val)
 
 
 def _find_cycles(adj: dict[int, list[int]], all_pids: set[int]) -> list[list[int]]:

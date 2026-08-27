@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any
+from typing import Any, Self
 from unittest.mock import patch
 
 import httpx
@@ -102,7 +102,7 @@ def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> _AsyncClient:
+        async def __aenter__(self) -> Self:
             return self
 
         async def __aexit__(self, *exc_info: object) -> None:
@@ -122,7 +122,7 @@ def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):
         def read(self) -> bytes:
             return self._body
 
-        def __enter__(self) -> _UrllibResponse:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *exc_info: object) -> None:
@@ -351,7 +351,7 @@ async def test_verifier_propagates_discovery_failure() -> None:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> _BrokenClient:
+        async def __aenter__(self) -> Self:
             return self
 
         async def __aexit__(self, *exc_info: object) -> None:
@@ -383,7 +383,7 @@ async def test_verifier_uses_explicit_jwks_url_when_provided() -> None:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> _AsyncClient:
+        async def __aenter__(self) -> Self:
             return self
 
         async def __aexit__(self, *exc_info: object) -> None:
@@ -397,7 +397,7 @@ async def test_verifier_uses_explicit_jwks_url_when_provided() -> None:
         def read(self) -> bytes:
             return json.dumps({"keys": [jwk]}).encode()
 
-        def __enter__(self) -> _UrllibResponse:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *exc_info: object) -> None:

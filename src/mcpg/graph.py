@@ -90,18 +90,17 @@ def parse_agtype(val: Any) -> Any:
     This helper strips those type suffixes recursively and parses the clean
     payload using standard ``json.loads``.
     """
-    if isinstance(val, str):
-        if val.endswith("::vertex") or val.endswith("::edge") or val.endswith("::path"):
-            # Split by unescaped double quotes to safely strip suffixes only outside string literals
-            parts = re.split(r'(?<!\\)"', val)
-            for i in range(len(parts)):
-                if i % 2 == 0:
-                    parts[i] = parts[i].replace("::vertex", "").replace("::edge", "").replace("::path", "")
-            clean = '"'.join(parts)
-            try:
-                return json.loads(clean)
-            except json.JSONDecodeError:
-                return val
+    if isinstance(val, str) and (val.endswith("::vertex") or val.endswith("::edge") or val.endswith("::path")):
+        # Split by unescaped double quotes to safely strip suffixes only outside string literals
+        parts = re.split(r'(?<!\\)"', val)
+        for i in range(len(parts)):
+            if i % 2 == 0:
+                parts[i] = parts[i].replace("::vertex", "").replace("::edge", "").replace("::path", "")
+        clean = '"'.join(parts)
+        try:
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            return val
     return val
 
 

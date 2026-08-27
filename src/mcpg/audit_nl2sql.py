@@ -226,7 +226,7 @@ def _resolve_settings(
     compress_after = (source.get("MCPG_NL2SQL_AUDIT_COMPRESS_AFTER") or "").strip() or "7 days"
     _check_interval(compress_after, kind="MCPG_NL2SQL_AUDIT_COMPRESS_AFTER")
     rls_raw = (source.get("MCPG_NL2SQL_AUDIT_RLS") or "").strip().lower()
-    rls = True if rls_raw in ("", "true", "1", "yes", "on") else False
+    rls = rls_raw in ("", "true", "1", "yes", "on")
     reader_role = (source.get("MCPG_NL2SQL_AUDIT_READER_ROLE") or "").strip() or None
     if reader_role is not None:
         _check_identifier(reader_role, kind="reader role")

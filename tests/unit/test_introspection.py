@@ -862,7 +862,7 @@ async def test_introspection_tools_are_registered() -> None:
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
 
-    assert _INTROSPECTION_TOOLS <= listed
+    assert listed >= _INTROSPECTION_TOOLS
 
 
 # --- list_generated_columns (Phase 4.7) ---------------------------------

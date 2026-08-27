@@ -16,6 +16,7 @@ the audit row) sees a structured "what changed" alongside the result.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -108,7 +109,9 @@ async def _persist_audit(
 ) -> None:
     """Best-effort audit persistence — failures must not mask the real result."""
     result_payload = asdict(result) if result is not None else None
-    try:
+    # Audit persistence is best-effort; never let it shadow the real
+    # write error or fabricate one for a successful write.
+    with contextlib.suppress(Exception):
         await record_audit(
             driver,
             tool=tool,
@@ -117,10 +120,6 @@ async def _persist_audit(
             error=error,
             result=result_payload,
         )
-    except Exception:
-        # Audit persistence is best-effort; never let it shadow the real
-        # write error or fabricate one for a successful write.
-        pass
 
 
 async def run_write(driver: SqlDriver, sql: str, *, audit_persist: bool = False) -> WriteResult:

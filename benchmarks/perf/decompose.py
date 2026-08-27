@@ -27,6 +27,7 @@ it is not unit-tested; the pure summariser + tolerance check below are.
 
 from __future__ import annotations
 
+import contextlib
 import time
 from dataclasses import dataclass
 
@@ -107,10 +108,8 @@ class DecompositionRunner:
                     # A failing sample must not return the pooled connection mid
                     # transaction and poison later checkouts. Best-effort close,
                     # then re-raise the original error.
-                    try:
+                    with contextlib.suppress(Exception):
                         await cur.execute("ROLLBACK")
-                    except Exception:
-                        pass
                     raise
 
         return SegmentSample(

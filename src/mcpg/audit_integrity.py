@@ -40,10 +40,7 @@ async def verify_audit_chain(driver: SqlDriver) -> dict[str, Any]:
         A dict with 'status' (either 'ok' or 'tampered'), and details if tampered.
     """
     settings = getattr(driver, "settings", None)
-    if settings is not None:
-        key_str = settings.audit_hmac_key or ""
-    else:
-        key_str = environ.get("MCPG_AUDIT_HMAC_KEY", "").strip()
+    key_str = settings.audit_hmac_key or "" if settings is not None else environ.get("MCPG_AUDIT_HMAC_KEY", "").strip()
 
     if not key_str:
         return {

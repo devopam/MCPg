@@ -10,7 +10,7 @@ slot under the first lock, so only `max_open` opens can be in flight at once.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Self
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,7 +19,7 @@ from mcpg.cursors import CursorError, CursorManager
 
 
 class _FakeCursor:
-    async def __aenter__(self) -> _FakeCursor:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc: object) -> None:

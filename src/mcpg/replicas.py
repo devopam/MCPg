@@ -31,11 +31,12 @@ Metrics (via :mod:`mcpg.observability`):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
 from mcpg.errors import MCPgError
 from mcpg.sql import DbConnPool, SqlDriver, obfuscate_password
@@ -193,7 +194,7 @@ class ReplicaPool:
                 for state in self._states
             ]
 
-    async def __aenter__(self) -> ReplicaPool:
+    async def __aenter__(self) -> Self:
         await self.connect()
         return self
 
@@ -228,10 +229,8 @@ class TimeoutSqlDriver(SqlDriver):
                 await cursor.execute(
                     f"SET statement_timeout = {self._statement_timeout_ms}; SET lock_timeout = {self._lock_timeout_ms}"
                 )
-            try:
+            with contextlib.suppress(AttributeError):
                 connection._timeouts_configured = True
-            except AttributeError:
-                pass
         return await super()._execute_with_connection(connection, query, params, force_readonly, row_limit=row_limit)
 
 
@@ -262,10 +261,8 @@ class TenantTimeoutSqlDriver(TenantSqlDriver):
                 await cursor.execute(
                     f"SET statement_timeout = {self._statement_timeout_ms}; SET lock_timeout = {self._lock_timeout_ms}"
                 )
-            try:
+            with contextlib.suppress(AttributeError):
                 connection._timeouts_configured = True
-            except AttributeError:
-                pass
         return await super()._execute_with_connection(  # type: ignore[no-untyped-call]
             connection, query, params, force_readonly, row_limit=row_limit
         )

@@ -11,6 +11,7 @@ this complements (that doc covers the adversarial *unit* test suite —
 known-shape attacks; this harness covers unknown-shape inputs).
 """
 
+import contextlib
 import sys
 
 import atheris
@@ -27,10 +28,8 @@ _driver = SafeSqlDriver(sql_driver=None)  # type: ignore[arg-type]
 def test_one_input(data: bytes) -> None:
     fdp = atheris.FuzzedDataProvider(data)
     query = fdp.ConsumeUnicodeNoSurrogates(fdp.remaining_bytes())
-    try:
+    with contextlib.suppress(ValueError):  # expected: malformed or policy-disallowed SQL is rejected
         _driver._validate(query)  # fuzzing the private validator directly
-    except ValueError:
-        pass  # expected: malformed or policy-disallowed SQL is rejected
 
 
 atheris.Setup(sys.argv, test_one_input)

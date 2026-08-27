@@ -24,6 +24,7 @@ primary, and secondaries simply can't be written to.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -119,10 +120,8 @@ class ReadOnlySqlDriver(SqlDriver):
                 await cursor.execute(
                     f"SET statement_timeout = {self._statement_timeout_ms}; SET lock_timeout = {self._lock_timeout_ms}"
                 )
-            try:
+            with contextlib.suppress(AttributeError):
                 connection._timeouts_configured = True
-            except AttributeError:
-                pass
         return await super()._execute_with_connection(connection, query, params, force_readonly, row_limit=row_limit)
 
 

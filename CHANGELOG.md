@@ -95,6 +95,16 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Fixed all pre-existing violations in four opt-in Ruff lint categories — `PTH` (flake8-use-pathlib, 9),
+  `C4` (flake8-comprehensions, 1), `SIM` (flake8-simplify, 48), `PYI` (flake8-pyi, 16) — 74 total, run
+  category-by-category with `--select` (not yet added to `pyproject.toml`'s `[tool.ruff.lint] select`
+  list; that lands in a later commit once the remaining assessed categories — `C90`, `ASYNC`, `FBT` — are
+  also fixed). `PTH`/`C4` hits and the `SIM` autofixable subset were mechanical (`os.path.*` →
+  `pathlib.Path`, `open()` → `Path.open()`, unnecessary comprehension/literal wrapping, yoda-condition and
+  nested-`with` rewrites); every `PTH` hit and every non-autofixed `SIM`/`PYI` hit (`contextlib.suppress`
+  for `try`/`except`/`pass`, if/else-to-ternary, nested-if collapsing, `__aenter__`/`__enter__` return type
+  → `Self`) was hand-reviewed for behavior preservation, including the security-critical SQL-safety AST
+  walker (`src/mcpg/sql/safety.py`) and the subprocess bin-allowlist symlink check (`src/mcpg/shell.py`).
 - Pinned `hatchling>=1.26` as the build-system floor (previously unpinned).
 - HSTS `max-age` default bumped from 31536000 (1 year) to 63072000 (2 years), OWASP's current
   recommendation — the old value remains the `hstspreload.org` minimum-eligibility floor, not the target.

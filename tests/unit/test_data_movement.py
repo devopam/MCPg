@@ -182,7 +182,7 @@ async def test_export_table_rejects_invalid_identifier_characters() -> None:
 
 
 def test_export_formats_set_is_complete() -> None:
-    assert EXPORT_FORMATS == {"csv", "json"}
+    assert {"csv", "json"} == EXPORT_FORMATS
 
 
 def test_default_export_limit_is_a_sensible_ceiling() -> None:
@@ -975,7 +975,7 @@ async def test_import_json_derives_columns_and_runs_parametrised_insert() -> Non
     assert result.format == "json"
     assert result.rows_imported == 2
     sql, rows = db.execute_many_calls[0]
-    assert 'INSERT INTO "app"."widget" ("id", "name") VALUES (%s, %s)' == sql
+    assert sql == 'INSERT INTO "app"."widget" ("id", "name") VALUES (%s, %s)'
     assert rows == [(1, "alpha"), (2, "beta")]
 
 

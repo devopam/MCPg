@@ -334,9 +334,7 @@ def _is_safe_pgq_query(query: str) -> bool:
     body = stripped.rstrip(";").strip()
     if ";" in body:
         return False
-    if not _GRAPH_TABLE_RE.search(body):
-        return False
-    return True
+    return bool(_GRAPH_TABLE_RE.search(body))
 
 
 async def run_pgq(

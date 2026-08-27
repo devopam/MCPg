@@ -111,9 +111,8 @@ class SafeSqlDriver(SqlDriver):
                     raise ValueError("EXPLAIN ANALYZE is not supported")
 
         # CREATE EXTENSION only for allowlisted extensions.
-        if isinstance(node, CreateExtensionStmt):
-            if node.extname not in self.ALLOWED_EXTENSIONS:
-                raise ValueError(f"CREATE EXTENSION {node.extname} is not supported")
+        if isinstance(node, CreateExtensionStmt) and node.extname not in self.ALLOWED_EXTENSIONS:
+            raise ValueError(f"CREATE EXTENSION {node.extname} is not supported")
 
         # Recurse into every child node. pglast's concrete Node subclasses
         # carry their fields in ``__slots__``; the base ``Node`` type (typed
@@ -128,11 +127,7 @@ class SafeSqlDriver(SqlDriver):
             except AttributeError:
                 continue  # normal in pglast
 
-            if isinstance(attr, list):
-                for item in attr:
-                    if isinstance(item, Node):
-                        self._validate_node(item)
-            elif isinstance(attr, tuple):
+            if isinstance(attr, (list, tuple)):
                 for item in attr:
                     if isinstance(item, Node):
                         self._validate_node(item)

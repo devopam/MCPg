@@ -610,10 +610,7 @@ def _events_native_partition_sql(month_start: datetime) -> str:
     # Normalise to the first of the month.
     start = month_start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     # Next month's first day. Avoid relativedelta to keep no deps.
-    if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1)
-    else:
-        end = start.replace(month=start.month + 1)
+    end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
     suffix = start.strftime("%Y%m")
     return (
         f"CREATE TABLE IF NOT EXISTS {AUDIT_SCHEMA}.{AUDIT_TABLE}_p{suffix} "

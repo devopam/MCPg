@@ -45,6 +45,7 @@ surface it back to callers.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pglast
@@ -235,7 +236,7 @@ def test_stats_reset_propagates_through_pg19_stats_reads() -> None:
     # the purpose of the propagation guard (gemini review on #177).
     src = (pg19_stats.__file__ or "").replace(".pyc", ".py")
     try:
-        with open(src, encoding="utf-8") as fh:
+        with Path(src).open(encoding="utf-8") as fh:
             module_text = fh.read()
     except OSError as exc:
         pytest.fail(f"failed to read pg19_stats source from {src!r}: {exc}")

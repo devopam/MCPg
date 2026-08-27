@@ -23,7 +23,7 @@ import secrets
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Self
 
 import psycopg
 from psycopg.rows import dict_row
@@ -291,7 +291,7 @@ class CursorManager:
         for cid in expired:
             await self._close_internal(cid)
 
-    async def __aenter__(self) -> CursorManager:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc_info: object) -> None:

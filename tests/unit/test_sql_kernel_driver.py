@@ -268,9 +268,8 @@ async def test_execute_query_error_log_redacts_sql_literal_secret(caplog):
     driver_logger = logging.getLogger("mcpg.sql.driver")
     driver_logger.addHandler(caplog.handler)
     try:
-        with caplog.at_level(logging.ERROR, logger="mcpg.sql.driver"):
-            with pytest.raises(Exception, match="boom"):
-                await driver._execute_with_connection(connection, query, None, force_readonly=False)
+        with caplog.at_level(logging.ERROR, logger="mcpg.sql.driver"), pytest.raises(Exception, match="boom"):
+            await driver._execute_with_connection(connection, query, None, force_readonly=False)
     finally:
         driver_logger.removeHandler(caplog.handler)
 

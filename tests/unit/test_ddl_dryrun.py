@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Self
 
 import pytest
 
@@ -46,7 +46,7 @@ class FakeCursor:
         self._last: str = ""
         self._lsn_calls = 0
 
-    async def __aenter__(self) -> FakeCursor:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc: object) -> None:

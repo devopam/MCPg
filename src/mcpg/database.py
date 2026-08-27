@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from types import TracebackType
-from typing import Any
+from typing import Any, Self
 
 from mcpg.config import Settings
 from mcpg.errors import MCPgError
@@ -316,7 +316,7 @@ class Database:
             finally:
                 await connection.set_autocommit(False)
 
-    async def __aenter__(self) -> Database:
+    async def __aenter__(self) -> Self:
         await self.connect()
         return self
 

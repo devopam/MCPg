@@ -57,7 +57,7 @@ def test_capability_ids_are_unique() -> None:
     tuple."""
     ids = [c.id for c in CAPABILITIES]
     assert len(ids) == len(set(ids)), f"duplicate bucket ids: {ids}"
-    assert BUCKET_IDS == frozenset(ids)
+    assert frozenset(ids) == BUCKET_IDS
 
 
 def test_capability_summaries_are_short_enough_for_an_llm() -> None:

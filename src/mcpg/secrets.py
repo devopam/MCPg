@@ -41,6 +41,7 @@ import threading
 from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from mcpg.errors import MCPgError
@@ -102,7 +103,7 @@ class FileSecretsProvider:
 def _load_overlay(path: str) -> dict[str, str]:
     """Load + validate a flat ``name -> value`` secrets file (JSON / YAML)."""
     try:
-        with open(path, encoding="utf-8") as handle:
+        with Path(path).open(encoding="utf-8") as handle:
             raw_text = handle.read()
     except OSError as exc:
         raise SecretsError(f"could not read MCPG_SECRETS_FILE_PATH ({path!r}): {exc}") from exc

@@ -343,7 +343,7 @@ async def test_read_tools_are_exposed_in_every_access_mode(access_mode: AccessMo
     async with create_connected_server_and_client_session(_server_for(access_mode)) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
 
-    assert _READ_TOOLS <= names
+    assert names >= _READ_TOOLS
 
 
 @pytest.mark.parametrize("access_mode", list(AccessMode))

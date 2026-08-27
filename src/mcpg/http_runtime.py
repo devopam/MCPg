@@ -27,7 +27,7 @@ import json
 import logging
 import sys
 from collections.abc import Iterable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import TYPE_CHECKING, Any, cast
 
 from mcpg.config import ConfigError, Settings
@@ -499,10 +499,8 @@ class _RequestSizeLimitMiddleware:
         content_length = -1
         for key, value in headers:
             if key.lower() == b"content-length":
-                try:
+                with suppress(ValueError):
                     content_length = int(value)
-                except ValueError:
-                    pass
                 break
 
         if content_length > self._max_bytes:

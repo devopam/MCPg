@@ -129,7 +129,7 @@ async def _server_version(driver: SqlDriver) -> tuple[int, str]:
     return int(cells.get("ver_num") or 0), str(cells.get("ver") or "")
 
 
-def _absolute_ndv(n_distinct: float | int | None, reltuples: float | int | None) -> int:
+def _absolute_ndv(n_distinct: float | None, reltuples: float | None) -> int:
     """Normalise pg_stats.n_distinct to an absolute integer estimate.
 
     Per the PG docs:

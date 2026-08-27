@@ -18,6 +18,7 @@ which is a documented limitation for v1.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import time
@@ -506,10 +507,9 @@ async def _execute_in_schema(driver: SqlDriver, schema: str, sql: str) -> None:
             await cur.execute(sql)
         return
     pool_obj = await driver.conn.pool_connect()
-    async with pool_obj.connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(f'SET LOCAL search_path TO "{schema}", public')
-            await cur.execute(sql)
+    async with pool_obj.connection() as conn, conn.cursor() as cur:
+        await cur.execute(f'SET LOCAL search_path TO "{schema}", public')
+        await cur.execute(sql)
 
 
 async def _load_record(driver: SqlDriver, migration_id: str) -> MigrationRecord | None:
@@ -629,17 +629,15 @@ async def validate_migration(
             # INSERT INTO shadow.table SELECT * FROM target.table LIMIT N.
             # We catch FK-violation errors per-table so one bad table
             # doesn't abort the whole validation — the agent gets a
-            # complete picture instead.
-            try:
+            # complete picture instead. Sampling failure (FK violation,
+            # etc.) is recorded as zero rows for that table; the
+            # validation continues.
+            with contextlib.suppress(Exception):
                 await driver.execute_query(
                     f'INSERT INTO "{shadow_schema}"."{table.name}" '
                     f'SELECT * FROM "{target_schema}"."{table.name}" LIMIT %s',
                     params=[sample_rows_per_table],
                 )
-            except Exception:
-                # Sampling failure (FK violation, etc.) is recorded as
-                # zero rows for that table; the validation continues.
-                pass
 
         # Snapshot counts before the candidate runs.
         before_counts: dict[str, int] = {}
@@ -670,10 +668,8 @@ async def validate_migration(
                 )
             )
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await driver.execute_query(f'DROP SCHEMA IF EXISTS "{shadow_schema}" CASCADE')
-        except Exception:
-            pass
 
     return ValidationResult(
         target_schema=target_schema,
@@ -750,10 +746,8 @@ async def validate_migration_schema(
         if applied:
             diff = await compare_schemas(driver, reference_schema, shadow_schema)
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await driver.execute_query(f'DROP SCHEMA IF EXISTS "{shadow_schema}" CASCADE')
-        except Exception:
-            pass
 
     return MigrationSchemaValidationResult(
         target_schema=target_schema,

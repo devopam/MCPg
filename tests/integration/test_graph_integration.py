@@ -1,5 +1,6 @@
 """Integration tests for Apache AGE graph tools against a live PostgreSQL database."""
 
+import contextlib
 from collections.abc import AsyncIterator
 
 import pytest
@@ -46,10 +47,8 @@ async def integration_graph(
     )
 
     # Teardown any leftover graph space
-    try:
+    with contextlib.suppress(Exception):
         await drop_graph(context, graph_name, cascade=True)
-    except Exception:
-        pass
 
     # Create fresh graph
     await create_graph(context, graph_name)
@@ -58,10 +57,8 @@ async def integration_graph(
         yield graph_name
     finally:
         # Cleanup
-        try:
+        with contextlib.suppress(Exception):
             await drop_graph(context, graph_name, cascade=True)
-        except Exception:
-            pass
 
 
 async def test_graph_lifecycle_and_cypher_queries(

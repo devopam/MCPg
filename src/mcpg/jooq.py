@@ -128,13 +128,11 @@ async def generate_jooq_config(
         _check_identifier(t.name, "table")
 
     # Build the includes regex out of explicit table names — anchored
-    # so a future ``widget2`` table won't accidentally get generated.
-    if tables:
-        # Each name is already a plain identifier (validated above), so
-        # no regex-meta-character escaping is needed here.
-        includes_expr = "|".join(f"{schema}\\.{t.name}" for t in tables)
-    else:
-        includes_expr = ""  # nothing to generate
+    # so a future ``widget2`` table won't accidentally get generated. Each
+    # name is already a plain identifier (validated above), so no
+    # regex-meta-character escaping is needed here. Empty when there are
+    # no tables to generate.
+    includes_expr = "|".join(f"{schema}\\.{t.name}" for t in tables) if tables else ""
 
     # Collect forced-type entries for JSON / JSONB columns across every table.
     forced_types: list[str] = []

@@ -135,9 +135,8 @@ class DbConnPool:
             await self.pool.open()
 
             # Prove the pool works before handing it out.
-            async with self.pool.connection() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute("SELECT 1")
+            async with self.pool.connection() as conn, conn.cursor() as cursor:
+                await cursor.execute("SELECT 1")
 
             self._is_valid = True
             self._last_error = None

@@ -245,9 +245,7 @@ def resolved_tool_names(
     """
     kept: set[str] = set()
     for name in candidate_names:
-        if name in always_keep or name in resolution.tool_names:
-            kept.add(name)
-        elif classify_tool(name) in resolution.buckets:
+        if name in always_keep or name in resolution.tool_names or classify_tool(name) in resolution.buckets:
             kept.add(name)
     return frozenset(kept)
 
