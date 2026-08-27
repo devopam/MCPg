@@ -219,6 +219,10 @@ select = ["E", "F", "I", "B", "W", "N", "UP", "RUF"]
 # as unused noqa directives (the rule they name isn't enabled yet) and flags
 # them as errors. Listing the prefixes here tells RUF100 to leave them alone;
 # it does NOT enable the rules themselves for bare `ruff check .` runs.
+# IMPORTANT: this prefix-matches unconditionally, so it will keep blinding
+# RUF100 to stale ASYNC/C901 noqa comments even after these categories are
+# added to `select` above. REMOVE this `external` entry at that point, or
+# RUF100 will stop detecting stale/unused noqa comments for these prefixes.
 external = ["ASYNC", "C90"]
 
 [tool.ruff.lint.isort]

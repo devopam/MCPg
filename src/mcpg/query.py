@@ -184,7 +184,10 @@ async def run_select_tuned(
     *,
     work_mem: str,
     maintenance_work_mem: str | None = None,
-    # ASYNC109 rationale: forwarded to SafeSqlDriver, which already wraps execution in asyncio.timeout() itself.
+    # ASYNC109 rationale: SafeSqlDriver is only used here for its pglast
+    # validator (._validate), not for execution -- the timeout= passed to
+    # it is dead on this path. Real enforcement is the asyncio.wait_for(...,
+    # timeout=timeout) around the actual execute_query call below.
     timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     max_rows: int = DEFAULT_MAX_ROWS,
 ) -> QueryResult:

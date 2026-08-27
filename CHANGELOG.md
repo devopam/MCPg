@@ -111,10 +111,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   added to a new `[tool.ruff.lint] external` entry so this task's mandated per-violation `# noqa` comments
   don't trip `RUF100` before a future step formally enables the categories). `ASYNC`: all 18 were
   justified-suppressed with an inline reason, 0 required a code change — every `ASYNC109`
-  (`timeout`-parameter) hit was a pass-through to a lower layer that already owns real timeout enforcement
-  (httpx's own per-request timeout, or `SafeSqlDriver`'s existing `asyncio.timeout()` — confirmed by
-  reading `src/mcpg/sql/safety.py:181`), and the 3 `ASYNC240` + 1 `ASYNC221` blocking-call hits were all
-  test-only or one-off-script call sites, not hot paths. `C901`: 7 functions refactored (cheap, safe,
+  (`timeout`-parameter) hit was a pass-through to a lower layer that already owns real timeout enforcement:
+  httpx's own per-request timeout for the NL→SQL providers; `SafeSqlDriver`'s existing `asyncio.timeout()`
+  (`src/mcpg/sql/safety.py:181`) for `run_select`; or an explicit `asyncio.wait_for(..., timeout=timeout)`
+  at the actual execution boundary for `run_select_tuned` and `explain_query`'s `io=True` path, both of
+  which only use `SafeSqlDriver` for its pglast validator, not for execution, so its `timeout=` is inert on
+  those two paths. The 3 `ASYNC240` + 1 `ASYNC221` blocking-call hits were all test-only or one-off-script
+  call sites, not hot paths. `C901`: 7 functions refactored (cheap, safe,
   extract-a-helper or if-chain-to-dispatch-table changes — `diesel.py`, `sqlc.py`, `test_row_factory.py`
   ×2, `test_data.py`, `audit.py`, `diagrams.py` — each re-verified against its own unit test file plus
   `mypy`/`ruff format`), the remaining 59 justified-suppressed with an individual one-line reason each
