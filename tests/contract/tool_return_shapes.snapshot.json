@@ -2234,6 +2234,7 @@
         "refused",
         "row_count",
         "rows",
+        "schema_context",
         "sql",
         "tokens_in",
         "tokens_out"
