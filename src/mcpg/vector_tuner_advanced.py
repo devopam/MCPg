@@ -196,7 +196,13 @@ def _percentile(values: list[float], pct: float) -> float:
     return ordered[rank]
 
 
-async def recommend_hnsw_ef_search(
+# C901 rationale: brute-force ground-truth construction, an ef_search sweep
+# measuring mean recall@k + p50/p95 latency per value, and the
+# smallest-value-clearing-target_recall selection -- the recall-measurement
+# methodology (excluding a query row's own vector from both ground truth
+# and approximate results, per the docstring) is the correctness-sensitive
+# part of the branching.
+async def recommend_hnsw_ef_search(  # noqa: C901
     driver: SqlDriver,
     schema: str,
     table: str,
@@ -458,7 +464,11 @@ class IvfflatProbesRecommendation:
     detail: str = ""
 
 
-async def recommend_ivfflat_probes(
+# C901 rationale: mirrors recommend_hnsw_ef_search (same recall-sweep
+# methodology, probe_values instead of ef_values) -- see that function's
+# rationale above for why the branching is the correctness-sensitive
+# recall-measurement logic, not incidental nesting.
+async def recommend_ivfflat_probes(  # noqa: C901
     driver: SqlDriver,
     schema: str,
     table: str,

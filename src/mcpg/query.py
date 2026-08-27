@@ -105,7 +105,8 @@ async def run_select(
     driver: SqlDriver,
     sql: str,
     *,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    # ASYNC109 rationale: forwarded to SafeSqlDriver, which already wraps execution in asyncio.timeout() itself.
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     max_rows: int = DEFAULT_MAX_ROWS,
 ) -> QueryResult:
     """Validate and execute a read-only SQL query.
@@ -183,7 +184,8 @@ async def run_select_tuned(
     *,
     work_mem: str,
     maintenance_work_mem: str | None = None,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    # ASYNC109 rationale: forwarded to SafeSqlDriver, which already wraps execution in asyncio.timeout() itself.
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     max_rows: int = DEFAULT_MAX_ROWS,
 ) -> QueryResult:
     """Run a read-only SELECT with an elevated, bounded ``work_mem``.
@@ -272,7 +274,8 @@ async def explain_query(
     driver: SqlDriver,
     sql: str,
     *,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    # ASYNC109 rationale: forwarded to SafeSqlDriver / asyncio.wait_for at the execution boundary below.
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     io: bool = False,
 ) -> ExplainResult:
     """Return the PostgreSQL execution plan for a query.
@@ -402,7 +405,7 @@ async def analyze_query_plan(
     driver: SqlDriver,
     sql: str,
     *,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109 -- forwarded to explain_query
     io: bool = False,
 ) -> QueryPlanAnalysis:
     """Summarise a query's execution plan into a structured analysis.
@@ -494,7 +497,8 @@ async def run_select_parallel(
     driver: SqlDriver,
     statements: list[str],
     *,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    # ASYNC109 rationale: forwarded per-statement to run_select, which owns the actual timeout enforcement.
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     max_rows: int = DEFAULT_MAX_ROWS,
     parallel_limit: int = DEFAULT_PARALLEL_LIMIT,
 ) -> ParallelQueryResult:

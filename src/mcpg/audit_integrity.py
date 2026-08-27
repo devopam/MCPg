@@ -29,7 +29,12 @@ _QUALIFIED_CHAIN_TIP = f"{AUDIT_SCHEMA}.{CHAIN_TIP_TABLE}"
 _VERIFY_BATCH_SIZE = 1_000
 
 
-async def verify_audit_chain(driver: SqlDriver) -> dict[str, Any]:
+# C901 rationale: security-sensitive HMAC signature-chain verification
+# (tamper detection over keyset-paginated audit rows, including the
+# tail-truncation check against a separately-read chain_tip). The branching
+# is the verification logic itself; restructuring it is pure risk to a
+# tamper-evidence guarantee for no lint benefit.
+async def verify_audit_chain(driver: SqlDriver) -> dict[str, Any]:  # noqa: C901
     """Verify the integrity of the audit events signature chain.
 
     Reads the audit events sequentially (ordered by id), computes the HMAC

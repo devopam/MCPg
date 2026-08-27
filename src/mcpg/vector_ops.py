@@ -359,7 +359,12 @@ class CrossTableSimilarityResult:
     matches: list[CrossTableMatch]
 
 
-async def cross_table_similarity(
+# C901 rationale: per-identifier validation (6 schema/table/column names,
+# each checked before the catalog lookup so an invalid identifier fails with
+# its own error rather than being masked as "column missing" -- see the
+# docstring) followed by the cross-table dimension-mismatch check and the
+# k-NN query itself.
+async def cross_table_similarity(  # noqa: C901
     driver: SqlDriver,
     *,
     source_schema: str,
@@ -619,7 +624,13 @@ def _kmeans_plus_plus_init(
     return centroids
 
 
-def _kmeans(
+# C901 rationale: Lloyd's k-means algorithm (assignment step + update step +
+# convergence check) with a hand-tuned hot-path distance function (the
+# inline comment cites "Gemini PR #52" for the unit-norm cosine shortcut) --
+# this is exactly the numerical-algorithm-inherent-complexity case; touching
+# the loop structure risks the performance property the comment documents
+# or the convergence math itself.
+def _kmeans(  # noqa: C901
     vectors: list[list[float]],
     k: int,
     *,
@@ -710,7 +721,13 @@ def _kmeans(
     return centroids, labels, distances, iteration, converged, inertia
 
 
-async def cluster_vectors(
+# C901 rationale: identifier + numeric-bound validation (k/sample_size/
+# max_iterations, metric) feeding into the cosine-normalisation branch
+# (vectors normalised before clustering, centroids re-normalised each
+# iteration so Lloyd's update still converges -- see the docstring) around
+# the `_kmeans` call; the branching is what keeps the metric-specific
+# normalisation contract correct.
+async def cluster_vectors(  # noqa: C901
     driver: SqlDriver,
     schema: str,
     table: str,
@@ -911,7 +928,13 @@ class VectorOutlierResult:
     cluster_stats: list[ClusterOutlierStats]
 
 
-async def detect_vector_outliers(
+# C901 rationale: complexity 23 -- identifier/bound validation, the shared
+# k-means clustering call, then within-cluster z-score computation and the
+# sort-and-cap-at-max_results output shaping. The statistical logic (z-score
+# per cluster, not a global threshold -- see the docstring's rationale for
+# why) is the correctness-sensitive part; splitting it from its validation
+# risks silently changing what counts as "far from its cluster."
+async def detect_vector_outliers(  # noqa: C901
     driver: SqlDriver,
     schema: str,
     table: str,

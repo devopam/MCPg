@@ -287,7 +287,12 @@ def _hist_bins(values: list[int], edges: list[int]) -> list[tuple[str, int]]:
     return list(zip(labels, counts, strict=True))
 
 
-def main() -> int:
+# C901 rationale: one-off dev-analysis CLI (not part of the shipped
+# package) computing several independent report sections (catalog shape,
+# description quality, token cost) over the tool snapshot -- each section
+# is self-contained; the count is report-section volume, not entangled
+# logic.
+def main() -> int:  # noqa: C901
     snapshot = json.loads(_SNAPSHOT_PATH.read_text(encoding="utf-8"))
     tools: list[dict[str, Any]] = snapshot["tools"]
     n = len(tools)

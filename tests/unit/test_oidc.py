@@ -80,7 +80,10 @@ def _make_jwt(
     return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": kid})
 
 
-def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):
+# C901 rationale: test-only mock-response builder patching both httpx (our
+# code) and urllib.request (PyJWKClient's internal transport) with several
+# small nested fake classes -- test infrastructure, not production logic.
+def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):  # noqa: C901
     """Patch httpx.AsyncClient.get to return either the discovery or JWKS doc.
 
     The PyJWKClient uses ``urllib.request`` rather than httpx for the

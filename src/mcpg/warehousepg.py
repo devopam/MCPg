@@ -97,7 +97,13 @@ class WarehousePGStatus:
 _MPP_VERSION_MARKERS: tuple[str, ...] = ("warehousepg", "greenplum")
 
 
-async def get_warehousepg_status(driver: SqlDriver) -> WarehousePGStatus:
+# C901 rationale: multi-step MPP detection (version-string marker check,
+# then a second gp_segment_configuration catalog confirmation "since an
+# operator could in principle put 'WarehousePG' in their version string
+# without being on the real product" -- see the inline comment), where
+# every step needs its own try/except to uphold the docstring's "never
+# raises; available=False on every error path" contract.
+async def get_warehousepg_status(driver: SqlDriver) -> WarehousePGStatus:  # noqa: C901
     """Probe the connected server for WarehousePG / MPP signature.
 
     Read-only; never raises. Returns ``available=False`` on every
@@ -749,7 +755,12 @@ def _walk_mpp_plan(node: dict[str, Any]) -> Iterator[dict[str, Any]]:
         yield from _walk_mpp_plan(child)
 
 
-async def analyze_mpp_query_plan(driver: SqlDriver, sql: str) -> MppQueryPlanAnalysis:
+# C901 rationale: same "available=False on every error path" contract as
+# get_warehousepg_status (vanilla-PG gate, EXPLAIN failure, unexpected plan
+# shape each need their own guard) plus the depth-first MPP plan-tree walk
+# rolling up slice/motion/redistribute/broadcast/gather counts -- the
+# per-node-type counting is the plan-analysis logic itself.
+async def analyze_mpp_query_plan(driver: SqlDriver, sql: str) -> MppQueryPlanAnalysis:  # noqa: C901
     """Run ``EXPLAIN (ANALYZE, FORMAT JSON)`` and roll up MPP plan facts.
 
     Reuses :func:`mcpg.query.explain_query` with ``io=True`` (which

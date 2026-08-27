@@ -205,7 +205,12 @@ async def test_execute_in_schema_raises_migration_error_for_concurrently() -> No
 # --- Fix 2: ListenManager recovers after reader-loop death ---
 
 
-async def test_listen_manager_reopens_connection_and_relistens_after_reader_death() -> None:
+# C901 rationale: test builds a fake LISTEN connection that dies mid-stream
+# to exercise ListenManager's reconnect-and-relisten path -- the fake's
+# async generator branching (die-on-first-iteration vs. live, timeout vs.
+# no-timeout, close-sentinel handling) is test-fixture plumbing, not
+# production logic.
+async def test_listen_manager_reopens_connection_and_relistens_after_reader_death() -> None:  # noqa: C901
     """When the reader loop dies (PG restart, network blip), the manager
     must clear the dead conn AND re-issue LISTEN on every active channel
     against the fresh connection — not silently stop delivering."""
@@ -329,7 +334,10 @@ async def test_restore_database_passes_empty_libpq_uri_as_dbname_for_pg_restore(
 # --- Fix 9: shell._write_stdin closes stdin in finally ---
 
 
-async def test_write_stdin_closes_pipe_even_when_drain_raises_a_non_pipe_exception() -> None:
+# C901 rationale: test builds a fake stdin/process pair to exercise
+# shell._write_stdin's finally-closes-stdin guarantee against a non-pipe
+# exception -- fake-object plumbing, not production logic.
+async def test_write_stdin_closes_pipe_even_when_drain_raises_a_non_pipe_exception() -> None:  # noqa: C901
     """A non-BrokenPipeError (e.g. OSError, RuntimeError) on write/drain
     must still close stdin so the child sees EOF."""
     import asyncio

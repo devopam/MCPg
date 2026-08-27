@@ -405,7 +405,7 @@ class LLMProvider(Protocol):
         user_prompt: str,
         model: str,
         max_tokens: int,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 -- forwarded to httpx's per-request timeout, not a manual reimplementation
     ) -> ProviderCompletion:
         """Send the prompt; return the completion text + usage. Raises on transport error."""
         ...
@@ -505,7 +505,7 @@ class AnthropicProvider:
         user_prompt: str,
         model: str,
         max_tokens: int,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 -- forwarded to httpx's per-request timeout, not a manual reimplementation
     ) -> ProviderCompletion:
         client = _get_shared_http_client()
         response = await client.post(
@@ -581,7 +581,7 @@ class OpenAIProvider:
         user_prompt: str,
         model: str,
         max_tokens: int,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 -- forwarded to httpx's per-request timeout, not a manual reimplementation
     ) -> ProviderCompletion:
         client = _get_shared_http_client()
         response = await client.post(
@@ -648,7 +648,7 @@ class GeminiProvider:
         user_prompt: str,
         model: str,
         max_tokens: int,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 -- forwarded to httpx's per-request timeout, not a manual reimplementation
     ) -> ProviderCompletion:
         # Gemini accepts the API key as a query string or `x-goog-api-key`
         # header — we use the header to avoid logging-route leakage.
@@ -1248,7 +1248,13 @@ async def _explain_preflight(driver: SqlDriver, sql: str) -> str | None:
     return None
 
 
-async def translate_nl_to_sql(
+# C901 rationale: the end-to-end NL->SQL orchestration (input validation,
+# schema-brief building, provider call with circuit-breaker/retry error
+# translation, response parsing, refusal detection, EXPLAIN pre-flight,
+# optional execute-and-audit) -- each stage has its own distinct failure
+# mode that must surface as a specific NL2SQLError, per this security- and
+# cost-sensitive tool's own docstring contract.
+async def translate_nl_to_sql(  # noqa: C901
     driver: SqlDriver,
     *,
     provider: LLMProvider,
@@ -1263,7 +1269,8 @@ async def translate_nl_to_sql(
     max_tables_in_brief: int = DEFAULT_MAX_TABLES_IN_BRIEF,
     columns_per_table: int = DEFAULT_COLUMNS_PER_TABLE,
     max_brief_chars: int = DEFAULT_MAX_BRIEF_CHARS,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    # ASYNC109 rationale: forwarded to provider.complete's own timeout, not a manual reimplementation.
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     env: Mapping[str, str] | None = None,
     audit_persist: bool = False,
 ) -> TranslationResult:

@@ -635,7 +635,13 @@ def _percentile(values: list[float], q: float) -> float:
     return s[lo] + (s[hi] - s[lo]) * (pos - lo)
 
 
-async def recommend_efficiency_thresholds(
+# C901 rationale: 3 independent optional filters (backend/metric/k) each
+# validated then conditionally appended to the WHERE clause + params list,
+# followed by 3 independent percentile-vs-corpus-size fallback decisions
+# (recall/spearman/pruning) -- both halves are per-field repetition of the
+# same small pattern, not entangled logic, but there are enough fields that
+# the count adds up.
+async def recommend_efficiency_thresholds(  # noqa: C901
     driver: SqlDriver,
     *,
     days: int = 30,

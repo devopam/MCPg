@@ -211,7 +211,13 @@ def _libpq_env_from_url(database_url: str) -> dict[str, str]:
 _PG_DUMP_FORMATS = frozenset({"plain", "custom", "directory", "tar"})
 
 
-async def dump_database(
+# C901 rationale: pg_dump argv construction (format validation, schema-name
+# identifier validation, credential-via-env-not-argv handling) plus
+# format-dependent output decoding -- the validation branches are exactly
+# what keeps this shell-out safe (identifiers checked before reaching argv,
+# unsupported formats rejected before spawn); splitting them apart doesn't
+# reduce risk, just relocates it.
+async def dump_database(  # noqa: C901
     database_url: str,
     *,
     timeout_sec: int,

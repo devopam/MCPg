@@ -491,7 +491,13 @@ def _parse_positive_int(var: str, raw: str) -> int:
     return value
 
 
-def load_settings(env: Mapping[str, str] | None = None) -> Settings:
+# C901 rationale: reads every `MCPG_*` environment variable into `Settings`
+# (complexity 178 -- by far the largest in the repo). Every branch is one
+# independent `if env.get("MCPG_X")` for one config knob; this is the
+# process-wide config-loading entrypoint every module reads (see CLAUDE.md's
+# source-of-truth map), so restructuring it is a rewrite of the thing the
+# whole app depends on for a lint-only benefit, not a cheap win.
+def load_settings(env: Mapping[str, str] | None = None) -> Settings:  # noqa: C901
     """Build :class:`Settings` from environment variables.
 
     Args:

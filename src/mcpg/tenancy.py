@@ -185,7 +185,13 @@ class TenantSqlDriver(SqlDriver):
         return await _execute_with_role(connection, query, params, force_readonly, role, row_limit=row_limit)
 
 
-async def _execute_with_role(
+# C901 rationale: multi-tenant RLS execution path -- role validation,
+# explicit transaction lifecycle so `SET LOCAL ROLE` is valid on write
+# paths too, and the same transaction-commit/rollback state machine as
+# sql/driver.py's `_execute_with_connection` (mirrored intentionally, per
+# the docstring) -- restructuring risks a tenant-isolation regression (the
+# wrong role active, or a transaction left open) for no benefit.
+async def _execute_with_role(  # noqa: C901
     connection: Any,
     query: str,
     params: Any,

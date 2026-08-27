@@ -25,7 +25,12 @@ class DiagramResult(TypedDict):
     mermaid: str
 
 
-async def generate_graph_diagram(
+# C901 rationale: a numbered validate/permission-check/graph-exists/render
+# pipeline (complexity 22) where each numbered step's failure mode (invalid
+# name, permission denial, missing graph) needs its own distinct error
+# before the AGE-catalog rendering proceeds -- collapsing the checks would
+# blur which precondition failed.
+async def generate_graph_diagram(  # noqa: C901
     context: AppContext,
     graph_name: str,
     limit: int = 50,

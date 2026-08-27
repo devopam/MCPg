@@ -1276,7 +1276,13 @@ WHERE am.amname = 'bm25' AND n.nspname = %s AND i.relname = %s
 """
 
 
-async def create_pg_search_index(
+# C901 rationale: per-identifier injection-defense validation (schema/table/
+# columns/index_name/key_field, each through _validate_identifier +
+# _pg_quote_ident) plus independent bounds/type validation for each of the
+# 13 documented bm25 reloptions before DDL construction -- the branching is
+# the validation matrix itself; the docstring's own "Identifier safety"
+# section is the reason each check stays separate and explicit.
+async def create_pg_search_index(  # noqa: C901
     database: Database,
     schema: str,
     table: str,

@@ -273,7 +273,12 @@ async def drop_publication(
 # ---------------------------------------------------------------------------
 
 
-async def create_subscription(
+# C901 rationale: per-argument identifier validation (name, each publication,
+# slot name) plus quoting before DDL construction (no parameter-bind slot is
+# available for CREATE SUBSCRIPTION) -- each check is a distinct
+# injection-defense gate; consolidating them doesn't reduce the number of
+# things that must be individually correct.
+async def create_subscription(  # noqa: C901
     database: Database,
     *,
     name: str,

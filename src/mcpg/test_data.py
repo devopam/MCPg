@@ -141,6 +141,22 @@ _UNSUPPORTED_TYPE_PREFIXES = (
 )
 
 
+def _format_column_value(col: ColumnInfo, rng: random.Random) -> str:
+    """Render one column's value for an INSERT's ``VALUES`` list.
+
+    ``DEFAULT`` when synthesis failed but PG can fill the column in
+    (has a default, or is NOT NULL with none — the agent sees the
+    resulting failure when the INSERT runs); ``NULL`` when synthesis
+    failed and the column is nullable; otherwise the quoted literal.
+    """
+    value = _synth_value(col, rng)
+    if value is None:
+        if col.default is not None or not col.nullable:
+            return "DEFAULT"
+        return "NULL"
+    return _quote_literal(value)
+
+
 async def generate_test_data(
     driver: SqlDriver,
     schema: str,
@@ -194,21 +210,7 @@ async def generate_test_data(
     column_list = ", ".join(f'"{c.name}"' for c in target_columns)
     statements: list[str] = []
     for _ in range(rows):
-        values: list[str] = []
-        for col in target_columns:
-            v = _synth_value(col, rng)
-            if v is None and col.default is not None:
-                # Has a default; let PG fill it in.
-                values.append("DEFAULT")
-            elif v is None and not col.nullable:
-                # Synthesis failed and column is NOT NULL with no default
-                # — fall back to a placeholder that's likely to fit. The
-                # agent will see the failure when the INSERT runs.
-                values.append("DEFAULT")
-            elif v is None:
-                values.append("NULL")
-            else:
-                values.append(_quote_literal(v))
+        values = [_format_column_value(col, rng) for col in target_columns]
         statements.append(f'INSERT INTO "{schema}"."{table}" ({column_list}) VALUES ({", ".join(values)})')
 
     return GeneratedDataset(

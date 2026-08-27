@@ -72,7 +72,15 @@ class SafeSqlDriver(SqlDriver):
         self.sql_driver = sql_driver
         self.timeout = timeout
 
-    def _validate_node(self, node: Node) -> None:
+    # C901 rationale: the recursive pglast AST walker enforcing the
+    # mcpg.sql.allowlist policy. Per this module's own docstring, it is
+    # "re-authored from the vendored crystaldba/postgres-mcp safe_sql.py
+    # (MIT); behaviour is pinned identical by the adversarial suite +
+    # differential parity test" — a security-critical, fuzz-tested,
+    # adversarially-pinned function where restructuring the branching is
+    # pure risk (any behavioural drift is a SQL-safety regression) for no
+    # safety benefit.
+    def _validate_node(self, node: Node) -> None:  # noqa: C901
         """Recursively validate a node and all of its children."""
         if not isinstance(node, tuple(self.ALLOWED_NODE_TYPES)):
             raise ValueError(f"Node type {type(node)} is not allowed")

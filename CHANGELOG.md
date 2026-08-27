@@ -105,6 +105,31 @@ adheres to [Semantic Versioning](https://semver.org/).
   for `try`/`except`/`pass`, if/else-to-ternary, nested-if collapsing, `__aenter__`/`__enter__` return type
   → `Self`) was hand-reviewed for behavior preservation, including the security-critical SQL-safety AST
   walker (`src/mcpg/sql/safety.py`) and the subprocess bin-allowlist symlink check (`src/mcpg/shell.py`).
+- Assessed the remaining two opt-in Ruff categories from the same sweep — `ASYNC` (flake8-async, 18
+  violations) and `C901` (mccabe complexity, 66) — reviewing each individually rather than blanket-fixing
+  or blanket-suppressing (still not added to `pyproject.toml`'s `select` list; only rule-code prefixes were
+  added to a new `[tool.ruff.lint] external` entry so this task's mandated per-violation `# noqa` comments
+  don't trip `RUF100` before a future step formally enables the categories). `ASYNC`: all 18 were
+  justified-suppressed with an inline reason, 0 required a code change — every `ASYNC109`
+  (`timeout`-parameter) hit was a pass-through to a lower layer that already owns real timeout enforcement
+  (httpx's own per-request timeout, or `SafeSqlDriver`'s existing `asyncio.timeout()` — confirmed by
+  reading `src/mcpg/sql/safety.py:181`), and the 3 `ASYNC240` + 1 `ASYNC221` blocking-call hits were all
+  test-only or one-off-script call sites, not hot paths. `C901`: 7 functions refactored (cheap, safe,
+  extract-a-helper or if-chain-to-dispatch-table changes — `diesel.py`, `sqlc.py`, `test_row_factory.py`
+  ×2, `test_data.py`, `audit.py`, `diagrams.py` — each re-verified against its own unit test file plus
+  `mypy`/`ruff format`), the remaining 59 justified-suppressed with an individual one-line reason each
+  (grouped by theme in the batch report: security-critical kernel functions including
+  `SafeSqlDriver._validate_node` — per this task's own mandate, suppressed citing the module's existing
+  fuzz-tested/adversarially-pinned rationale, not refactored — plus other identifier-validation /
+  credential-handling / subprocess-sandboxing paths, the `tools.py` MCP-tool-registration functions gated
+  by the frozen 254-tool contract snapshot, numerical algorithms (k-means, MMR re-ranking, ANN recall
+  sweeps) where a refactor risks changing the computed result, and several code-generator functions in the
+  same family as the refactored `diesel.py`/`sqlc.py` but with cross-cutting state that resists the same
+  cheap extraction). Full detail per function:
+  `.superpowers/sdd/2026-08-25-audit-remediation/batch-ruffB-report.md`. `uv run ruff check --select
+  ASYNC,C901 .` → 0; full verification (`ruff check . && ruff format --check . && mypy src/mcpg && pytest
+  -q`, including `tests/contract/` and `tests/integration/`) → clean, 3001 passed / 115 skipped, no
+  failures, no tool-surface or tool-return-shape contract drift.
 - Pinned `hatchling>=1.26` as the build-system floor (previously unpinned).
 - HSTS `max-age` default bumped from 31536000 (1 year) to 63072000 (2 years), OWASP's current
   recommendation — the old value remains the `hstspreload.org` minimum-eligibility floor, not the target.

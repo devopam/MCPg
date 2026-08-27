@@ -601,7 +601,12 @@ def _close_oidc_verifier_on_lifespan_shutdown(app: Starlette, verifier: OIDCVeri
     app.router.lifespan_context = _lifespan_with_oidc_close
 
 
-def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlette:
+# C901 rationale: transport-kind dispatch (streamable-http/sse) plus mounting
+# several independent routes (metrics/healthz/readyz) and conditional bearer
+# auth wiring -- the SDK-quirk comment above (host-only kwarg, DNS-rebinding
+# defaults) shows this is fragile-by-necessity glue code where consolidating
+# branches risks reintroducing the transport-security regression it fixes.
+def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlette:  # noqa: C901
     """Wrap an MCPServer HTTP app with metrics + optional auth.
 
     Args:

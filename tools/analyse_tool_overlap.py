@@ -250,7 +250,12 @@ def _pair_score(
     )
 
 
-def main() -> int:
+# C901 rationale: one-off dev-analysis CLI (not part of the shipped
+# package) -- pairwise O(n^2) tool-overlap scan with several independent
+# similarity signals (name, description Jaccard/containment, shared
+# verb+noun) combined into one flag decision; the branching is the
+# heuristic itself.
+def main() -> int:  # noqa: C901
     snapshot = json.loads(_SNAPSHOT_PATH.read_text(encoding="utf-8"))
     tools: list[dict[str, Any]] = snapshot["tools"]
 

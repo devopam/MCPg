@@ -90,7 +90,7 @@ class _StubProvider:
         user_prompt: str,
         model: str,
         max_tokens: int,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 -- must match the LLMProvider Protocol's signature exactly
     ) -> ProviderCompletion:
         _ = timeout
         self.captured_system = system_prompt

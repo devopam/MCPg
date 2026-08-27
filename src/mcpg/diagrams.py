@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 
 from mcpg.introspection import (
+    ForeignKeyInfo,
+    TableInfo,
     describe_table,
     list_constraints,
     list_foreign_keys,
@@ -41,6 +43,45 @@ def _parse_pk_columns(definition: str) -> set[str]:
     return {column.strip().strip('"') for column in match.group(1).split(",")}
 
 
+async def _render_entity_block(
+    driver: SqlDriver, schema: str, table: TableInfo, fk_columns_by_table: dict[str, set[str]]
+) -> list[str]:
+    """Render one table's ``erDiagram`` entity block (columns, PK/FK tags)."""
+    columns = await describe_table(driver, schema, table.name)
+    constraints = await list_constraints(driver, schema, table.name)
+    pk_columns: set[str] = set()
+    for constraint in constraints:
+        if constraint.type == "primary_key":
+            pk_columns |= _parse_pk_columns(constraint.definition)
+
+    fk_columns = fk_columns_by_table.get(table.name, set())
+
+    lines = [f"    {_sanitize(table.name)} {{"]
+    for column in columns:
+        attrs: list[str] = []
+        if column.name in pk_columns:
+            attrs.append("PK")
+        if column.name in fk_columns:
+            attrs.append("FK")
+        suffix = f" {' '.join(attrs)}" if attrs else ""
+        lines.append(f"        {_sanitize(column.data_type)} {_sanitize(column.name)}{suffix}")
+    lines.append("    }")
+    return lines
+
+
+def _render_relationship_lines(foreign_keys: list[ForeignKeyInfo], entity_names: set[str]) -> list[str]:
+    """Render the ``erDiagram`` relationship line for each intra-schema FK."""
+    lines: list[str] = []
+    for fk in foreign_keys:
+        if fk.from_table not in entity_names or fk.to_table not in entity_names:
+            # Cross-schema FK or pointing to a filtered-out table — skip the
+            # edge rather than emit a dangling reference.
+            continue
+        label = ",".join(fk.from_columns)
+        lines.append(f'    {_sanitize(fk.to_table)} ||--o{{ {_sanitize(fk.from_table)} : "{label}"')
+    return lines
+
+
 async def generate_schema_diagram(driver: SqlDriver, schema: str, *, include_partitions: bool = False) -> str:
     """Render a Mermaid ER diagram for the tables in ``schema``.
 
@@ -60,33 +101,9 @@ async def generate_schema_diagram(driver: SqlDriver, schema: str, *, include_par
 
     lines = ["erDiagram"]
     for table in tables:
-        columns = await describe_table(driver, schema, table.name)
-        constraints = await list_constraints(driver, schema, table.name)
-        pk_columns: set[str] = set()
-        for constraint in constraints:
-            if constraint.type == "primary_key":
-                pk_columns |= _parse_pk_columns(constraint.definition)
+        lines.extend(await _render_entity_block(driver, schema, table, fk_columns_by_table))
 
-        fk_columns = fk_columns_by_table.get(table.name, set())
-
-        lines.append(f"    {_sanitize(table.name)} {{")
-        for column in columns:
-            attrs: list[str] = []
-            if column.name in pk_columns:
-                attrs.append("PK")
-            if column.name in fk_columns:
-                attrs.append("FK")
-            suffix = f" {' '.join(attrs)}" if attrs else ""
-            lines.append(f"        {_sanitize(column.data_type)} {_sanitize(column.name)}{suffix}")
-        lines.append("    }")
-
-    for fk in foreign_keys:
-        if fk.from_table not in entity_names or fk.to_table not in entity_names:
-            # Cross-schema FK or pointing to a filtered-out table — skip the
-            # edge rather than emit a dangling reference.
-            continue
-        label = ",".join(fk.from_columns)
-        lines.append(f'    {_sanitize(fk.to_table)} ||--o{{ {_sanitize(fk.from_table)} : "{label}"')
+    lines.extend(_render_relationship_lines(foreign_keys, entity_names))
 
     return "\n".join(lines) + "\n"
 

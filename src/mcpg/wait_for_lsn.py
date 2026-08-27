@@ -353,7 +353,14 @@ async def wait_for_lsn(driver: SqlDriver, *, lsn: str, timeout_ms: int = 0) -> W
 # ---------------------------------------------------------------------------
 
 
-async def recommend_read_your_writes(driver: SqlDriver) -> ReadYourWritesRecommendation:
+# C901 rationale: six reason-code classification branches over an
+# atomically-fetched version/recovery/lag probe. Per the function's own
+# "Implementation note", the single-query atomicity fixed a real
+# misclassification bug ("gemini critical on PR #146" -- a standby could be
+# routed to `primary_no_wait_needed`) -- splitting the classification back
+# into separate probes/branches is the exact regression this function's
+# docstring documents avoiding.
+async def recommend_read_your_writes(driver: SqlDriver) -> ReadYourWritesRecommendation:  # noqa: C901
     """Advisor — should the caller use WAIT FOR LSN for read-your-writes?
 
     Read-only; never raises. Returns a structured recommendation with

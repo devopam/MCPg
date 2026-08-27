@@ -241,7 +241,11 @@ async def _recommend_graph_indices(driver: SqlDriver, schema: str) -> list[Findi
     ]
 
 
-async def _redundant_indexes(driver: SqlDriver, schema: str) -> list[Finding]:
+# C901 rationale: pairwise index-prefix comparison algorithm (O(n^2) over a
+# table's indexes, checking column-vector prefixes + partial-index predicate
+# / expression matches) -- the branching is the redundancy-detection logic
+# itself; splitting it up risks subtly changing which indexes get flagged.
+async def _redundant_indexes(driver: SqlDriver, schema: str) -> list[Finding]:  # noqa: C901
     """Identify B-Tree indexes whose columns are a leading prefix of another index.
 
     Operators can drop prefix-redundant indexes to reclaim disk space and reduce
@@ -713,7 +717,15 @@ class OptimizationResult:
     rationale: str
 
 
-async def optimize_query(driver: SqlDriver, sql: str) -> OptimizationResult:
+# C901 rationale: several independent regex-based anti-pattern detectors
+# (SELECT *, missing LIMIT, IN-subquery, leading wildcard) whose boolean
+# flags are computed once and then reused across both the findings list and
+# the rewritten-SQL/rationale construction -- splitting the checks apart
+# would still need to thread the same shared flags through, and this
+# function's return shape is contract-pinned
+# (tests/contract/tool_return_shapes.snapshot.json), so a restructuring
+# carries real regression risk for a lint-only benefit.
+async def optimize_query(driver: SqlDriver, sql: str) -> OptimizationResult:  # noqa: C901
     """Analyze a SQL query for anti-patterns and performance issues, returning an optimized version."""
     findings = []
     ex_summary = ""

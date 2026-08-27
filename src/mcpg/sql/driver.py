@@ -250,7 +250,14 @@ class SqlDriver:
                 self.conn = None
             raise
 
-    async def _execute_with_connection(  # pragma: no cover - real psycopg execution; integration-tested
+    # C901 rationale: part of the first-party SQL-safety kernel (CLAUDE.md:
+    # "sql/driver.py -- pool + execution + credential redaction"). The
+    # branching here is the transaction start/commit/rollback state machine
+    # plus the obfuscate_password-sanitised error-logging path (see the
+    # inline CodeQL note below, verified against
+    # tests/unit/test_sql_kernel_driver.py) -- restructuring it risks a
+    # dropped rollback or a credential-leak regression for no benefit.
+    async def _execute_with_connection(  # pragma: no cover - real psycopg execution; integration-tested  # noqa: C901
         self, connection: Any, query: Any, params: Any, force_readonly: bool, row_limit: int | None = None
     ) -> list[RowResult] | None:
         """Execute on a specific connection with read-only + txn handling."""

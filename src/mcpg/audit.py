@@ -449,7 +449,15 @@ async def audit_memory_io(driver: SqlDriver, health_score: dict[str, int]) -> Ca
     )
 
 
-async def audit_transactions_connections(driver: SqlDriver) -> CategoryResult:
+# C901 rationale: 4 independent metric checks (rollback rate, connection
+# saturation, XID wraparound age, prepared transactions), each its own
+# query + try/except + threshold-based status classification, accumulating
+# into a shared `category_score`. Extracting each into a helper is possible
+# but this shape repeats across every `audit_*` function in this module
+# (see audit_database, audit_sequences, audit_settings below) -- a proper
+# fix is a module-wide "run checks, accumulate score" helper, out of scope
+# for a per-function lint pass.
+async def audit_transactions_connections(driver: SqlDriver) -> CategoryResult:  # noqa: C901
     """Analyze transaction health: rollback rate, wraparound, prepared transactions, and connection saturation."""
     metrics: list[MetricResult] = []
     category_score = 100
@@ -1469,19 +1477,9 @@ async def audit_database(driver: SqlDriver, schema: str, log_table: str | None =
     cat_vector = await audit_vector_indexes(driver)
     cat_rag_pipeline = await audit_rag_pipeline(driver)
 
+    optional_categories = [cat_sequences, cat_settings, cat_turboquant, cat_pg_search, cat_vector, cat_rag_pipeline]
     categories = [cat_mem, cat_tx, cat_lock, cat_bloat, cat_slow, cat_auth]
-    if cat_sequences is not None:
-        categories.append(cat_sequences)
-    if cat_settings is not None:
-        categories.append(cat_settings)
-    if cat_turboquant is not None:
-        categories.append(cat_turboquant)
-    if cat_pg_search is not None:
-        categories.append(cat_pg_search)
-    if cat_vector is not None:
-        categories.append(cat_vector)
-    if cat_rag_pipeline is not None:
-        categories.append(cat_rag_pipeline)
+    categories.extend(cat for cat in optional_categories if cat is not None)
 
     # 2. Dynamic scoring
     overall_score = round(sum(cat.score for cat in categories) / len(categories))

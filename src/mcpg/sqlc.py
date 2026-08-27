@@ -25,6 +25,7 @@ import re
 from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
+    TableInfo,
     describe_table,
     list_constraints,
     list_enums,
@@ -97,6 +98,51 @@ def _render_index(definition: str) -> str:
 _CONSTRAINT_ORDER = {"primary_key": 0, "unique": 1, "check": 2, "foreign_key": 3, "exclusion": 4}
 
 
+async def _build_create_tables(
+    driver: SqlDriver, schema: str, tables: list[TableInfo]
+) -> tuple[list[str], dict[str, list[ColumnInfo]]]:
+    """Step 3: ``CREATE TABLE`` statements (columns only) for each base table."""
+    blocks: list[str] = []
+    table_columns: dict[str, list[ColumnInfo]] = {}
+    for table in tables:
+        columns = await describe_table(driver, schema, table.name)
+        for col in columns:
+            _check_identifier(col.name, "column")
+        table_columns[table.name] = columns
+        blocks.append(_render_table(schema, table.name, columns))
+    return blocks, table_columns
+
+
+async def _build_constraints(
+    driver: SqlDriver, schema: str, tables: list[TableInfo]
+) -> tuple[list[str], dict[str, list[tuple[str, str, str]]]]:
+    """Step 4: ``ALTER TABLE ADD CONSTRAINT``, ordered PK before FK."""
+    constraint_blocks: list[str] = []
+    constraints_by_table: dict[str, list[tuple[str, str, str]]] = {}
+    for table in tables:
+        cons = await list_constraints(driver, schema, table.name)
+        triples = [(c.type, c.name, c.definition) for c in cons]
+        triples.sort(key=lambda triple: (_CONSTRAINT_ORDER.get(triple[0], 9), triple[1]))
+        constraints_by_table[table.name] = triples
+        for _ctype, name, definition in triples:
+            constraint_blocks.append(_render_constraint(schema, table.name, name, definition))
+    return constraint_blocks, constraints_by_table
+
+
+async def _build_indexes(
+    driver: SqlDriver, schema: str, tables: list[TableInfo], constraints_by_table: dict[str, list[tuple[str, str, str]]]
+) -> list[str]:
+    """Step 5: ``CREATE INDEX`` for indexes not created by PK / unique constraints."""
+    blocks: list[str] = []
+    for table in tables:
+        constraint_names = {name for _, name, _ in constraints_by_table[table.name]}
+        for idx in await list_indexes(driver, schema, table.name):
+            if idx.name in constraint_names:
+                continue
+            blocks.append(_render_index(idx.definition))
+    return blocks
+
+
 async def generate_sqlc_schema(driver: SqlDriver, schema: str) -> str:
     """Emit a ``schema.sql`` for sqlc covering the base tables of ``schema``.
 
@@ -130,25 +176,12 @@ async def generate_sqlc_schema(driver: SqlDriver, schema: str) -> str:
             blocks.append(_render_enum(enum.name, list(enum.values)))
 
     # 3. CREATE TABLE statements — columns only.
-    table_columns: dict[str, list[ColumnInfo]] = {}
-    for table in tables:
-        columns = await describe_table(driver, schema, table.name)
-        for col in columns:
-            _check_identifier(col.name, "column")
-        table_columns[table.name] = columns
-        blocks.append(_render_table(schema, table.name, columns))
+    table_blocks, _table_columns = await _build_create_tables(driver, schema, tables)
+    blocks.extend(table_blocks)
 
     # 4. ALTER TABLE ADD CONSTRAINT, ordered by constraint type so PK lands
     #    before FK (and unique indexes are created implicitly with PK/unique).
-    constraint_blocks: list[str] = []
-    constraints_by_table: dict[str, list[tuple[str, str, str]]] = {}
-    for table in tables:
-        cons = await list_constraints(driver, schema, table.name)
-        triples = [(c.type, c.name, c.definition) for c in cons]
-        triples.sort(key=lambda triple: (_CONSTRAINT_ORDER.get(triple[0], 9), triple[1]))
-        constraints_by_table[table.name] = triples
-        for _ctype, name, definition in triples:
-            constraint_blocks.append(_render_constraint(schema, table.name, name, definition))
+    constraint_blocks, constraints_by_table = await _build_constraints(driver, schema, tables)
 
     # FK constraints on intra-schema targets come back via list_constraints
     # already (they're table constraints, not free-floating). The
@@ -160,11 +193,6 @@ async def generate_sqlc_schema(driver: SqlDriver, schema: str) -> str:
     blocks.extend(constraint_blocks)
 
     # 5. CREATE INDEX statements for indexes not created by PK / unique constraints.
-    for table in tables:
-        constraint_names = {name for _, name, _ in constraints_by_table[table.name]}
-        for idx in await list_indexes(driver, schema, table.name):
-            if idx.name in constraint_names:
-                continue
-            blocks.append(_render_index(idx.definition))
+    blocks.extend(await _build_indexes(driver, schema, tables, constraints_by_table))
 
     return "\n\n".join(blocks) + "\n"

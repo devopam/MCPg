@@ -55,6 +55,7 @@ import random
 import re
 import string
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -142,71 +143,144 @@ _COUNTRIES = ("US", "GB", "IN", "DE", "JP", "BR", "ZA", "AU")
 _CURRENCIES = ("USD", "EUR", "GBP", "JPY", "INR", "BRL", "ZAR", "AUD")
 
 
+# Column-name heuristics, tried in order (first match wins). Time-bearing
+# names must land first so e.g. ``last_login_at`` wins on ``_at`` rather
+# than falling through to a less specific pattern.
+_NAME_PATTERNS: list[tuple[Callable[[str], bool], Callable[[random.Random], tuple[object, str]]]] = [
+    (
+        lambda name: (
+            name.endswith("_at")
+            or name in {"created", "updated", "last_seen", "last_login"}
+            or name.endswith("_timestamp")
+        ),
+        lambda rng: (datetime.now(UTC) - timedelta(seconds=rng.randint(0, 60 * 60 * 24 * 30)), "timestamp pattern"),
+    ),
+    (
+        lambda name: name == "email" or name.endswith("_email"),
+        lambda rng: (f"user_{rng.randint(1, 9999)}@example.com", "email pattern"),
+    ),
+    (
+        lambda name: name == "url" or name.endswith("_url") or name.endswith("_uri"),
+        lambda rng: (f"https://example.com/r/{rng.randint(1, 9999)}", "url pattern"),
+    ),
+    (
+        lambda name: name == "phone" or name.endswith("_phone"),
+        lambda rng: (f"+1-555-{rng.randint(1000, 9999)}", "phone pattern"),
+    ),
+    (
+        lambda name: name in {"country", "country_code"},
+        lambda rng: (rng.choice(_COUNTRIES), "country pattern"),
+    ),
+    (
+        lambda name: name in {"currency", "currency_code"},
+        lambda rng: (rng.choice(_CURRENCIES), "currency pattern"),
+    ),
+    (
+        lambda name: name in {"ip", "ip_address"},
+        lambda rng: (f"192.0.2.{rng.randint(1, 254)}", "ip pattern (RFC 5737 docs range)"),
+    ),
+    (
+        lambda name: name == "slug",
+        lambda rng: (
+            "-".join(rng.choice(_NAME_FIRST) for _ in range(rng.randint(2, 3))),
+            "slug pattern",
+        ),
+    ),
+    (
+        lambda name: name in {"first_name", "given_name"},
+        lambda rng: (rng.choice(_NAME_FIRST), "first_name pattern"),
+    ),
+    (
+        lambda name: name in {"last_name", "family_name", "surname"},
+        lambda rng: (rng.choice(_NAME_LAST), "last_name pattern"),
+    ),
+    (
+        lambda name: name in {"full_name", "name", "display_name"},
+        lambda rng: (f"{rng.choice(_NAME_FIRST)} {rng.choice(_NAME_LAST)}", "name pattern"),
+    ),
+]
+
+
 def _synth_by_name(col_name: str, rng: random.Random) -> tuple[object, str] | None:
     """Return ``(value, heuristic_label)`` if ``col_name`` matches a
     well-known pattern; otherwise ``None`` so the caller falls through
     to type-based synthesis."""
     name = col_name.lower()
-    # Time-bearing names land first so ``last_login_at`` wins on ``_at``.
-    if name.endswith("_at") or name in {"created", "updated", "last_seen", "last_login"} or name.endswith("_timestamp"):
-        ts = datetime.now(UTC) - timedelta(seconds=rng.randint(0, 60 * 60 * 24 * 30))
-        return ts, "timestamp pattern"
-    if name == "email" or name.endswith("_email"):
-        return f"user_{rng.randint(1, 9999)}@example.com", "email pattern"
-    if name == "url" or name.endswith("_url") or name.endswith("_uri"):
-        return f"https://example.com/r/{rng.randint(1, 9999)}", "url pattern"
-    if name == "phone" or name.endswith("_phone"):
-        return f"+1-555-{rng.randint(1000, 9999)}", "phone pattern"
-    if name in {"country", "country_code"}:
-        return rng.choice(_COUNTRIES), "country pattern"
-    if name in {"currency", "currency_code"}:
-        return rng.choice(_CURRENCIES), "currency pattern"
-    if name == "ip" or name == "ip_address":
-        return f"192.0.2.{rng.randint(1, 254)}", "ip pattern (RFC 5737 docs range)"
-    if name == "slug":
-        return "-".join(rng.choice(_NAME_FIRST) for _ in range(rng.randint(2, 3))), "slug pattern"
-    if name in {"first_name", "given_name"}:
-        return rng.choice(_NAME_FIRST), "first_name pattern"
-    if name in {"last_name", "family_name", "surname"}:
-        return rng.choice(_NAME_LAST), "last_name pattern"
-    if name in {"full_name", "name", "display_name"}:
-        return f"{rng.choice(_NAME_FIRST)} {rng.choice(_NAME_LAST)}", "name pattern"
+    for predicate, generate in _NAME_PATTERNS:
+        if predicate(name):
+            return generate(rng)
     return None
+
+
+def _synth_text_value(column: ColumnInfo, rng: random.Random) -> tuple[object, str]:
+    # Honour the (N) length cap on varchar(N) / char(N) — generating
+    # a 4-16 char string into a varchar(2) lands a real "value too
+    # long" failure on the INSERT (gemini review on #178).
+    max_len: int | None = None
+    if "(" in column.data_type:
+        try:
+            max_len = int(column.data_type.split("(", 1)[1].split(")", 1)[0].strip())
+        except (ValueError, IndexError):
+            max_len = None
+    lo, hi = 4, 16
+    if max_len is not None:
+        hi = min(hi, max(1, max_len))
+        lo = min(lo, hi)
+    length = rng.randint(lo, hi)
+    return "".join(rng.choice(string.ascii_lowercase) for _ in range(length)), "text type"
+
+
+# Type-driven fallback synthesis, tried in order (first matching base-type
+# set wins). Each generator receives the full column (needed for the
+# varchar/char length cap) plus the shared RNG.
+_TYPE_SYNTHESIZERS: list[tuple[frozenset[str], Callable[[ColumnInfo, random.Random], tuple[object, str]]]] = [
+    (
+        frozenset({"integer", "int", "int4", "int2", "smallint", "bigint", "int8"}),
+        lambda _column, rng: (rng.randint(1, 1_000_000), "int type"),
+    ),
+    (
+        frozenset({"numeric", "decimal", "real", "double precision", "float4", "float8"}),
+        lambda _column, rng: (round(rng.random() * 1000, 2), "numeric type"),
+    ),
+    (
+        frozenset({"boolean", "bool"}),
+        lambda _column, rng: (rng.choice([True, False]), "bool type"),
+    ),
+    (
+        frozenset({"uuid"}),
+        lambda _column, rng: (str(uuid.UUID(int=rng.getrandbits(128))), "uuid type"),
+    ),
+    (
+        frozenset({"date"}),
+        lambda _column, rng: (
+            (datetime.now(UTC).date() - timedelta(days=rng.randint(0, 365))).isoformat(),
+            "date type",
+        ),
+    ),
+    (
+        frozenset({"timestamp", "timestamp without time zone", "timestamptz", "timestamp with time zone"}),
+        lambda _column, rng: (
+            datetime.now(UTC) - timedelta(seconds=rng.randint(0, 60 * 60 * 24 * 365)),
+            "timestamp type",
+        ),
+    ),
+    (
+        frozenset({"text", "varchar", "character varying", "char", "character", "citext", "name"}),
+        _synth_text_value,
+    ),
+    (
+        frozenset({"json", "jsonb"}),
+        lambda _column, rng: ('{"k": "v"}', "json type"),
+    ),
+]
 
 
 def _synth_by_type(column: ColumnInfo, rng: random.Random) -> tuple[object, str] | None:
     """Fall-back type-driven synthesis."""
     base = column.data_type.lower().split("(", 1)[0].strip()
-    if base in {"integer", "int", "int4", "int2", "smallint", "bigint", "int8"}:
-        return rng.randint(1, 1_000_000), "int type"
-    if base in {"numeric", "decimal", "real", "double precision", "float4", "float8"}:
-        return round(rng.random() * 1000, 2), "numeric type"
-    if base in {"boolean", "bool"}:
-        return rng.choice([True, False]), "bool type"
-    if base == "uuid":
-        return str(uuid.UUID(int=rng.getrandbits(128))), "uuid type"
-    if base == "date":
-        return (datetime.now(UTC).date() - timedelta(days=rng.randint(0, 365))).isoformat(), "date type"
-    if base in {"timestamp", "timestamp without time zone", "timestamptz", "timestamp with time zone"}:
-        return datetime.now(UTC) - timedelta(seconds=rng.randint(0, 60 * 60 * 24 * 365)), "timestamp type"
-    if base in {"text", "varchar", "character varying", "char", "character", "citext", "name"}:
-        # Honour the (N) length cap on varchar(N) / char(N) — generating
-        # a 4-16 char string into a varchar(2) lands a real "value too
-        # long" failure on the INSERT (gemini review on #178).
-        max_len: int | None = None
-        if "(" in column.data_type:
-            try:
-                max_len = int(column.data_type.split("(", 1)[1].split(")", 1)[0].strip())
-            except (ValueError, IndexError):
-                max_len = None
-        lo, hi = 4, 16
-        if max_len is not None:
-            hi = min(hi, max(1, max_len))
-            lo = min(lo, hi)
-        length = rng.randint(lo, hi)
-        return "".join(rng.choice(string.ascii_lowercase) for _ in range(length)), "text type"
-    if base in {"json", "jsonb"}:
-        return '{"k": "v"}', "json type"
+    for bases, generate in _TYPE_SYNTHESIZERS:
+        if base in bases:
+            return generate(column, rng)
     return None
 
 
@@ -294,7 +368,14 @@ async def _sample_fk_row(
 # ---------------------------------------------------------------------------
 
 
-async def generate_test_row_for(
+# C901 rationale: the 5-step column-fill priority order documented in the
+# docstring (identity/generated skip -> FK sampling with composite-FK
+# consistency -> name-pattern -> type-based synthesis -> NULL/DEFAULT/raise
+# fallback) plus per-referenced-identifier validation for FK targets -- the
+# `_synth_by_name`/`_synth_by_type` dispatch tables already extracted the
+# two steps that were cleanly separable (see above); the remaining
+# branching is the priority-order decision itself.
+async def generate_test_row_for(  # noqa: C901
     driver: SqlDriver,
     schema: str,
     table: str,

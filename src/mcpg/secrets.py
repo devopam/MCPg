@@ -100,7 +100,13 @@ class FileSecretsProvider:
         return self.env.get(name)
 
 
-def _load_overlay(path: str) -> dict[str, str]:
+# C901 rationale: YAML/JSON secrets-file parsing where every error message
+# is deliberately hand-scoped to exclude the parser's own exception text
+# (see the inline comments: YAML/JSON error internals "can echo source text
+# and would leak secret values into logs") -- the branching is what keeps
+# secret values out of error messages and logs; consolidating it risks
+# reintroducing a secret-leak path.
+def _load_overlay(path: str) -> dict[str, str]:  # noqa: C901
     """Load + validate a flat ``name -> value`` secrets file (JSON / YAML)."""
     try:
         with Path(path).open(encoding="utf-8") as handle:

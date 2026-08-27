@@ -448,7 +448,11 @@ def _register_dynamic_session_intent(server: MCPServer[AppContext], settings: Se
         return {"ok": True, "enabled": sorted(enabled_intents(session_key, default_intent=default_intent))}
 
 
-def _register_introspection(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen `tests/contract/tool_surface.snapshot.json` contract — splitting
+# this up would restructure registration order/grouping for the entire
+# introspection tool surface for no functional benefit.
+def _register_introspection(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="list_schemas",
         description=_with_example(
@@ -1354,7 +1358,9 @@ def _register_rag_analytics(server: MCPServer[AppContext]) -> None:
         return report
 
 
-def _register_vector_tuning(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen tool-surface contract — same shape as `_register_introspection`.
+def _register_vector_tuning(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="tune_vector_index",
         description=(
@@ -1987,7 +1993,9 @@ def _register_prisma(server: MCPServer[AppContext]) -> None:
         return await sqlc.generate_sqlc_schema(_driver(ctx, database), schema)
 
 
-def _register_advisors(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen tool-surface contract — same shape as `_register_introspection`.
+def _register_advisors(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="run_advisors",
         description=(
@@ -3049,7 +3057,9 @@ def _register_audit_trail(server: MCPServer[AppContext]) -> None:
         return await vac(_driver(ctx, database))
 
 
-def _register_query(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen tool-surface contract — same shape as `_register_introspection`.
+def _register_query(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="run_select",
         description=_with_example(
@@ -3332,7 +3342,9 @@ def _register_analytical(server: MCPServer[AppContext]) -> None:
         return await runner.run(sql, timeout_ms=timeout_ms, max_rows=max_rows, work_mem=work_mem)
 
 
-def _register_health(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen tool-surface contract — same shape as `_register_introspection`.
+def _register_health(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="check_database_health",
         description=_with_example(
@@ -6637,7 +6649,9 @@ def _register_prompts(server: MCPServer[AppContext]) -> None:
         return mcpg_prompts._build_review_rls_policy(schema, table)
 
 
-def _register_warehousepg_reads(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen tool-surface contract — same shape as `_register_introspection`.
+def _register_warehousepg_reads(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="get_warehousepg_status",
         description=_with_example(
@@ -7101,7 +7115,10 @@ def _apply_tool_wire_metadata(server: MCPServer[AppContext], read_only_names: se
             tool.annotations = existing.model_copy(update=derived)
 
 
-def register_tools(
+# C901 rationale: one policy-gated `if is_permitted(...)` branch per capability
+# / access-mode tier, dispatching to the `_register_*` helpers above — the
+# branching is the access-mode policy itself, not incidental complexity.
+def register_tools(  # noqa: C901
     server: MCPServer[AppContext], settings: Settings, *, analytical_available: bool | None = None
 ) -> None:
     """Register the MCP tools permitted by the configured access mode.

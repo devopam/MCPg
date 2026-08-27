@@ -98,7 +98,10 @@ class _SchemaDriver(_AgeAwareDriver):
         self._book_pk = book_pk
         self._table_rows = rows or {}
 
-    async def execute_query(
+    # C901 rationale: test-only fake-driver query router matching on SQL
+    # substrings to return canned fixture rows -- refactoring test fixtures
+    # for a lint score is pure churn.
+    async def execute_query(  # noqa: C901
         self, query: str, params: list[Any] | None = None, force_readonly: bool = False
     ) -> list[SqlDriver.RowResult]:
         if "ag_catalog.ag_graph" in query:

@@ -110,7 +110,13 @@ async def _default_acquire(database: Database) -> AsyncIterator[Any]:
         yield conn
 
 
-async def dry_run_ddl(
+# C901 rationale: always-rolled-back DDL dry-run with SQLSTATE-specific
+# lock-timeout detection (55P03), WAL-delta measurement, and pg_locks
+# introspection -- the branching is the correctness contract itself ("this
+# never raises out", always rolls back); splitting it up risks a code path
+# that forgets to roll back or misclassifies a lock-timeout as a generic
+# error.
+async def dry_run_ddl(  # noqa: C901
     database: Database,
     ddl_sql: str,
     *,

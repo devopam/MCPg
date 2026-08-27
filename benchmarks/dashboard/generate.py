@@ -248,7 +248,11 @@ def _waterfall_chart(rows: list[dict[str, Any]]) -> str:
     return legend + "".join(parts)
 
 
-def _throughput_chart(results: list[dict[str, Any]]) -> str:
+# C901 rationale: hand-rolled SVG chart renderer (grid lines, axis ticks,
+# per-path polylines with coordinate-mapping closures) -- operator-only
+# benchmark tooling, not part of the shipped package; the branching is
+# inline SVG geometry construction, not business logic.
+def _throughput_chart(results: list[dict[str, Any]]) -> str:  # noqa: C901
     """Lines: throughput (queries/sec) vs concurrency, per path. Empty if no sweep."""
     conc = [r for r in results if r.get("throughput_rps") is not None and r.get("concurrency", 1) >= 1]
     if not conc:

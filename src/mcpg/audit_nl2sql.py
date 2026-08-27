@@ -233,7 +233,12 @@ def _resolve_settings(
     return backend_raw, retention_days, chunk_interval, compress_after, rls, reader_role
 
 
-async def ensure_nl2sql_audit_table(
+# C901 rationale: idempotent DDL provisioning (double-checked-locking cache
+# check, then schema/table/compression/retention/RLS setup branched by which
+# of native-partitioned / pg_partman / TimescaleDB backend was detected) --
+# the branching is the backend-selection matrix itself, and the double-check
+# lock is load-bearing concurrency-safety, not incidental complexity.
+async def ensure_nl2sql_audit_table(  # noqa: C901
     driver: SqlDriver,
     *,
     env: Mapping[str, str] | None = None,

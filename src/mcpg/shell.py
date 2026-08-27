@@ -221,7 +221,14 @@ def _filter_env(env: dict[str, str] | None) -> dict[str, str]:
     return merged
 
 
-async def run_pg_binary(
+# C901 rationale: the SHELL-capability subprocess-hardening path -- binary
+# allowlisting, env-var filtering (drops everything but allowlisted PG*/
+# LANG/LC_ALL/PATH so the child can't inherit a polluted environment),
+# sandboxed throwaway workdir, preexec rlimits, timeout-kill, and
+# output-byte capping all happen in one call because they're one security
+# boundary; splitting the checks apart doesn't reduce what must be gotten
+# right for a subprocess spawn to stay sandboxed.
+async def run_pg_binary(  # noqa: C901
     binary: str,
     *argv: str,
     env: dict[str, str] | None = None,

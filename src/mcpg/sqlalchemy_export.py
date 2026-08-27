@@ -160,7 +160,13 @@ def _parse_columns_in_definition(definition: str, regex: re.Pattern[str]) -> lis
     return [col.strip().strip('"') for col in match.group(1).split(",")]
 
 
-def _render_column(
+# C901 rationale: builds a single Mapped[...]/mapped_column(...) line while
+# accumulating 3 separate import sets (core/pg/typing) alongside the
+# rendered SQLAlchemy args/kwargs -- each `if` contributes to shared local
+# state (args, kwargs, and the 3 import sets), so extracting pieces would
+# still need to thread all of that state back together; not the clean
+# independent-steps shape that diesel.py/sqlc.py's cheap wins had.
+def _render_column(  # noqa: C901
     column: ColumnInfo,
     *,
     schema: str,
@@ -322,7 +328,12 @@ def _render_table_args(schema: str, composite_uniques: list[tuple[str, list[str]
     return f"    __table_args__ = ({joined}, {schema_kwarg})"
 
 
-async def generate_sqlalchemy_models(driver: SqlDriver, schema: str) -> str:
+# C901 rationale: same code-generator family as diesel.py / sqlc.py, but at
+# complexity 23 -- the 3 accumulated import sets (core/pg/typing) plus
+# composite-FK and composite-unique special-casing thread state through the
+# per-table loop in a way that resists the diesel/sqlc "extract a step"
+# refactor without a larger restructuring.
+async def generate_sqlalchemy_models(driver: SqlDriver, schema: str) -> str:  # noqa: C901
     """Emit a SQLAlchemy 2.0 declarative model file for ``schema``.
 
     Returns a Python source string. The model classes use
