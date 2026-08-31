@@ -95,6 +95,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Fixed all 103 `FBT` (flake8-boolean-trap) violations in `src/mcpg/tools.py` — the `tools.py` half of the
+  196-violation `FBT` sweep — by making boolean parameters keyword-only (`*, flag: bool = False`). The 103
+  hits (53 `FBT001` + 50 `FBT002`; no `FBT003`) resolved to **53 boolean parameters across 43 functions, all
+  43 of which are registered `@server.tool` MCP tools** — there were no internal-helper hits in this file. A
+  `*` marker was inserted before each signature's first boolean parameter rather than reordering parameters,
+  so declaration order (and therefore JSON-Schema `required` order) is preserved. Boolean tool arguments now
+  can't be passed positionally in Python, which is the point: `create_subscription(..., True, True, True)`
+  was legal and unreadable.
+  **The exposed MCP wire contract is unchanged.** The `mcp` SDK derives each tool's JSON Schema via
+  pydantic, which treats keyword-only and positional-or-keyword parameters identically, so no tool's
+  `inputSchema` moved. Verified two ways: `tests/contract/` passes **without** regenerating anything, and
+  re-running both `MCPG_REGENERATE_TOOL_SNAPSHOT=1` and `MCPG_REGENERATE_TOOL_RETURN_SHAPES=1` reproduces
+  `tool_surface.snapshot.json` and `tool_return_shapes.snapshot.json` byte-for-byte (empty `git diff`).
+  This is a Python calling-convention change only; MCP clients, which always dispatch tool arguments by
+  name, are unaffected.
+  Also hardened one cross-module call site while here: `read_pg_wal_stats` now passes `per_record=` to
+  `walinspect.read_pg_wal_stats` by keyword instead of positionally, so the pending `FBT` pass over the
+  remaining ~93 violations outside `tools.py` can make that helper's parameter keyword-only without
+  silently breaking this caller.
 - Fixed all pre-existing violations in four opt-in Ruff lint categories — `PTH` (flake8-use-pathlib, 9),
   `C4` (flake8-comprehensions, 1), `SIM` (flake8-simplify, 48), `PYI` (flake8-pyi, 16) — 74 total, run
   category-by-category with `--select` (not yet added to `pyproject.toml`'s `[tool.ruff.lint] select`
