@@ -117,6 +117,34 @@ adheres to [Semantic Versioning](https://semver.org/).
   boolean variable in the slot the 3 flagged ones pass a literal. These were found by an AST arity sweep
   rather than by the linter; one of them (`replicas.py`, `TenantTimeoutSqlDriver`) would otherwise have
   broken at runtime on the multi-tenant + timeout path.
+- Fixed all 126 `FBT` (flake8-boolean-trap) violations in `tests/` (53 `FBT003` + 41 `FBT001` + 32
+  `FBT002`) — **this completes the entire `FBT` sweep across Parts C+D+E: 103 (`tools.py`) + 30 (`src/` +
+  `tools/`) + 126 (`tests/`) = 259 total violations fixed, `FBT` is now clean repo-wide.** 45 test-helper
+  signatures (fixtures, local fakes, small builder functions) were made keyword-only (`*` inserted before
+  the first boolean parameter, no reordering) and every call site fixed to match; `FBT003` call-site
+  literals were converted to keyword form, including several dataclass constructions
+  (`DomainInfo`/`PublicationInfo`/`SubscriptionInfo`/`ColumnInfo`/`CronJob`) that don't otherwise appear in
+  this sweep's file list. Two calls into `_cached_call`'s `*key_args` (a genuinely variadic-positional
+  cache-key slot with no keyword form) were rewritten to pass a named variable instead of a literal
+  `True`, which is enough to clear `FBT003` without a `noqa` since the rule only fires on boolean
+  *literals*. Zero `noqa` added in this batch.
+  **Completed the Part D handoff exactly as specified:** `tests/unit/_fakes.py`'s three standalone
+  fakes (`FakeDriver`, `FakeRoutingDriver`, `FakeParamRoutingDriver`) had their `force_readonly` parameter
+  made keyword-only, together with all 5 positional `super()`/`self._routing` call sites into them
+  (`test_graph_projection.py` ×2, `test_migration_history.py`, `test_nl2sql.py`,
+  `test_audit_events_migration.py`) fixed to keyword form in this same commit — verified before and after
+  with `grep -rn "force_readonly" tests/`, so no `TypeError` was introduced.
+  One definition could not be made keyword-only without also changing its production caller:
+  `tests/unit/test_database.py`'s `_FakeConnection.set_autocommit` mirrors the real
+  `psycopg.AsyncConnection.set_autocommit(value: bool)` and is called positionally from
+  `src/mcpg/database.py`'s `run_unmanaged` — reaching into `src/` for a test-fake fix is explicitly
+  out of this batch's scope, so instead the fake's `value` parameter had its `bool` type annotation
+  dropped (`FBT001` fires on the annotation, not the position); the fake still accepts the same
+  calling convention as the real connection object it stands in for, `src/mcpg/database.py` is
+  untouched, and no `noqa` was needed.
+  With `FBT` now fully clean, the category is ready for Step 11 (adding `FBT`, `C90`, `ASYNC`, `C4`,
+  `SIM`, `PTH`, `PYI` to `pyproject.toml`'s `[tool.ruff.lint] select` list) — not done here, per the plan's
+  intent to keep that "flip the switch" change its own separate, reviewable commit.
 - Fixed all 103 `FBT` (flake8-boolean-trap) violations in `src/mcpg/tools.py` — the `tools.py` half of the
   196-violation `FBT` sweep — by making boolean parameters keyword-only (`*, flag: bool = False`). The 103
   hits (53 `FBT001` + 50 `FBT002`; no `FBT003`) resolved to **53 boolean parameters across 43 functions, all

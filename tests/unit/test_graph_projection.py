@@ -25,14 +25,14 @@ class _AgeAwareDriver(FakeRoutingDriver):
         self._age = age
 
     async def execute_query(
-        self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+        self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
     ) -> list[SqlDriver.RowResult]:
         if "ag_catalog.ag_graph" in query:
             self.calls.append((query, params, force_readonly))
             if not self._age:
                 raise RuntimeError("relation ag_catalog.ag_graph does not exist")
             return [SqlDriver.RowResult(cells={"?column?": 1})]
-        return await super().execute_query(query, params, force_readonly)
+        return await super().execute_query(query, params, force_readonly=force_readonly)
 
 
 # Column-describe rows for two tables: authors(id) and books(id, author_id, title).
@@ -102,10 +102,10 @@ class _SchemaDriver(_AgeAwareDriver):
     # substrings to return canned fixture rows -- refactoring test fixtures
     # for a lint score is pure churn.
     async def execute_query(  # noqa: C901
-        self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+        self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
     ) -> list[SqlDriver.RowResult]:
         if "ag_catalog.ag_graph" in query:
-            return await super().execute_query(query, params, force_readonly)
+            return await super().execute_query(query, params, force_readonly=force_readonly)
         self.calls.append((query, params, force_readonly))
         p = params or []
         table = p[1] if len(p) > 1 else None

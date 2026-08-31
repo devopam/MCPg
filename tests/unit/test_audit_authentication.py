@@ -85,7 +85,7 @@ async def test_pg_authid_permission_denied_degrades_to_warning_per_metric() -> N
 
     class _DeniedDriver:
         async def execute_query(
-            self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+            self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
         ) -> list[Any]:
             del query, params, force_readonly
             raise PermissionError("pg_authid: permission denied")

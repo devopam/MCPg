@@ -31,7 +31,7 @@ async def _force_drop(database_url: str) -> None:
         await conn.commit()
 
 
-async def test_demo_lifecycle_and_planted_findings(database_url: str, is_warehousepg: bool) -> None:
+async def test_demo_lifecycle_and_planted_findings(database_url: str, *, is_warehousepg: bool) -> None:
     if is_warehousepg:
         pytest.skip("demo dataset targets stock PostgreSQL")
     await _force_drop(database_url)
@@ -122,7 +122,7 @@ async def test_demo_lifecycle_and_planted_findings(database_url: str, is_warehou
         await _force_drop(database_url)
 
 
-async def test_drop_refuses_a_schema_mcpg_did_not_create(database_url: str, is_warehousepg: bool) -> None:
+async def test_drop_refuses_a_schema_mcpg_did_not_create(database_url: str, *, is_warehousepg: bool) -> None:
     if is_warehousepg:
         pytest.skip("demo dataset targets stock PostgreSQL")
     await _force_drop(database_url)

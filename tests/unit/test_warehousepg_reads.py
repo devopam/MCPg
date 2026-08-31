@@ -376,7 +376,7 @@ async def test_all_reads_handle_driver_failure_on_data_query_gracefully(func_cal
             self.call_index = 0
 
         async def execute_query(
-            self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+            self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
         ) -> list[Any]:
             del force_readonly
             self.call_index += 1

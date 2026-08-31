@@ -48,6 +48,7 @@ class FakeDriver:
         self,
         query: str,
         params: list[Any] | None = None,
+        *,
         force_readonly: bool = False,
         row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult]:
@@ -70,6 +71,7 @@ class FakeRoutingDriver:
         self,
         query: str,
         params: list[Any] | None = None,
+        *,
         force_readonly: bool = False,
         row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult]:
@@ -98,6 +100,7 @@ class FakeParamRoutingDriver:
         self,
         query: str,
         params: list[Any] | None = None,
+        *,
         force_readonly: bool = False,
         row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult]:

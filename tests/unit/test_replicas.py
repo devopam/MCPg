@@ -44,6 +44,7 @@ class _RecordingDriver:
         self,
         query: str,
         params: list[Any] | None = None,
+        *,
         force_readonly: bool = False,
         row_limit: int | None = None,
     ) -> list[Any]:

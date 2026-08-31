@@ -80,7 +80,11 @@ class _FakeConnection:
         self.autocommit_calls: list[bool] = []
         self.executed: list[str] = []
 
-    async def set_autocommit(self, value: bool) -> None:
+    async def set_autocommit(self, value) -> None:
+        # Mirrors psycopg's AsyncConnection.set_autocommit(value: bool),
+        # called positionally by src/mcpg/database.py -- unannotated (rather
+        # than made keyword-only) so this fake keeps accepting the same
+        # calling convention as the real connection object it stands in for.
         self.autocommit_calls.append(value)
 
     async def execute(self, sql: str) -> None:

@@ -98,7 +98,7 @@ async def test_recommend_returns_empty_when_catalog_walk_fails() -> None:
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        async def execute_query(self, query, params=None, force_readonly=False):  # type: ignore[no-untyped-def]
+        async def execute_query(self, query, params=None, *, force_readonly=False):  # type: ignore[no-untyped-def]
             from mcpg.sql import SqlDriver
 
             self.calls.append(query)

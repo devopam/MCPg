@@ -85,6 +85,7 @@ async def test_run_select_does_not_fetch_beyond_max_rows_plus_one() -> None:
             self,
             query: str,
             params: list[Any] | None = None,
+            *,
             force_readonly: bool = True,
             row_limit: int | None = None,
         ) -> list[SqlDriver.RowResult]:
@@ -214,6 +215,7 @@ async def test_run_select_tuned_does_not_fetch_beyond_max_rows_plus_one() -> Non
             self,
             query: str,
             params: list[Any] | None = None,
+            *,
             force_readonly: bool = True,
             row_limit: int | None = None,
         ) -> list[SqlDriver.RowResult]:
@@ -505,7 +507,7 @@ class _StallingDriver:
     """
 
     async def execute_query(
-        self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+        self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
     ) -> list[Any]:
         del query, params, force_readonly
         import asyncio

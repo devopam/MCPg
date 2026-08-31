@@ -152,7 +152,7 @@ async def test_analyze_mpp_query_plan_explain_failure_surfaces_as_available_fals
             self.call_index = 0
 
         async def execute_query(
-            self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+            self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
         ) -> list[Any]:
             del params, force_readonly
             from mcpg.sql import SqlDriver

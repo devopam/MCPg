@@ -371,7 +371,7 @@ async def test_write_tools_are_exposed_in_restricted_and_unrestricted_modes(acce
     ],
 )
 async def test_run_ddl_requires_unrestricted_mode_and_the_allow_ddl_opt_in(
-    access_mode: str, allow_ddl: bool, expected: bool
+    access_mode: str, *, allow_ddl: bool, expected: bool
 ) -> None:
     env = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": access_mode}
     if allow_ddl:

@@ -119,8 +119,12 @@ async def test_cached_call_none_and_primary_share_one_entry() -> None:
             calls.append(1)
             return "primary-value"
 
-        a = await _cached_call(ctx, "list_schemas", _run, True, database=None)
-        b = await _cached_call(ctx, "list_schemas", _run, True, database="primary")
+        # `include_system` here is a *key_args cache-key component (mirrors
+        # the real `include_system` call site), not a flag parameter --
+        # _cached_call's *key_args is variadic-positional by design.
+        include_system = True
+        a = await _cached_call(ctx, "list_schemas", _run, include_system, database=None)
+        b = await _cached_call(ctx, "list_schemas", _run, include_system, database="primary")
 
         assert a == b == "primary-value"
         assert calls == [1]  # None normalises to "primary" — one shared entry

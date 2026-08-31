@@ -237,7 +237,7 @@ def test_table_diff_is_empty_recognises_an_unchanged_table() -> None:
     )
     populated = TableDiff(
         table="x",
-        columns_added=[ColumnInfo("c", "int", False, None, None)],
+        columns_added=[ColumnInfo("c", "int", nullable=False, default=None, vector_dimension=None)],
         columns_removed=[],
         columns_changed=[],
         indexes_added=[],
@@ -287,8 +287,8 @@ def test_column_change_dataclass_shape() -> None:
     # this catches accidental field renames the wiring depends on.
     change = ColumnChange(
         name="id",
-        before=ColumnInfo("id", "integer", False, None, None),
-        after=ColumnInfo("id", "bigint", False, None, None),
+        before=ColumnInfo("id", "integer", nullable=False, default=None, vector_dimension=None),
+        after=ColumnInfo("id", "bigint", nullable=False, default=None, vector_dimension=None),
         fields_changed=["data_type"],
     )
     assert change.fields_changed == ["data_type"]

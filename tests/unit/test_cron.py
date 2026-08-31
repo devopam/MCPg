@@ -50,7 +50,7 @@ async def test_list_cron_jobs_maps_rows_when_extension_present() -> None:
     )
 
     assert await list_cron_jobs(driver) == [  # type: ignore[arg-type]
-        CronJob(7, "*/5 * * * *", "SELECT 1", "app", "app_owner", True, "heartbeat")
+        CronJob(7, "*/5 * * * *", "SELECT 1", "app", "app_owner", active=True, jobname="heartbeat")
     ]
 
 

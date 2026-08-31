@@ -32,7 +32,7 @@ class _CaptureDriver:
     def __init__(self) -> None:
         self.sqls: list[str] = []
 
-    async def execute_query(self, sql: Any, params: Any = None, force_readonly: bool = False) -> list[Any]:
+    async def execute_query(self, sql: Any, params: Any = None, *, force_readonly: bool = False) -> list[Any]:
         self.sqls.append(str(sql))
         return [
             SqlDriver.RowResult(cells={"id": 1, "vec": "[1,0]"}),

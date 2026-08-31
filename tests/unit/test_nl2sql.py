@@ -1188,13 +1188,13 @@ async def test_query_error_message_is_redacted_in_translation_result() -> None:
     # exercise the QueryError branch via the safety stack.
 
     class _RaisingDriver(FakeRoutingDriver):
-        async def execute_query(self, query, params=None, force_readonly=False):  # type: ignore[override]
+        async def execute_query(self, query, params=None, *, force_readonly=False):  # type: ignore[override]
             if "SELECT count(*)" in query and "public.widget" in query:
                 # Simulate a libpq error with an embedded credential.
                 from mcpg.query import QueryError
 
                 raise QueryError("could not connect to postgres://alice:hunter2@db/x")
-            return await super().execute_query(query, params, force_readonly)
+            return await super().execute_query(query, params, force_readonly=force_readonly)
 
     provider = _StubProvider(response='{"sql": "SELECT count(*) FROM public.widget", "explanation": "x"}')
     result = await translate_nl_to_sql(

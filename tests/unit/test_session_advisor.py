@@ -16,7 +16,7 @@ from mcpg.session_advisor import (
 )
 
 
-def _audit_present(present: bool) -> dict[str, list[dict[str, object]]]:
+def _audit_present(*, present: bool) -> dict[str, list[dict[str, object]]]:
     return {"to_regclass('mcpg_audit.events')": [{"present": present}]}
 
 
@@ -53,7 +53,7 @@ async def test_rejects_zero_threshold() -> None:
 
 
 async def test_returns_diagnostic_when_audit_table_missing() -> None:
-    driver = FakeRoutingDriver(_audit_present(False))
+    driver = FakeRoutingDriver(_audit_present(present=False))
     result = await analyze_session_cost(driver)  # type: ignore[arg-type]
     assert isinstance(result, SessionCostAnalysis)
     assert result.audit_table_present is False
@@ -64,7 +64,7 @@ async def test_returns_diagnostic_when_audit_table_missing() -> None:
 
 async def test_returns_idle_finding_when_no_events_in_window() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([]))
     driver = FakeRoutingDriver(routes)
     result = await analyze_session_cost(driver, lookback_minutes=15)  # type: ignore[arg-type]
@@ -82,7 +82,7 @@ async def test_returns_idle_finding_when_no_events_in_window() -> None:
 
 async def test_redundant_listing_classified_for_catalogue_tool() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([{"tool": "list_tables", "call_count": 47}]))
     driver = FakeRoutingDriver(routes)
     result = await analyze_session_cost(driver, hot_threshold=10)  # type: ignore[arg-type]
@@ -96,7 +96,7 @@ async def test_redundant_listing_classified_for_catalogue_tool() -> None:
 
 async def test_hot_repeated_call_classified_for_non_catalogue_tool() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([{"tool": "explain_query", "call_count": 25}]))
     driver = FakeRoutingDriver(routes)
     result = await analyze_session_cost(driver, hot_threshold=10)  # type: ignore[arg-type]
@@ -109,7 +109,7 @@ async def test_hot_repeated_call_classified_for_non_catalogue_tool() -> None:
 
 async def test_under_threshold_emits_no_finding() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([{"tool": "list_tables", "call_count": 3}, {"tool": "explain_query", "call_count": 2}]))
     driver = FakeRoutingDriver(routes)
     result = await analyze_session_cost(driver, hot_threshold=10)  # type: ignore[arg-type]
@@ -121,7 +121,7 @@ async def test_under_threshold_emits_no_finding() -> None:
 async def test_threshold_inclusive_lower_bound() -> None:
     """Equal-to-threshold doesn't flag — only strictly above does."""
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([{"tool": "list_tables", "call_count": 10}]))
     driver = FakeRoutingDriver(routes)
     result = await analyze_session_cost(driver, hot_threshold=10)  # type: ignore[arg-type]
@@ -135,7 +135,7 @@ async def test_threshold_inclusive_lower_bound() -> None:
 
 async def test_examines_all_events_even_when_only_some_flag() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(
         _events_route(
             [
@@ -161,7 +161,7 @@ async def test_examines_all_events_even_when_only_some_flag() -> None:
 
 async def test_lookback_lands_as_bound_parameter() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([]))
     driver = FakeRoutingDriver(routes)
     await analyze_session_cost(driver, lookback_minutes=42)  # type: ignore[arg-type]

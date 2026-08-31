@@ -88,7 +88,7 @@ def test_recommend_hnsw_boundary_at_exactly_one_million_rows() -> None:
 # --- tune_vector_index -----------------------------------------------------
 
 
-def _vector_column_row(name: str, dimension: int, nullable: bool = True) -> dict[str, object]:
+def _vector_column_row(name: str, dimension: int, *, nullable: bool = True) -> dict[str, object]:
     return {
         "column_name": name,
         "data_type": f"vector({dimension})",

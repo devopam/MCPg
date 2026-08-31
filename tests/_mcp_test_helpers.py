@@ -29,6 +29,7 @@ async def create_connected_server_and_client_session(
     logging_callback: LoggingFnT | None = None,
     message_handler: MessageHandlerFnT | None = None,
     client_info: types.Implementation | None = None,
+    *,
     raise_exceptions: bool = False,
     elicitation_callback: ElicitationFnT | None = None,
 ) -> AsyncGenerator[ClientSession, None]:

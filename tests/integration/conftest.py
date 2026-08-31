@@ -56,7 +56,7 @@ async def is_warehousepg(connected_database: Database) -> bool:
 
 
 @pytest.fixture
-async def distributed_replicated_clause(is_warehousepg: bool) -> str:
+async def distributed_replicated_clause(*, is_warehousepg: bool) -> str:
     """DDL suffix for tables needing >1 independent UNIQUE/PK constraint.
 
     WarehousePG requires every UNIQUE/PRIMARY KEY constraint on a table to

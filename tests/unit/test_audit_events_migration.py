@@ -30,11 +30,11 @@ class _SelectiveFailDriver:
         self._fail_substrings = fail_substrings
         self.calls: list[Any] = []
 
-    async def execute_query(self, query: str, params: Any = None, force_readonly: bool = False) -> Any:
+    async def execute_query(self, query: str, params: Any = None, *, force_readonly: bool = False) -> Any:
         self.calls.append((query, params, force_readonly))
         if any(s in query for s in self._fail_substrings):
             raise RuntimeError("simulated TimescaleDB policy failure")
-        return await self._routing.execute_query(query, params, force_readonly)
+        return await self._routing.execute_query(query, params, force_readonly=force_readonly)
 
 
 def _table_exists_routes() -> dict[str, list[dict[str, Any]]]:

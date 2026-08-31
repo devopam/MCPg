@@ -627,7 +627,7 @@ async def test_prune_audit_events_tool_is_registered_in_unrestricted_mode() -> N
     ("mode", "present"),
     [("read-only", False), ("restricted", True), ("unrestricted", True)],
 )
-async def test_prune_audit_events_tool_needs_write_capability(mode: str, present: bool) -> None:
+async def test_prune_audit_events_tool_needs_write_capability(mode: str, *, present: bool) -> None:
     # prune deletes rows -> WRITE capability -> present in the read-write tiers
     # (restricted + unrestricted), absent in read-only.
     settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": mode})

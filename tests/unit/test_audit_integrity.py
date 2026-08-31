@@ -453,7 +453,9 @@ async def test_verify_audit_chain_walks_multiple_batches(monkeypatch: pytest.Mon
         def __init__(self) -> None:
             self.calls: list[tuple[str, list[Any] | None, bool]] = []
 
-        async def execute_query(self, query: str, params: list[Any] | None = None, force_readonly: bool = False) -> Any:
+        async def execute_query(
+            self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
+        ) -> Any:
             from mcpg.sql import SqlDriver
 
             self.calls.append((query, params, force_readonly))

@@ -63,12 +63,15 @@ def test_shadow_name_starts_with_the_documented_prefix() -> None:
 
 def test_column_clause_builds_create_table_fragments() -> None:
     class _Col:
-        def __init__(self, name: str, data_type: str, nullable: bool, default: str | None) -> None:
+        def __init__(self, name: str, data_type: str, *, nullable: bool, default: str | None) -> None:
             self.name, self.data_type, self.nullable, self.default = name, data_type, nullable, default
 
-    assert _column_clause(_Col("id", "integer", False, None)) == '"id" integer NOT NULL'
-    assert _column_clause(_Col("name", "text", True, None)) == '"name" text'
-    assert _column_clause(_Col("flag", "boolean", False, "false")) == '"flag" boolean NOT NULL DEFAULT false'
+    assert _column_clause(_Col("id", "integer", nullable=False, default=None)) == '"id" integer NOT NULL'
+    assert _column_clause(_Col("name", "text", nullable=True, default=None)) == '"name" text'
+    assert (
+        _column_clause(_Col("flag", "boolean", nullable=False, default="false"))
+        == '"flag" boolean NOT NULL DEFAULT false'
+    )
 
 
 def test_rewrite_schema_reference_rewrites_only_the_target_schema_in_fk_defs() -> None:
@@ -201,7 +204,7 @@ class _FailingDropSchemaDriver:
     def __init__(self) -> None:
         self.calls: list[Any] = []
 
-    async def execute_query(self, query: str, params: Any = None, force_readonly: bool = False) -> Any:
+    async def execute_query(self, query: str, params: Any = None, *, force_readonly: bool = False) -> Any:
         self.calls.append((query, params, force_readonly))
         if "DROP SCHEMA" in query:
             raise RuntimeError("cannot drop schema: schema is being accessed by other users")

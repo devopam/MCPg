@@ -16,8 +16,8 @@ from mcpg.test_data import (
 
 def test_quote_literal_handles_strings_and_special_values() -> None:
     assert _quote_literal(None) == "NULL"
-    assert _quote_literal(True) == "TRUE"
-    assert _quote_literal(False) == "FALSE"
+    assert _quote_literal(value=True) == "TRUE"
+    assert _quote_literal(value=False) == "FALSE"
     assert _quote_literal(42) == "42"
     assert _quote_literal(3.14) == "3.14"
     assert _quote_literal("hello") == "'hello'"

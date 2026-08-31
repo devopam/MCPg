@@ -27,7 +27,7 @@ async def test_replay_does_not_rewrite_schema_in_check_constraint_string_literal
 
     class _RoutingDriver:
         async def execute_query(
-            self, query: str, params: list[object] | None = None, force_readonly: bool = False
+            self, query: str, params: list[object] | None = None, *, force_readonly: bool = False
         ) -> list[object]:
             captured_sqls.append(query)
             # information_schema.tables → one BASE TABLE.

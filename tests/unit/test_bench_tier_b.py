@@ -41,7 +41,7 @@ def test_naming_grader_matches_camelcase_column() -> None:
 
 
 def _trial(
-    arm: str, task_id: str, tin: int, tout: int, tools: int, turns: int, passed: bool, error=None
+    arm: str, task_id: str, tin: int, tout: int, tools: int, turns: int, *, passed: bool, error=None
 ) -> TrialResult:
     return TrialResult(
         task_id=task_id,
@@ -60,11 +60,11 @@ def _trial(
 def test_aggregate_token_ratio_and_correctness() -> None:
     trials = [
         # baseline: 10k tokens, 1/2 correct
-        _trial(ARM_BASELINE, "a", 8000, 2000, 5, 5, True),
-        _trial(ARM_BASELINE, "b", 8000, 2000, 5, 5, False),
+        _trial(ARM_BASELINE, "a", 8000, 2000, 5, 5, passed=True),
+        _trial(ARM_BASELINE, "b", 8000, 2000, 5, 5, passed=False),
         # mcpg: 2.5k tokens, 2/2 correct
-        _trial(ARM_MCPG, "a", 2000, 500, 1, 2, True),
-        _trial(ARM_MCPG, "b", 2000, 500, 1, 2, True),
+        _trial(ARM_MCPG, "a", 2000, 500, 1, 2, passed=True),
+        _trial(ARM_MCPG, "b", 2000, 500, 1, 2, passed=True),
     ]
     agg = aggregate(trials)
     assert agg["baseline"]["mean_total_tokens"] == pytest.approx(10000)
@@ -78,8 +78,8 @@ def test_aggregate_token_ratio_and_correctness() -> None:
 
 def test_aggregate_excludes_errored_trials_and_counts_them() -> None:
     trials = [
-        _trial(ARM_MCPG, "a", 2000, 500, 1, 2, True),
-        _trial(ARM_MCPG, "a", 999999, 999999, 9, 9, False, error="boom"),  # must not pollute means
+        _trial(ARM_MCPG, "a", 2000, 500, 1, 2, passed=True),
+        _trial(ARM_MCPG, "a", 999999, 999999, 9, 9, passed=False, error="boom"),  # must not pollute means
     ]
     agg = aggregate(trials)
     assert agg["mcpg"]["trials"] == 1

@@ -465,7 +465,7 @@ async def test_list_grants_acl_is_none_when_pg_get_acl_does_not_exist() -> None:
             self.calls: list[tuple[str, list[Any] | None]] = []
 
         async def execute_query(
-            self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+            self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
         ) -> list[Any]:
             del force_readonly
             self.calls.append((query, params))
@@ -639,8 +639,8 @@ async def test_list_domains_maps_rows_including_constraints() -> None:
     )
 
     assert await list_domains(driver, "app") == [
-        DomainInfo("positive_int", "integer", False, "0", ["CHECK ((VALUE > 0))"]),
-        DomainInfo("free_text", "text", True, None, []),
+        DomainInfo("positive_int", "integer", nullable=False, default="0", constraints=["CHECK ((VALUE > 0))"]),
+        DomainInfo("free_text", "text", nullable=True, default=None, constraints=[]),
     ]
 
 
@@ -782,8 +782,26 @@ async def test_list_publications_maps_rows_including_tables() -> None:
     )
 
     assert await list_publications(driver) == [
-        PublicationInfo("widget_pub", "app_owner", False, True, True, False, False, ["app.widget", "app.event"]),
-        PublicationInfo("everything_pub", "postgres", True, True, True, True, True, []),
+        PublicationInfo(
+            "widget_pub",
+            "app_owner",
+            all_tables=False,
+            publishes_insert=True,
+            publishes_update=True,
+            publishes_delete=False,
+            publishes_truncate=False,
+            tables=["app.widget", "app.event"],
+        ),
+        PublicationInfo(
+            "everything_pub",
+            "postgres",
+            all_tables=True,
+            publishes_insert=True,
+            publishes_update=True,
+            publishes_delete=True,
+            publishes_truncate=True,
+            tables=[],
+        ),
     ]
 
 
@@ -801,7 +819,9 @@ async def test_list_subscriptions_maps_rows() -> None:
     )
 
     assert await list_subscriptions(driver) == [
-        SubscriptionInfo("widget_sub", "app_owner", True, "host=upstream dbname=app", ["widget_pub"]),
+        SubscriptionInfo(
+            "widget_sub", "app_owner", enabled=True, connection="host=upstream dbname=app", publications=["widget_pub"]
+        ),
     ]
 
 
