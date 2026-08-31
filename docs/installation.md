@@ -150,13 +150,22 @@ specific client.
 
 For HTTP-based clients:
 
+The HTTP transport (`streamable-http` / `sse`) refuses to start unless it
+is authenticated: set `MCPG_HTTP_AUTH_TOKEN` (static bearer, shown below)
+or `MCPG_AUTH_MODE=oidc` (see [security.md](security.md)). If you
+genuinely need to run it without auth (e.g. behind a trusted network
+proxy that terminates auth itself), set
+`MCPG_HTTP_ALLOW_UNAUTHENTICATED=true` to explicitly opt out — MCPg logs
+a loud warning every time it starts with that opt-out set. The default
+`stdio` transport is unaffected and needs none of this.
+
 **Linux / macOS (bash/zsh)**
 
 ```bash
 export MCPG_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mydb
 export MCPG_TRANSPORT=streamable-http
 export MCPG_HTTP_PORT=8000
-export MCPG_HTTP_AUTH_TOKEN=...    # optional but strongly recommended
+export MCPG_HTTP_AUTH_TOKEN=...    # required unless MCPG_AUTH_MODE=oidc or MCPG_HTTP_ALLOW_UNAUTHENTICATED=true
 mcpg
 ```
 
@@ -166,7 +175,7 @@ mcpg
 $env:MCPG_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/mydb"
 $env:MCPG_TRANSPORT = "streamable-http"
 $env:MCPG_HTTP_PORT = "8000"
-$env:MCPG_HTTP_AUTH_TOKEN = "..."    # optional but strongly recommended
+$env:MCPG_HTTP_AUTH_TOKEN = "..."    # required unless MCPG_AUTH_MODE=oidc or MCPG_HTTP_ALLOW_UNAUTHENTICATED=true
 mcpg
 ```
 
@@ -268,6 +277,7 @@ the minimum set per common scenario.
 | **`LISTEN/NOTIFY`** event streams | `MCPG_ACCESS_MODE=unrestricted` + `MCPG_ALLOW_LISTEN=true` |
 | **HTTP transport** with static bearer | `MCPG_TRANSPORT=streamable-http` + `MCPG_HTTP_AUTH_TOKEN=…` |
 | **HTTP transport** with OIDC | `MCPG_TRANSPORT=streamable-http` + `MCPG_AUTH_MODE=oidc` + `MCPG_OIDC_ISSUER=…` + `MCPG_OIDC_AUDIENCE=…` |
+| **HTTP transport**, deliberately unauthenticated | `MCPG_TRANSPORT=streamable-http` + `MCPG_HTTP_ALLOW_UNAUTHENTICATED=true` (not recommended; refuses to start otherwise) |
 | **HTTP transport** with IP allowlist | `MCPG_HTTP_IP_ALLOWLIST=10.0.0.0/8,192.168.1.0/24` (applied before auth; matched against the immediate peer — `X-Forwarded-For` is **not** honoured, so deployments behind a reverse proxy must enforce the allowlist at the proxy layer) |
 | **HTTP transport** with TLS | `MCPG_HTTP_TLS_CERTFILE=/etc/mcpg/cert.pem` + `MCPG_HTTP_TLS_KEYFILE=/etc/mcpg/key.pem` |
 | **HTTP transport** with mTLS | the TLS pair above + `MCPG_HTTP_TLS_CA_CERTS=/etc/mcpg/ca.pem` + `MCPG_HTTP_TLS_CLIENT_CERT_REQUIRED=true` |

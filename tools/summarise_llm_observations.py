@@ -66,7 +66,11 @@ def _truncate(text: str, limit: int = 280) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def main() -> int:
+# C901 rationale: one-off dev-report CLI (not part of the shipped package)
+# assembling a multi-section Markdown report line-by-line from an
+# observation dataset -- straight-line report-building with conditional
+# sections, not entangled logic.
+def main() -> int:  # noqa: C901
     rows = _load_observations()
     if not rows:
         print("ERROR: observation file is empty.", file=sys.stderr)

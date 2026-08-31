@@ -38,6 +38,7 @@ from mcpg.audit_nl2sql import _check_identifier as _shared_check_identifier
 from mcpg.audit_nl2sql import _check_interval as _shared_check_interval
 from mcpg.audit_nl2sql import detect_backend as _detect_backend
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 _SCHEMA_NAME = "mcpg_rag"
@@ -109,7 +110,7 @@ _PROBE_INDEX_SQL = (
 )
 
 
-class RagTelemetryError(Exception):
+class RagTelemetryError(MCPgError):
     """Raised when a RAG telemetry operation cannot complete."""
 
 
@@ -634,7 +635,13 @@ def _percentile(values: list[float], q: float) -> float:
     return s[lo] + (s[hi] - s[lo]) * (pos - lo)
 
 
-async def recommend_efficiency_thresholds(
+# C901 rationale: 3 independent optional filters (backend/metric/k) each
+# validated then conditionally appended to the WHERE clause + params list,
+# followed by 3 independent percentile-vs-corpus-size fallback decisions
+# (recall/spearman/pruning) -- both halves are per-field repetition of the
+# same small pattern, not entangled logic, but there are enough fields that
+# the count adds up.
+async def recommend_efficiency_thresholds(  # noqa: C901
     driver: SqlDriver,
     *,
     days: int = 30,
@@ -994,10 +1001,7 @@ async def _rag_data_range(driver: SqlDriver, spec: _RagTableSpec) -> tuple[datet
 
 def _rag_native_monthly_partition_sql(spec: _RagTableSpec, month_start: datetime) -> str:
     start = month_start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1)
-    else:
-        end = start.replace(month=start.month + 1)
+    end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
     return (
         f"CREATE TABLE IF NOT EXISTS {_SCHEMA_NAME}.{spec.table}_p{start.strftime('%Y%m')} "
         f"PARTITION OF {_SCHEMA_NAME}.{spec.table} "

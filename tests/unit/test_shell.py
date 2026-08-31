@@ -1,6 +1,6 @@
 """Tests for the subprocess execution policy (ADR-0004)."""
 
-import os
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -313,10 +313,12 @@ async def test_run_pg_binary_spawns_in_a_temp_cwd_with_no_preexec_by_default(
     # A throwaway working directory is always passed; no rlimit preexec
     # unless limits are configured.
     cwd = record["kwargs"]["cwd"]
-    assert os.path.isabs(cwd)
+    assert Path(cwd).is_absolute()
     assert record["kwargs"]["preexec_fn"] is None
     # The temp cwd must be cleaned up by the time run_pg_binary returns.
-    assert not os.path.isdir(cwd)
+    # ASYNC240 rationale: test-only assertion, single fast local stat after the
+    # call under test already completed; not a hot path.
+    assert not Path(cwd).is_dir()  # noqa: ASYNC240
 
 
 async def test_run_pg_binary_passes_a_preexec_fn_when_limits_are_set(
@@ -360,7 +362,8 @@ async def test_run_pg_binary_cleans_up_temp_cwd_when_cancelled(monkeypatch: pyte
         await run_pg_binary("pg_dump", "--version", timeout_sec=10, max_output_bytes=1024)
 
     assert captured["cwd"]  # spawn got far enough to record it
-    assert not os.path.isdir(captured["cwd"])
+    # ASYNC240 rationale: test-only assertion, single fast local stat; not a hot path.
+    assert not Path(captured["cwd"]).is_dir()  # noqa: ASYNC240
 
 
 async def test_run_pg_binary_enforces_the_bin_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:

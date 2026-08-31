@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any
+from typing import Any, Self
 from unittest.mock import patch
 
 import httpx
@@ -18,6 +18,30 @@ from mcpg.oidc import (
     OIDCVerifier,
     VerifiedToken,
 )
+
+# --- fixtures --------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_circuit_breakers():
+    """Reset every registered circuit breaker before/after each test.
+
+    ``@circuit`` decorates ``OIDCVerifier._resolve_jwks_url`` once at class
+    definition time, so the breaker's failure count is a single object
+    shared across *every* ``OIDCVerifier`` instance for the life of the test
+    process — not per-instance state. Without this reset, a test that trips
+    the breaker open would leave it open for every unrelated test that runs
+    afterward in the same session (including tests in test_nl2sql.py, which
+    registers its own separately-named breakers alongside this module's).
+    """
+    from circuitbreaker import CircuitBreakerMonitor
+
+    for cb in CircuitBreakerMonitor.get_circuits():
+        cb.reset()
+    yield
+    for cb in CircuitBreakerMonitor.get_circuits():
+        cb.reset()
+
 
 # --- helpers -------------------------------------------------------------
 
@@ -56,7 +80,10 @@ def _make_jwt(
     return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": kid})
 
 
-def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):
+# C901 rationale: test-only mock-response builder patching both httpx (our
+# code) and urllib.request (PyJWKClient's internal transport) with several
+# small nested fake classes -- test infrastructure, not production logic.
+def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):  # noqa: C901
     """Patch httpx.AsyncClient.get to return either the discovery or JWKS doc.
 
     The PyJWKClient uses ``urllib.request`` rather than httpx for the
@@ -78,7 +105,7 @@ def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> _AsyncClient:
+        async def __aenter__(self) -> Self:
             return self
 
         async def __aexit__(self, *exc_info: object) -> None:
@@ -98,7 +125,7 @@ def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):
         def read(self) -> bytes:
             return self._body
 
-        def __enter__(self) -> _UrllibResponse:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *exc_info: object) -> None:
@@ -327,7 +354,7 @@ async def test_verifier_propagates_discovery_failure() -> None:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> _BrokenClient:
+        async def __aenter__(self) -> Self:
             return self
 
         async def __aexit__(self, *exc_info: object) -> None:
@@ -359,7 +386,7 @@ async def test_verifier_uses_explicit_jwks_url_when_provided() -> None:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> _AsyncClient:
+        async def __aenter__(self) -> Self:
             return self
 
         async def __aexit__(self, *exc_info: object) -> None:
@@ -373,7 +400,7 @@ async def test_verifier_uses_explicit_jwks_url_when_provided() -> None:
         def read(self) -> bytes:
             return json.dumps({"keys": [jwk]}).encode()
 
-        def __enter__(self) -> _UrllibResponse:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *exc_info: object) -> None:
@@ -427,3 +454,133 @@ async def test_verifier_offloads_jwks_fetch_to_a_worker_thread() -> None:
     assert verified.claims["sub"] == "user-42"
     # PyJWKClient.get_signing_key_from_jwt is the method we offloaded.
     assert "get_signing_key_from_jwt" in observed
+
+
+# --- shared httpx.AsyncClient reuse (perf audit remediation, Task 9) ------
+
+
+async def test_verifier_reuses_one_httpx_client_across_discovery_fetches() -> None:
+    """The discovery-document fetch reuses one ``httpx.AsyncClient`` held
+    for the verifier's whole lifetime, rather than opening ``async with
+    httpx.AsyncClient(...)`` fresh on every fetch. ``jwks_cache_seconds=0``
+    forces the cache to be treated as expired immediately, so two direct
+    ``_resolve_jwks_url()`` calls both actually hit the network path."""
+    issuer = "https://issuer.example"
+    discovery = {"issuer": issuer, "jwks_uri": f"{issuer}/.well-known/jwks.json"}
+    constructed: list[object] = []
+
+    class _AsyncResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return discovery
+
+    class _AsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            constructed.append(self)
+
+        async def get(self, url: str, **_kwargs: Any) -> _AsyncResponse:
+            return _AsyncResponse()
+
+    with patch(
+        "mcpg.oidc.httpx",
+        type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
+    ):
+        verifier = OIDCVerifier(issuer=issuer, audience="mcpg", jwks_cache_seconds=0.0)
+        url_one = await verifier._resolve_jwks_url()
+        url_two = await verifier._resolve_jwks_url()
+
+    assert url_one == url_two == discovery["jwks_uri"]
+    assert len(constructed) == 1, f"expected exactly one httpx.AsyncClient construction; got {len(constructed)}"
+
+
+async def test_verifier_aclose_closes_the_underlying_client() -> None:
+    """``aclose()`` closes the verifier's held HTTP client."""
+    closed: list[bool] = []
+
+    class _AsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def aclose(self) -> None:
+            closed.append(True)
+
+    with patch(
+        "mcpg.oidc.httpx",
+        type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
+    ):
+        verifier = OIDCVerifier(issuer="https://issuer.example", audience="mcpg")
+        await verifier.aclose()
+
+    assert closed == [True]
+
+
+# --- circuit breaker on JWKS discovery (audit remediation, Task 15) -------
+
+
+async def test_ensure_jwks_client_opens_circuit_after_repeated_discovery_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After enough consecutive discovery-fetch failures, the breaker opens
+    and further calls fail fast (as OIDCError, not a bare CircuitBreakerError)
+    without hitting the network again.
+
+    Loops only just past the failure threshold (6, not 10) to keep this fast
+    — the invariant only needs one call past the point the breaker opens.
+    """
+    verifier = OIDCVerifier(issuer="https://idp.example", audience="mcpg")
+    call_count = 0
+
+    async def _always_fails(_url: str, **_kwargs: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        raise httpx.ConnectError("simulated outage", request=None)
+
+    monkeypatch.setattr(verifier._client, "get", _always_fails)
+
+    for _ in range(6):
+        with pytest.raises(OIDCError):
+            await verifier._ensure_jwks_client()
+
+    # The breaker should have opened well before the 6th iteration — assert
+    # relatively (not against an absolute call count), since Task 16 layers
+    # retry *inside* the breaker and changes how many real network calls
+    # happen per logical failure.
+    calls_before_open = call_count
+    with pytest.raises(OIDCError):
+        await verifier._ensure_jwks_client()
+    assert call_count == calls_before_open, "breaker should short-circuit without re-invoking the discovery fetch"
+
+
+# --- retry with backoff on JWKS discovery (audit remediation, Task 16) ----
+
+
+async def test_resolve_jwks_url_retries_transient_failures_before_giving_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A discovery fetch that fails twice then succeeds is retried
+    transparently — not immediately surfaced as an error."""
+    attempts = 0
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {"jwks_uri": "https://idp.example/jwks"}
+
+    async def _flaky_get(_url: str, **_kwargs: Any) -> Any:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise httpx.ConnectError("transient", request=None)
+        return _FakeResponse()
+
+    verifier = OIDCVerifier(issuer="https://idp.example", audience="mcpg")
+    monkeypatch.setattr(verifier._client, "get", _flaky_get)
+
+    url = await verifier._resolve_jwks_url()
+
+    assert attempts == 3
+    assert url == "https://idp.example/jwks"

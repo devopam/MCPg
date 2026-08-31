@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 from mcpg.sql import SqlDriver
 
@@ -39,14 +39,25 @@ class FakeDriver:
         self._rows = rows or []
         self.fail = fail
         self.calls: list[tuple[str, Any, bool]] = []
+        # Recorded separately (not in ``calls``, to avoid touching every
+        # existing call-site assertion): the ``row_limit`` each
+        # ``execute_query`` call was made with, in call order.
+        self.row_limits: list[int | None] = []
 
     async def execute_query(
-        self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+        self,
+        query: str,
+        params: list[Any] | None = None,
+        *,
+        force_readonly: bool = False,
+        row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult]:
         self.calls.append((query, params, force_readonly))
+        self.row_limits.append(row_limit)
         if self.fail:
             raise RuntimeError("execution failed")
-        return [SqlDriver.RowResult(cells=dict(row)) for row in self._rows]
+        rows = self._rows if row_limit is None else self._rows[:row_limit]
+        return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
 
 
 class FakeRoutingDriver:
@@ -57,12 +68,18 @@ class FakeRoutingDriver:
         self.calls: list[tuple[str, Any, bool]] = []
 
     async def execute_query(
-        self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+        self,
+        query: str,
+        params: list[Any] | None = None,
+        *,
+        force_readonly: bool = False,
+        row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult]:
         self.calls.append((query, params, force_readonly))
         for substring, rows in self._routes.items():
             if substring in query:
-                return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
+                result = rows if row_limit is None else rows[:row_limit]
+                return [SqlDriver.RowResult(cells=dict(row)) for row in result]
         return []
 
 
@@ -80,7 +97,12 @@ class FakeParamRoutingDriver:
         self.calls: list[tuple[str, Any, bool]] = []
 
     async def execute_query(
-        self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+        self,
+        query: str,
+        params: list[Any] | None = None,
+        *,
+        force_readonly: bool = False,
+        row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult]:
         self.calls.append((query, params, force_readonly))
         params_key = tuple(params) if params is not None else ()
@@ -88,7 +110,8 @@ class FakeParamRoutingDriver:
             if substring not in query:
                 continue
             if route_params is None or route_params == params_key:
-                return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
+                result = rows if row_limit is None else rows[:row_limit]
+                return [SqlDriver.RowResult(cells=dict(row)) for row in result]
         return []
 
 
@@ -143,7 +166,7 @@ class FakeDatabase:
         self.execute_many_calls.append((sql, rows))
         return self._execute_many_rowcount if self._execute_many_rowcount is not None else len(rows)
 
-    async def __aenter__(self) -> FakeDatabase:
+    async def __aenter__(self) -> Self:
         await self.connect()
         return self
 

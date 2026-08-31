@@ -59,10 +59,11 @@ import json
 from typing import Any
 
 from mcpg.about import CAPABILITIES, build_capability_summary
+from mcpg.errors import MCPgError
 from mcpg.introspection import get_compact_schema
 
 
-class MCPgResourceError(Exception):
+class MCPgResourceError(MCPgError):
     """Raised when a resource lookup fails."""
 
 

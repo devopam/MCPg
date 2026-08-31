@@ -75,15 +75,15 @@ class _TableAgg:
     suggestions: list[IndexSuggestion] = field(default_factory=list)
     _seen_columns: set[str] = field(default_factory=set, repr=False)
 
-    def add_stats(self, seq_scan: int, live_tup: int, is_partition: bool) -> None:
+    def add_stats(self, seq_scan: int, live_tup: int, *, is_partition: bool) -> None:
         self.seq_scans += seq_scan
         self.live_tuples += live_tup
         self.partitioned = self.partitioned or is_partition
 
-    def add_suggestion(self, column: str, data_type: str, is_unindexed_fk: bool = False) -> None:
+    def add_suggestion(self, column: str, data_type: str, *, is_unindexed_fk: bool = False) -> None:
         if column in self._seen_columns:
             return
-        suggestion = _suggest(column, data_type, is_unindexed_fk)
+        suggestion = _suggest(column, data_type, is_unindexed_fk=is_unindexed_fk)
         if suggestion is None:
             return
         self._seen_columns.add(column)
@@ -101,7 +101,7 @@ _FK_RATIONALE = (
 )
 
 
-def _suggest(column: str, data_type: str, is_unindexed_fk: bool = False) -> IndexSuggestion | None:
+def _suggest(column: str, data_type: str, *, is_unindexed_fk: bool = False) -> IndexSuggestion | None:
     """Suggest an index for a column based on FK status, then data type."""
     # An unindexed foreign key wins: a plain btree on the FK column is the
     # highest-value fix, independent of the column's data type.
@@ -184,8 +184,12 @@ async def recommend_indexes(
         physical = (row.cells["schemaname"], row.cells["relname"])
         if physical not in counted:
             counted.add(physical)
-            agg.add_stats(row.cells["seq_scan"], row.cells["n_live_tup"], is_partition)
-        agg.add_suggestion(row.cells["column_name"], row.cells["data_type"], bool(row.cells.get("is_unindexed_fk")))
+            agg.add_stats(row.cells["seq_scan"], row.cells["n_live_tup"], is_partition=is_partition)
+        agg.add_suggestion(
+            row.cells["column_name"],
+            row.cells["data_type"],
+            is_unindexed_fk=bool(row.cells.get("is_unindexed_fk")),
+        )
 
     return [
         IndexRecommendation(

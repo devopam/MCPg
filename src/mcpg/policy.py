@@ -10,6 +10,7 @@ from __future__ import annotations
 from enum import StrEnum
 
 from mcpg.config import AccessMode
+from mcpg.errors import MCPgError
 
 
 class Capability(StrEnum):
@@ -61,7 +62,7 @@ def is_permitted(access_mode: AccessMode, capability: Capability) -> bool:
     return capability in _PERMITTED[access_mode]
 
 
-class PermissionError(Exception):
+class PermissionError(MCPgError):
     """Raised when an operation is requested but the access mode does not permit it."""
 
 

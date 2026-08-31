@@ -1162,7 +1162,14 @@ async def list_generated_columns(driver: SqlDriver, schema: str) -> list[Generat
     ]
 
 
-async def get_compact_schema(driver: SqlDriver, schema: str) -> str:
+# C901 rationale: merges 3 separate catalog queries (columns, PKs, FKs) into
+# nested per-table dicts before rendering the compact notation -- the
+# `pg_attribute`/`information_schema` result shapes differ enough (vector
+# dimension detection, cross-schema FK qualification) that each merge step
+# is its own small state machine; deliberately 3 queries total per the
+# docstring's own token-efficiency contract, not a candidate for further
+# query splitting.
+async def get_compact_schema(driver: SqlDriver, schema: str) -> str:  # noqa: C901
     """Return a highly condensed, token-efficient text summary of a schema.
 
     Collects all tables, columns, primary keys, and foreign keys in the schema

@@ -132,7 +132,11 @@ def _conc_row(path: str, query: BenchQuery, cr: ConcurrencyResult) -> ResultRow:
     )
 
 
-async def _run_concurrency(database_url: str, iterations: int, timeout: float) -> list[ResultRow]:
+async def _run_concurrency(
+    database_url: str,
+    iterations: int,
+    timeout: float,  # noqa: ASYNC109 -- converted to a statement_timeout_ms setting, not a manual reimplementation
+) -> list[ResultRow]:
     """Sweep the **ultralight** queries across the concurrency levels.
 
     Throughput-under-load exists to expose the *pool + per-call* overhead, so it
@@ -255,7 +259,13 @@ def _checkpoint(
     return run
 
 
-async def _run(args: argparse.Namespace) -> PerfRun:
+# C901 rationale: the CLI orchestrator wiring together native/server-side/
+# optional e2e/concurrency-sweep paths with teardown-order-sensitive
+# resource management (each runner registered for cleanup before it's
+# started, per the inline comment) -- operator-only benchmark tooling, not
+# part of the shipped package, but the teardown ordering is load-bearing
+# for not leaking connections on a partial failure.
+async def _run(args: argparse.Namespace) -> PerfRun:  # noqa: C901
     # MCPG_STATEMENT_TIMEOUT_MS sets Postgres's own statement_timeout GUC — a
     # second, independent ceiling from the asyncio guard --timeout controls
     # (mcpg.query.run_select's own `timeout` kwarg). Both must be raised

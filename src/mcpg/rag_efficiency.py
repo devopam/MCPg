@@ -49,6 +49,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -102,7 +103,7 @@ _THRESHOLD_RANKING_DEGRADED_SPEARMAN = 0.50
 _THRESHOLD_PRUNING_INEFFECTIVE = 0.10
 
 
-class VectorEfficiencyError(Exception):
+class VectorEfficiencyError(MCPgError):
     """Raised when a vector-efficiency analysis cannot complete."""
 
 
@@ -675,7 +676,13 @@ async def _approx_top_k_turboquant(
 # --- main entry point ------------------------------------------------------
 
 
-async def analyze_vector_search_efficiency(
+# C901 rationale: identifier + numeric-bound validation matrix (schema/
+# table/column/id_column/metric/k/sample_size/candidate_multipliers, each
+# with its own VectorEfficiencyError per the docstring's Raises list),
+# followed by the ANN recall-sweep algorithm itself -- both halves are
+# individually simple but independent, and inlining is what keeps each
+# precondition's error message specific.
+async def analyze_vector_search_efficiency(  # noqa: C901
     driver: SqlDriver,
     schema: str,
     table: str,
@@ -929,7 +936,12 @@ async def _detect_single_column_pk(driver: SqlDriver, schema: str, table: str) -
     return str(rows[0].cells["pk_column"])
 
 
-async def audit_vector_indexes(driver: SqlDriver) -> Any:
+# C901 rationale: per-index audit loop where a missing PK or a per-index
+# efficiency-sweep failure must skip-and-continue rather than sink the whole
+# scorecard category (see the docstring: "the audit reports what it can,
+# not what it can't") -- same degrade-gracefully shape as the audit_*
+# functions in mcpg/audit.py.
+async def audit_vector_indexes(driver: SqlDriver) -> Any:  # noqa: C901
     """Scorecard adapter — returns a CategoryResult or None.
 
     Returns ``None`` when there are no ANN indexes (HNSW / IVFFlat /

@@ -388,25 +388,46 @@ async def test_record_audit_reads_integrity_config_from_driver_settings() -> Non
     )
 
 
-async def test_record_audit_treats_malformed_integrity_flag_as_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_record_audit_treats_malformed_integrity_flag_as_disabled(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     # A non-boolean MCPG_AUDIT_INTEGRITY must not crash record_audit; the
-    # parse error is swallowed and integrity stays off (HMAC columns NULL).
+    # parse error is swallowed and integrity stays off (HMAC columns NULL),
+    # and the swallowed parse failure is logged at debug rather than silent.
+    import logging
+
     monkeypatch.setenv("MCPG_AUDIT_INTEGRITY", "not-a-bool")
     monkeypatch.setenv("MCPG_AUDIT_HMAC_KEY", "secret_key")
     _reset_audit_init_cache()
     driver = FakeRoutingDriver({})
 
-    await record_audit(  # type: ignore[arg-type]
-        driver,
-        tool="run_write",
-        arguments={"sql": "SELECT 1"},
-        status="ok",
-    )
+    root_logger = logging.getLogger("mcpg")
+    old_propagate = root_logger.propagate
+    root_logger.propagate = True
+    try:
+        caplog.set_level(logging.DEBUG, logger="mcpg.audit_trail")
+
+        await record_audit(  # type: ignore[arg-type]
+            driver,
+            tool="run_write",
+            arguments={"sql": "SELECT 1"},
+            status="ok",
+        )
+    finally:
+        root_logger.propagate = old_propagate
 
     insert = next(call for call in driver.calls if "INSERT INTO" in call[0])
     params = insert[1]
     assert params is not None
     assert params[7] is None  # event_hmac stays NULL
+    matches = [
+        r
+        for r in caplog.records
+        if r.name == "mcpg.audit_trail" and "MCPG_AUDIT_INTEGRITY" in r.message and r.levelno == logging.DEBUG
+    ]
+    assert len(matches) == 1
+    # exc_info=True must actually attach a traceback, not just the message.
+    assert matches[0].exc_info is not None
 
 
 async def test_record_audit_leaves_hmac_columns_null_when_integrity_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -606,7 +627,7 @@ async def test_prune_audit_events_tool_is_registered_in_unrestricted_mode() -> N
     ("mode", "present"),
     [("read-only", False), ("restricted", True), ("unrestricted", True)],
 )
-async def test_prune_audit_events_tool_needs_write_capability(mode: str, present: bool) -> None:
+async def test_prune_audit_events_tool_needs_write_capability(mode: str, *, present: bool) -> None:
     # prune deletes rows -> WRITE capability -> present in the read-write tiers
     # (restricted + unrestricted), absent in read-only.
     settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": mode})

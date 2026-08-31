@@ -549,8 +549,8 @@ async def test_e2e_enable_session_intent_grows_the_real_tools_list() -> None:
     assert len(before_names) == 14
     assert len(after_names) == 71, f"expected 71 tools after enabling monitor, got {len(after_names)}"
     assert before_names < after_names  # strict growth: every core/always-kept tool survives, nothing lost
-    assert ALWAYS_KEEP <= before_names
-    assert ALWAYS_KEEP <= after_names
+    assert before_names >= ALWAYS_KEEP
+    assert after_names >= ALWAYS_KEEP
     assert "list_tables" in after_names  # a core headline tool -- must still be visible after enabling monitor
     assert "list_active_queries" in after_names  # operations_and_health, newly visible via monitor
     assert "list_active_queries" not in before_names  # not visible under the core default alone

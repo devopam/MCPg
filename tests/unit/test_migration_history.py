@@ -211,11 +211,11 @@ async def test_read_migration_history_schema_filter() -> None:
 async def test_read_migration_history_resilient_to_errors() -> None:
     class FailingRoutingDriver(FakeRoutingDriver):
         async def execute_query(
-            self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+            self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
         ) -> list[SqlDriver.RowResult]:
             if "alembic_version" in query and "version_num" in query:
                 raise RuntimeError("database error")
-            return await super().execute_query(query, params, force_readonly)
+            return await super().execute_query(query, params, force_readonly=force_readonly)
 
     driver = FailingRoutingDriver(
         {

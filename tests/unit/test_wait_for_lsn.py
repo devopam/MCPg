@@ -104,7 +104,7 @@ class _WaitForLsnDriver:
         self.executed: list[str] = []
         self.calls: list[tuple[str, object, bool]] = []
 
-    async def execute_query(self, query, params=None, force_readonly=False):  # type: ignore[no-untyped-def]
+    async def execute_query(self, query, params=None, *, force_readonly=False):  # type: ignore[no-untyped-def]
         from mcpg.sql import SqlDriver
 
         self.calls.append((query, params, force_readonly))
@@ -158,7 +158,7 @@ async def test_wait_for_lsn_timeout_detected_via_sqlstate_57014() -> None:
     # Override the driver's failure with a SQLSTATE-bearing exception.
     driver._fail_with = None
 
-    async def fail_with_sqlstate(query, params=None, force_readonly=False):  # type: ignore[no-untyped-def]
+    async def fail_with_sqlstate(query, params=None, *, force_readonly=False):  # type: ignore[no-untyped-def]
         from mcpg.sql import SqlDriver
 
         driver.calls.append((query, params, force_readonly))

@@ -291,7 +291,7 @@ def module_descriptions() -> dict[str, str]:
         except SyntaxError:
             doc = ""
         desc = _first_sentence(doc) or _MODULE_FALLBACK.get(name, "")
-        out[name] = _MODULE_FALLBACK.get(name, desc) if not desc else desc
+        out[name] = desc if desc else _MODULE_FALLBACK.get(name, desc)
     return out
 
 

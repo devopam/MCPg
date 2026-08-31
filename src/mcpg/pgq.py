@@ -52,6 +52,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # SQL/PGQ landed in the PG 19 series. We use the version-num probe rather
@@ -80,7 +81,7 @@ _PG_DEFINITION_PREFIX_RE = re.compile(r"^\s*VERTEX\s+TABLES\b", re.IGNORECASE)
 _DEFAULT_MAX_ROWS = 200
 
 
-class PgqError(Exception):
+class PgqError(MCPgError):
     """Raised when a SQL/PGQ operation cannot complete."""
 
 
@@ -333,9 +334,7 @@ def _is_safe_pgq_query(query: str) -> bool:
     body = stripped.rstrip(";").strip()
     if ";" in body:
         return False
-    if not _GRAPH_TABLE_RE.search(body):
-        return False
-    return True
+    return bool(_GRAPH_TABLE_RE.search(body))
 
 
 async def run_pgq(

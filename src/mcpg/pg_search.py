@@ -67,6 +67,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -76,7 +77,7 @@ from mcpg.sql import SqlDriver
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class PgSearchError(Exception):
+class PgSearchError(MCPgError):
     """Raised when a pg_search operation cannot complete."""
 
 
@@ -366,7 +367,7 @@ def _validate_positive_int(name: str, value: int, *, allow_zero: bool = False) -
         raise PgSearchError(f"{name} must be an int {op} 0; got {value!r}")
 
 
-def _validate_bool(value: bool, kind: str) -> None:
+def _validate_bool(*, value: bool, kind: str) -> None:
     if not isinstance(value, bool):
         raise PgSearchError(f"{kind} must be a bool; got {value!r}")
 
@@ -566,7 +567,7 @@ async def pg_search_run(
     _validate_identifier(schema, "schema")
     _validate_identifier(table, "table")
     _validate_identifier(key_field, "key_field")
-    _validate_bool(return_snippets, "return_snippets")
+    _validate_bool(value=return_snippets, kind="return_snippets")
     _validate_limit(limit)
     if not isinstance(query, str):
         raise PgSearchError(f"query must be str; got {type(query).__name__}")
@@ -831,8 +832,8 @@ async def pg_search_parse_query(
     """
     if not isinstance(query_string, str):
         raise PgSearchError(f"query_string must be str; got {type(query_string).__name__}")
-    _validate_bool(lenient, "lenient")
-    _validate_bool(conjunction_mode, "conjunction_mode")
+    _validate_bool(value=lenient, kind="lenient")
+    _validate_bool(value=conjunction_mode, kind="conjunction_mode")
 
     if not await extension_installed(driver, "pg_search"):
         raise PgSearchError("pg_search extension is not installed in this database")
@@ -1275,7 +1276,13 @@ WHERE am.amname = 'bm25' AND n.nspname = %s AND i.relname = %s
 """
 
 
-async def create_pg_search_index(
+# C901 rationale: per-identifier injection-defense validation (schema/table/
+# columns/index_name/key_field, each through _validate_identifier +
+# _pg_quote_ident) plus independent bounds/type validation for each of the
+# 13 documented bm25 reloptions before DDL construction -- the branching is
+# the validation matrix itself; the docstring's own "Identifier safety"
+# section is the reason each check stays separate and explicit.
+async def create_pg_search_index(  # noqa: C901
     database: Database,
     schema: str,
     table: str,

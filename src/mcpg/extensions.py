@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # Extensions MCPg will enable on request: well-known, widely-used extensions.
@@ -48,7 +49,7 @@ ENABLEABLE_EXTENSIONS = frozenset(
 )
 
 
-class ExtensionError(Exception):
+class ExtensionError(MCPgError):
     """Raised when an extension cannot be enabled."""
 
 

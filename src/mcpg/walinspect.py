@@ -143,6 +143,7 @@ async def read_pg_wal_stats(
     driver: SqlDriver,
     start_lsn: str,
     end_lsn: str | None = None,
+    *,
     per_record: bool = False,
 ) -> WalStatsReport:
     """Read WAL record statistics using ``pg_walinspect``.

@@ -210,9 +210,11 @@ mcpg
 ```
 
 Then point any MCP-aware client at `http://localhost:8000/mcp` (or
-`/sse` for the SSE transport). Set
-`MCPG_HTTP_AUTH_TOKEN=...` for a static bearer, or
-`MCPG_AUTH_MODE=oidc` for full JWT validation against an OIDC issuer.
+`/sse` for the SSE transport). The HTTP transport refuses to start
+unless it's authenticated — set `MCPG_HTTP_AUTH_TOKEN=...` for a static
+bearer, or `MCPG_AUTH_MODE=oidc` for full JWT validation against an
+OIDC issuer. To deliberately run without auth (not recommended), set
+`MCPG_HTTP_ALLOW_UNAUTHENTICATED=true`.
 
 ---
 
@@ -262,7 +264,8 @@ are one-shot commands, not configuration). The only required one is
 | Variable | Default | Description |
 |---|---|---|
 | `MCPG_AUTH_MODE` | `static` | `static` (compare bearer to `MCPG_HTTP_AUTH_TOKEN`) \| `oidc` (full JWT validation). |
-| `MCPG_HTTP_AUTH_TOKEN` | — | Required bearer token when `MCPG_AUTH_MODE=static`. Constant-time compare. |
+| `MCPG_HTTP_AUTH_TOKEN` | — | Required bearer token when `MCPG_AUTH_MODE=static`. Constant-time compare. The HTTP transport refuses to start (`ConfigError`) unless this, `MCPG_AUTH_MODE=oidc`, or `MCPG_HTTP_ALLOW_UNAUTHENTICATED=true` is set. |
+| `MCPG_HTTP_ALLOW_UNAUTHENTICATED` | `false` | Explicit opt-out of the HTTP transport's fail-closed auth check. Loudly logged on every startup when set; not recommended. |
 | `MCPG_OIDC_ISSUER` | — | OIDC issuer URL (required when `MCPG_AUTH_MODE=oidc`). |
 | `MCPG_OIDC_AUDIENCE` | — | Expected `aud` claim (required when `MCPG_AUTH_MODE=oidc`). |
 | `MCPG_OIDC_JWKS_URL` | discovered | Override JWKS endpoint (auto-discovered from issuer's `.well-known` otherwise). |
@@ -274,8 +277,9 @@ are one-shot commands, not configuration). The only required one is
 |---|---|---|
 | `MCPG_HTTP_MAX_BODY_BYTES` | `1048576` | (1 MiB) Request bodies above this get a `413`. Counts streamed bytes, so a missing/lying `Content-Length` can't bypass it. |
 | `MCPG_HTTP_ALLOWED_ORIGINS` | — | Comma-separated CORS allowlist. Unset = no CORS middleware (no cross-origin headers emitted). |
-| `MCPG_HTTP_HSTS_MAX_AGE` | `31536000` | `Strict-Transport-Security` max-age. `0` disables the HSTS header. Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) are always added unless the app already set them. |
+| `MCPG_HTTP_HSTS_MAX_AGE` | `63072000` | `Strict-Transport-Security` max-age (2 years, OWASP's current recommendation). `0` disables the HSTS header. Security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) are always added unless the app already set them. |
 | `MCPG_HTTP_REQUEST_TIMEOUT_SECONDS` | `0` | Per-request wall-clock cap (`504` on expiry). `0` = disabled. Leave off if you rely on long-lived SSE / streamable-http streams — a hard cap also severs those. |
+| `MCPG_HTTP_TRUSTED_HOSTS` | — | Comma-separated list of allowed `Host` header values (wildcards like `*.example.com` supported). Unset = no host-header validation (current behaviour). When set, requests with a non-matching Host get a `400` via Starlette's `TrustedHostMiddleware`. |
 
 #### Multi-tenancy (`SET ROLE`)
 
@@ -352,7 +356,7 @@ falls back to the env var, so partial files work.
 
 | Variable | Default | Description |
 |---|---|---|
-| `MCPG_RATE_LIMIT_ENABLED` | `false` | Enable token-bucket per-tool rate limiting. |
+| `MCPG_RATE_LIMIT_ENABLED` | `true` | Token-bucket per-tool rate limiting. Set to `false` to restore the pre-breaking-change unlimited behavior. |
 | `MCPG_RATE_LIMIT_MAX_REQUESTS` | `60` | Global cap per window across all tools. |
 | `MCPG_RATE_LIMIT_WINDOW_SECONDS` | `60` | Window length for the global quota. |
 | `MCPG_RATE_LIMIT_HEAVY_MAX` | `5` | Cap for heavy tools (`run_write`, `run_ddl`, `dump_database`, etc.). |

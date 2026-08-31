@@ -23,11 +23,12 @@ import secrets
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Self
 
 import psycopg
 from psycopg.rows import dict_row
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SafeSqlDriver, SqlDriver
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ DEFAULT_FETCH_BATCH = 100
 HARD_FETCH_BATCH = 10_000
 
 
-class CursorError(Exception):
+class CursorError(MCPgError):
     """Raised when a cursor operation fails or is rejected."""
 
 
@@ -280,7 +281,7 @@ class CursorManager:
         try:
             await active.connection.close()
         except Exception as exc:
-            logger.warning("Error closing cursor %s connection: %s", cursor_id, exc)
+            logger.warning("Error closing cursor %s connection: %s", cursor_id, exc, exc_info=True)
         return True
 
     async def _sweep_expired(self) -> None:
@@ -290,7 +291,7 @@ class CursorManager:
         for cid in expired:
             await self._close_internal(cid)
 
-    async def __aenter__(self) -> CursorManager:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc_info: object) -> None:

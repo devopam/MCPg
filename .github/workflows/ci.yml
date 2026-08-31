@@ -70,6 +70,14 @@ jobs:
           uv run pip-audit --strict --disable-pip -r /tmp/mcpg-reqs.txt
       - name: Bandit static analysis (SAST)
         run: uv run bandit -r src/mcpg --skip B101,B608,B110 -ll
+      # Non-blocking license inventory: report the dependency tree's
+      # license mix so a maintainer can review it, without gating merge
+      # on any particular license yet (no `--fail-on`). Promote to a
+      # blocking check once the current mix has been reviewed and an
+      # explicit allow/deny policy is written.
+      - name: License enumeration (pip-licenses)
+        continue-on-error: true
+        run: uv run pip-licenses --format=markdown --with-urls --order=license
 
   test:
     name: Tests (PG ${{ matrix.postgres }})

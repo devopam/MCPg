@@ -36,7 +36,11 @@ from urllib.parse import urlsplit
 
 import httpx
 import jwt
+from circuitbreaker import CircuitBreakerError, circuit
 from jwt import PyJWKClient
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
+
+from mcpg.errors import MCPgError
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +49,36 @@ DEFAULT_DISCOVERY_TIMEOUT_SECONDS = 10.0
 DEFAULT_JWKS_CACHE_SECONDS = 3600.0
 DEFAULT_VERIFY_LEEWAY_SECONDS = 30.0
 
+# Circuit breaker tuning for the discovery-document fetch in
+# `_resolve_jwks_url` — after this many consecutive failures, further calls
+# fail fast with `CircuitBreakerError` (translated to `OIDCError` by
+# `_ensure_jwks_client` below) for `recovery_timeout` seconds instead of
+# every request separately paying the full `discovery_timeout` cost against
+# a degraded IdP. Threshold counts once per logical call even once
+# retry-with-backoff is layered *inside* the breaker (see
+# `_resolve_jwks_url`'s `@retry`) — only an attempt that exhausts all its
+# retries counts as one breaker failure, not one per retry.
+OIDC_CIRCUIT_FAILURE_THRESHOLD = 5
+OIDC_CIRCUIT_RECOVERY_TIMEOUT_SECONDS = 30.0
 
-class OIDCError(Exception):
+# Retry tuning for the discovery-document fetch — a handful of quick
+# attempts with exponential backoff + jitter before giving up, so a single
+# dropped connection doesn't fail a request that would have succeeded on a
+# retry. `@retry` is applied *inside* `@circuit` below (i.e. `@circuit` is
+# the outer decorator) deliberately: `circuitbreaker.call_async` (see the
+# installed package's source) does `with self: return await func(...)` and
+# counts exactly one failure per invocation of whatever it wraps. With
+# retry innermost, all `OIDC_RETRY_STOP_ATTEMPTS` attempts happen *inside*
+# that one `with self:` block, so an exhausted retry cycle counts as ONE
+# breaker failure — not one per retry, which is what stacking the two
+# decorators the other way around would produce.
+OIDC_RETRY_STOP_ATTEMPTS = 3
+OIDC_RETRY_WAIT_INITIAL_SECONDS = 0.1
+OIDC_RETRY_WAIT_MAX_SECONDS = 2.0
+OIDC_RETRY_WAIT_JITTER_SECONDS = 0.1
+
+
+class OIDCError(MCPgError):
     """Raised when OIDC configuration is wrong or a token fails to verify."""
 
 
@@ -147,7 +179,40 @@ class OIDCVerifier:
 
         self._discovery: _DiscoveryCache | None = None
         self._jwks_client: PyJWKClient | None = None
+        # Held for this verifier's lifetime rather than opened fresh per
+        # discovery-document fetch — construction is cheap (no I/O), so
+        # this is safe even though discovery itself is infrequent (cached
+        # for jwks_cache_seconds, and skipped entirely when jwks_url is
+        # supplied explicitly).
+        self._client = httpx.AsyncClient(timeout=self._discovery_timeout)
 
+    # ``@circuit`` decorates the plain function object at class-definition
+    # time, so its failure count is one object shared by every
+    # ``OIDCVerifier`` instance for the process's lifetime, not per-instance
+    # state — acceptable here since a process typically runs one configured
+    # IdP. `expected_exception=OIDCError` matches this method's own error
+    # type (the try/except below already normalises every failure mode —
+    # bad URL, connection error, malformed discovery doc — into `OIDCError`
+    # before it escapes the function), so only genuine discovery failures
+    # count toward the threshold.
+    @circuit(  # type: ignore[untyped-decorator]
+        failure_threshold=OIDC_CIRCUIT_FAILURE_THRESHOLD,
+        recovery_timeout=OIDC_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
+        expected_exception=OIDCError,
+    )
+    @retry(
+        reraise=True,  # load-bearing: without it, exhaustion raises
+        # tenacity.RetryError instead of OIDCError, which wouldn't match
+        # @circuit's expected_exception above — the breaker would silently
+        # never count a retry-exhausted call as a failure.
+        stop=stop_after_attempt(OIDC_RETRY_STOP_ATTEMPTS),
+        wait=wait_exponential_jitter(
+            initial=OIDC_RETRY_WAIT_INITIAL_SECONDS,
+            max=OIDC_RETRY_WAIT_MAX_SECONDS,
+            jitter=OIDC_RETRY_WAIT_JITTER_SECONDS,
+        ),
+        retry=retry_if_exception_type(OIDCError),
+    )
     async def _resolve_jwks_url(self) -> str:
         """Return the JWKS URL — explicit override wins, else discovery."""
         if self._explicit_jwks_url is not None:
@@ -156,8 +221,7 @@ class OIDCVerifier:
             return self._discovery.jwks_uri
         url = f"{self._issuer}/.well-known/openid-configuration"
         try:
-            async with httpx.AsyncClient(timeout=self._discovery_timeout) as client:
-                response = await client.get(url)
+            response = await self._client.get(url)
             response.raise_for_status()
             doc = response.json()
         except Exception as exc:
@@ -168,8 +232,20 @@ class OIDCVerifier:
         self._discovery = _DiscoveryCache(jwks_uri=jwks_uri, fetched_at=time.monotonic())
         return jwks_uri
 
+    async def aclose(self) -> None:
+        """Close the underlying HTTP client. Call once when the verifier is no longer needed."""
+        await self._client.aclose()
+
     async def _ensure_jwks_client(self) -> PyJWKClient:
-        url = await self._resolve_jwks_url()
+        try:
+            url = await self._resolve_jwks_url()
+        except CircuitBreakerError as exc:
+            # The breaker on `_resolve_jwks_url` is open (too many recent
+            # discovery failures) — translate to `OIDCError` so `verify`'s
+            # caller (the HTTP auth middleware) only ever needs to catch
+            # `OIDCError`, tripped breaker or not (see `http_runtime.py`'s
+            # `except OIDCError` around `verifier.verify`).
+            raise OIDCError(f"OIDC JWKS resolution failed: circuit open ({exc})") from exc
         # PyJWKClient caches keys in-process; reuse the same client
         # for the JWKS-URL lifetime. Recreate when the URL changes
         # (e.g. discovery doc rotated).

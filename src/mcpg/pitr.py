@@ -117,14 +117,21 @@ async def check_pitr_readiness(driver: SqlDriver) -> PitrReadinessReport:
 
     # 1. Continuous archiving.
     if archive.archiving_enabled and archive.healthy:
-        gates.append(PitrGate("archiving", True, f"archive_mode={archive.archive_mode}, healthy", ""))
+        gates.append(
+            PitrGate(
+                "archiving",
+                ok=True,
+                observed=f"archive_mode={archive.archive_mode}, healthy",
+                remediation="",
+            )
+        )
     elif not archive.archiving_enabled:
         gates.append(
             PitrGate(
                 "archiving",
-                False,
-                f"archive_mode={archive.archive_mode}",
-                "Enable continuous archiving: set archive_mode = on and a working "
+                ok=False,
+                observed=f"archive_mode={archive.archive_mode}",
+                remediation="Enable continuous archiving: set archive_mode = on and a working "
                 "archive_command / archive_library, then restart.",
             )
         )
@@ -132,9 +139,9 @@ async def check_pitr_readiness(driver: SqlDriver) -> PitrReadinessReport:
         gates.append(
             PitrGate(
                 "archiving",
-                False,
-                "archive_mode on but archiver is failing",
-                "Fix the failing archive_command / archive_library "
+                ok=False,
+                observed="archive_mode on but archiver is failing",
+                remediation="Fix the failing archive_command / archive_library "
                 "(see get_wal_archive_status) before relying on PITR.",
             )
         )
@@ -144,9 +151,9 @@ async def check_pitr_readiness(driver: SqlDriver) -> PitrReadinessReport:
     gates.append(
         PitrGate(
             "wal_level",
-            wal_ok,
-            wal_level,
-            ""
+            ok=wal_ok,
+            observed=wal_level,
+            remediation=""
             if wal_ok
             else "Set wal_level = replica (or logical) and restart — minimal omits records PITR replay needs.",
         )
@@ -157,9 +164,11 @@ async def check_pitr_readiness(driver: SqlDriver) -> PitrReadinessReport:
     gates.append(
         PitrGate(
             "base_backup_capable",
-            senders_ok,
-            f"max_wal_senders={max_wal_senders}",
-            "" if senders_ok else "Set max_wal_senders >= 1 (and restart) so pg_basebackup can stream a base backup.",
+            ok=senders_ok,
+            observed=f"max_wal_senders={max_wal_senders}",
+            remediation=""
+            if senders_ok
+            else "Set max_wal_senders >= 1 (and restart) so pg_basebackup can stream a base backup.",
         )
     )
 
@@ -168,9 +177,9 @@ async def check_pitr_readiness(driver: SqlDriver) -> PitrReadinessReport:
     gates.append(
         PitrGate(
             "full_page_writes",
-            fpw_ok,
-            full_page_writes,
-            ""
+            ok=fpw_ok,
+            observed=full_page_writes,
+            remediation=""
             if fpw_ok
             else "Set full_page_writes = on — recovery replay can hit torn "
             "pages otherwise (unless the storage guarantees atomic 8kB writes).",

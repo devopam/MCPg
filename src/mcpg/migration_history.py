@@ -121,7 +121,15 @@ def _quote_ident(name: str) -> str:
     return f'"{name.replace(chr(34), chr(34) * 2)}"'
 
 
-async def read_migration_history(
+# C901 rationale: dispatches on 8 known migration-framework bookkeeping
+# table names (Alembic/Flyway/Diesel/Django/Prisma/golang-migrate/Goose/
+# Sequelize), each its own query + framework-specific row-parsing +
+# try/except-and-skip-on-failure block feeding a distinct named result
+# field. A dispatch-table-of-handlers refactor is plausible but is a
+# larger restructuring than this pass's cheap-win budget; each framework's
+# parsing failure must independently degrade without aborting the others,
+# which the current straight-line branches make easy to audit.
+async def read_migration_history(  # noqa: C901
     driver: SqlDriver,
     schema: str | None = None,
 ) -> MigrationHistoryReport:

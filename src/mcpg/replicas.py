@@ -31,12 +31,14 @@ Metrics (via :mod:`mcpg.observability`):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
+from mcpg.errors import MCPgError
 from mcpg.sql import DbConnPool, SqlDriver, obfuscate_password
 from mcpg.tenancy import TenantSqlDriver
 
@@ -49,7 +51,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_DEGRADED_RETRY_SECONDS = 30.0
 
 
-class ReplicaError(Exception):
+class ReplicaError(MCPgError):
     """Raised when replica configuration is invalid."""
 
 
@@ -148,7 +150,7 @@ class ReplicaPool:
             try:
                 await state.pool.close()
             except Exception as exc:
-                logger.warning("Error closing replica %d pool: %s", state.index, exc)
+                logger.warning("Error closing replica %d pool: %s", state.index, exc, exc_info=True)
 
     async def next_healthy(self) -> _ReplicaState | None:
         """Return the next healthy replica, or ``None`` if all are degraded.
@@ -192,7 +194,7 @@ class ReplicaPool:
                 for state in self._states
             ]
 
-    async def __aenter__(self) -> ReplicaPool:
+    async def __aenter__(self) -> Self:
         await self.connect()
         return self
 
@@ -219,18 +221,20 @@ class TimeoutSqlDriver(SqlDriver):
         connection,
         query,
         params,
+        *,
         force_readonly,
+        row_limit=None,
     ):
         if not getattr(connection, "_timeouts_configured", False):
             async with connection.cursor() as cursor:
                 await cursor.execute(
                     f"SET statement_timeout = {self._statement_timeout_ms}; SET lock_timeout = {self._lock_timeout_ms}"
                 )
-            try:
+            with contextlib.suppress(AttributeError):
                 connection._timeouts_configured = True
-            except AttributeError:
-                pass
-        return await super()._execute_with_connection(connection, query, params, force_readonly)
+        return await super()._execute_with_connection(
+            connection, query, params, force_readonly=force_readonly, row_limit=row_limit
+        )
 
 
 class TenantTimeoutSqlDriver(TenantSqlDriver):
@@ -252,18 +256,20 @@ class TenantTimeoutSqlDriver(TenantSqlDriver):
         connection,
         query,
         params,
+        *,
         force_readonly,
+        row_limit=None,
     ):
         if not getattr(connection, "_timeouts_configured", False):
             async with connection.cursor() as cursor:
                 await cursor.execute(
                     f"SET statement_timeout = {self._statement_timeout_ms}; SET lock_timeout = {self._lock_timeout_ms}"
                 )
-            try:
+            with contextlib.suppress(AttributeError):
                 connection._timeouts_configured = True
-            except AttributeError:
-                pass
-        return await super()._execute_with_connection(connection, query, params, force_readonly)  # type: ignore[no-untyped-call]
+        return await super()._execute_with_connection(  # type: ignore[no-untyped-call]
+            connection, query, params, force_readonly=force_readonly, row_limit=row_limit
+        )
 
 
 def _make_driver_for_pool(
@@ -327,7 +333,9 @@ class RoutedSqlDriver(SqlDriver):
         self,
         query: str,
         params: list[Any] | None = None,
+        *,
         force_readonly: bool = False,
+        row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult] | None:
         from mcpg.observability import get_metrics
 
@@ -335,17 +343,19 @@ class RoutedSqlDriver(SqlDriver):
 
         if not force_readonly:
             metrics.record_call("__replica_route", "primary", 0.0)
-            return await self._primary.execute_query(query, params, force_readonly)
+            return await self._primary.execute_query(query, params, force_readonly=force_readonly, row_limit=row_limit)
 
         candidate = await self._replica_pool.next_healthy()
         if candidate is None:
             # Every replica degraded — fall through to primary.
             metrics.record_call("__replica_route", "primary_no_healthy", 0.0)
-            return await self._primary.execute_query(query, params, force_readonly)
+            return await self._primary.execute_query(query, params, force_readonly=force_readonly, row_limit=row_limit)
 
         replica_driver = self._replicas[candidate.index]
         try:
-            result = await replica_driver.execute_query(query, params, force_readonly)
+            result = await replica_driver.execute_query(
+                query, params, force_readonly=force_readonly, row_limit=row_limit
+            )
         except Exception as exc:
             await self._replica_pool.mark_degraded(candidate.index, str(exc))
             metrics.record_call("__replica_route", "fallback", 0.0)
@@ -354,7 +364,7 @@ class RoutedSqlDriver(SqlDriver):
                 candidate.index,
                 obfuscate_password(str(exc)),
             )
-            return await self._primary.execute_query(query, params, force_readonly)
+            return await self._primary.execute_query(query, params, force_readonly=force_readonly, row_limit=row_limit)
 
         metrics.record_call("__replica_route", f"replica_{candidate.index}", 0.0)
         return result

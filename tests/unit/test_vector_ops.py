@@ -1636,6 +1636,7 @@ async def test_monitor_embedding_drift_small_window_skips_random_filter() -> Non
             self,
             sql: str,
             params: list[object] | None = None,
+            *,
             force_readonly: bool = False,
         ) -> list[object]:
             from mcpg.sql import SqlDriver
@@ -1690,6 +1691,7 @@ async def test_monitor_embedding_drift_large_window_applies_probability_filter()
             self,
             sql: str,
             params: list[object] | None = None,
+            *,
             force_readonly: bool = False,
         ) -> list[object]:
             from mcpg.sql import SqlDriver
@@ -1753,6 +1755,7 @@ async def test_monitor_embedding_drift_caps_probability_at_one() -> None:
             self,
             sql: str,
             params: list[object] | None = None,
+            *,
             force_readonly: bool = False,
         ) -> list[object]:
             from mcpg.sql import SqlDriver

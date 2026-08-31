@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 from unittest.mock import patch
 
 import httpx
@@ -18,6 +20,7 @@ from mcpg.nl2sql import (
     DEFAULT_SCHEMA_DENYLIST,
     HARD_MAX_BRIEF_CHARS,
     HARD_MAX_TOKENS,
+    NL2SQL_CIRCUIT_FAILURE_THRESHOLD,
     OPENAI_COMPATIBLE_BASE_URLS,
     VENDOR_ENV_VAR_HINT,
     VENDOR_KEY_ENV_VARS,
@@ -31,6 +34,7 @@ from mcpg.nl2sql import (
     _assert_single_statement,
     _parse_response,
     _reset_egress_notice_cache,
+    _reset_shared_http_client,
     _resolve_schema_policy,
     _sanitize_default_expr,
     _validate_schema_name,
@@ -39,6 +43,28 @@ from mcpg.nl2sql import (
     resolve_provider_call_params,
     translate_nl_to_sql,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_circuit_breakers():
+    """Reset every registered circuit breaker before/after each test.
+
+    ``@circuit`` decorates each provider's ``complete`` once at class
+    definition time, so the breaker's failure count is a single object
+    shared across every provider *instance* for the life of the test
+    process (production builds a fresh provider per call — see
+    ``build_provider`` — so per-instance state wouldn't accumulate
+    failures at all; the shared-at-class-level design is intentional).
+    Without this reset, a test that trips a breaker open would leave it
+    open for every unrelated test that runs afterward in the same session.
+    """
+    from circuitbreaker import CircuitBreakerMonitor
+
+    for cb in CircuitBreakerMonitor.get_circuits():
+        cb.reset()
+    yield
+    for cb in CircuitBreakerMonitor.get_circuits():
+        cb.reset()
 
 
 @dataclass
@@ -64,7 +90,7 @@ class _StubProvider:
         user_prompt: str,
         model: str,
         max_tokens: int,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 -- must match the LLMProvider Protocol's signature exactly
     ) -> ProviderCompletion:
         _ = timeout
         self.captured_system = system_prompt
@@ -533,6 +559,24 @@ async def test_translate_nl_to_sql_records_provider_and_model_on_the_result() ->
 
     assert result.model == "my-model-id"
     assert result.provider == "stub"
+
+
+async def test_translation_result_records_the_schema_context_it_saw() -> None:
+    """A caller can trace generated SQL back to the schema evidence the model was given."""
+    provider = _StubProvider(response='{"sql": "SELECT count(*) FROM public.widget", "explanation": "row count"}')
+
+    result = await translate_nl_to_sql(
+        FakeRoutingDriver(_routes_for_simple_schema()),  # type: ignore[arg-type]
+        provider=provider,  # type: ignore[arg-type]
+        model="m",
+        question="how many widgets are there?",
+        schema="public",
+    )
+
+    assert result.schema_context  # non-empty
+    assert "widget" in result.schema_context  # the table the question is actually about was included
+    # It's the exact brief sent to the model, not a re-derived copy.
+    assert result.schema_context in provider.captured_user
 
 
 async def test_translate_nl_to_sql_reports_the_providers_token_usage() -> None:
@@ -1106,7 +1150,7 @@ async def test_translate_nl_to_sql_emits_egress_warning_once_per_provider() -> N
     # Exactly one provider — "stub" — is in the cache; if the warning
     # fired twice, the set membership doesn't change but the test
     # below would catch any logic that bypassed the cache.
-    assert nl2sql_mod._EGRESS_NOTICE_LOGGED == {"stub"}
+    assert {"stub"} == nl2sql_mod._EGRESS_NOTICE_LOGGED
 
 
 async def test_translate_nl_to_sql_egress_warning_fires_per_distinct_provider() -> None:
@@ -1127,7 +1171,7 @@ async def test_translate_nl_to_sql_egress_warning_fires_per_distinct_provider() 
             question="x",
             schema="public",
         )
-    assert nl2sql_mod._EGRESS_NOTICE_LOGGED == {"anthropic_x", "openai_x", "gemini_x"}
+    assert {"anthropic_x", "openai_x", "gemini_x"} == nl2sql_mod._EGRESS_NOTICE_LOGGED
 
 
 # --- P2 #6 — QueryError redaction ----------------------------------------
@@ -1144,13 +1188,13 @@ async def test_query_error_message_is_redacted_in_translation_result() -> None:
     # exercise the QueryError branch via the safety stack.
 
     class _RaisingDriver(FakeRoutingDriver):
-        async def execute_query(self, query, params=None, force_readonly=False):  # type: ignore[override]
+        async def execute_query(self, query, params=None, *, force_readonly=False):  # type: ignore[override]
             if "SELECT count(*)" in query and "public.widget" in query:
                 # Simulate a libpq error with an embedded credential.
                 from mcpg.query import QueryError
 
                 raise QueryError("could not connect to postgres://alice:hunter2@db/x")
-            return await super().execute_query(query, params, force_readonly)
+            return await super().execute_query(query, params, force_readonly=force_readonly)
 
     provider = _StubProvider(response='{"sql": "SELECT count(*) FROM public.widget", "explanation": "x"}')
     result = await translate_nl_to_sql(
@@ -1256,8 +1300,18 @@ def test_parse_response_extracts_fence_body_over_outer_garbage() -> None:
 # provider classes' usage-block parsing is actually exercised.
 
 
-def _mock_post_response(body: dict[str, Any]):
-    """Patch ``mcpg.nl2sql.httpx`` so any POST returns ``body`` as JSON."""
+@contextmanager
+def _mock_post_response(body: dict[str, Any]) -> Iterator[None]:
+    """Patch ``mcpg.nl2sql.httpx`` so any POST returns ``body`` as JSON.
+
+    Also resets the module-level shared httpx client
+    (``mcpg.nl2sql._get_shared_http_client``) around the patch. The
+    providers now share one lazily-constructed client at module scope
+    instead of opening one per call — without the reset, a client
+    cached by an earlier test would still be the real (or differently-
+    mocked) instance from that test, and this test's mock would never
+    actually be hit.
+    """
 
     class _AsyncResponse:
         def __init__(self, body: dict[str, Any]) -> None:
@@ -1274,7 +1328,7 @@ def _mock_post_response(body: dict[str, Any]):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> _AsyncClient:
+        async def __aenter__(self) -> Self:
             return self
 
         async def __aexit__(self, *exc_info: object) -> None:
@@ -1283,10 +1337,15 @@ def _mock_post_response(body: dict[str, Any]):
         async def post(self, url: str, **_kwargs: Any) -> _AsyncResponse:
             return _AsyncResponse(body)
 
-    return patch.multiple(
-        "mcpg.nl2sql",
-        httpx=type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
-    )
+    _reset_shared_http_client()
+    try:
+        with patch.multiple(
+            "mcpg.nl2sql",
+            httpx=type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
+        ):
+            yield
+    finally:
+        _reset_shared_http_client()
 
 
 async def test_anthropic_provider_parses_usage_from_the_real_response_shape() -> None:
@@ -1341,3 +1400,215 @@ async def test_provider_usage_missing_or_malformed_defaults_to_zero_not_a_crash(
         )
     assert result.tokens_in == 0
     assert result.tokens_out == 0
+
+
+# --- shared httpx.AsyncClient reuse (perf audit remediation, Task 9) ------
+#
+# NOTE on test shape: `build_provider` is called fresh on EVERY
+# `translate_nl_to_sql` tool invocation in production (see
+# `mcpg.tools._register_nl2sql`) — a new provider instance every call.
+# A test that instead calls `.complete()` twice on one hand-held
+# provider instance would go green the moment `__init__` held a client,
+# even though production still built a fresh provider (and thus a
+# fresh client) on every call — the defect this task fixes would
+# survive untouched. This test instead calls `build_provider()` twice,
+# matching the real per-call construction pattern, and asserts the two
+# resulting (distinct) provider instances still share one underlying
+# `httpx.AsyncClient`.
+
+
+async def test_providers_reuse_one_shared_httpx_client_across_build_provider_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two separate `build_provider()` calls share one `httpx.AsyncClient`.
+
+    Providers hold no client of their own — `complete()` reaches into
+    `mcpg.nl2sql`'s module-level, lazily-constructed shared client
+    (`_get_shared_http_client`) instead of opening `async with
+    httpx.AsyncClient(...)` per call.
+    """
+    _reset_shared_http_client()
+    constructed: list[object] = []
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {"content": [{"type": "text", "text": "{}"}], "usage": {}}
+
+    class _FakeAsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            constructed.append(self)
+
+        async def post(self, *args: Any, **kwargs: Any) -> _FakeResponse:
+            return _FakeResponse()
+
+    # Patch the real `httpx.AsyncClient` attribute (not
+    # `mcpg.nl2sql.httpx` wholesale) so `_get_shared_http_client`'s
+    # `httpx.AsyncClient()` call resolves to the fake at call time,
+    # tracking every construction regardless of which provider/call
+    # triggers it.
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+    try:
+        provider_one = build_provider("anthropic", "key-one")
+        result_one = await provider_one.complete(
+            system_prompt="sys", user_prompt="user", model="m", max_tokens=10, timeout=5
+        )
+        provider_two = build_provider("anthropic", "key-two")
+        result_two = await provider_two.complete(
+            system_prompt="sys", user_prompt="user", model="m", max_tokens=10, timeout=5
+        )
+    finally:
+        _reset_shared_http_client()
+
+    assert provider_one is not provider_two  # two distinct instances, matching production
+    assert result_one.text == "{}"
+    assert result_two.text == "{}"
+    assert len(constructed) == 1, (
+        f"expected exactly one httpx.AsyncClient construction across two build_provider() calls; got {len(constructed)}"
+    )
+
+
+# --- circuit breaker on provider HTTP calls (audit remediation, Task 15) --
+
+
+async def test_anthropic_complete_opens_circuit_after_repeated_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After enough consecutive HTTP failures, the breaker opens and further
+    calls fail fast without re-invoking the underlying HTTP request.
+
+    Loops only just past the failure threshold (6, not 10) to keep this
+    fast — the invariant only needs one call past the point the breaker
+    opens. Uses a *fresh provider instance* each iteration (mirroring
+    production's ``build_provider``-per-call pattern) to prove the breaker's
+    state lives at the class level, not on any one instance.
+    """
+    _reset_shared_http_client()
+    call_count = 0
+
+    class _FailingAsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def post(self, *args: Any, **kwargs: Any) -> Any:
+            nonlocal call_count
+            call_count += 1
+            raise httpx.ConnectError("simulated outage", request=None)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FailingAsyncClient)
+    try:
+        for _ in range(6):
+            with pytest.raises(Exception):  # noqa: B017 - either httpx.HTTPError or CircuitBreakerError
+                await AnthropicProvider(api_key="k").complete(
+                    system_prompt="sys", user_prompt="user", model="m", max_tokens=10, timeout=5
+                )
+
+        calls_before_open = call_count
+        with pytest.raises(Exception):  # noqa: B017
+            await AnthropicProvider(api_key="k").complete(
+                system_prompt="sys", user_prompt="user", model="m", max_tokens=10, timeout=5
+            )
+        assert call_count == calls_before_open, "breaker should short-circuit without re-invoking the HTTP request"
+    finally:
+        _reset_shared_http_client()
+
+
+# --- retry with backoff on provider HTTP calls (audit remediation, Task 16)
+
+
+async def test_anthropic_complete_retries_transient_failures_before_giving_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A provider call that fails twice then succeeds is retried
+    transparently — not immediately surfaced as an error."""
+    _reset_shared_http_client()
+    attempts = 0
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {"content": [{"type": "text", "text": "ok"}], "usage": {}}
+
+    class _FlakyAsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def post(self, *args: Any, **kwargs: Any) -> Any:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise httpx.ConnectError("transient", request=None)
+            return _FakeResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FlakyAsyncClient)
+    try:
+        result = await AnthropicProvider(api_key="k").complete(
+            system_prompt="sys", user_prompt="user", model="m", max_tokens=10, timeout=5
+        )
+    finally:
+        _reset_shared_http_client()
+
+    assert attempts == 3
+    assert result.text == "ok"
+
+
+# --- CircuitBreakerError translation at the translate_nl_to_sql level -----
+#
+# The two tests above call AnthropicProvider(...).complete(...) directly,
+# bypassing translate_nl_to_sql entirely — they never exercise its
+# `except CircuitBreakerError` branch (nl2sql.py's sibling to the existing
+# `except httpx.HTTPError`). This test drives a tripped breaker through
+# translate_nl_to_sql itself, matching what the CHANGELOG entry advertises:
+# a tripped breaker surfaces as NL2SQLError, never a bare CircuitBreakerError.
+
+
+async def test_translate_nl_to_sql_surfaces_open_circuit_as_nl2sqlerror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Once the provider's breaker is open, translate_nl_to_sql must still
+    raise its own NL2SQLError — not let a bare CircuitBreakerError escape
+    to the caller."""
+    _reset_shared_http_client()
+
+    class _FailingAsyncClient:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def post(self, *args: Any, **kwargs: Any) -> Any:
+            raise httpx.ConnectError("simulated outage", request=None)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FailingAsyncClient)
+    driver = FakeRoutingDriver(_routes_for_simple_schema())
+    try:
+        # Trip the breaker via translate_nl_to_sql itself (not
+        # provider.complete() directly) — each failing call here already
+        # raises NL2SQLError via the existing `except httpx.HTTPError`
+        # branch, since the breaker is still closed for these attempts.
+        for _ in range(NL2SQL_CIRCUIT_FAILURE_THRESHOLD):
+            with pytest.raises(NL2SQLError):
+                await translate_nl_to_sql(
+                    driver,  # type: ignore[arg-type]
+                    provider=AnthropicProvider(api_key="k"),
+                    model="m",
+                    question="how many widgets?",
+                    schema="public",
+                )
+
+        # The breaker should now be open. The next call must still surface
+        # NL2SQLError (via the `except CircuitBreakerError` branch) — a
+        # bare CircuitBreakerError leaking out here would be a regression.
+        with pytest.raises(NL2SQLError, match="circuit open") as excinfo:
+            await translate_nl_to_sql(
+                driver,  # type: ignore[arg-type]
+                provider=AnthropicProvider(api_key="k"),
+                model="m",
+                question="how many widgets?",
+                schema="public",
+            )
+        assert excinfo.type is NL2SQLError
+    finally:
+        _reset_shared_http_client()

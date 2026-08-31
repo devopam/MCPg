@@ -19,6 +19,7 @@ import math
 import re
 from dataclasses import dataclass
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.introspection import describe_table
 from mcpg.sql import SqlDriver
@@ -51,7 +52,7 @@ _MAX_SAMPLE_SIZE = 100
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class VectorTuningError(Exception):
+class VectorTuningError(MCPgError):
     """Raised when a pgvector tuning operation cannot complete."""
 
 

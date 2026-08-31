@@ -42,6 +42,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # PG 19 ships both toggles. The version-num probe is the boundary —
@@ -53,7 +54,7 @@ _LOGICAL_WAL_LEVEL = "logical"
 _VALID_WAL_LEVELS = frozenset({"minimal", "replica", "logical"})
 
 
-class Pg19RuntimeError(Exception):
+class Pg19RuntimeError(MCPgError):
     """Raised when a PG 19 runtime-toggle operation cannot complete."""
 
 

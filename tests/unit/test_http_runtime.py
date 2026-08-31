@@ -16,6 +16,7 @@ from mcpg.http_runtime import (
     build_http_app,
 )
 from mcpg.observability import get_metrics, reset_metrics
+from mcpg.oidc import OIDCVerifier
 from mcpg.tenancy import current_role
 
 
@@ -94,11 +95,12 @@ def test_bearer_middleware_returns_401_for_wrong_token() -> None:
 def test_bearer_middleware_exempts_metrics_path_even_without_token() -> None:
     """A Prometheus scraper hits /metrics without the MCP bearer token."""
     sent_messages: list[dict[str, object]] = []
-    inner_invoked = False
+    captured_args: dict[str, object] = {}
 
-    async def inner(_scope: object, _receive: object, send_fn: object) -> None:
-        nonlocal inner_invoked
-        inner_invoked = True
+    async def inner(scope: object, receive: object, send_fn: object) -> None:
+        captured_args["scope"] = scope
+        captured_args["receive"] = receive
+        captured_args["send_fn"] = send_fn
         await send_fn(  # type: ignore[operator]
             {
                 "type": "http.response.start",
@@ -121,17 +123,21 @@ def test_bearer_middleware_exempts_metrics_path_even_without_token() -> None:
 
     asyncio.run(middleware(scope, receive, send))
 
-    # The middleware passed through to the inner app without checking auth.
-    assert inner_invoked
+    # The middleware passed through to the inner app without checking auth,
+    # and without modifying the scope/receive/send objects.
+    assert captured_args["scope"] is scope
+    assert captured_args["receive"] is receive
+    assert captured_args["send_fn"] is send
     assert sent_messages[0]["status"] == 200
 
 
 def test_bearer_middleware_passes_non_http_scopes_through_unmodified() -> None:
-    inner_invoked = False
+    captured_args: dict[str, object] = {}
 
-    async def inner(scope: object, _receive: object, _send: object) -> None:
-        nonlocal inner_invoked
-        inner_invoked = True
+    async def inner(scope: object, receive: object, send: object) -> None:
+        captured_args["scope"] = scope
+        captured_args["receive"] = receive
+        captured_args["send"] = send
         # Lifespan scopes must reach the underlying ASGI app or the
         # server never starts up.
         assert scope["type"] == "lifespan"  # type: ignore[index]
@@ -139,11 +145,20 @@ def test_bearer_middleware_passes_non_http_scopes_through_unmodified() -> None:
     middleware = _BearerAuthMiddleware(inner, token="s3cr3t")
     scope = {"type": "lifespan"}
 
+    async def receive_fn() -> dict[str, object]:
+        return {}
+
+    async def send_fn(_message: dict[str, object]) -> None:
+        pass
+
     import asyncio
 
-    asyncio.run(middleware(scope, lambda: None, lambda _: None))  # type: ignore[arg-type]
+    asyncio.run(middleware(scope, receive_fn, send_fn))  # type: ignore[arg-type]
 
-    assert inner_invoked
+    # Verify non-HTTP scope is passed through unmodified, without wrapping.
+    assert captured_args["scope"] is scope
+    assert captured_args["receive"] is receive_fn
+    assert captured_args["send"] is send_fn
 
 
 def test_auth_exempt_paths_includes_metrics_and_health_endpoints() -> None:
@@ -171,7 +186,12 @@ def test_build_http_app_serves_metrics_with_observability_payload() -> None:
     # Record one observation so the /metrics body has something to assert on.
     get_metrics().record_call("smoke_test", "ok", 0.05)
 
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     class _Stub:
         def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
@@ -187,7 +207,12 @@ def test_build_http_app_serves_metrics_with_observability_payload() -> None:
 
 
 def test_build_http_app_serves_healthz_unauthenticated() -> None:
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     class _Stub:
         def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
@@ -198,6 +223,77 @@ def test_build_http_app_serves_healthz_unauthenticated() -> None:
         response = client.get("/healthz")
     assert response.status_code == 200
     assert response.text.startswith("ok")
+
+
+def test_readyz_returns_200_when_database_is_connected() -> None:
+    """/readyz reports ready once Database.is_connected is True."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
+
+    class _FakeDatabase:
+        is_connected = True
+
+    class _Stub:
+        mcpg_database = _FakeDatabase()
+
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    with TestClient(wrapped) as client:
+        response = client.get("/readyz")
+    assert response.status_code == 200
+    assert response.text.startswith("ready")
+
+
+def test_readyz_returns_503_when_database_is_not_connected() -> None:
+    """/readyz reports not-ready when Database.is_connected is False."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
+
+    class _FakeDatabase:
+        is_connected = False
+
+    class _Stub:
+        mcpg_database = _FakeDatabase()
+
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    with TestClient(wrapped) as client:
+        response = client.get("/readyz")
+    assert response.status_code == 503
+    assert response.text.startswith("not ready")
+
+
+def test_readyz_returns_200_when_server_never_wired_a_database() -> None:
+    """A build_http_app caller that never set mcpg_database (e.g. the bare
+    stubs used elsewhere in this file) has nothing to assess, so /readyz
+    reports ready rather than failing a check that was never wired up."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    with TestClient(wrapped) as client:
+        response = client.get("/readyz")
+    assert response.status_code == 200
 
 
 def test_build_http_app_with_token_blocks_unauthenticated_requests() -> None:
@@ -226,6 +322,37 @@ def test_build_http_app_with_token_blocks_unauthenticated_requests() -> None:
         # /metrics still works without a token.
         response = client.get("/metrics")
         assert response.status_code == 200
+
+
+def test_build_http_app_raises_without_auth_or_opt_out() -> None:
+    """HTTP transport refuses to start unauthenticated unless explicitly opted out."""
+    from mcpg.config import ConfigError
+
+    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    with pytest.raises(ConfigError, match="unauthenticated"):
+        build_http_app(_Stub(), settings, kind="streamable-http")
+
+
+def test_build_http_app_starts_with_explicit_opt_out() -> None:
+    """The MCPG_HTTP_ALLOW_UNAUTHENTICATED escape hatch still works, loudly logged."""
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    app = build_http_app(_Stub(), settings, kind="streamable-http")
+    assert app is not None
 
 
 # --- per-request role multi-tenancy (Phase 1.4) --------------------------
@@ -352,11 +479,12 @@ def test_tenant_role_middleware_passes_through_when_header_is_absent() -> None:
 
 def test_tenant_role_middleware_exempts_health_paths() -> None:
     """A probe to /healthz doesn't need the X-MCPG-Role header."""
-    inner_invoked = False
+    captured_args: dict[str, object] = {}
 
-    async def inner(_scope: object, _receive: object, send_fn: object) -> None:
-        nonlocal inner_invoked
-        inner_invoked = True
+    async def inner(scope: object, receive: object, send_fn: object) -> None:
+        captured_args["scope"] = scope
+        captured_args["receive"] = receive
+        captured_args["send_fn"] = send_fn
         await send_fn(  # type: ignore[operator]
             {"type": "http.response.start", "status": 200, "headers": []}
         )
@@ -377,7 +505,10 @@ def test_tenant_role_middleware_exempts_health_paths() -> None:
 
     asyncio.run(middleware(scope, receive, send))
 
-    assert inner_invoked
+    # Verify health paths are exempt and pass through unmodified.
+    assert captured_args["scope"] is scope
+    assert captured_args["receive"] is receive
+    assert captured_args["send_fn"] is send
 
 
 def test_build_http_app_with_tenant_role_returns_403_for_unknown_role() -> None:
@@ -386,6 +517,7 @@ def test_build_http_app_with_tenant_role_returns_403_for_unknown_role() -> None:
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_DEFAULT_ROLE": "tenant_a",
             "MCPG_ALLOWED_ROLES": "tenant_a,tenant_b",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -456,11 +588,56 @@ def test_build_http_app_in_oidc_mode_blocks_requests_without_a_valid_jwt() -> No
         # Wrong token → 401 (verification fails — discovery never reached).
         response = client.get("/", headers={"Authorization": "Bearer not.a.real.jwt"})
         assert response.status_code == 401
-        # /metrics and /healthz still bypass auth.
+        # /metrics, /healthz, and /readyz still bypass auth.
         response = client.get("/metrics")
         assert response.status_code == 200
         response = client.get("/healthz")
         assert response.status_code == 200
+        response = client.get("/readyz")
+        assert response.status_code == 200
+
+
+def test_build_http_app_in_oidc_mode_closes_the_verifier_client_on_lifespan_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The OIDCVerifier is built inside build_http_app — after
+    mcpg.server.make_lifespan's closure already exists — so there's no
+    way to reach it from that closure's own `finally`. build_http_app
+    instead wraps the app's own `router.lifespan_context` so the
+    verifier's HTTP client still gets closed when the ASGI lifespan
+    (entered by TestClient's context manager here, uvicorn in
+    production) shuts down."""
+    closed: list[bool] = []
+
+    class _TrackedVerifier(OIDCVerifier):
+        async def aclose(self) -> None:
+            closed.append(True)
+            await super().aclose()
+
+    import mcpg.http_runtime as http_runtime
+
+    monkeypatch.setattr(http_runtime, "OIDCVerifier", _TrackedVerifier)
+
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_AUTH_MODE": "oidc",
+            "MCPG_OIDC_ISSUER": "https://issuer.example",
+            "MCPG_OIDC_AUDIENCE": "mcpg",
+        }
+    )
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    wrapped = build_http_app(_Stub(), settings, kind="streamable-http")
+    assert closed == []  # not yet closed while the app is "running"
+    with TestClient(wrapped) as client:
+        client.get("/metrics")
+        assert closed == []
+
+    assert closed == [True]
 
 
 # --- HTTP hardening middlewares (Security headers, CORS, request size limit) ---
@@ -508,6 +685,7 @@ def test_cors_middleware_integration() -> None:
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_ALLOWED_ORIGINS": "http://localhost:3000, https://app.example.com",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -597,6 +775,7 @@ def test_cors_middleware_negative_and_default_config() -> None:
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_ALLOWED_ORIGINS": "",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -619,6 +798,7 @@ def test_cors_middleware_negative_and_default_config() -> None:
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_ALLOWED_ORIGINS": "https://app.example.com",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
     wrapped_allowlist = build_http_app(_Stub(), settings_allowlist, kind="streamable-http")
@@ -817,6 +997,7 @@ def test_build_http_app_passes_configured_host_to_streamable_http_app() -> None:
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_HOST": "0.0.0.0",
             "MCPG_HTTP_PORT": "9999",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -841,6 +1022,7 @@ def test_build_http_app_passes_configured_host_to_sse_app() -> None:
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_HOST": "0.0.0.0",
             "MCPG_HTTP_PORT": "9999",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -857,7 +1039,12 @@ def test_build_http_app_passes_configured_host_to_sse_app() -> None:
 
 
 def test_build_http_app_supports_sse_kind() -> None:
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     class _Stub:
         def sse_app(self, *, host: str = "127.0.0.1") -> Starlette:
@@ -877,6 +1064,7 @@ def test_run_http_builds_app_and_serves_via_uvicorn(monkeypatch: pytest.MonkeyPa
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_HTTP_HOST": "0.0.0.0",
             "MCPG_HTTP_PORT": "9999",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
         }
     )
 
@@ -919,7 +1107,12 @@ def test_run_http_falls_back_to_private_policy_name_when_public_name_raises(
 
     from mcpg import http_runtime
 
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     captured_kwargs: dict[str, object] = {}
 
@@ -964,7 +1157,12 @@ def test_run_http_pins_selector_loop_on_windows(monkeypatch: pytest.MonkeyPatch)
 
     from mcpg import http_runtime
 
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     captured_kwargs: dict[str, object] = {}
 
@@ -1005,7 +1203,12 @@ def test_run_http_leaves_the_event_loop_alone_off_windows(monkeypatch: pytest.Mo
 
     from mcpg import http_runtime
 
-    settings = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
 
     captured_kwargs: dict[str, object] = {}
 
@@ -1285,7 +1488,10 @@ def test_settings_rejects_nonexistent_cert_path() -> None:
 
 
 def test_build_http_app_installs_request_timeout_only_when_positive() -> None:
-    base = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"}
+    base = {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+    }
 
     class _Stub:
         def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
@@ -1444,7 +1650,10 @@ async def test_ip_allowlist_middleware_passes_non_http_scopes_through() -> None:
 
 
 def test_build_http_app_installs_ip_allowlist_only_when_configured() -> None:
-    base = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"}
+    base = {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+    }
 
     class _Stub:
         def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
@@ -1461,6 +1670,33 @@ def test_build_http_app_installs_ip_allowlist_only_when_configured() -> None:
         kind="streamable-http",
     )
     assert any(m.cls.__name__ == "_IPAllowlistMiddleware" for m in on.user_middleware)
+
+
+def test_build_http_app_installs_trusted_host_middleware_only_when_configured() -> None:
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    base = {
+        "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
+        "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+    }
+
+    class _Stub:
+        def streamable_http_app(self, *, host: str = "127.0.0.1") -> Starlette:
+            return _bare_app()
+
+    # No trusted hosts configured -> middleware not installed.
+    off = build_http_app(_Stub(), load_settings(base), kind="streamable-http")
+    off_classes = [m.cls for m in off.user_middleware]
+    assert TrustedHostMiddleware not in off_classes
+
+    # Trusted hosts configured -> middleware installed.
+    on = build_http_app(
+        _Stub(),
+        load_settings({**base, "MCPG_HTTP_TRUSTED_HOSTS": "api.example.com"}),
+        kind="streamable-http",
+    )
+    on_classes = [m.cls for m in on.user_middleware]
+    assert TrustedHostMiddleware in on_classes
 
 
 def test_settings_rejects_invalid_ip_allowlist_entry() -> None:

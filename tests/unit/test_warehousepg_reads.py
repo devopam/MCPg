@@ -298,7 +298,9 @@ async def test_describe_ao_table_passes_schema_and_table_as_parameters() -> None
     driver = FakeRoutingDriver(routes)
     await describe_ao_table(driver, "warehouse", "fact_events")
     ao_calls = [c for c in driver.calls if "pg_appendonly" in c[0]]
-    assert ao_calls
+    # Verify exactly one pg_appendonly query was issued, not multiple.
+    # This catches bugs where the query is issued twice by accident.
+    assert len(ao_calls) == 1
     assert ao_calls[0][1] == ["warehouse", "fact_events"]
 
 
@@ -374,7 +376,7 @@ async def test_all_reads_handle_driver_failure_on_data_query_gracefully(func_cal
             self.call_index = 0
 
         async def execute_query(
-            self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+            self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
         ) -> list[Any]:
             del force_readonly
             self.call_index += 1

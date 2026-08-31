@@ -46,6 +46,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # PG 19 ships skip-scan as the planner default. The version-num boundary.
@@ -63,7 +64,7 @@ _MAX_LEADING_NDV = 1000
 _NDV_UNKNOWN = 0
 
 
-class Pg19SkipScanError(Exception):
+class Pg19SkipScanError(MCPgError):
     """Raised when a skip-scan advisor operation cannot complete."""
 
 
@@ -128,7 +129,7 @@ async def _server_version(driver: SqlDriver) -> tuple[int, str]:
     return int(cells.get("ver_num") or 0), str(cells.get("ver") or "")
 
 
-def _absolute_ndv(n_distinct: float | int | None, reltuples: float | int | None) -> int:
+def _absolute_ndv(n_distinct: float | None, reltuples: float | None) -> int:
     """Normalise pg_stats.n_distinct to an absolute integer estimate.
 
     Per the PG docs:

@@ -168,4 +168,4 @@ async def test_partman_tools_registered_in_unrestricted_mode_with_allow_ddl() ->
     server = create_server(_UNRESTRICTED_DDL, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
     async with create_connected_server_and_client_session(server) as client:
         listed = {tool.name for tool in (await client.list_tools()).tools}
-    assert _PARTMAN_TOOLS <= listed
+    assert listed >= _PARTMAN_TOOLS

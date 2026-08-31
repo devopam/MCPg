@@ -16,12 +16,14 @@ the audit row) sees a structured "what changed" alongside the result.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import pglast
 
 from mcpg.audit_trail import SchemaDiffSnapshot, capture_columns, record_audit
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # pglast statement node names accepted by run_write.
@@ -47,7 +49,7 @@ _DDL_STATEMENTS = frozenset(
 )
 
 
-class WriteError(Exception):
+class WriteError(MCPgError):
     """Raised when a write is rejected or fails to execute."""
 
 
@@ -107,7 +109,9 @@ async def _persist_audit(
 ) -> None:
     """Best-effort audit persistence — failures must not mask the real result."""
     result_payload = asdict(result) if result is not None else None
-    try:
+    # Audit persistence is best-effort; never let it shadow the real
+    # write error or fabricate one for a successful write.
+    with contextlib.suppress(Exception):
         await record_audit(
             driver,
             tool=tool,
@@ -116,10 +120,6 @@ async def _persist_audit(
             error=error,
             result=result_payload,
         )
-    except Exception:
-        # Audit persistence is best-effort; never let it shadow the real
-        # write error or fabricate one for a successful write.
-        pass
 
 
 async def run_write(driver: SqlDriver, sql: str, *, audit_persist: bool = False) -> WriteResult:

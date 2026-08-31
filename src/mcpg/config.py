@@ -12,9 +12,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from os import environ
-from os.path import isabs
+from pathlib import Path
 from urllib.parse import urlparse
 
+from mcpg.errors import MCPgError
 from mcpg.nl2sql import AUTO_PICK_ORDER, VENDOR_ENV_VAR_HINT, VENDOR_KEY_ENV_VARS
 from mcpg.secrets import SecretsError, build_secrets_provider
 from mcpg.sql import obfuscate_password
@@ -35,7 +36,7 @@ _TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
 _FALSE_VALUES = frozenset({"false", "0", "no", "off"})
 
 
-class ConfigError(Exception):
+class ConfigError(MCPgError):
     """Raised when the environment configuration is missing or invalid."""
 
 
@@ -112,6 +113,12 @@ class Settings:
     # When unset, the HTTP transport runs without auth (current
     # behaviour). stdio is never gated.
     http_auth_token: str | None = None
+    # When True, explicitly opts out of the fail-closed startup check in
+    # ``build_http_app`` that otherwise raises ``ConfigError`` when the
+    # HTTP transport would start with neither ``http_auth_token`` nor
+    # ``auth_mode == "oidc"`` configured. Setting this is a deliberate,
+    # loudly-logged choice — not the default.
+    http_allow_unauthenticated: bool = False
     # HTTP transport authentication mode. ``static`` (the default) does
     # constant-time comparison against ``http_auth_token``. ``oidc``
     # validates the bearer JWT against the configured OIDC provider's
@@ -189,7 +196,7 @@ class Settings:
     nl2sql_audit_compress_after: str = "7 days"
     nl2sql_audit_rls: bool = True
     nl2sql_audit_reader_role: str | None = None
-    rate_limit_enabled: bool = False
+    rate_limit_enabled: bool = True
     rate_limit_max_requests: int = 60
     rate_limit_window_seconds: int = 60
     rate_limit_heavy_max: int = 5
@@ -254,7 +261,15 @@ class Settings:
     dynamic_session_intent: bool = False
     http_max_body_bytes: int = 1048576
     http_allowed_origins: tuple[str, ...] = ()
-    http_hsts_max_age: int = 31536000
+    http_hsts_max_age: int = 63072000
+    # Host-header validation (Starlette's TrustedHostMiddleware) for the
+    # HTTP transports. Empty (default) = no host-header gate (current
+    # behaviour) — matches the http_allowed_origins/CORS convention.
+    # When set, each entry is an allowed host (wildcards like
+    # ``*.example.com`` are supported by TrustedHostMiddleware itself);
+    # requests with a Host header that doesn't match get a 400.
+    # ``MCPG_HTTP_TRUSTED_HOSTS=`` comma-separated.
+    http_trusted_hosts: tuple[str, ...] = ()
     # IP allowlist for the HTTP transports. Empty (default) = no
     # network-level gate (current behaviour). When set, each entry is
     # an IP address or CIDR range that the client's connecting IP
@@ -365,6 +380,7 @@ class Settings:
             f"http_allowed_origins={self.http_allowed_origins!r}, "
             f"http_ip_allowlist={self.http_ip_allowlist!r}, "
             f"http_hsts_max_age={self.http_hsts_max_age}, "
+            f"http_trusted_hosts={self.http_trusted_hosts!r}, "
             f"http_tls_certfile={self.http_tls_certfile!r}, "
             f"http_tls_keyfile={self.http_tls_keyfile!r}, "
             f"http_tls_ca_certs={self.http_tls_ca_certs!r}, "
@@ -475,7 +491,13 @@ def _parse_positive_int(var: str, raw: str) -> int:
     return value
 
 
-def load_settings(env: Mapping[str, str] | None = None) -> Settings:
+# C901 rationale: reads every `MCPG_*` environment variable into `Settings`
+# (complexity 178 -- by far the largest in the repo). Every branch is one
+# independent `if env.get("MCPG_X")` for one config knob; this is the
+# process-wide config-loading entrypoint every module reads (see CLAUDE.md's
+# source-of-truth map), so restructuring it is a rewrite of the thing the
+# whole app depends on for a lint-only benefit, not a cheap win.
+def load_settings(env: Mapping[str, str] | None = None) -> Settings:  # noqa: C901
     """Build :class:`Settings` from environment variables.
 
     Args:
@@ -545,7 +567,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if (raw := env.get("MCPG_SUBPROCESS_BIN_ALLOWLIST")) is not None:
         dirs = tuple(d.strip() for d in raw.split(",") if d.strip())
         for d in dirs:
-            if not isabs(d):
+            if not Path(d).is_absolute():
                 raise ConfigError(f"MCPG_SUBPROCESS_BIN_ALLOWLIST entries must be absolute paths (got {d!r})")
         subprocess_bin_allowlist = dirs
 
@@ -678,6 +700,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         if not stripped:
             raise ConfigError("MCPG_HTTP_AUTH_TOKEN must not be blank when set")
         http_auth_token = stripped
+
+    http_allow_unauthenticated = False
+    if (raw := secrets.get("MCPG_HTTP_ALLOW_UNAUTHENTICATED")) is not None:
+        http_allow_unauthenticated = _parse_bool("MCPG_HTTP_ALLOW_UNAUTHENTICATED", raw)
 
     auth_mode = "static"
     if (raw := env.get("MCPG_AUTH_MODE")) is not None:
@@ -995,7 +1021,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             raise ConfigError("MCPG_NL2SQL_AUDIT_READER_ROLE must not be blank when set")
         nl2sql_audit_reader_role = stripped
 
-    rate_limit_enabled = False
+    rate_limit_enabled = True
     if (raw := env.get("MCPG_RATE_LIMIT_ENABLED")) is not None:
         rate_limit_enabled = _parse_bool("MCPG_RATE_LIMIT_ENABLED", raw)
 
@@ -1104,7 +1130,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
         parts = [piece.strip() for piece in raw.split(pathsep) if piece.strip()]
         for part in parts:
-            if not isabs(part):
+            if not Path(part).is_absolute():
                 raise ConfigError(f"MCPG_MIGRATION_SCRIPTS_ROOTS entries must be absolute paths (got {part!r})")
         migration_scripts_roots = tuple(parts)
 
@@ -1158,7 +1184,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
                 raise ConfigError(f"MCPG_HTTP_IP_ALLOWLIST entry is not a valid IP / CIDR (got {part!r})") from exc
         http_ip_allowlist = tuple(parts)
 
-    http_hsts_max_age = 31536000
+    http_hsts_max_age = 63072000
     if (raw := env.get("MCPG_HTTP_HSTS_MAX_AGE")) is not None:
         try:
             val = int(raw)
@@ -1167,6 +1193,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             http_hsts_max_age = val
         except ValueError:
             raise ConfigError(f"MCPG_HTTP_HSTS_MAX_AGE must be a non-negative integer (got {raw!r})") from None
+
+    http_trusted_hosts: tuple[str, ...] = ()
+    if (raw := env.get("MCPG_HTTP_TRUSTED_HOSTS")) is not None:
+        http_trusted_hosts = tuple(h.strip() for h in raw.split(",") if h.strip())
 
     # HTTP TLS / mTLS. Parsed together so we can enforce the
     # invariant "if either cert or key is set, the other must be too"
@@ -1193,11 +1223,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         ("MCPG_HTTP_TLS_KEYFILE", http_tls_keyfile),
         ("MCPG_HTTP_TLS_CA_CERTS", http_tls_ca_certs),
     ):
-        if path is not None:
-            from os.path import isfile
-
-            if not isfile(path):
-                raise ConfigError(f"{env_var} points to a non-existent file: {path!r}")
+        if path is not None and not Path(path).is_file():
+            raise ConfigError(f"{env_var} points to a non-existent file: {path!r}")
 
     http_request_timeout_seconds = 0
     if (raw := env.get("MCPG_HTTP_REQUEST_TIMEOUT_SECONDS")) is not None:
@@ -1273,6 +1300,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
         http_auth_token=http_auth_token,
+        http_allow_unauthenticated=http_allow_unauthenticated,
         auth_mode=auth_mode,
         oidc_issuer=oidc_issuer,
         oidc_audience=oidc_audience,
@@ -1320,6 +1348,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         http_allowed_origins=http_allowed_origins,
         http_ip_allowlist=http_ip_allowlist,
         http_hsts_max_age=http_hsts_max_age,
+        http_trusted_hosts=http_trusted_hosts,
         http_tls_certfile=http_tls_certfile,
         http_tls_keyfile=http_tls_keyfile,
         http_tls_ca_certs=http_tls_ca_certs,

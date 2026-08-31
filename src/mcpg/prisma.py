@@ -29,6 +29,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
     EnumInfo,
@@ -90,7 +91,7 @@ _UNIQUE_COLUMNS = re.compile(r"UNIQUE \(([^)]+)\)", re.IGNORECASE)
 _LITERAL_DEFAULT = re.compile(r"^'((?:[^']|'')*)'::")
 
 
-class PrismaError(Exception):
+class PrismaError(MCPgError):
     """Raised when a Prisma schema cannot be emitted."""
 
 
@@ -306,7 +307,12 @@ def _disambiguate_relation_names(pairs: Iterable[tuple[str, ForeignKeyInfo]]) ->
     return names
 
 
-async def generate_prisma_schema(driver: SqlDriver, schema: str) -> str:
+# C901 rationale: same code-generator family as diesel.py / sqlc.py, but at
+# complexity 23 -- Prisma's relation model needs both forward FKs and
+# synthesized back-relations (`_back_relations_by_target`) rendered inline
+# per column, which threads more state through the per-table loop than the
+# diesel/sqlc cheap-win shape allows without a larger restructuring.
+async def generate_prisma_schema(driver: SqlDriver, schema: str) -> str:  # noqa: C901
     """Emit a Prisma schema string covering the base tables of ``schema``.
 
     Views, foreign tables, partitions, triggers, functions, policies,

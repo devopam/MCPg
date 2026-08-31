@@ -24,6 +24,7 @@ primary, and secondaries simply can't be written to.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -99,29 +100,33 @@ class ReadOnlySqlDriver(SqlDriver):
         self,
         query: Any,
         params: list[Any] | None = None,
+        *,
         force_readonly: bool = False,
+        row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult] | None:
         # Ignore the caller's flag — a secondary is read-only, full stop.
         del force_readonly
-        return await super().execute_query(query, params, force_readonly=True)
+        return await super().execute_query(query, params, force_readonly=True, row_limit=row_limit)
 
     async def _execute_with_connection(  # type: ignore[no-untyped-def]
         self,
         connection,
         query,
         params,
+        *,
         force_readonly,
+        row_limit=None,
     ):
         if not getattr(connection, "_timeouts_configured", False):
             async with connection.cursor() as cursor:
                 await cursor.execute(
                     f"SET statement_timeout = {self._statement_timeout_ms}; SET lock_timeout = {self._lock_timeout_ms}"
                 )
-            try:
+            with contextlib.suppress(AttributeError):
                 connection._timeouts_configured = True
-            except AttributeError:
-                pass
-        return await super()._execute_with_connection(connection, query, params, force_readonly)
+        return await super()._execute_with_connection(
+            connection, query, params, force_readonly=force_readonly, row_limit=row_limit
+        )
 
 
 # NOTE: these two return shapes intentionally avoid ``slots=True`` and field

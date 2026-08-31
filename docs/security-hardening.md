@@ -167,7 +167,9 @@ unconditionally (operators can disable per header via env). New
 
 **Env vars to add:** `MCPG_HTTP_MAX_BODY_BYTES`,
 `MCPG_HTTP_REQUEST_TIMEOUT_SECONDS`, `MCPG_HTTP_ALLOWED_ORIGINS`,
-`MCPG_HTTP_HSTS_MAX_AGE` (default 31536000).
+`MCPG_HTTP_HSTS_MAX_AGE` (default `63072000` — 2 years, OWASP's
+current recommendation; bumped from the originally-shipped
+`31536000`).
 
 **Effort:** medium (one new middleware module + 6-8 tests).
 

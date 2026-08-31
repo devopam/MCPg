@@ -8,8 +8,40 @@ import sys
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from mcpg.sql import obfuscate_password
+
 if TYPE_CHECKING:
     from mcpg.config import Settings
+
+
+class RedactionFilter(logging.Filter):
+    """Backstop redaction: scrubs a password-bearing connection string out of a log call's
+    message or %-style arguments when a call site reaches a handler without having passed
+    it through obfuscate_password() first.
+
+    Not a replacement for calling obfuscate_password() explicitly where a value is known to
+    carry credentials — that per-call-site discipline still matters for accuracy (this filter
+    only recognizes the same connection-string shapes obfuscate_password() already does). This
+    is the centralized enforcement layer for the case a future call site forgets.
+
+    Scope: covers only `record.msg` / `record.args` (the log call's own message and its
+    lazy-formatting arguments). It does NOT cover `record.exc_info` — an exception's traceback
+    (e.g. from `logger.exception(...)`) is rendered separately by
+    `logging.Formatter.formatException()`, which never passes through this filter, so a
+    password embedded in an exception's message can still leak via a formatter's "exception"
+    output even with this filter attached.
+
+    Runs before formatting (logging.Filter operates on the LogRecord, not rendered output), so
+    it renders any lazy %-style args via getMessage() up front and clears record.args — this
+    both avoids leaving unredacted args sitting on the record and prevents a formatter that
+    calls getMessage() again (e.g. JSONFormatter) from re-applying % substitution to the
+    already-rendered, now-static message string.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = obfuscate_password(record.getMessage())
+        record.args = ()
+        return True
 
 
 class JSONFormatter(logging.Formatter):
@@ -73,6 +105,7 @@ def setup_logging(settings: Settings) -> None:
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
     handler.setFormatter(formatter)
+    handler.addFilter(RedactionFilter())
     logger.addHandler(handler)
 
     # Disable propagation to prevent double-logging if root has handlers

@@ -59,6 +59,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -68,7 +69,7 @@ from mcpg.sql import SqlDriver
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class TurboQuantError(Exception):
+class TurboQuantError(MCPgError):
     """Raised when a pg_turboquant operation cannot complete."""
 
 
@@ -814,7 +815,7 @@ def _validate_transform(transform: str | None) -> None:
         )
 
 
-def _validate_bool(value: bool | None, kind: str) -> None:
+def _validate_bool(*, value: bool | None, kind: str) -> None:
     if value is None:
         return
     if not isinstance(value, bool):
@@ -896,8 +897,8 @@ async def create_turboquant_index(
     _validate_int_option("bits", bits, _BITS_MIN, _BITS_MAX)
     _validate_int_option("lists", lists, _LISTS_MIN, _LISTS_MAX)
     _validate_transform(transform)
-    _validate_bool(normalized, "normalized")
-    _validate_bool(concurrently, "concurrently")
+    _validate_bool(value=normalized, kind="normalized")
+    _validate_bool(value=concurrently, kind="concurrently")
 
     if not await extension_installed(database.driver(), "pg_turboquant"):
         raise TurboQuantError("pg_turboquant extension is not installed in this database")
@@ -966,7 +967,7 @@ async def reindex_turboquant_index(
     """
     _validate_identifier(schema, "schema")
     _validate_identifier(index, "index")
-    _validate_bool(concurrently, "concurrently")
+    _validate_bool(value=concurrently, kind="concurrently")
 
     driver = database.driver()
     if not await extension_installed(driver, "pg_turboquant"):
@@ -1145,7 +1146,7 @@ async def turboquant_approx_candidates(
     _validate_positive_int("candidate_limit", candidate_limit)
     _validate_int_option("probes", probes, 1, 1_000_000)
     _validate_int_option("oversample_factor", oversample_factor, 1, 1_000_000)
-    _validate_bool(half_precision, "half_precision")
+    _validate_bool(value=half_precision, kind="half_precision")
 
     if not await extension_installed(driver, "pg_turboquant"):
         raise TurboQuantError("pg_turboquant extension is not installed in this database")
@@ -1213,7 +1214,7 @@ async def turboquant_rerank_candidates(
     _validate_positive_int("final_limit", final_limit)
     _validate_int_option("probes", probes, 1, 1_000_000)
     _validate_int_option("oversample_factor", oversample_factor, 1, 1_000_000)
-    _validate_bool(half_precision, "half_precision")
+    _validate_bool(value=half_precision, kind="half_precision")
 
     if not await extension_installed(driver, "pg_turboquant"):
         raise TurboQuantError("pg_turboquant extension is not installed in this database")

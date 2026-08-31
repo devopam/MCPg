@@ -131,7 +131,13 @@ def _build_mcp_config(database_url: str, worktree_dir: Path, nl2sql_api_key: str
     }
 
 
-async def _invoke_claude(
+# C901 rationale: one-off diagnostic benchmark script (never run in CI, per
+# its module docstring) driving a real `claude -p` subprocess with
+# stdin-piping worked around Windows-specific argv-quoting bugs (see the
+# docstring below) and parsing streamed JSON events -- the branching is
+# platform-workaround + streamed-event-parsing plumbing for a script that
+# only a human runs interactively.
+async def _invoke_claude(  # noqa: C901
     prompt: str,
     *,
     model: str,
@@ -223,7 +229,7 @@ async def _invoke_claude(
 
 
 def _result_to_trial(
-    task_id: str, arm: str, trial: int, raw: dict[str, Any], tool_names: list[str], passed: bool
+    task_id: str, arm: str, trial: int, raw: dict[str, Any], tool_names: list[str], *, passed: bool
 ) -> TrialResult:
     """Map a `claude -p --output-format stream-json` result event onto the shared TrialResult schema.
 
@@ -356,7 +362,7 @@ async def _run(args: argparse.Namespace) -> TierBReport:
                             timeout_seconds=args.invocation_timeout_seconds,
                         )
                         passed = task.grade(str(raw.get("result") or ""))
-                        result = _result_to_trial(task.id, arm, trial, raw, tool_names, passed)
+                        result = _result_to_trial(task.id, arm, trial, raw, tool_names, passed=passed)
                     except Exception as exc:  # record and continue, same as runner.py's pattern
                         result = TrialResult(
                             task_id=task.id,
@@ -379,7 +385,10 @@ async def _run(args: argparse.Namespace) -> TierBReport:
                     )
                     _checkpoint(args, trials, complete=False)
     finally:
-        mcp_config_path.unlink(missing_ok=True)
+        # ASYNC240 rationale: one-off benchmark script, single sequential coroutine
+        # (no concurrent tasks to starve); a single unlink() at teardown after
+        # trials that each take seconds to minutes is not a meaningful blocking cost.
+        mcp_config_path.unlink(missing_ok=True)  # noqa: ASYNC240
 
     return _checkpoint(args, trials, complete=True)
 

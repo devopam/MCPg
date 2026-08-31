@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any
 from mcp.server.context import CallNext, HandlerResult, ServerMiddleware, ServerRequestContext
 from psycopg.rows import dict_row
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ current_role: ContextVar[str | None] = ContextVar("mcpg_current_role", default=N
 _ROLE_SCOPE_KEY = "mcpg.tenant_role"
 
 
-class TenancyError(ValueError):
+class TenancyError(MCPgError, ValueError):
     """Raised when a role name fails validation."""
 
 
@@ -173,20 +174,34 @@ class TenantSqlDriver(SqlDriver):
         connection,
         query,
         params,
+        *,
         force_readonly,
+        row_limit=None,
     ):
         role = resolve_role(self._default_role)
         if role is None:
-            return await super()._execute_with_connection(connection, query, params, force_readonly)
-        return await _execute_with_role(connection, query, params, force_readonly, role)
+            return await super()._execute_with_connection(
+                connection, query, params, force_readonly=force_readonly, row_limit=row_limit
+            )
+        return await _execute_with_role(
+            connection, query, params, force_readonly=force_readonly, role=role, row_limit=row_limit
+        )
 
 
-async def _execute_with_role(
+# C901 rationale: multi-tenant RLS execution path -- role validation,
+# explicit transaction lifecycle so `SET LOCAL ROLE` is valid on write
+# paths too, and the same transaction-commit/rollback state machine as
+# sql/driver.py's `_execute_with_connection` (mirrored intentionally, per
+# the docstring) -- restructuring risks a tenant-isolation regression (the
+# wrong role active, or a transaction left open) for no benefit.
+async def _execute_with_role(  # noqa: C901
     connection: Any,
     query: str,
     params: Any,
+    *,
     force_readonly: bool,
     role: str,
+    row_limit: int | None = None,
 ) -> Any:
     """Run ``query`` inside an explicit transaction with ``SET LOCAL ROLE``.
 
@@ -226,7 +241,7 @@ async def _execute_with_role(
                 transaction_started = False
                 return None
 
-            rows = await cursor.fetchall()
+            rows = await cursor.fetchmany(row_limit) if row_limit is not None else await cursor.fetchall()
             if force_readonly:
                 await cursor.execute("ROLLBACK")
             else:
@@ -242,5 +257,9 @@ async def _execute_with_role(
                 # actually unwinds; never swallow it inside a fallback.
                 raise
             except Exception as rollback_error:
-                logger.error("Error rolling back transaction during role-wrapped execute: %s", rollback_error)
+                logger.error(
+                    "Error rolling back transaction during role-wrapped execute: %s",
+                    rollback_error,
+                    exc_info=True,
+                )
         raise

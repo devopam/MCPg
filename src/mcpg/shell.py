@@ -33,7 +33,10 @@ import tempfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Final
+
+from mcpg.errors import MCPgError
 
 try:  # POSIX-only; absent on Windows. Guarded so the import never breaks startup.
     import resource
@@ -68,7 +71,7 @@ _SECRET_ENV_VARS: Final[frozenset[str]] = frozenset({"PGPASSWORD"})
 _REDACTED_VALUE = "****"
 
 
-class ShellError(Exception):
+class ShellError(MCPgError):
     """Raised when a subprocess invocation is rejected or fails."""
 
 
@@ -140,7 +143,7 @@ def _resolve_binary(name: str, bin_allowlist: tuple[str, ...] = ()) -> str:
         # e.g. /usr/bin/pg_dump -> pg_wrapper outside the bin dir. We only
         # normalise the directory for symlinks so a PATH shim in an
         # untrusted dir is still rejected.
-        resolved_dir = os.path.realpath(os.path.dirname(resolved))
+        resolved_dir = os.path.realpath(Path(resolved).parent)
         allowed = {os.path.realpath(d) for d in bin_allowlist}
         if resolved_dir not in allowed:
             raise ShellError(
@@ -218,7 +221,14 @@ def _filter_env(env: dict[str, str] | None) -> dict[str, str]:
     return merged
 
 
-async def run_pg_binary(
+# C901 rationale: the SHELL-capability subprocess-hardening path -- binary
+# allowlisting, env-var filtering (drops everything but allowlisted PG*/
+# LANG/LC_ALL/PATH so the child can't inherit a polluted environment),
+# sandboxed throwaway workdir, preexec rlimits, timeout-kill, and
+# output-byte capping all happen in one call because they're one security
+# boundary; splitting the checks apart doesn't reduce what must be gotten
+# right for a subprocess spawn to stay sandboxed.
+async def run_pg_binary(  # noqa: C901
     binary: str,
     *argv: str,
     env: dict[str, str] | None = None,

@@ -56,11 +56,10 @@ async def load(database_url: str, scale_factor: int) -> None:
             for table in _TABLES:
                 csv_path = Path(tmp) / f"{table}.csv"
                 duck.execute(f"COPY {table} TO '{csv_path}' (FORMAT csv, HEADER false)")
-                async with conn.cursor() as cur:
-                    async with cur.copy(f"COPY {table} FROM STDIN (FORMAT csv)") as copy:
-                        with csv_path.open("rb") as fh:
-                            while chunk := fh.read(1 << 20):
-                                await copy.write(chunk)
+                async with conn.cursor() as cur, cur.copy(f"COPY {table} FROM STDIN (FORMAT csv)") as copy:
+                    with csv_path.open("rb") as fh:
+                        while chunk := fh.read(1 << 20):
+                            await copy.write(chunk)
                 csv_path.unlink()
                 print(f"  loaded {table}")
             duck.close()

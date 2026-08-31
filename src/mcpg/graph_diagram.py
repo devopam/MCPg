@@ -12,7 +12,7 @@ from typing import Any, TypedDict
 
 from mcpg.context import AppContext
 from mcpg.database import DatabaseError
-from mcpg.graph import GraphError
+from mcpg.graph import GraphError, _check_label_identifier
 from mcpg.policy import Capability, check_permission
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,12 @@ class DiagramResult(TypedDict):
     mermaid: str
 
 
-async def generate_graph_diagram(
+# C901 rationale: a numbered validate/permission-check/graph-exists/render
+# pipeline (complexity 22) where each numbered step's failure mode (invalid
+# name, permission denial, missing graph) needs its own distinct error
+# before the AGE-catalog rendering proceeds -- collapsing the checks would
+# blur which precondition failed.
+async def generate_graph_diagram(  # noqa: C901
     context: AppContext,
     graph_name: str,
     limit: int = 50,
@@ -78,6 +83,12 @@ async def generate_graph_diagram(
         kind = str(row.cells["kind"])
         if name.startswith("_ag_label"):
             continue
+        # Catalog-derived name — validated up front, before it can reach
+        # either the interpolated SQL below or the generated Mermaid text
+        # (subgraph/edge labels). Raises (aborting the whole diagram),
+        # matching graph.describe_graph and graph_projection's precedent
+        # of aborting rather than silently dropping the offending label.
+        _check_label_identifier(name)
         if kind == "v":
             vertex_tables.append(name)
         elif kind == "e":
@@ -92,6 +103,7 @@ async def generate_graph_diagram(
             v_rows = await driver.execute_query(
                 f'SELECT id, properties::text as props FROM "{graph_name}"."{tbl}" LIMIT %s;',
                 [limit - len(nodes)],
+                force_readonly=True,
             )
             for vr in v_rows or []:
                 raw_props = vr.cells.get("props") or "{}"
@@ -104,7 +116,7 @@ async def generate_graph_diagram(
                     }
                 )
         except Exception as exc:
-            logger.warning("failed to fetch vertices from label %s: %s", tbl, exc)
+            logger.warning("failed to fetch vertices from label %s: %s", tbl, exc, exc_info=True)
 
     # 6. Fetch edges
     edges: list[dict[str, Any]] = []
@@ -115,6 +127,7 @@ async def generate_graph_diagram(
             e_rows = await driver.execute_query(
                 f'SELECT start_id, end_id, properties::text as props FROM "{graph_name}"."{tbl}" LIMIT %s;',
                 [limit - len(edges)],
+                force_readonly=True,
             )
             for er in e_rows or []:
                 edges.append(
@@ -125,7 +138,7 @@ async def generate_graph_diagram(
                     }
                 )
         except Exception as exc:
-            logger.warning("failed to fetch edges from label %s: %s", tbl, exc)
+            logger.warning("failed to fetch edges from label %s: %s", tbl, exc, exc_info=True)
 
     # 7. Render Mermaid Flowchart
     lines = ["flowchart TD"]

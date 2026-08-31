@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SafeSqlDriver, SqlDriver
 
 # Default per-query execution timeout, in seconds.
@@ -34,7 +35,7 @@ _MEMORY_SIZE_RE = re.compile(r"^\d+(kB|MB|GB)$", re.IGNORECASE)
 _MEMORY_CAP_KB = 2 * 1024 * 1024  # 2 GiB expressed in kB
 
 
-class QueryError(Exception):
+class QueryError(MCPgError):
     """Raised when a query is rejected as unsafe or fails to execute."""
 
 
@@ -104,7 +105,8 @@ async def run_select(
     driver: SqlDriver,
     sql: str,
     *,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    # ASYNC109 rationale: forwarded to SafeSqlDriver, which already wraps execution in asyncio.timeout() itself.
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     max_rows: int = DEFAULT_MAX_ROWS,
 ) -> QueryResult:
     """Validate and execute a read-only SQL query.
@@ -126,8 +128,14 @@ async def run_select(
 
     safe_driver = SafeSqlDriver(sql_driver=driver, timeout=timeout)
     try:
-        # SafeSqlDriver parses and validates this runtime SQL before running it.
-        rows = await safe_driver.execute_query(sql)
+        # SafeSqlDriver parses and validates this runtime SQL before running
+        # it. row_limit bounds how many rows are converted to Python objects
+        # (fetchmany(max_rows + 1) instead of fetchall()) instead of
+        # materializing the whole result set. Note: psycopg's client-side
+        # cursor already pulls the full result set into libpq's buffer
+        # during cursor.execute(), so this bounds Python-side object
+        # allocation, not the server-side network transfer.
+        rows = await safe_driver.execute_query(sql, row_limit=max_rows + 1)
     except Exception as exc:
         if _is_timeout_exc(exc):
             raise QueryTimeoutError(str(exc)) from exc
@@ -176,7 +184,11 @@ async def run_select_tuned(
     *,
     work_mem: str,
     maintenance_work_mem: str | None = None,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    # ASYNC109 rationale: SafeSqlDriver is only used here for its pglast
+    # validator (._validate), not for execution -- the timeout= passed to
+    # it is dead on this path. Real enforcement is the asyncio.wait_for(...,
+    # timeout=timeout) around the actual execute_query call below.
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     max_rows: int = DEFAULT_MAX_ROWS,
 ) -> QueryResult:
     """Run a read-only SELECT with an elevated, bounded ``work_mem``.
@@ -229,9 +241,12 @@ async def run_select_tuned(
     try:
         # One call so SET LOCAL and the SELECT share a transaction;
         # force_readonly wraps it in BEGIN READ ONLY. Reinstate the timeout
-        # bound the raw driver doesn't apply itself.
+        # bound the raw driver doesn't apply itself. row_limit bounds how
+        # many rows are converted to Python objects (max_rows + 1) instead
+        # of materializing everything — see run_select's comment above for
+        # the client-side-cursor caveat.
         rows = await asyncio.wait_for(
-            driver.execute_query(tuned_sql, force_readonly=True),
+            driver.execute_query(tuned_sql, force_readonly=True, row_limit=max_rows + 1),
             timeout=timeout,
         )
     except Exception as exc:
@@ -262,7 +277,8 @@ async def explain_query(
     driver: SqlDriver,
     sql: str,
     *,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    # ASYNC109 rationale: forwarded to SafeSqlDriver / asyncio.wait_for at the execution boundary below.
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     io: bool = False,
 ) -> ExplainResult:
     """Return the PostgreSQL execution plan for a query.
@@ -392,7 +408,7 @@ async def analyze_query_plan(
     driver: SqlDriver,
     sql: str,
     *,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109 -- forwarded to explain_query
     io: bool = False,
 ) -> QueryPlanAnalysis:
     """Summarise a query's execution plan into a structured analysis.
@@ -484,7 +500,8 @@ async def run_select_parallel(
     driver: SqlDriver,
     statements: list[str],
     *,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    # ASYNC109 rationale: forwarded per-statement to run_select, which owns the actual timeout enforcement.
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     max_rows: int = DEFAULT_MAX_ROWS,
     parallel_limit: int = DEFAULT_PARALLEL_LIMIT,
 ) -> ParallelQueryResult:

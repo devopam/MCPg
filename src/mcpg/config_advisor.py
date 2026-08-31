@@ -42,6 +42,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # Status codes shared across the audit tools — same vocabulary as
@@ -55,7 +56,7 @@ _VALID_WORKLOADS = frozenset({"web", "oltp", "dw", "desktop", "mixed"})
 _VALID_STORAGE = frozenset({"ssd", "hdd", "san"})
 
 
-class ConfigAdvisorError(Exception):
+class ConfigAdvisorError(MCPgError):
     """Raised when a config-advisor argument fails validation."""
 
 
@@ -112,7 +113,12 @@ async def _has_pg_sequences(driver: SqlDriver) -> bool:
     return bool(rows and rows[0].cells.get("present"))
 
 
-async def audit_sequences(
+# C901 rationale: direction-aware sequence-exhaustion math (ascending vs.
+# descending sequences consume toward opposite bounds -- see the inline
+# "gemini review on #181" note) plus threshold classification and a
+# multi-branch summary message; the branching is the correctness-sensitive
+# exhaustion-detection logic itself.
+async def audit_sequences(  # noqa: C901
     driver: SqlDriver,
     *,
     warning_pct: float = 80.0,
@@ -306,7 +312,11 @@ _EXAMINED_SETTINGS = [
 _MB = 1024 * 1024
 
 
-async def audit_settings(
+# C901 rationale: a long series of independent `pg_settings` sanity checks
+# (fsync, full_page_writes, autovacuum, RAM-relative ratios, ...), each its
+# own `if` appending a `SettingFinding` -- the branching is one rule per
+# check, same shape as the `audit_*` functions in mcpg/audit.py.
+async def audit_settings(  # noqa: C901
     driver: SqlDriver,
     *,
     total_ram_mb: int | None = None,

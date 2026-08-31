@@ -94,6 +94,24 @@ def _manager_with_fake_conn() -> tuple[ListenManager, _FakeConn]:
     return manager, conn
 
 
+class _FailingCloseConn(_FakeConn):
+    """A connection whose ``close()`` raises — simulates a half-open TCP
+    socket or libpq quirk during shutdown."""
+
+    async def close(self) -> None:
+        raise RuntimeError("connection already reset by peer")
+
+
+def _manager_with_failing_close_conn() -> tuple[ListenManager, _FailingCloseConn]:
+    conn = _FailingCloseConn()
+
+    async def factory() -> _FailingCloseConn:
+        return conn
+
+    manager = ListenManager(database_url="postgresql:///x", connection_factory=factory)
+    return manager, conn
+
+
 # --- subscribe / unsubscribe / poll lifecycle ----------------------------
 
 
@@ -300,6 +318,33 @@ async def test_close_is_idempotent_and_cancels_the_reader_task() -> None:
     await manager.close()
     await manager.close()  # second call is a no-op
     assert conn.closed is True
+
+
+async def test_close_logs_debug_when_connection_close_fails(caplog: pytest.LogCaptureFixture) -> None:
+    """A failed best-effort ``conn.close()`` during shutdown is swallowed
+    (close() must never raise) but now logs at debug rather than silently."""
+    import logging
+
+    manager, _conn = _manager_with_failing_close_conn()
+    await manager.subscribe("orders")
+
+    root_logger = logging.getLogger("mcpg")
+    old_propagate = root_logger.propagate
+    root_logger.propagate = True
+    try:
+        caplog.set_level(logging.DEBUG, logger="mcpg.listen")
+        await manager.close()  # must not raise despite conn.close() failing
+    finally:
+        root_logger.propagate = old_propagate
+
+    matches = [
+        r
+        for r in caplog.records
+        if r.name == "mcpg.listen" and "Best-effort connection close" in r.message and r.levelno == logging.DEBUG
+    ]
+    assert len(matches) == 1
+    # exc_info=True must actually attach a traceback, not just the message.
+    assert matches[0].exc_info is not None
 
 
 async def test_subscribe_after_close_raises() -> None:

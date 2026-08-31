@@ -27,19 +27,24 @@ import json
 import logging
 import sys
 from collections.abc import Iterable
+from contextlib import asynccontextmanager, suppress
 from typing import TYPE_CHECKING, Any, cast
 
-from mcpg.config import Settings
+from mcpg.config import ConfigError, Settings
+from mcpg.errors import MCPgError
 from mcpg.observability import render_prometheus
 from mcpg.oidc import OIDCError, OIDCVerifier
 from mcpg.tenancy import _ROLE_SCOPE_KEY, TenancyError, current_role, validate_role
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import AsyncIterator, Awaitable, Callable
+    from contextlib import AbstractAsyncContextManager
 
     from starlette.applications import Starlette
     from starlette.requests import Request
     from starlette.responses import Response
+
+    from mcpg.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +76,38 @@ def _health_response_factory() -> Callable[[Request], Awaitable[Response]]:
         return PlainTextResponse("ok\n")
 
     return healthz
+
+
+def _readiness_response_factory(database: Database | None) -> Callable[[Request], Awaitable[Response]]:
+    """Build the /readyz handler: ready once the DB pool has served a live connection.
+
+    Distinct from /healthz (liveness — "is the process alive"): this reports
+    whether the process can currently do useful work, so an orchestrator can
+    pull a degraded instance out of rotation without restarting it. Reads
+    ``Database.is_connected`` (``self._connected and self._pool.is_valid`` —
+    see ``mcpg.database.Database``), the same side-effect-free signal
+    ``tools.py``'s ``server_info`` already uses to decide whether to attach a
+    live driver. No fresh connection is attempted on every poll.
+
+    ``database`` is ``None`` when the wrapped app wasn't built by
+    ``create_server`` (e.g. a test stub that only implements
+    ``streamable_http_app``/``sse_app``) — there is nothing to assess, so we
+    report ready rather than failing a check that was never wired up.
+
+    Note: ``is_connected`` only reflects the pool's state as of the last
+    ``pool_connect()``/``close()`` call — a database that answered at startup
+    and then dies mid-flight isn't detected until something next exercises
+    the pool. This still distinguishes "never came up" from "process alive",
+    which is /readyz's job here.
+    """
+    from starlette.responses import PlainTextResponse
+
+    async def readyz(_request: Request) -> Response:
+        if database is not None and not database.is_connected:
+            return PlainTextResponse("not ready\n", status_code=503)
+        return PlainTextResponse("ready\n")
+
+    return readyz
 
 
 class _BearerAuthMiddleware:
@@ -165,7 +202,7 @@ class _OIDCAuthMiddleware:
         try:
             verified = await self._verifier.verify(token)
         except OIDCError as exc:
-            logger.warning("OIDC verification failed: %s", exc)
+            logger.warning("OIDC verification failed: %s", exc, exc_info=True)
             await _send_401(send, "invalid bearer token")
             return
 
@@ -179,7 +216,7 @@ class _OIDCAuthMiddleware:
         try:
             validate_role(verified.role)
         except TenancyError:
-            logger.warning("OIDC role claim has unsafe identifier: %r", verified.role)
+            logger.warning("OIDC role claim has unsafe identifier: %r", verified.role, exc_info=True)
             await _send_401(send, "role claim contains an invalid identifier")
             return
 
@@ -406,7 +443,7 @@ class _IPAllowlistMiddleware:
 class _SecurityHeadersMiddleware:
     """ASGI middleware that enforces standard security headers."""
 
-    def __init__(self, app: object, *, hsts_max_age: int = 31536000) -> None:
+    def __init__(self, app: object, *, hsts_max_age: int = 63072000) -> None:
         self._app = app
         self._hsts_max_age = hsts_max_age
 
@@ -440,7 +477,7 @@ class _SecurityHeadersMiddleware:
         await self._app(scope, receive, send_wrapper)  # type: ignore[operator]
 
 
-class _RequestTooLargeError(Exception):
+class _RequestTooLargeError(MCPgError):
     """Raised when the request body exceeds the configured maximum size."""
 
     pass
@@ -462,10 +499,8 @@ class _RequestSizeLimitMiddleware:
         content_length = -1
         for key, value in headers:
             if key.lower() == b"content-length":
-                try:
+                with suppress(ValueError):
                     content_length = int(value)
-                except ValueError:
-                    pass
                 break
 
         if content_length > self._max_bytes:
@@ -539,7 +574,39 @@ class _RequestTimeoutMiddleware:
                 await _send_504(send, f"request exceeded {self._timeout}s")
 
 
-def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlette:
+def _close_oidc_verifier_on_lifespan_shutdown(app: Starlette, verifier: OIDCVerifier) -> None:
+    """Make the ASGI lifespan close ``verifier``'s HTTP client on shutdown.
+
+    ``streamable_http_app()``/``sse_app()`` already install their own
+    lifespan (the MCP SDK's session-manager ``run()``, which itself
+    enters MCPg's ``make_lifespan`` closure — see ``mcpg.server``). That
+    closure is built by ``create_server`` *before* this function (and
+    the verifier) exist, so there's no way to reach it from here to add
+    a teardown call. Wrapping ``app.router.lifespan_context`` directly
+    is the one real hook available at this point: it runs inside the
+    same ASGI lifespan scope, alongside (not instead of) the SDK's own
+    teardown, and fires for both the streamable-http and sse transports
+    since both go through this function.
+    """
+    inner_lifespan: Callable[[Starlette], AbstractAsyncContextManager[Any]] = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def _lifespan_with_oidc_close(started_app: Starlette) -> AsyncIterator[Any]:
+        try:
+            async with inner_lifespan(started_app) as state:
+                yield state
+        finally:
+            await verifier.aclose()
+
+    app.router.lifespan_context = _lifespan_with_oidc_close
+
+
+# C901 rationale: transport-kind dispatch (streamable-http/sse) plus mounting
+# several independent routes (metrics/healthz/readyz) and conditional bearer
+# auth wiring -- the SDK-quirk comment above (host-only kwarg, DNS-rebinding
+# defaults) shows this is fragile-by-necessity glue code where consolidating
+# branches risks reintroducing the transport-security regression it fixes.
+def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlette:  # noqa: C901
     """Wrap an MCPServer HTTP app with metrics + optional auth.
 
     Args:
@@ -579,6 +646,13 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
     # subclassing.
     app.router.routes.append(Route("/metrics", _metrics_response_factory(), methods=["GET"]))
     app.router.routes.append(Route("/healthz", _health_response_factory(), methods=["GET"]))
+    # ``server`` is typed ``object`` (tests pass bare stubs implementing only
+    # streamable_http_app/sse_app), so mcpg_database is read defensively —
+    # getattr rather than an isinstance/Protocol check, matching this
+    # function's existing style of type: ignore'd attribute access on
+    # ``server`` (see the streamable_http_app/sse_app calls just above).
+    database: Database | None = getattr(server, "mcpg_database", None)
+    app.router.routes.append(Route("/readyz", _readiness_response_factory(database), methods=["GET"]))
 
     # Middleware stack ordering:
     #   In OIDC mode, the OIDC middleware verifies the JWT AND stashes
@@ -600,17 +674,24 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
             allowed_roles=settings.allowed_roles,
         )
         app.add_middleware(_OIDCAuthMiddleware, verifier=verifier)
+        _close_oidc_verifier_on_lifespan_shutdown(app, verifier)
     else:
         if settings.default_role is not None or settings.allowed_roles:
             app.add_middleware(_TenantRoleMiddleware, allowed_roles=settings.allowed_roles)
         if settings.http_auth_token is not None:
             app.add_middleware(_BearerAuthMiddleware, token=settings.http_auth_token)
-        else:
+        elif settings.http_allow_unauthenticated:
             logger.warning(
-                "MCPg HTTP transport %s is running without auth. "
-                "Set MCPG_HTTP_AUTH_TOKEN or MCPG_AUTH_MODE=oidc to require "
-                "bearer tokens on every request.",
+                "MCPg HTTP transport %s is running WITHOUT AUTH — MCPG_HTTP_ALLOW_UNAUTHENTICATED=true "
+                "was set explicitly. This is your deliberate choice; if it wasn't, unset that variable "
+                "and set MCPG_HTTP_AUTH_TOKEN or MCPG_AUTH_MODE=oidc instead.",
                 kind,
+            )
+        else:
+            raise ConfigError(
+                f"MCPg HTTP transport ({kind}) refuses to start unauthenticated. Set "
+                "MCPG_HTTP_AUTH_TOKEN, set MCPG_AUTH_MODE=oidc, or set "
+                "MCPG_HTTP_ALLOW_UNAUTHENTICATED=true to explicitly opt out (not recommended)."
             )
 
     # Outer middlewares (processed first on request)
@@ -630,6 +711,10 @@ def build_http_app(server: object, settings: Settings, *, kind: str) -> Starlett
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    if settings.http_trusted_hosts:
+        from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.http_trusted_hosts))
 
     # IP allowlist sits at the OUTERMOST layer (added last → processed
     # first per Starlette's middleware stacking) so denied clients

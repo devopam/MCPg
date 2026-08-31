@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from mcpg.errors import MCPgError
 from mcpg.sql import SqlDriver
 
 # Both views landed in PG 19. The version-num probe is the boundary —
@@ -56,7 +57,7 @@ _HIGH_WAIT_TIME_US = 1_000_000
 _HIGH_WAIT_COUNT = 1_000
 
 
-class Pg19StatsError(Exception):
+class Pg19StatsError(MCPgError):
     """Raised when a PG 19 stats operation cannot complete."""
 
 

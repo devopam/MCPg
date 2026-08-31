@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
     ForeignKeyInfo,
@@ -33,7 +34,7 @@ from mcpg.sql import SqlDriver
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class DrizzleError(Exception):
+class DrizzleError(MCPgError):
     """Raised when a Drizzle export call is rejected or fails."""
 
 
@@ -288,7 +289,13 @@ _KNOWN_HELPERS = {
 }
 
 
-async def generate_drizzle_schema(driver: SqlDriver, schema: str) -> str:
+# C901 rationale: schema-generator in the same family as diesel.py /
+# sqlc.py (per-table constraint/index/type mapping to Drizzle's TS DSL), but
+# at complexity 21 -- constraint classification (PK / single-unique /
+# composite-unique) feeds both the per-column rendering and the
+# __table_args__-equivalent output, so extracting sections cleanly needs
+# more restructuring than the cheap wins already taken in diesel.py/sqlc.py.
+async def generate_drizzle_schema(driver: SqlDriver, schema: str) -> str:  # noqa: C901
     """Emit a Drizzle ORM TypeScript schema for ``schema``.
 
     Returns a string with the import line, every ``pgEnum`` declaration,

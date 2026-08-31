@@ -12,11 +12,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
 
-class CronError(Exception):
+class CronError(MCPgError):
     """Raised when a pg_cron operation cannot complete."""
 
 

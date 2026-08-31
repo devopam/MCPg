@@ -45,7 +45,13 @@ def test_referential_integrity_of_generated_rows() -> None:
         assert 1 <= product_id <= len(dataset.products)
         assert 1 <= customer_id <= len(dataset.customers)
         assert 1 <= rating <= 5
-        assert text
+        # Verify template interpolation actually happened: the product name OR
+        # at least one feature for that product type must be in the text.
+        # This catches bugs where template rendering failed or data was corrupted.
+        _, product_name, _, _, _ = dataset.products[product_id - 1]  # (sku, name, category, price, desc)
+        product_type = product_name.split(" ", 1)[1]  # Extract product type from "Adjective ProductType"
+        features = _FEATURES_BY_TYPE[product_type]
+        assert product_name in text or any(feature in text for feature in features)
         assert source in {"web", "mobile", "email_campaign"}
 
 

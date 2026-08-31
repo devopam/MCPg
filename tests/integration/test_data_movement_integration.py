@@ -38,7 +38,10 @@ async def _skip_when_pg_dump_too_old_for_server(database: Database) -> None:
     if shutil.which("pg_dump") is None:
         pytest.skip("pg_dump is not on PATH on this runner")
     try:
-        client_out = subprocess.check_output(["pg_dump", "--version"], text=True, timeout=5)
+        # ASYNC221 rationale: test-only, single fast local probe run once per test
+        # setup, not a hot path; asyncio.create_subprocess_exec would add
+        # complexity for no measurable benefit here.
+        client_out = subprocess.check_output(["pg_dump", "--version"], text=True, timeout=5)  # noqa: ASYNC221
     except (subprocess.SubprocessError, OSError) as exc:
         pytest.skip(f"pg_dump --version probe failed: {exc}")
     client_match = re.search(r"\b(\d+)(?:\.\d+)?\b", client_out)

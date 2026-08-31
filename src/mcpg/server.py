@@ -75,6 +75,12 @@ class AuditedMCPServer(MCPServer[AppContext]):
 
     rate_limiter: RateLimiter
     mcpg_settings: Settings
+    # The primary Database, so the HTTP transport's /readyz probe can read
+    # Database.is_connected without threading a new constructor parameter
+    # through create_server -> AuditedMCPServer -> build_http_app. Same
+    # "stash it directly on the server object" pattern as mcpg_settings /
+    # otel_tracer / rate_limiter below.
+    mcpg_database: Database
     in_flight_calls: int = 0
     # OpenTelemetry tracer. ``None`` when MCPG_OTEL_ENABLED=false or
     # the ``mcpg[otel]`` extra isn't installed — :func:`tool_span`
@@ -276,6 +282,14 @@ def make_lifespan(
 
             await cache_manager.close()
 
+            # NL→SQL providers share one process-wide httpx.AsyncClient
+            # (see mcpg.nl2sql._get_shared_http_client) rather than each
+            # opening a fresh client per translate_nl_to_sql call — close
+            # it out symmetrically so it doesn't leak past shutdown.
+            from mcpg.nl2sql import aclose_shared_client
+
+            await aclose_shared_client()
+
             # Flush pending OTel spans so a clean shutdown doesn't
             # drop the last batch of traces. Tracer is process-wide
             # global but the provider hung off the server lets us
@@ -348,6 +362,7 @@ def create_server(
         middleware=middleware,
     )
     server.mcpg_settings = settings
+    server.mcpg_database = db
     server.otel_tracer = setup_tracing(settings)
     # Instantiate and register the RateLimiter
     server.rate_limiter = RateLimiter(

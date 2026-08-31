@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver
 
@@ -41,7 +42,7 @@ _VECTOR_METRICS = {"l2": "<->", "cosine": "<=>", "inner_product": "<#>"}
 DEFAULT_VECTOR_METRIC = "l2"
 
 
-class SearchError(Exception):
+class SearchError(MCPgError):
     """Raised when a search request is invalid."""
 
 
@@ -391,7 +392,13 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / math.sqrt(norm_a * norm_b)
 
 
-async def mmr_search(
+# C901 rationale: input validation (metric/finite-values/k/fetch_k/lambda
+# bounds) followed by the O(k^2) greedy Maximal Marginal Relevance selection
+# loop itself -- the greedy re-ranking algorithm's correctness depends on
+# the exact relevance-vs-diversity bookkeeping across iterations, so
+# restructuring it is a correctness risk to the ranking result for a
+# lint-only benefit.
+async def mmr_search(  # noqa: C901
     driver: SqlDriver,
     schema: str,
     table: str,

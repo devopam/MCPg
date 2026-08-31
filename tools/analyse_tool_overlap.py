@@ -211,7 +211,7 @@ def _input_param_set(schema: dict[str, Any]) -> frozenset[str]:
 
 
 def _classify_pair(
-    name_sim: float, jaccard: float, containment: float, shared_verb_noun: bool, same_required: bool
+    name_sim: float, jaccard: float, containment: float, *, shared_verb_noun: bool, same_required: bool
 ) -> str:
     """One-line label summarising why the pair was flagged."""
     bits: list[str] = []
@@ -229,7 +229,7 @@ def _classify_pair(
 
 
 def _pair_score(
-    name_sim: float, jaccard: float, containment: float, shared_verb_noun: bool, same_required: bool
+    name_sim: float, jaccard: float, containment: float, *, shared_verb_noun: bool, same_required: bool
 ) -> float:
     """Combined score for ranking. Hand-tuned weights.
 
@@ -250,7 +250,12 @@ def _pair_score(
     )
 
 
-def main() -> int:
+# C901 rationale: one-off dev-analysis CLI (not part of the shipped
+# package) -- pairwise O(n^2) tool-overlap scan with several independent
+# similarity signals (name, description Jaccard/containment, shared
+# verb+noun) combined into one flag decision; the branching is the
+# heuristic itself.
+def main() -> int:  # noqa: C901
     snapshot = json.loads(_SNAPSHOT_PATH.read_text(encoding="utf-8"))
     tools: list[dict[str, Any]] = snapshot["tools"]
 
@@ -299,7 +304,13 @@ def main() -> int:
                     "containment": containment,
                     "shared_vn": shared_vn,
                     "same_required": same_required,
-                    "score": _pair_score(name_sim, jaccard, containment, shared_vn, same_required),
+                    "score": _pair_score(
+                        name_sim,
+                        jaccard,
+                        containment,
+                        shared_verb_noun=shared_vn,
+                        same_required=same_required,
+                    ),
                     "a_desc": a["desc"],
                     "b_desc": b["desc"],
                     "required": a["required"] if same_required else None,
@@ -361,8 +372,8 @@ def main() -> int:
             pair["name_sim"],
             pair["jaccard"],
             pair["containment"],
-            pair["shared_vn"],
-            pair["same_required"],
+            shared_verb_noun=pair["shared_vn"],
+            same_required=pair["same_required"],
         )
         out.append(f"_{classification}_")
         out.append("")

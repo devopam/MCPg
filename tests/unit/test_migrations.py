@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from _fakes import FakeDatabase, FakeDriver
@@ -62,12 +63,15 @@ def test_shadow_name_starts_with_the_documented_prefix() -> None:
 
 def test_column_clause_builds_create_table_fragments() -> None:
     class _Col:
-        def __init__(self, name: str, data_type: str, nullable: bool, default: str | None) -> None:
+        def __init__(self, name: str, data_type: str, *, nullable: bool, default: str | None) -> None:
             self.name, self.data_type, self.nullable, self.default = name, data_type, nullable, default
 
-    assert _column_clause(_Col("id", "integer", False, None)) == '"id" integer NOT NULL'
-    assert _column_clause(_Col("name", "text", True, None)) == '"name" text'
-    assert _column_clause(_Col("flag", "boolean", False, "false")) == '"flag" boolean NOT NULL DEFAULT false'
+    assert _column_clause(_Col("id", "integer", nullable=False, default=None)) == '"id" integer NOT NULL'
+    assert _column_clause(_Col("name", "text", nullable=True, default=None)) == '"name" text'
+    assert (
+        _column_clause(_Col("flag", "boolean", nullable=False, default="false"))
+        == '"flag" boolean NOT NULL DEFAULT false'
+    )
 
 
 def test_rewrite_schema_reference_rewrites_only_the_target_schema_in_fk_defs() -> None:
@@ -188,6 +192,65 @@ async def test_prepare_migration_rejects_unsafe_target_schema() -> None:
             target_schema='app"; DROP TABLE x; --',
             candidate_sql="ALTER TABLE w ADD c int",
         )
+
+
+class _FailingDropSchemaDriver:
+    """FakeRoutingDriver-alike whose ``DROP SCHEMA`` statements always
+    raise — used to exercise the "shadow cleanup itself fails" branch of
+    ``prepare_migration``'s except handler, on top of an outer failure
+    (a non-transactional candidate statement) that triggers the cleanup
+    in the first place."""
+
+    def __init__(self) -> None:
+        self.calls: list[Any] = []
+
+    async def execute_query(self, query: str, params: Any = None, *, force_readonly: bool = False) -> Any:
+        self.calls.append((query, params, force_readonly))
+        if "DROP SCHEMA" in query:
+            raise RuntimeError("cannot drop schema: schema is being accessed by other users")
+        return []
+
+
+async def test_prepare_migration_logs_debug_when_shadow_cleanup_also_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When the candidate SQL fails to apply AND the shadow-schema cleanup
+    itself fails, the cleanup failure is now logged at debug (not
+    silently), and the original error still propagates via the trailing
+    ``raise``."""
+    import logging
+
+    from mcpg.migrations import prepare_migration
+
+    driver = _FailingDropSchemaDriver()
+
+    root_logger = logging.getLogger("mcpg")
+    old_propagate = root_logger.propagate
+    root_logger.propagate = True
+    try:
+        caplog.set_level(logging.DEBUG, logger="mcpg.migrations")
+
+        # VACUUM cannot run inside a transaction block — _execute_in_schema
+        # rejects it immediately, entering prepare_migration's cleanup path
+        # without needing a real connection pool.
+        with pytest.raises(MigrationError, match="cannot run inside a transaction"):
+            await prepare_migration(
+                driver,  # type: ignore[arg-type]
+                name="bad_vacuum",
+                target_schema="app",
+                candidate_sql="VACUUM;",
+            )
+    finally:
+        root_logger.propagate = old_propagate
+
+    matches = [
+        r
+        for r in caplog.records
+        if r.name == "mcpg.migrations" and "shadow schema" in r.message.lower() and r.levelno == logging.DEBUG
+    ]
+    assert len(matches) == 1
+    # exc_info=True must actually attach a traceback, not just the message.
+    assert matches[0].exc_info is not None
 
 
 # --- validate_migration (Phase 9.2) -------------------------------

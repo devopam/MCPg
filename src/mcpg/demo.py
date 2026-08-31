@@ -40,6 +40,8 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import TupleRow
 
+from mcpg.errors import MCPgError
+
 DEMO_SCHEMA = "mcpg_demo"
 
 # Stamped as the schema comment on seed; ``drop_demo`` refuses to drop a
@@ -60,7 +62,7 @@ _ORDER_COUNT = 3000
 _REVIEW_COUNT = 900
 
 
-class DemoError(Exception):
+class DemoError(MCPgError):
     """Raised when seeding or dropping the demo schema cannot proceed."""
 
 

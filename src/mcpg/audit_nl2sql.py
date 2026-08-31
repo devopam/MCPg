@@ -47,6 +47,7 @@ from datetime import UTC, datetime, timedelta
 from os import environ
 from typing import Any, Literal
 
+from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
 from mcpg.sql import SqlDriver, obfuscate_password
 
@@ -84,7 +85,7 @@ _KNOWN_BACKENDS: frozenset[str] = frozenset({"timescaledb", "pg_partman", "nativ
 _NATIVE_WINDOW_DAYS = 7
 
 
-class NL2SQLAuditError(Exception):
+class NL2SQLAuditError(MCPgError):
     """Raised when the NL→SQL audit subsystem can't satisfy a request."""
 
 
@@ -225,14 +226,19 @@ def _resolve_settings(
     compress_after = (source.get("MCPG_NL2SQL_AUDIT_COMPRESS_AFTER") or "").strip() or "7 days"
     _check_interval(compress_after, kind="MCPG_NL2SQL_AUDIT_COMPRESS_AFTER")
     rls_raw = (source.get("MCPG_NL2SQL_AUDIT_RLS") or "").strip().lower()
-    rls = True if rls_raw in ("", "true", "1", "yes", "on") else False
+    rls = rls_raw in ("", "true", "1", "yes", "on")
     reader_role = (source.get("MCPG_NL2SQL_AUDIT_READER_ROLE") or "").strip() or None
     if reader_role is not None:
         _check_identifier(reader_role, kind="reader role")
     return backend_raw, retention_days, chunk_interval, compress_after, rls, reader_role
 
 
-async def ensure_nl2sql_audit_table(
+# C901 rationale: idempotent DDL provisioning (double-checked-locking cache
+# check, then schema/table/compression/retention/RLS setup branched by which
+# of native-partitioned / pg_partman / TimescaleDB backend was detected) --
+# the branching is the backend-selection matrix itself, and the double-check
+# lock is load-bearing concurrency-safety, not incidental complexity.
+async def ensure_nl2sql_audit_table(  # noqa: C901
     driver: SqlDriver,
     *,
     env: Mapping[str, str] | None = None,
@@ -357,7 +363,7 @@ async def ensure_nl2sql_audit_table(
                 statements.append(sql_compress_policy)
                 compression_enabled = True
             except Exception as exc:  # pragma: no cover - depends on TSDB version
-                logger.warning("add_compression_policy raised, continuing: %s", exc)
+                logger.warning("add_compression_policy raised, continuing: %s", exc, exc_info=True)
 
             sql_retention = (
                 f"SELECT add_retention_policy('{_QUALIFIED}', INTERVAL '{retention_days} days', if_not_exists => TRUE)"
@@ -366,7 +372,7 @@ async def ensure_nl2sql_audit_table(
                 await driver.execute_query(sql_retention, force_readonly=False)
                 statements.append(sql_retention)
             except Exception as exc:  # pragma: no cover
-                logger.warning("add_retention_policy raised, continuing: %s", exc)
+                logger.warning("add_retention_policy raised, continuing: %s", exc, exc_info=True)
         elif backend == "pg_partman":
             # pg_partman is the partition manager; LZ4 TOAST compression
             # is the storage-level codec. Both are independent layers.

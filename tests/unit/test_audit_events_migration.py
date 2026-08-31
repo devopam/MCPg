@@ -12,9 +12,29 @@ from mcpg.audit_trail import (
     AUDIT_TABLE,
     AuditTrailError,
     EventsAuditMigrationResult,
+    _events_migrate_timescaledb,
     _resolve_events_settings,
     migrate_audit_events_to_partitioned,
 )
+
+
+class _SelectiveFailDriver:
+    """Routes like FakeRoutingDriver, but raises for queries matching any
+    of ``fail_substrings`` — used to simulate a TimescaleDB policy call
+    (``add_compression_policy`` / ``add_retention_policy``) rejecting on
+    an unsupported TSDB edition/version, distinct from every other
+    statement in the same migration succeeding."""
+
+    def __init__(self, routes: dict[str, list[dict[str, Any]]], fail_substrings: tuple[str, ...]) -> None:
+        self._routing = FakeRoutingDriver(routes)
+        self._fail_substrings = fail_substrings
+        self.calls: list[Any] = []
+
+    async def execute_query(self, query: str, params: Any = None, *, force_readonly: bool = False) -> Any:
+        self.calls.append((query, params, force_readonly))
+        if any(s in query for s in self._fail_substrings):
+            raise RuntimeError("simulated TimescaleDB policy failure")
+        return await self._routing.execute_query(query, params, force_readonly=force_readonly)
 
 
 def _table_exists_routes() -> dict[str, list[dict[str, Any]]]:
@@ -282,3 +302,78 @@ async def test_migrate_native_skips_lz4_on_pg_13() -> None:
     # The DROP TABLE legacy step (which follows compression) still
     # runs — transaction integrity preserved.
     assert "DROP TABLE mcpg_audit.events_migration_legacy" in queries
+
+
+async def test_timescaledb_migrate_logs_debug_when_compression_policy_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A rejected add_compression_policy call is swallowed (best-effort —
+    not every TSDB edition supports compression) but now logs at debug."""
+    import logging
+
+    driver = _SelectiveFailDriver({}, fail_substrings=("add_compression_policy",))
+
+    root_logger = logging.getLogger("mcpg")
+    old_propagate = root_logger.propagate
+    root_logger.propagate = True
+    try:
+        caplog.set_level(logging.DEBUG, logger="mcpg.audit_trail")
+
+        _rows_copied, compression_enabled, _statements = await _events_migrate_timescaledb(
+            driver,  # type: ignore[arg-type]
+            chunk_interval="7 days",
+            compress_after="30 days",
+            retention_days=None,
+            rls=False,
+            reader_role=None,
+        )
+    finally:
+        root_logger.propagate = old_propagate
+
+    assert compression_enabled is False
+    matches = [
+        r
+        for r in caplog.records
+        if r.name == "mcpg.audit_trail" and "add_compression_policy" in r.message and r.levelno == logging.DEBUG
+    ]
+    assert len(matches) == 1
+    # exc_info=True must actually attach a traceback, not just the message.
+    assert matches[0].exc_info is not None
+
+
+async def test_timescaledb_migrate_logs_debug_when_retention_policy_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A rejected add_retention_policy call is swallowed (best-effort —
+    the operator opted in but the TSDB edition rejected it) but now logs
+    at debug."""
+    import logging
+
+    driver = _SelectiveFailDriver({}, fail_substrings=("add_retention_policy",))
+
+    root_logger = logging.getLogger("mcpg")
+    old_propagate = root_logger.propagate
+    root_logger.propagate = True
+    try:
+        caplog.set_level(logging.DEBUG, logger="mcpg.audit_trail")
+
+        _rows_copied, _compression_enabled, statements = await _events_migrate_timescaledb(
+            driver,  # type: ignore[arg-type]
+            chunk_interval="7 days",
+            compress_after="30 days",
+            retention_days=90,
+            rls=False,
+            reader_role=None,
+        )
+    finally:
+        root_logger.propagate = old_propagate
+
+    assert "add_retention_policy" not in " | ".join(statements)
+    matches = [
+        r
+        for r in caplog.records
+        if r.name == "mcpg.audit_trail" and "add_retention_policy" in r.message and r.levelno == logging.DEBUG
+    ]
+    assert len(matches) == 1
+    # exc_info=True must actually attach a traceback, not just the message.
+    assert matches[0].exc_info is not None

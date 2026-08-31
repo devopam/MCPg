@@ -1,10 +1,13 @@
 """Tests for the Query Syntax Optimizer (optimize_query) tool."""
 
 import json
+import logging
 
+import pytest
 from _fakes import FakeDatabase, FakeDriver, FakeRoutingDriver
 from _mcp_test_helpers import create_connected_server_and_client_session
 
+from mcpg import advisors
 from mcpg.advisors import optimize_query
 from mcpg.config import load_settings
 from mcpg.server import create_server
@@ -49,6 +52,69 @@ async def test_optimize_query_detects_all_anti_patterns() -> None:
     assert "LIMIT 100" in res.rationale
     assert "pg_trgm" in res.rationale
     assert "Seq Scan" in res.rationale
+
+
+class _FlakyPlan:
+    """A plan double whose ``sequential_scans`` raises on its third access.
+
+    ``optimize_query`` reads ``plan.sequential_scans`` twice while building
+    the EXPLAIN summary (truthy check, then ``", ".join(...)``) inside a
+    ``try``/``except QueryError`` block, and once more later while
+    composing the rationale, inside a separate ``try``/``except
+    Exception`` block. Raising only on the third access exercises that
+    second, best-effort block without tripping the first.
+    """
+
+    total_cost = 12.0
+    estimated_rows = 5
+    node_types = ("Seq Scan",)
+
+    def __init__(self) -> None:
+        self._accesses = 0
+
+    @property
+    def sequential_scans(self) -> list[str]:
+        self._accesses += 1
+        if self._accesses <= 2:
+            return ["large_table"]
+        raise RuntimeError("plan inspection blew up")
+
+
+async def test_optimize_query_logs_debug_when_sequential_scan_advisory_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A failure while composing the seq-scan advisory line logs at debug, not silently."""
+
+    async def _flaky_analyze_query_plan(driver: object, sql: str) -> _FlakyPlan:
+        return _FlakyPlan()
+
+    monkeypatch.setattr(advisors, "analyze_query_plan", _flaky_analyze_query_plan)
+
+    # setup_logging() (invoked by create_server in other tests in this
+    # session) disables propagation on the "mcpg" logger to avoid
+    # double-logging in production; restore it here so caplog (which
+    # attaches to the root logger) can see records from "mcpg.advisors".
+    root_logger = logging.getLogger("mcpg")
+    old_propagate = root_logger.propagate
+    root_logger.propagate = True
+    try:
+        caplog.set_level(logging.DEBUG, logger="mcpg.advisors")
+
+        driver = FakeRoutingDriver({})
+        res = await optimize_query(driver, "SELECT * FROM large_table;")  # type: ignore[arg-type]
+
+        # The function completes normally — the failure is swallowed, not raised.
+        assert res.original_sql == "SELECT * FROM large_table;"
+        matches = [
+            record
+            for record in caplog.records
+            if "sequential-scan advisory" in record.message and record.levelno == logging.DEBUG
+        ]
+        assert len(matches) == 1
+        # exc_info=True must actually attach a traceback, not just the message.
+        assert matches[0].exc_info is not None
+    finally:
+        root_logger.propagate = old_propagate
 
 
 async def test_optimize_query_tool_registered() -> None:

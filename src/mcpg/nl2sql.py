@@ -37,7 +37,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import httpx
+from circuitbreaker import CircuitBreakerError, circuit
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import describe_table, list_foreign_keys, list_tables
 from mcpg.query import DEFAULT_MAX_ROWS, QueryError, explain_query, run_select
 from mcpg.sql import SqlDriver, obfuscate_password
@@ -232,6 +235,38 @@ HARD_MAX_TOKENS = 16_384
 # 30s; pad for slow networks / slower models.
 DEFAULT_TIMEOUT_SECONDS = 60.0
 
+# Circuit breaker tuning for each provider's ``complete()`` HTTP call —
+# after this many consecutive failures, further calls to that *class* (not
+# instance — see the ``@circuit`` note on each provider below) fail fast
+# with ``CircuitBreakerError`` for ``recovery_timeout`` seconds instead of
+# each one separately paying the full ``timeout`` cost against a degraded
+# vendor. Threshold counts once per logical call even once retry-with-
+# backoff is layered *inside* the breaker (see each ``complete``'s
+# ``@retry``) — only an attempt that exhausts all its retries counts as one
+# breaker failure, not one per retry.
+NL2SQL_CIRCUIT_FAILURE_THRESHOLD = 5
+NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS = 30.0
+
+# Retry tuning for each provider's ``complete()`` HTTP call — a handful of
+# quick attempts with exponential backoff + jitter before giving up, so a
+# single dropped connection or transient 5xx doesn't surface as a user-
+# facing failure. `@retry` is applied *inside* `@circuit` below (i.e.
+# `@circuit` is the outer decorator) deliberately, not by accident of
+# decorator-stacking order: `circuitbreaker.call_async` (see the installed
+# package's source) does `with self: return await func(...)` and counts
+# exactly one failure per invocation of whatever it wraps. With retry
+# innermost, all `NL2SQL_RETRY_STOP_ATTEMPTS` attempts happen *inside* that
+# one `with self:` block, so an exhausted retry cycle counts as ONE breaker
+# failure. Stacked the other way (`@retry` outer, `@circuit` inner — as a
+# stale draft of this task's brief showed), each retry attempt would
+# separately enter/exit the breaker's `with self:`, so 3 quick retries
+# would burn 3 of the breaker's `failure_threshold` slots for a single
+# logical call — letting retries alone trip the breaker.
+NL2SQL_RETRY_STOP_ATTEMPTS = 3
+NL2SQL_RETRY_WAIT_INITIAL_SECONDS = 0.1
+NL2SQL_RETRY_WAIT_MAX_SECONDS = 2.0
+NL2SQL_RETRY_WAIT_JITTER_SECONDS = 0.1
+
 _SUPPORTED_PROVIDERS = frozenset(DEFAULT_MODELS)
 
 # Schema-brief sizing — bounded so the prompt doesn't explode on large
@@ -290,7 +325,7 @@ DEFAULT_SCHEMA_DENYLIST: frozenset[str] = frozenset(
 _DEFAULT_EXPR_MAX_CHARS = 80
 
 
-class NL2SQLError(Exception):
+class NL2SQLError(MCPgError):
     """Raised when NL→SQL translation is rejected or fails."""
 
 
@@ -299,7 +334,10 @@ class TranslationResult:
     """Result of :func:`translate_nl_to_sql`.
 
     ``sql`` is the generated query; empty when parsing failed.
-    ``explanation`` is the model's natural-language rationale. When
+    ``explanation`` is the model's natural-language rationale.
+    ``schema_context`` is the rendered schema brief the model actually
+    saw for this call — empty only on the (currently nonexistent) path
+    where the result is built before schema-gathering runs. When
     ``execute=True`` and the SQL passed the safety check, ``rows`` /
     ``columns`` / ``row_count`` are populated and ``executed`` is
     ``True``. On safety / execution failure, ``error`` carries the
@@ -310,6 +348,11 @@ class TranslationResult:
     explanation: str
     model: str
     provider: str
+    # The rendered schema brief actually sent to the model as part of the
+    # prompt for this translation (see ``_build_schema_brief``) — kept so a
+    # generated query's provenance is traceable to the schema evidence that
+    # informed it, not just which model/provider produced it.
+    schema_context: str
     executed: bool
     rows: list[dict[str, Any]]
     columns: list[str]
@@ -362,10 +405,61 @@ class LLMProvider(Protocol):
         user_prompt: str,
         model: str,
         max_tokens: int,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 -- forwarded to httpx's per-request timeout, not a manual reimplementation
     ) -> ProviderCompletion:
         """Send the prompt; return the completion text + usage. Raises on transport error."""
         ...
+
+
+# Process-wide client shared by all three provider classes below.
+#
+# `build_provider` is called fresh on every `translate_nl_to_sql` tool
+# invocation (provider selection can vary per-call via the `provider=`
+# argument), so holding a client on each provider *instance* wouldn't
+# help — a new instance still means a new client. Sharing one client at
+# module scope instead means every call, regardless of how many
+# providers get constructed, reuses the same keep-alive connection pool
+# rather than paying a fresh TCP/TLS handshake per call. httpx already
+# pools connections per-host internally, so one client shared across
+# vendors (each with its own host) is correct usage, not a compromise.
+#
+# Lazily created on first use so importing this module never opens a
+# client; closed via `aclose_shared_client()`, which the server's
+# lifespan hook (`mcpg.server.make_lifespan`) calls on shutdown.
+_shared_http_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_http_client() -> httpx.AsyncClient:
+    """Return the process-wide ``httpx.AsyncClient`` shared by all providers."""
+    global _shared_http_client
+    if _shared_http_client is None:
+        _shared_http_client = httpx.AsyncClient()
+    return _shared_http_client
+
+
+async def aclose_shared_client() -> None:
+    """Close the shared HTTP client, if one was ever constructed.
+
+    Call once at server shutdown. Safe to call when no provider call
+    has happened yet (no-op) and safe to call more than once.
+    """
+    global _shared_http_client
+    if _shared_http_client is not None:
+        await _shared_http_client.aclose()
+        _shared_http_client = None
+
+
+def _reset_shared_http_client() -> None:
+    """Test-only: drop the cached shared client without closing it.
+
+    Each async test runs its own event loop (pytest-asyncio,
+    function-scoped), and an ``httpx.AsyncClient`` built against one
+    loop breaks if reused from another. Tests that mock the transport
+    per-call must reset this between tests so they don't inherit a
+    prior test's cached (and differently-mocked) client instance.
+    """
+    global _shared_http_client
+    _shared_http_client = None
 
 
 class AnthropicProvider:
@@ -377,6 +471,33 @@ class AnthropicProvider:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
 
+    # ``@circuit`` decorates the plain function object at class-definition
+    # time, so its failure count is one object shared by every
+    # ``AnthropicProvider`` instance for the process's lifetime — not
+    # per-instance state. That's intentional: `build_provider` constructs a
+    # fresh provider on every `translate_nl_to_sql` call (see its
+    # module-level docstring), so per-instance breaker state would never
+    # accumulate a single failure across calls. `expected_exception` is
+    # scoped to `httpx.HTTPError` (network/timeout/non-2xx) so a bug in our
+    # own response parsing can't trip the *network* breaker.
+    @circuit(  # type: ignore[untyped-decorator]
+        failure_threshold=NL2SQL_CIRCUIT_FAILURE_THRESHOLD,
+        recovery_timeout=NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
+        expected_exception=httpx.HTTPError,
+    )
+    @retry(
+        reraise=True,  # load-bearing: without it, exhaustion raises
+        # tenacity.RetryError instead of the original httpx.HTTPError, which
+        # wouldn't match @circuit's expected_exception above — the breaker
+        # would silently never count a retry-exhausted call as a failure.
+        stop=stop_after_attempt(NL2SQL_RETRY_STOP_ATTEMPTS),
+        wait=wait_exponential_jitter(
+            initial=NL2SQL_RETRY_WAIT_INITIAL_SECONDS,
+            max=NL2SQL_RETRY_WAIT_MAX_SECONDS,
+            jitter=NL2SQL_RETRY_WAIT_JITTER_SECONDS,
+        ),
+        retry=retry_if_exception_type(httpx.HTTPError),
+    )
     async def complete(
         self,
         *,
@@ -384,23 +505,24 @@ class AnthropicProvider:
         user_prompt: str,
         model: str,
         max_tokens: int,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 -- forwarded to httpx's per-request timeout, not a manual reimplementation
     ) -> ProviderCompletion:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{self._base_url}/v1/messages",
-                headers={
-                    "x-api-key": self._api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "system": system_prompt,
-                    "messages": [{"role": "user", "content": user_prompt}],
-                },
-            )
+        client = _get_shared_http_client()
+        response = await client.post(
+            f"{self._base_url}/v1/messages",
+            headers={
+                "x-api-key": self._api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_prompt}],
+            },
+            timeout=timeout,
+        )
         response.raise_for_status()
         body = response.json()
         usage = body.get("usage") or {}
@@ -428,6 +550,30 @@ class OpenAIProvider:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
 
+    # See the matching comment on ``AnthropicProvider.complete`` — shared
+    # class-level breaker state is intentional given per-call construction.
+    # Note this one breaker covers every OpenAI-compatible vendor (the
+    # `OPENAI_COMPATIBLE_BASE_URLS` fleet all route through this class), so
+    # a run of failures against one vendor's endpoint trips the same
+    # breaker as another OpenAI-compatible vendor would.
+    @circuit(  # type: ignore[untyped-decorator]
+        failure_threshold=NL2SQL_CIRCUIT_FAILURE_THRESHOLD,
+        recovery_timeout=NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
+        expected_exception=httpx.HTTPError,
+    )
+    @retry(
+        reraise=True,  # load-bearing: without it, exhaustion raises
+        # tenacity.RetryError instead of the original httpx.HTTPError, which
+        # wouldn't match @circuit's expected_exception above — the breaker
+        # would silently never count a retry-exhausted call as a failure.
+        stop=stop_after_attempt(NL2SQL_RETRY_STOP_ATTEMPTS),
+        wait=wait_exponential_jitter(
+            initial=NL2SQL_RETRY_WAIT_INITIAL_SECONDS,
+            max=NL2SQL_RETRY_WAIT_MAX_SECONDS,
+            jitter=NL2SQL_RETRY_WAIT_JITTER_SECONDS,
+        ),
+        retry=retry_if_exception_type(httpx.HTTPError),
+    )
     async def complete(
         self,
         *,
@@ -435,25 +581,26 @@ class OpenAIProvider:
         user_prompt: str,
         model: str,
         max_tokens: int,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 -- forwarded to httpx's per-request timeout, not a manual reimplementation
     ) -> ProviderCompletion:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{self._base_url}/chat/completions",
-                headers={
-                    "authorization": f"Bearer {self._api_key}",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": max_tokens,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "response_format": {"type": "json_object"},
-                },
-            )
+        client = _get_shared_http_client()
+        response = await client.post(
+            f"{self._base_url}/chat/completions",
+            headers={
+                "authorization": f"Bearer {self._api_key}",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "response_format": {"type": "json_object"},
+            },
+            timeout=timeout,
+        )
         response.raise_for_status()
         body = response.json()
         usage = body.get("usage") or {}
@@ -475,6 +622,25 @@ class GeminiProvider:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
 
+    # See the matching comment on ``AnthropicProvider.complete``.
+    @circuit(  # type: ignore[untyped-decorator]
+        failure_threshold=NL2SQL_CIRCUIT_FAILURE_THRESHOLD,
+        recovery_timeout=NL2SQL_CIRCUIT_RECOVERY_TIMEOUT_SECONDS,
+        expected_exception=httpx.HTTPError,
+    )
+    @retry(
+        reraise=True,  # load-bearing: without it, exhaustion raises
+        # tenacity.RetryError instead of the original httpx.HTTPError, which
+        # wouldn't match @circuit's expected_exception above — the breaker
+        # would silently never count a retry-exhausted call as a failure.
+        stop=stop_after_attempt(NL2SQL_RETRY_STOP_ATTEMPTS),
+        wait=wait_exponential_jitter(
+            initial=NL2SQL_RETRY_WAIT_INITIAL_SECONDS,
+            max=NL2SQL_RETRY_WAIT_MAX_SECONDS,
+            jitter=NL2SQL_RETRY_WAIT_JITTER_SECONDS,
+        ),
+        retry=retry_if_exception_type(httpx.HTTPError),
+    )
     async def complete(
         self,
         *,
@@ -482,26 +648,27 @@ class GeminiProvider:
         user_prompt: str,
         model: str,
         max_tokens: int,
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 -- forwarded to httpx's per-request timeout, not a manual reimplementation
     ) -> ProviderCompletion:
         # Gemini accepts the API key as a query string or `x-goog-api-key`
         # header — we use the header to avoid logging-route leakage.
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{self._base_url}/v1beta/models/{model}:generateContent",
-                headers={
-                    "x-goog-api-key": self._api_key,
-                    "content-type": "application/json",
+        client = _get_shared_http_client()
+        response = await client.post(
+            f"{self._base_url}/v1beta/models/{model}:generateContent",
+            headers={
+                "x-goog-api-key": self._api_key,
+                "content-type": "application/json",
+            },
+            json={
+                "systemInstruction": {"parts": [{"text": system_prompt}]},
+                "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": max_tokens,
+                    "responseMimeType": "application/json",
                 },
-                json={
-                    "systemInstruction": {"parts": [{"text": system_prompt}]},
-                    "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-                    "generationConfig": {
-                        "maxOutputTokens": max_tokens,
-                        "responseMimeType": "application/json",
-                    },
-                },
-            )
+            },
+            timeout=timeout,
+        )
         response.raise_for_status()
         body = response.json()
         usage = body.get("usageMetadata") or {}
@@ -1081,7 +1248,13 @@ async def _explain_preflight(driver: SqlDriver, sql: str) -> str | None:
     return None
 
 
-async def translate_nl_to_sql(
+# C901 rationale: the end-to-end NL->SQL orchestration (input validation,
+# schema-brief building, provider call with circuit-breaker/retry error
+# translation, response parsing, refusal detection, EXPLAIN pre-flight,
+# optional execute-and-audit) -- each stage has its own distinct failure
+# mode that must surface as a specific NL2SQLError, per this security- and
+# cost-sensitive tool's own docstring contract.
+async def translate_nl_to_sql(  # noqa: C901
     driver: SqlDriver,
     *,
     provider: LLMProvider,
@@ -1096,7 +1269,8 @@ async def translate_nl_to_sql(
     max_tables_in_brief: int = DEFAULT_MAX_TABLES_IN_BRIEF,
     columns_per_table: int = DEFAULT_COLUMNS_PER_TABLE,
     max_brief_chars: int = DEFAULT_MAX_BRIEF_CHARS,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    # ASYNC109 rationale: forwarded to provider.complete's own timeout, not a manual reimplementation.
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,  # noqa: ASYNC109
     env: Mapping[str, str] | None = None,
     audit_persist: bool = False,
 ) -> TranslationResult:
@@ -1190,6 +1364,12 @@ async def translate_nl_to_sql(
         )
     except httpx.HTTPError as exc:
         raise NL2SQLError(f"NL→SQL provider request failed: {exc}") from exc
+    except CircuitBreakerError as exc:
+        # The breaker on `provider.complete` is open (too many recent
+        # failures) — translate to the module's own error type so callers
+        # only ever see `NL2SQLError` from this function, tripped breaker
+        # or not.
+        raise NL2SQLError(f"NL→SQL provider request failed: circuit open ({exc})") from exc
 
     raw = completion.text
     tokens_in, tokens_out = completion.tokens_in, completion.tokens_out
@@ -1214,6 +1394,7 @@ async def translate_nl_to_sql(
             explanation=explanation or refusal_reason,
             model=model,
             provider=provider.name,
+            schema_context=schema_brief,
             executed=False,
             rows=[],
             columns=[],
@@ -1232,6 +1413,7 @@ async def translate_nl_to_sql(
             explanation=explanation,
             model=model,
             provider=provider.name,
+            schema_context=schema_brief,
             executed=False,
             rows=[],
             columns=[],
@@ -1246,6 +1428,7 @@ async def translate_nl_to_sql(
             explanation=explanation,
             model=model,
             provider=provider.name,
+            schema_context=schema_brief,
             executed=False,
             rows=[],
             columns=[],
@@ -1267,6 +1450,7 @@ async def translate_nl_to_sql(
                 explanation=explanation,
                 model=model,
                 provider=provider.name,
+                schema_context=schema_brief,
                 executed=True,
                 rows=exec_result.rows,
                 columns=exec_result.columns,
@@ -1286,6 +1470,7 @@ async def translate_nl_to_sql(
                 explanation=explanation,
                 model=model,
                 provider=provider.name,
+                schema_context=schema_brief,
                 executed=False,
                 rows=[],
                 columns=[],
@@ -1320,6 +1505,6 @@ async def translate_nl_to_sql(
                 env=env,
             )
         except Exception as exc:  # pragma: no cover - swallowed on purpose
-            logger.warning("NL→SQL audit persist failed (translation kept): %s", exc)
+            logger.warning("NL→SQL audit persist failed (translation kept): %s", exc, exc_info=True)
 
     return translation

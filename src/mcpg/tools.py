@@ -406,10 +406,8 @@ def _register_dynamic_session_intent(server: MCPServer[AppContext], settings: Se
 
         entries: list[dict[str, Any]] = []
         for preset_name, buckets in INTENT_PRESETS.items():
-            if buckets:
-                count = sum(1 for name in registered if classify_tool(name) in buckets)
-            else:
-                count = len(registered)  # "admin" -- no filter
+            # "admin" -- no filter
+            count = sum(1 for name in registered if classify_tool(name) in buckets) if buckets else len(registered)
             entries.append(
                 {
                     "name": preset_name,
@@ -450,7 +448,11 @@ def _register_dynamic_session_intent(server: MCPServer[AppContext], settings: Se
         return {"ok": True, "enabled": sorted(enabled_intents(session_key, default_intent=default_intent))}
 
 
-def _register_introspection(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen `tests/contract/tool_surface.snapshot.json` contract — splitting
+# this up would restructure registration order/grouping for the entire
+# introspection tool surface for no functional benefit.
+def _register_introspection(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="list_schemas",
         description=_with_example(
@@ -460,7 +462,7 @@ def _register_introspection(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def list_schemas(
-        ctx: _Ctx, include_system: bool = False, database: _DatabaseArg = None
+        ctx: _Ctx, *, include_system: bool = False, database: _DatabaseArg = None
     ) -> list[introspection.SchemaInfo]:
         async def _run() -> list[introspection.SchemaInfo]:
             schemas = await introspection.list_schemas(_driver(ctx, database), include_system=include_system)
@@ -495,7 +497,7 @@ def _register_introspection(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def describe_table(
-        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None, fresh: bool = False
+        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None, *, fresh: bool = False
     ) -> list[introspection.ColumnInfo]:
         async def _run() -> list[introspection.ColumnInfo]:
             columns = await introspection.describe_table(_driver(ctx, database), schema, table)
@@ -515,7 +517,7 @@ def _register_introspection(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def list_indexes(
-        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None, fresh: bool = False
+        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None, *, fresh: bool = False
     ) -> list[introspection.IndexInfo]:
         async def _run() -> list[introspection.IndexInfo]:
             indexes = await introspection.list_indexes(_driver(ctx, database), schema, table)
@@ -533,7 +535,7 @@ def _register_introspection(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def list_constraints(
-        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None, fresh: bool = False
+        ctx: _Ctx, schema: str, table: str, database: _DatabaseArg = None, *, fresh: bool = False
     ) -> list[introspection.ConstraintInfo]:
         async def _run() -> list[introspection.ConstraintInfo]:
             constraints = await introspection.list_constraints(_driver(ctx, database), schema, table)
@@ -552,7 +554,7 @@ def _register_introspection(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def list_foreign_keys(
-        ctx: _Ctx, schema: str, database: _DatabaseArg = None, fresh: bool = False
+        ctx: _Ctx, schema: str, database: _DatabaseArg = None, *, fresh: bool = False
     ) -> list[introspection.ForeignKeyInfo]:
         async def _run() -> list[introspection.ForeignKeyInfo]:
             fks = await introspection.list_foreign_keys(_driver(ctx, database), schema)
@@ -635,7 +637,7 @@ def _register_introspection(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def list_roles(
-        ctx: _Ctx, include_system: bool = False, database: _DatabaseArg = None
+        ctx: _Ctx, *, include_system: bool = False, database: _DatabaseArg = None
     ) -> list[introspection.RoleInfo]:
         async def _run() -> list[introspection.RoleInfo]:
             roles = await introspection.list_roles(_driver(ctx, database), include_system=include_system)
@@ -1001,10 +1003,11 @@ def _register_introspection(server: MCPServer[AppContext]) -> None:
         ctx: _Ctx,
         start_lsn: str,
         end_lsn: str | None = None,
+        *,
         per_record: bool = False,
         database: _DatabaseArg = None,
     ) -> walinspect.WalStatsReport:
-        return await walinspect.read_pg_wal_stats(_driver(ctx, database), start_lsn, end_lsn, per_record)
+        return await walinspect.read_pg_wal_stats(_driver(ctx, database), start_lsn, end_lsn, per_record=per_record)
 
     @server.tool(
         name="get_wal_archive_status",
@@ -1061,7 +1064,7 @@ def _register_introspection(server: MCPServer[AppContext]) -> None:
             "Set `fresh=true` to bypass the cache and re-read live (e.g. after a schema change)."
         ),
     )
-    async def get_compact_schema(ctx: _Ctx, schema: str, database: _DatabaseArg = None, fresh: bool = False) -> str:
+    async def get_compact_schema(ctx: _Ctx, schema: str, database: _DatabaseArg = None, *, fresh: bool = False) -> str:
         async def _run() -> str:
             return await introspection.get_compact_schema(_driver(ctx, database), schema)
 
@@ -1098,7 +1101,7 @@ def _register_diagrams(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def generate_schema_diagram(
-        ctx: _Ctx, schema: str, include_partitions: bool = False, database: _DatabaseArg = None
+        ctx: _Ctx, schema: str, *, include_partitions: bool = False, database: _DatabaseArg = None
     ) -> str:
         _check_heavy_diagnostics(ctx, "generate_schema_diagram")
 
@@ -1125,7 +1128,7 @@ def _register_diagrams(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def generate_fk_cascade_graph(
-        ctx: _Ctx, schema: str, include_all: bool = False, database: _DatabaseArg = None
+        ctx: _Ctx, schema: str, *, include_all: bool = False, database: _DatabaseArg = None
     ) -> str:
         _check_heavy_diagnostics(ctx, "generate_fk_cascade_graph")
 
@@ -1146,7 +1149,7 @@ def _register_diagrams(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def generate_schema_docs(
-        ctx: _Ctx, schema: str, include_samples: bool = False, database: _DatabaseArg = None
+        ctx: _Ctx, schema: str, *, include_samples: bool = False, database: _DatabaseArg = None
     ) -> str:
         _check_heavy_diagnostics(ctx, "generate_schema_docs")
 
@@ -1356,7 +1359,9 @@ def _register_rag_analytics(server: MCPServer[AppContext]) -> None:
         return report
 
 
-def _register_vector_tuning(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen tool-surface contract — same shape as `_register_introspection`.
+def _register_vector_tuning(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="tune_vector_index",
         description=(
@@ -1676,6 +1681,7 @@ def _register_vector_tuning(server: MCPServer[AppContext]) -> None:
         query_vector: list[float],
         k: int = vector_ops.DEFAULT_CONTEXT_K,
         metric: str = "l2",
+        *,
         include_parents: bool = True,
         include_children: bool = True,
         max_related: int = vector_ops.DEFAULT_MAX_RELATED,
@@ -1989,7 +1995,9 @@ def _register_prisma(server: MCPServer[AppContext]) -> None:
         return await sqlc.generate_sqlc_schema(_driver(ctx, database), schema)
 
 
-def _register_advisors(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen tool-surface contract — same shape as `_register_introspection`.
+def _register_advisors(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="run_advisors",
         description=(
@@ -2201,6 +2209,7 @@ def _register_advisors(server: MCPServer[AppContext]) -> None:
         schema: str,
         table: str,
         seed: int | None = None,
+        *,
         follow_foreign_keys: bool = True,
         database: _DatabaseArg = None,
     ) -> test_row_factory.GeneratedTestRow:
@@ -2496,6 +2505,7 @@ def _register_data_movement_writes(server: MCPServer[AppContext]) -> None:
         schema: str,
         table: str,
         content: str,
+        *,
         header: bool = True,
         delimiter: str = ",",
         columns: list[str] | None = None,
@@ -2816,6 +2826,7 @@ def _register_timescaledb_writes(server: MCPServer[AppContext]) -> None:
         table: str,
         time_column: str,
         chunk_time_interval: str = "7 days",
+        *,
         if_not_exists: bool = True,
     ) -> timescaledb.TimescaleWriteResult:
         result = await timescaledb.create_hypertable(
@@ -2941,6 +2952,7 @@ def _register_data_movement_shell(server: MCPServer[AppContext]) -> None:
     async def dump_database(
         ctx: _Ctx,
         format: str = "plain",
+        *,
         schema_only: bool = False,
         schemas: list[str] | None = None,
     ) -> data_movement.DumpResult:
@@ -3002,6 +3014,7 @@ def _register_data_movement_shell(server: MCPServer[AppContext]) -> None:
         source_url: str,
         schema: str,
         table: str,
+        *,
         include_schema: bool,
         include_data: bool,
     ) -> data_movement.CopyTableResult:
@@ -3051,7 +3064,9 @@ def _register_audit_trail(server: MCPServer[AppContext]) -> None:
         return await vac(_driver(ctx, database))
 
 
-def _register_query(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen tool-surface contract — same shape as `_register_introspection`.
+def _register_query(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="run_select",
         description=_with_example(
@@ -3218,7 +3233,7 @@ def _register_query(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def explain_query(
-        ctx: _Ctx, sql: str, io: bool = False, database: _DatabaseArg = None
+        ctx: _Ctx, sql: str, *, io: bool = False, database: _DatabaseArg = None
     ) -> query.ExplainResult:
         result = await query.explain_query(_driver(ctx, database), sql, io=io)
         return result
@@ -3237,7 +3252,7 @@ def _register_query(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def analyze_query_plan(
-        ctx: _Ctx, sql: str, io: bool = False, database: _DatabaseArg = None
+        ctx: _Ctx, sql: str, *, io: bool = False, database: _DatabaseArg = None
     ) -> query.QueryPlanAnalysis:
         result = await query.analyze_query_plan(_driver(ctx, database), sql, io=io)
         return result
@@ -3275,6 +3290,7 @@ def _register_query(server: MCPServer[AppContext]) -> None:
         question: str,
         schema: str,
         provider: str | None = None,
+        *,
         execute: bool = False,
         explain_preflight: bool = True,
         table_filter: list[str] | None = None,
@@ -3334,7 +3350,9 @@ def _register_analytical(server: MCPServer[AppContext]) -> None:
         return await runner.run(sql, timeout_ms=timeout_ms, max_rows=max_rows, work_mem=work_mem)
 
 
-def _register_health(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen tool-surface contract — same shape as `_register_introspection`.
+def _register_health(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="check_database_health",
         description=_with_example(
@@ -3367,6 +3385,7 @@ def _register_health(server: MCPServer[AppContext]) -> None:
         ctx: _Ctx,
         schema: str,
         limit: int = health.DEFAULT_BLOAT_LIMIT,
+        *,
         precise: bool = False,
         database: _DatabaseArg = None,
     ) -> health.TableBloatReport:
@@ -3425,7 +3444,7 @@ def _register_health(server: MCPServer[AppContext]) -> None:
         ),
     )
     async def audit_database(
-        ctx: _Ctx, schema: str, log_table: str | None = None, database: _DatabaseArg = None, fresh: bool = False
+        ctx: _Ctx, schema: str, log_table: str | None = None, database: _DatabaseArg = None, *, fresh: bool = False
     ) -> audit.AuditReport:
         _check_heavy_diagnostics(ctx, "audit_database")
 
@@ -3534,6 +3553,7 @@ def _register_health(server: MCPServer[AppContext]) -> None:
         ctx: _Ctx,
         min_live_tuples: int = indexing.DEFAULT_MIN_LIVE_TUPLES,
         database: _DatabaseArg = None,
+        *,
         fresh: bool = False,
     ) -> list[indexing.IndexRecommendation]:
         _check_heavy_diagnostics(ctx, "recommend_indexes")
@@ -4019,6 +4039,7 @@ def _register_turboquant_reads(server: MCPServer[AppContext]) -> None:
         candidate_limit: int,
         probes: int | None = None,
         oversample_factor: int | None = None,
+        *,
         half_precision: bool = False,
         database: _DatabaseArg = None,
     ) -> list[turboquant.TurboQuantCandidate]:
@@ -4059,6 +4080,7 @@ def _register_turboquant_reads(server: MCPServer[AppContext]) -> None:
         final_limit: int,
         probes: int | None = None,
         oversample_factor: int | None = None,
+        *,
         half_precision: bool = False,
         database: _DatabaseArg = None,
     ) -> list[turboquant.TurboQuantRerankedCandidate]:
@@ -4199,6 +4221,7 @@ def _register_pg_search_reads(server: MCPServer[AppContext]) -> None:
         key_field: str,
         limit: int,
         columns: list[str] | None = None,
+        *,
         return_snippets: bool = False,
         snippet_field: str | None = None,
         snippet_start_tag: str = "<b>",
@@ -4288,6 +4311,7 @@ def _register_pg_search_reads(server: MCPServer[AppContext]) -> None:
     async def pg_search_parse_query(
         ctx: _Ctx,
         query_string: str,
+        *,
         lenient: bool = False,
         conjunction_mode: bool = False,
         database: _DatabaseArg = None,
@@ -4404,6 +4428,7 @@ def _register_rag_telemetry_write(server: MCPServer[AppContext]) -> None:
         cross_encoder_score: float,
         cross_encoder_rank: int,
         reranker_model: str,
+        *,
         used_in_context: bool = False,
         ground_truth_relevance: int | None = None,
         extra: dict[str, Any] | None = None,
@@ -4591,6 +4616,7 @@ def _register_turboquant_ddl(server: MCPServer[AppContext]) -> None:
         bits: int | None = None,
         lists: int | None = None,
         transform: str | None = None,
+        *,
         normalized: bool | None = None,
         concurrently: bool = True,
     ) -> turboquant.CreateIndexResult:
@@ -4628,6 +4654,7 @@ def _register_turboquant_ddl(server: MCPServer[AppContext]) -> None:
         ctx: _Ctx,
         schema: str,
         index: str,
+        *,
         concurrently: bool = True,
     ) -> turboquant.ReindexResult:
         database = ctx.request_context.lifespan_context.database
@@ -4677,6 +4704,7 @@ def _register_pg_search_ddl(server: MCPServer[AppContext]) -> None:
         mutable_segment_rows: int | None = None,
         sort_by: str | None = None,
         search_tokenizer: dict[str, Any] | None = None,
+        *,
         concurrently: bool = True,
     ) -> pg_search.CreatePgSearchIndexResult:
         database = ctx.request_context.lifespan_context.database
@@ -4722,6 +4750,7 @@ def _register_pg_search_ddl(server: MCPServer[AppContext]) -> None:
         ctx: _Ctx,
         schema: str,
         index: str,
+        *,
         concurrently: bool = True,
     ) -> pg_search.ReindexPgSearchResult:
         database = ctx.request_context.lifespan_context.database
@@ -4889,6 +4918,7 @@ def _register_redis_fdw_ddl(server: MCPServer[AppContext]) -> None:
         address: str,
         port: int = 6379,
         database: int = 0,
+        *,
         tls: bool = True,
         allow_insecure_tls: bool = False,
     ) -> redis_fdw.CreateRedisServerResult:
@@ -5038,6 +5068,7 @@ def _register_cron_write(server: MCPServer[AppContext]) -> None:
         destination: str,
         database: str,
         format: str = "plain",
+        *,
         schema_only: bool = False,
         compress: bool = False,
         pg_dump_path: str = "pg_dump",
@@ -5195,6 +5226,7 @@ def _register_pgq_ddl(server: MCPServer[AppContext]) -> None:
         ctx: _Ctx,
         schema: str,
         name: str,
+        *,
         if_exists: bool = True,
     ) -> pgq.DropPropertyGraphResult:
         result = await pgq.drop_property_graph(
@@ -5369,6 +5401,7 @@ def _register_pg_prewarm_writes(server: MCPServer[AppContext]) -> None:
         min_heap_blks_read: int = 1000,
         limit: int = 20,
         prewarm_mode: str = "buffer",
+        *,
         dry_run: bool = False,
     ) -> pg_prewarm.BulkPrewarmResult:
         result = await pg_prewarm.prewarm_recommended(
@@ -6093,6 +6126,7 @@ def _register_repack_writes(server: MCPServer[AppContext]) -> None:
         ctx: _Ctx,
         schema: str,
         table: str,
+        *,
         concurrently: bool = True,
     ) -> repack.RepackResult:
         database = ctx.request_context.lifespan_context.database
@@ -6164,6 +6198,7 @@ def _register_partman(server: MCPServer[AppContext]) -> None:
         ctx: _Ctx,
         parent_table: str,
         retention: str,
+        *,
         control_is_time: bool = True,
     ) -> dict[str, Any]:
         dropped = await partman.partman_drop_partition(
@@ -6453,7 +6488,7 @@ def _register_graphs_writes(server: MCPServer[AppContext]) -> None:
             "Returns an object with `graph_name` and `dropped` (bool)."
         ),
     )
-    async def drop_graph(ctx: _Ctx, graph_name: str, cascade: bool = True) -> dict[str, Any]:
+    async def drop_graph(ctx: _Ctx, graph_name: str, *, cascade: bool = True) -> dict[str, Any]:
         app = ctx.request_context.lifespan_context
         res = await graph_mgmt.drop_graph(app, graph_name, cascade=cascade)
         await app.cache.clear()
@@ -6639,7 +6674,9 @@ def _register_prompts(server: MCPServer[AppContext]) -> None:
         return mcpg_prompts._build_review_rls_policy(schema, table)
 
 
-def _register_warehousepg_reads(server: MCPServer[AppContext]) -> None:
+# C901 rationale: one `@server.tool` closure per exposed MCP tool, gated by
+# the frozen tool-surface contract — same shape as `_register_introspection`.
+def _register_warehousepg_reads(server: MCPServer[AppContext]) -> None:  # noqa: C901
     @server.tool(
         name="get_warehousepg_status",
         description=_with_example(
@@ -6801,6 +6838,7 @@ def _register_logical_replication_writes(server: MCPServer[AppContext]) -> None:
     async def create_publication(
         ctx: _Ctx,
         name: str,
+        *,
         all_tables: bool = False,
         tables: tuple[str, ...] = (),
     ) -> logical_replication.CreatePublicationResult:
@@ -6826,6 +6864,7 @@ def _register_logical_replication_writes(server: MCPServer[AppContext]) -> None:
     async def drop_publication(
         ctx: _Ctx,
         name: str,
+        *,
         if_exists: bool = False,
         cascade: bool = False,
     ) -> logical_replication.DropPublicationResult:
@@ -6859,6 +6898,7 @@ def _register_logical_replication_writes(server: MCPServer[AppContext]) -> None:
         name: str,
         connection_string: str,
         publications: tuple[str, ...],
+        *,
         enabled: bool = True,
         copy_data: bool = True,
         create_slot: bool = True,
@@ -6893,6 +6933,7 @@ def _register_logical_replication_writes(server: MCPServer[AppContext]) -> None:
     async def drop_subscription(
         ctx: _Ctx,
         name: str,
+        *,
         if_exists: bool = False,
     ) -> logical_replication.DropSubscriptionResult:
         result = await logical_replication.drop_subscription(
@@ -7103,7 +7144,10 @@ def _apply_tool_wire_metadata(server: MCPServer[AppContext], read_only_names: se
             tool.annotations = existing.model_copy(update=derived)
 
 
-def register_tools(
+# C901 rationale: one policy-gated `if is_permitted(...)` branch per capability
+# / access-mode tier, dispatching to the `_register_*` helpers above — the
+# branching is the access-mode policy itself, not incidental complexity.
+def register_tools(  # noqa: C901
     server: MCPServer[AppContext], settings: Settings, *, analytical_available: bool | None = None
 ) -> None:
     """Register the MCP tools permitted by the configured access mode.

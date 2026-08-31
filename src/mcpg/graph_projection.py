@@ -39,6 +39,7 @@ import numbers
 import re
 from dataclasses import dataclass
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import ColumnInfo, describe_table, list_foreign_keys
 from mcpg.sql import SqlDriver
 
@@ -93,7 +94,7 @@ _NUMERIC_TYPES = frozenset(
 _BOOLEAN_TYPES = frozenset({"boolean", "bool"})
 
 
-class GraphProjectionError(Exception):
+class GraphProjectionError(MCPgError):
     """Raised when a graph-projection request is rejected."""
 
 
@@ -286,7 +287,12 @@ def _edge_type_name(fk_name: str, from_table: str, to_table: str) -> str:
     return f"{from_table}_{to_table}"
 
 
-async def generate_graph_projection(
+# C901 rationale: relational-to-openCypher projection (complexity 23) --
+# validation, template-plan generation, and the optional row_limit>0
+# concrete-statement path are all read-only-guaranteed generation logic
+# ("NEVER executed here"); the branching is the schema/table/row-limit
+# validation matrix plus the two generation modes, not incidental nesting.
+async def generate_graph_projection(  # noqa: C901
     driver: SqlDriver,
     schema: str,
     *,

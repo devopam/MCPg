@@ -70,7 +70,7 @@ async def create_graph(context: AppContext, graph_name: str) -> GraphMgmtResult:
     )
 
 
-async def drop_graph(context: AppContext, graph_name: str, cascade: bool = True) -> GraphMgmtResult:
+async def drop_graph(context: AppContext, graph_name: str, *, cascade: bool = True) -> GraphMgmtResult:
     """Delete a property graph space, dropping all its nodes, edges, and schemas.
 
     Args:

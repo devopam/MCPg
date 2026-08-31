@@ -1,6 +1,7 @@
 """Tests for the MCP server bootstrap."""
 
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from _fakes import FakePool
@@ -76,6 +77,33 @@ async def test_lifespan_connects_database_and_yields_app_context() -> None:
 
     assert pool.close_calls == 1
     assert db.is_connected is False
+
+
+async def test_lifespan_closes_the_shared_nl2sql_http_client() -> None:
+    """NL→SQL providers share one process-wide httpx.AsyncClient
+    (mcpg.nl2sql._get_shared_http_client) rather than each opening one
+    per call — make_lifespan's shutdown finally must close it out
+    symmetrically so it doesn't leak past the server's lifetime."""
+    import mcpg.nl2sql as nl2sql
+
+    pool = FakePool()
+    db = Database(_SETTINGS, pool=pool)  # type: ignore[arg-type]
+    lm = ListenManager(database_url=_SETTINGS.database_url)
+    cm = CursorManager(database_url=_SETTINGS.database_url)
+    lifespan = make_lifespan(_SETTINGS, db, lm, cm)
+
+    closed: list[bool] = []
+    real_aclose = nl2sql.aclose_shared_client
+
+    async def _tracking_aclose() -> None:
+        closed.append(True)
+        await real_aclose()
+
+    with patch.object(nl2sql, "aclose_shared_client", _tracking_aclose):
+        async with lifespan(create_server(_SETTINGS)):
+            pass
+
+    assert closed == [True]
 
 
 def test_run_dispatches_stdio_transport(monkeypatch: pytest.MonkeyPatch) -> None:

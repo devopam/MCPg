@@ -10,9 +10,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from types import TracebackType
-from typing import Any
+from typing import Any, Self
 
 from mcpg.config import Settings
+from mcpg.errors import MCPgError
 from mcpg.multidb import PRIMARY_DATABASE_ID, make_read_only_driver, resolve_primary_id
 from mcpg.replicas import ReplicaPool, RoutedSqlDriver, _make_driver_for_pool
 from mcpg.sql import DbConnPool, SqlDriver, obfuscate_password
@@ -20,7 +21,7 @@ from mcpg.sql import DbConnPool, SqlDriver, obfuscate_password
 logger = logging.getLogger(__name__)
 
 
-class DatabaseError(Exception):
+class DatabaseError(MCPgError):
     """Raised when the database cannot be connected to or used."""
 
 
@@ -130,7 +131,7 @@ class Database:
             try:
                 await pool.close()
             except Exception as exc:
-                logger.warning("Error closing secondary database %r pool: %s", name, exc)
+                logger.warning("Error closing secondary database %r pool: %s", name, exc, exc_info=True)
         await self._pool.close()
         self._connected = False
 
@@ -315,7 +316,7 @@ class Database:
             finally:
                 await connection.set_autocommit(False)
 
-    async def __aenter__(self) -> Database:
+    async def __aenter__(self) -> Self:
         await self.connect()
         return self
 

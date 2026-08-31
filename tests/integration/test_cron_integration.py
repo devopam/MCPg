@@ -1,5 +1,7 @@
 """Integration tests for pg_cron wrappers — gated on the extension."""
 
+import contextlib
+
 import pytest
 
 from mcpg.cron import list_cron_jobs, schedule_cron_job, unschedule_cron_job
@@ -29,10 +31,8 @@ async def test_schedule_then_unschedule_roundtrip(connected_database: Database) 
 
     job_name = "mcpg_cron_it_heartbeat"
     # Best-effort cleanup if a prior run left the job behind.
-    try:
+    with contextlib.suppress(Exception):
         await unschedule_cron_job(driver, job_name)
-    except Exception:
-        pass
 
     scheduled = await schedule_cron_job(driver, job_name, "*/5 * * * *", "SELECT 1")
     try:

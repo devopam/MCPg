@@ -21,8 +21,11 @@ from __future__ import annotations
 
 import re
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
+    ForeignKeyInfo,
+    TableInfo,
     describe_table,
     list_constraints,
     list_enums,
@@ -34,7 +37,7 @@ from mcpg.sql import SqlDriver
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class DieselExportError(Exception):
+class DieselExportError(MCPgError):
     """Raised when a Diesel export call is rejected or fails."""
 
 
@@ -186,6 +189,37 @@ def _pascal(name: str) -> str:
     return "".join(p[:1].upper() + p[1:] for p in parts if p) or name
 
 
+async def _build_table_blocks(
+    driver: SqlDriver, schema: str, tables: list[TableInfo], enum_names: set[str]
+) -> list[str]:
+    """Render one ``table! { ... }`` block per table (step 2 of the export)."""
+    blocks: list[str] = []
+    for table in tables:
+        columns = await describe_table(driver, schema, table.name)
+        for col in columns:
+            _check_identifier(col.name, "column")
+        constraints = await list_constraints(driver, schema, table.name)
+        pk_columns: list[str] = []
+        for con in constraints:
+            if con.type == "primary_key":
+                pk_columns = _parse_pk_columns(con.definition)
+                break
+        blocks.append(_render_table_block(table.name, columns, pk_columns, enum_names))
+    return blocks
+
+
+def _build_joinable_lines(fks_all: list[ForeignKeyInfo], entity_names: set[str]) -> list[str]:
+    """Emit ``joinable!`` for every single-column intra-schema FK (step 3)."""
+    joinable_lines: list[str] = []
+    for fk in fks_all:
+        if fk.to_table not in entity_names:
+            continue  # cross-schema FK — Diesel's joinable! can't span schemas cleanly
+        if len(fk.from_columns) != 1:
+            continue  # composite FKs are a documented v1 gap
+        joinable_lines.append(_render_joinable(fk.from_table, fk.to_table, fk.from_columns[0]))
+    return joinable_lines
+
+
 async def generate_diesel_schema(driver: SqlDriver, schema: str) -> str:
     """Emit a Diesel ORM ``schema.rs`` for ``schema``.
 
@@ -217,26 +251,10 @@ async def generate_diesel_schema(driver: SqlDriver, schema: str) -> str:
         blocks.append(enum_module)
 
     # 2. One table! macro per table.
-    for table in tables:
-        columns = await describe_table(driver, schema, table.name)
-        for col in columns:
-            _check_identifier(col.name, "column")
-        constraints = await list_constraints(driver, schema, table.name)
-        pk_columns: list[str] = []
-        for con in constraints:
-            if con.type == "primary_key":
-                pk_columns = _parse_pk_columns(con.definition)
-                break
-        blocks.append(_render_table_block(table.name, columns, pk_columns, enum_names))
+    blocks.extend(await _build_table_blocks(driver, schema, tables, enum_names))
 
     # 3. joinable! for every single-column intra-schema FK.
-    joinable_lines: list[str] = []
-    for fk in fks_all:
-        if fk.to_table not in entity_names:
-            continue  # cross-schema FK — Diesel's joinable! can't span schemas cleanly
-        if len(fk.from_columns) != 1:
-            continue  # composite FKs are a documented v1 gap
-        joinable_lines.append(_render_joinable(fk.from_table, fk.to_table, fk.from_columns[0]))
+    joinable_lines = _build_joinable_lines(fks_all, entity_names)
     if joinable_lines:
         blocks.append("\n".join(joinable_lines))
 

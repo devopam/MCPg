@@ -956,7 +956,7 @@ def test_new_config_parameters_loads_and_validates() -> None:
     settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
     assert settings.http_max_body_bytes == 1048576
     assert settings.http_allowed_origins == ()
-    assert settings.http_hsts_max_age == 31536000
+    assert settings.http_hsts_max_age == 63072000
     assert settings.shutdown_drain_seconds == 30
     assert settings.audit_hmac_key is None
     assert settings.audit_integrity is False
@@ -1076,3 +1076,33 @@ def test_http_request_timeout_rejects_negative() -> None:
                 "MCPG_HTTP_REQUEST_TIMEOUT_SECONDS": "-5",
             }
         )
+
+
+def test_http_allow_unauthenticated_defaults_false() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.http_allow_unauthenticated is False
+
+
+def test_http_allow_unauthenticated_env_var_parses() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_HTTP_ALLOW_UNAUTHENTICATED": "true",
+        }
+    )
+    assert settings.http_allow_unauthenticated is True
+
+
+def test_rate_limit_enabled_defaults_true() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.rate_limit_enabled is True
+
+
+def test_rate_limit_enabled_can_still_be_disabled_explicitly() -> None:
+    settings = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_RATE_LIMIT_ENABLED": "false",
+        }
+    )
+    assert settings.rate_limit_enabled is False

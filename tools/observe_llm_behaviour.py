@@ -141,7 +141,7 @@ async def _call_anthropic(
     user_prompt: str,
     tools: list[dict[str, Any]],
     max_tokens: int,
-    timeout: float,
+    timeout: float,  # noqa: ASYNC109 -- forwarded to httpx's per-request timeout, not a manual reimplementation
 ) -> tuple[dict[str, Any], int]:
     """Single Messages API call. Returns ``(response_json, latency_ms)``."""
     started = time.monotonic()
@@ -218,7 +218,7 @@ async def _run(
     category_filter: str | None,
     limit: int | None,
     max_tokens: int,
-    timeout: float,
+    timeout: float,  # noqa: ASYNC109 -- forwarded to _call_anthropic's httpx client timeout
 ) -> int:
     corpus = json.loads(_CORPUS_PATH.read_text(encoding="utf-8"))
     prompts = corpus["prompts"]

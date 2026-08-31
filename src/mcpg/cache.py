@@ -122,7 +122,8 @@ class RedisCache:
         except ImportError:
             logger.error(
                 "Redis caching is configured (MCPG_REDIS_URL), but the 'redis' package is not installed. "
-                "Please run 'pip install redis' to enable Redis caching. Falling back to InMemoryCache."
+                "Please run 'pip install redis' to enable Redis caching. Falling back to InMemoryCache.",
+                exc_info=True,
             )
             raise
 
@@ -136,7 +137,7 @@ class RedisCache:
                 return None
             return json.loads(raw)
         except Exception as e:
-            logger.warning(f"Error fetching from Redis cache for key {key!r}: {e}")
+            logger.warning(f"Error fetching from Redis cache for key {key!r}: {e}", exc_info=True)
             return None
 
     async def set(self, key: str, value: Any, ttl: int) -> None:
@@ -147,7 +148,7 @@ class RedisCache:
             raw = json.dumps(value)
             await self._client.set(f"{self._prefix}{key}", raw, ex=ttl)
         except Exception as e:
-            logger.warning(f"Error setting Redis cache for key {key!r}: {e}")
+            logger.warning(f"Error setting Redis cache for key {key!r}: {e}", exc_info=True)
 
     async def clear(self) -> None:
         await self._init_client()
@@ -160,14 +161,14 @@ class RedisCache:
             async for key in self._client.scan_iter(f"{self._prefix}*"):
                 await self._client.delete(key)
         except Exception as e:
-            logger.warning(f"Error clearing Redis cache: {e}")
+            logger.warning(f"Error clearing Redis cache: {e}", exc_info=True)
 
     async def close(self) -> None:
         if self._client:
             try:
                 await self._client.close()
             except Exception as e:
-                logger.warning(f"Error closing Redis client: {e}")
+                logger.warning(f"Error closing Redis client: {e}", exc_info=True)
             finally:
                 self._client = None
                 self._initialized = False
@@ -178,6 +179,7 @@ class CacheManager:
 
     def __init__(
         self,
+        *,
         enabled: bool = True,
         ttl_seconds: int = 300,
         maxsize: int = 1024,
@@ -205,7 +207,7 @@ class CacheManager:
             except ImportError:
                 pass
             except Exception as e:
-                logger.warning(f"Redis cache initialization failed: {e}. Falling back to InMemoryCache.")
+                logger.warning(f"Redis cache initialization failed: {e}. Falling back to InMemoryCache.", exc_info=True)
 
         self._driver = InMemoryCache(maxsize=self._maxsize)
         logger.info("InMemoryCache backend initialized successfully.")

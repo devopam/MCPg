@@ -52,6 +52,7 @@ import re
 from dataclasses import dataclass
 
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 
 # Unquoted PostgreSQL identifier: starts with letter / underscore,
 # then letters / digits / underscores. Same shape as
@@ -60,7 +61,7 @@ from mcpg.database import Database
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class LogicalReplicationError(Exception):
+class LogicalReplicationError(MCPgError):
     """Raised when a logical-replication write is rejected or fails."""
 
 
@@ -272,7 +273,12 @@ async def drop_publication(
 # ---------------------------------------------------------------------------
 
 
-async def create_subscription(
+# C901 rationale: per-argument identifier validation (name, each publication,
+# slot name) plus quoting before DDL construction (no parameter-bind slot is
+# available for CREATE SUBSCRIPTION) -- each check is a distinct
+# injection-defense gate; consolidating them doesn't reduce the number of
+# things that must be individually correct.
+async def create_subscription(  # noqa: C901
     database: Database,
     *,
     name: str,

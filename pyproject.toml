@@ -9,7 +9,7 @@ description = "A production-grade PostgreSQL Model Context Protocol (MCP) server
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
-license-files = ["LICENSE", "src/mcpg/_vendor/LICENSE"]
+license-files = ["LICENSE"]
 authors = [
     {name = "Devopam Mittra", email = "devopam@gmail.com"},
 ]
@@ -64,6 +64,8 @@ dependencies = [
     # JWT validation for the OIDC auth path. ``[crypto]`` pulls in
     # ``cryptography`` so RS256 / ES256 signature checks work.
     "pyjwt[crypto]>=2.8",
+    "circuitbreaker>=2.1.3",
+    "tenacity>=9.1.4",
 ]
 
 # Optional extras the runtime picks up only on demand. ``otel`` adds
@@ -103,7 +105,7 @@ Security = "https://github.com/devopam/MCPg/blob/main/SECURITY.md"
 mcpg = "mcpg.__main__:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 
 # Single source of truth for the version: hatchling reads ``__version__``
@@ -115,6 +117,7 @@ path = "src/mcpg/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcpg"]
+include = ["src/mcpg/py.typed"]
 
 # Keep the sdist tight — ship the source tree + the prose a user
 # actually wants when they unpack from PyPI, and leave dev-only
@@ -155,6 +158,12 @@ dev = [
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
+    "pip-licenses>=5.5.5",
+    "pytest-mock>=3.15.1",
+    "pytest-randomly>=4.1.0",
+    "pytest-socket>=0.8.1",
+    "time-machine>=3.5.0",
+    "pytest-rerunfailures>=16.6",
 ]
 # Benchmark suite (roadmap 19) — dev-only. Keeps the shipped package lean;
 # `duckdb` generates the TPC-H dataset for benchmarks/datasets/load_tpch.py,
@@ -202,7 +211,7 @@ extend-exclude = ["scratch", "demo.py"]
 force-exclude = true
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "W", "N", "UP", "RUF"]
+select = ["E", "F", "I", "B", "W", "N", "UP", "RUF", "C90", "ASYNC", "C4", "SIM", "PTH", "PYI", "FBT"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["mcpg"]
@@ -216,6 +225,16 @@ exclude = ["scratch/"]
 # pglast ships partial type hints (as of v8); ignore import-resolution gaps
 # for the submodules we don't have full types for.
 module = ["pglast", "pglast.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# circuitbreaker (audit remediation Task 15) ships no py.typed marker and no
+# stub package — `@circuit` therefore types as `Any`, which on its own would
+# only need ignore_missing_imports. The decorated methods still need a
+# `# type: ignore[untyped-decorator]` at each call site (see nl2sql.py /
+# oidc.py) because --strict's disallow_untyped_decorators fires independently
+# of import resolution.
+module = ["circuitbreaker"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

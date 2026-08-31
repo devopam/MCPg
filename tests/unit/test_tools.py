@@ -343,7 +343,7 @@ async def test_read_tools_are_exposed_in_every_access_mode(access_mode: AccessMo
     async with create_connected_server_and_client_session(_server_for(access_mode)) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
 
-    assert _READ_TOOLS <= names
+    assert names >= _READ_TOOLS
 
 
 @pytest.mark.parametrize("access_mode", list(AccessMode))
@@ -371,7 +371,7 @@ async def test_write_tools_are_exposed_in_restricted_and_unrestricted_modes(acce
     ],
 )
 async def test_run_ddl_requires_unrestricted_mode_and_the_allow_ddl_opt_in(
-    access_mode: str, allow_ddl: bool, expected: bool
+    access_mode: str, *, allow_ddl: bool, expected: bool
 ) -> None:
     env = {"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db", "MCPG_ACCESS_MODE": access_mode}
     if allow_ddl:

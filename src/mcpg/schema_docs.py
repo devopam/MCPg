@@ -76,7 +76,13 @@ def _escape_cell(val: Any) -> str:
     return s.replace("\n", "<br>")
 
 
-async def generate_schema_docs(driver: SqlDriver, schema: str, *, include_samples: bool = False) -> str:
+# C901 rationale: complexity 42, the second-highest in the repo -- a
+# comprehensive Markdown doc-generator covering tables/views/foreign tables/
+# enums/comments/FKs/optional row-sampling in one pass. A safe extraction
+# into per-section helpers is plausible (same family as diesel.py/sqlc.py)
+# but at this size and branching depth it needs a dedicated refactor pass
+# with its own test-diffing, not a cheap-win within this lint sweep.
+async def generate_schema_docs(driver: SqlDriver, schema: str, *, include_samples: bool = False) -> str:  # noqa: C901
     """Build a detailed Markdown reference for all objects in ``schema``.
 
     Optionally samples the first 10 rows of each base table to extract up to 3

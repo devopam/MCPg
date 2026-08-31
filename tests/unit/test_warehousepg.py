@@ -124,7 +124,7 @@ async def test_version_probe_driver_failure_surfaces_as_available_false() -> Non
 
     class _FailingDriver:
         async def execute_query(
-            self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+            self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
         ) -> list[Any]:
             del query, params, force_readonly
             raise RuntimeError("connection lost")
@@ -145,7 +145,7 @@ async def test_catalog_probe_failure_surfaces_as_available_false() -> None:
             self.call_index = 0
 
         async def execute_query(
-            self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+            self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
         ) -> list[Any]:
             del params, force_readonly
             self.call_index += 1
@@ -175,7 +175,7 @@ async def test_segment_metadata_failure_keeps_available_true_with_diagnostic() -
             self.call_index = 0
 
         async def execute_query(
-            self, query: str, params: list[Any] | None = None, force_readonly: bool = False
+            self, query: str, params: list[Any] | None = None, *, force_readonly: bool = False
         ) -> list[Any]:
             del params, force_readonly
             self.call_index += 1
@@ -205,7 +205,7 @@ async def test_segment_metadata_failure_keeps_available_true_with_diagnostic() -
         ("PostgreSQL only", False),
     ],
 )
-async def test_version_marker_recognition_is_case_insensitive(version_substring: str, expected_match: bool) -> None:
+async def test_version_marker_recognition_is_case_insensitive(version_substring: str, *, expected_match: bool) -> None:
     """The version string scan must be case-insensitive — operators
     have shipped releases with both 'WarehousePG' and 'warehousepg'
     spellings across the years."""

@@ -62,9 +62,11 @@ async def test_pool_connect_returns_cached_when_valid() -> None:
 
 async def test_pool_connect_wraps_construction_failure() -> None:
     pool = DbConnPool("postgresql://u:p@localhost/db")
-    with patch("mcpg.sql.driver.AsyncConnectionPool", side_effect=RuntimeError("boom")):
-        with pytest.raises(ValueError, match="Connection attempt failed"):
-            await pool.pool_connect()
+    with (
+        patch("mcpg.sql.driver.AsyncConnectionPool", side_effect=RuntimeError("boom")),
+        pytest.raises(ValueError, match="Connection attempt failed"),
+    ):
+        await pool.pool_connect()
     assert pool.is_valid is False
     assert pool.last_error is not None
 
@@ -110,9 +112,11 @@ async def test_execute_query_lazily_connects_from_engine_url() -> None:
     # then fail cleanly when the pool can't open — exercising the lazy-connect
     # branch without a live database.
     driver = SqlDriver(engine_url="postgresql://u:p@localhost/db")
-    with patch("mcpg.sql.driver.AsyncConnectionPool", side_effect=RuntimeError("no db")):
-        with pytest.raises(ValueError, match="Connection attempt failed"):
-            await driver.execute_query("SELECT 1")
+    with (
+        patch("mcpg.sql.driver.AsyncConnectionPool", side_effect=RuntimeError("no db")),
+        pytest.raises(ValueError, match="Connection attempt failed"),
+    ):
+        await driver.execute_query("SELECT 1")
     assert driver.is_pool is True
 
 
@@ -127,7 +131,9 @@ async def test_safe_execute_prefixes_marker_and_forces_readonly() -> None:
     safe = SafeSqlDriver(inner)
 
     await safe.execute_query("SELECT 1")
-    inner.execute_query.assert_awaited_once_with("/* crystaldba */ SELECT 1", params=None, force_readonly=True)
+    inner.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ SELECT 1", params=None, force_readonly=True, row_limit=None
+    )
 
 
 async def test_safe_execute_with_timeout_success() -> None:

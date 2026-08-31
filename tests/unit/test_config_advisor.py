@@ -24,7 +24,7 @@ _MB = 1024 * 1024
 # ===========================================================================
 
 
-def _seq_present(present: bool) -> dict[str, list[dict[str, object]]]:
+def _seq_present(*, present: bool) -> dict[str, list[dict[str, object]]]:
     return {"to_regclass('pg_catalog.pg_sequences')": [{"present": present}]}
 
 
@@ -45,7 +45,7 @@ async def test_sequences_rejects_critical_below_warning() -> None:
 
 
 async def test_sequences_unavailable_pre_pg10() -> None:
-    driver = FakeRoutingDriver(_seq_present(False))
+    driver = FakeRoutingDriver(_seq_present(present=False))
     result = await audit_sequences(driver)  # type: ignore[arg-type]
     assert isinstance(result, SequenceAuditResult)
     assert result.available is False
@@ -54,7 +54,7 @@ async def test_sequences_unavailable_pre_pg10() -> None:
 
 async def test_sequences_flags_critical_and_warning() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_seq_present(True))
+    routes.update(_seq_present(present=True))
     routes.update(
         _seq_rows(
             [
@@ -96,7 +96,7 @@ async def test_sequences_flags_critical_and_warning() -> None:
 async def test_sequences_never_advanced_not_flagged() -> None:
     """A sequence with NULL last_value is counted but never at-risk."""
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_seq_present(True))
+    routes.update(_seq_present(present=True))
     routes.update(
         _seq_rows(
             [{"schemaname": "public", "sequencename": "fresh_seq", "last_value": None, "max_value": 2_147_483_647}]
@@ -111,7 +111,7 @@ async def test_sequences_never_advanced_not_flagged() -> None:
 
 async def test_sequences_remaining_headroom_computed() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_seq_present(True))
+    routes.update(_seq_present(present=True))
     # min_value=0 so used_pct = (95-0)/(100-0) = 95.0 exactly.
     routes.update(
         _seq_rows(
@@ -139,7 +139,7 @@ async def test_sequences_descending_supported() -> None:
     not max_value — used_pct must reflect the direction of travel.
     Regression for gemini review on #181."""
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_seq_present(True))
+    routes.update(_seq_present(present=True))
     routes.update(
         _seq_rows(
             [
@@ -169,7 +169,7 @@ async def test_sequences_fresh_descending_not_flagged() -> None:
     """A just-started descending sequence near max_value has its whole
     range left — it must NOT be flagged (the false-positive case)."""
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_seq_present(True))
+    routes.update(_seq_present(present=True))
     routes.update(
         _seq_rows(
             [

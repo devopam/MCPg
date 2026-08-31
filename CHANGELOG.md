@@ -6,8 +6,69 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Dev dependencies: `pytest-mock`, `pytest-randomly`, `pytest-socket`, `time-machine`,
+  `pytest-rerunfailures`. Of these, only `pytest-randomly` is active today — it auto-enables and
+  randomizes test order by default. The other four (`pytest-mock`, `pytest-socket`, `time-machine`,
+  `pytest-rerunfailures`) are staged for planned future test-hygiene work and are not yet wired
+  into any test: no `mocker` fixture, `time_machine` call, `--reruns`/`@pytest.mark.flaky` usage,
+  or `disable_socket`/`socket_enabled` usage exists anywhere in `tests/` as of this writing.
+
+- License enumeration (`pip-licenses`) added to CI as a non-blocking report step.
+
+- `/readyz` readiness endpoint on the HTTP transport — reports 503 when the DB pool can't currently serve
+  a connection, distinct from `/healthz`'s liveness-only check. Previously reserved in the auth-exemption
+  set but never mounted. Reads `Database.is_connected` (no fresh connection attempted on every poll);
+  `create_server` now stashes the primary `Database` on the server object (`server.mcpg_database`,
+  alongside the existing `mcpg_settings`/`otel_tracer`/`rate_limiter`) so `build_http_app` can reach it.
+
+- `mcpg.errors.MCPgError`, a common base class every domain-specific exception (`ConfigError`,
+  `DatabaseError`, `CursorError`, and 62 others — 65 exception classes across 64 modules in total)
+  now subclasses — lets calling code catch "any MCPg-internal error" with one type instead of an
+  enumerated list. No existing exception's name, message, or call sites changed. Two of the 65
+  (`TenancyError`, `DynamicIntentError`) previously subclassed `ValueError` rather than `Exception`;
+  they now subclass both `MCPgError` and `ValueError`, so anything catching them as `ValueError`
+  today keeps working.
+
+- Optional `TrustedHostMiddleware` support via `MCPG_HTTP_TRUSTED_HOSTS` (comma-separated), off by
+  default, matching the existing `MCPG_HTTP_ALLOWED_ORIGINS` convention.
+
+- `TranslationResult` (NL→SQL) now records `schema_context` — the schema evidence actually sent to the
+  model for that translation — so a generated query's provenance is traceable, not just which
+  model/provider produced it.
+
+- Circuit breaker (`circuitbreaker`) around each NL→SQL provider's `complete()` call and the OIDC
+  discovery-document fetch (`OIDCVerifier._resolve_jwks_url`) — after 5 consecutive failures against a
+  degraded vendor/IdP, further calls fail fast for 30s instead of each one separately paying the full
+  request timeout. A tripped breaker still surfaces as the module's existing error type (`NL2SQLError` /
+  `OIDCError`), never a bare `CircuitBreakerError`, so calling code's exception handling is unaffected.
+
+- Retry with exponential backoff + jitter (`tenacity`) around the same NL→SQL provider calls and OIDC
+  discovery fetch, layered *inside* the circuit breaker added above (up to 3 attempts, ~0.1-2s apart) —
+  a single dropped connection or transient 5xx is retried transparently instead of surfacing as an
+  error. Because retry sits inside the breaker, an exhausted retry cycle counts as exactly one breaker
+  failure (not one per retry attempt), and a call that fails twice then succeeds never touches the
+  breaker's failure count at all.
+
 ### Fixed
 
+- **`run_select` / `run_select_tuned` fully materialized a query's entire result set into Python
+  `dict`/`RowResult` objects before truncating to `max_rows`,** rather than bounding the fetch itself —
+  a query without its own `LIMIT` against a large table could build millions of row objects into memory
+  before the truncation line ever ran. `SqlDriver.execute_query` / `SafeSqlDriver.execute_query` (and the
+  tenancy-role-wrapped execute path) now take an optional `row_limit` parameter and use
+  `cursor.fetchmany(row_limit)` instead of `cursor.fetchall()`; both call sites in `query.py` now pass
+  `max_rows + 1`. Note the precise scope: `psycopg`'s regular (client-side) cursor already pulls the whole
+  result set into libpq's buffer during `cursor.execute()`, so this bounds how many rows are converted to
+  Python objects, not the server-side network transfer — a true wire-level bound would need a named
+  server-side cursor or an injected `LIMIT`, which is out of scope here (a server-side cursor can't
+  support `run_select_tuned`'s `SET LOCAL ...; SELECT ...` two-statement pattern or the SHOW/EXPLAIN/VACUUM
+  paths `SafeSqlDriver` also allows).
+- **`py.typed` marker was missing despite the `Typing :: Typed` classifier.** Added `src/mcpg/py.typed`
+  and verified it ships in the built wheel.
+- **`license-files` in `pyproject.toml` pointed at `src/mcpg/_vendor/LICENSE`, which hasn't existed since
+  the SQL kernel was de-vendored (ADR-0007).** Removed the stale entry.
 - **Broken readiness probe on the `warehousepg-latest` CI lane was
   burning ~6 minutes of dead time on every run.** The lane's readiness
   poll used `docker exec mcpg-db pg_isready -U gpadmin`, but
@@ -21,13 +82,116 @@ adheres to [Semantic Versioning](https://semver.org/).
   step accounted for ~6-6.5 min of the lane's ~9-10 min total vs.
   ~20-30s on every other PG version; the `pytest` step itself was
   already the same duration as any other lane).
+- **Seven `except Exception: pass` sites now log at `debug` level with `exc_info=True`** instead of
+  swallowing silently — `advisors.py`, `audit.py`, `audit_trail.py` (×3), `listen.py`, `migrations.py`.
+  No control flow changed; these were already best-effort/cleanup paths and remain so, now with
+  observability into how often they actually fire.
+- **Error-logging call sites inside `except` blocks now preserve tracebacks** (`exc_info=True`, added
+  to the existing `logger.error`/`logger.warning` calls) where they previously logged only the
+  exception's string form and lost the traceback — audited every `logger.error`/`logger.warning` call
+  across `src/mcpg` (33 candidate sites), 23 sites fixed across `audit_nl2sql.py` (×2), `cache.py` (×6),
+  `cursors.py`, `database.py` (×2), `graph_diagram.py` (×2), `http_runtime.py` (×2), `nl2sql.py` (×3),
+  `otel_tracing.py`, `replicas.py` (×3), and `tenancy.py`. The remaining 10 sites were left unchanged:
+  one (`listen.py`) already carried `exc_info=True`; nine log about something other than the exception
+  just caught, or aren't inside an `except` block at all (e.g. a slow-call warning, an audit-event
+  record, an egress notice, a config-collision warning).
+
+### Changed
+
+- **Task 23 (ruff sweep, Parts A-E + Step 11) complete.** `pyproject.toml`'s `[tool.ruff.lint] select`
+  list now includes `C90`, `ASYNC`, `C4`, `SIM`, `PTH`, `PYI`, and `FBT` alongside the pre-existing
+  `E`/`F`/`I`/`B`/`W`/`N`/`UP`/`RUF`, and `uv run ruff check .` is clean with zero outstanding
+  violations across all 7 categories. The `external = ["ASYNC", "C90"]` workaround added mid-sweep (so
+  `RUF100` wouldn't flag the mandated per-violation `# noqa` justifications as unused before these
+  categories were selected) is removed now that both are enforced; `RUF100` polices those ~113 `noqa`
+  comments normally and none are stale. No `[tool.ruff.lint.mccabe]` section was added — `C901`
+  findings were measured against ruff's unconfigured default `max-complexity` of 10, corroborated by
+  several findings at exactly 11 (`audit_database`, `tenancy._execute_with_role`,
+  `data_movement.dump_database`, `http_runtime.build_http_app`) that a higher threshold would have
+  missed.
+
+  **418 violations addressed in total:**
+  - Part A — 74 mechanical fixes: `PTH` (9), `C4` (1), `SIM` (48), `PYI` (16).
+  - Part B — 84 `ASYNC`/`C901` findings individually assessed: `ASYNC` (18, all justified-suppressed —
+    each is a pass-through `timeout=` parameter already enforced by a lower layer, e.g. httpx's own
+    per-request timeout or `SafeSqlDriver`'s `asyncio.timeout()`); `C901` (66: 7 refactored, 59
+    justified-suppressed, including the security-critical `SafeSqlDriver._validate_node`, suppressed
+    rather than refactored per its existing adversarial/fuzz-pinning rationale).
+  - Parts C+D+E+Step 11 — 260 `FBT` (flake8-boolean-trap) violations, now clean repo-wide: 103 in
+    `src/mcpg/tools.py` (Part C — all 43 affected functions are registered MCP tools), 30 in the rest
+    of `src/` + `tools/` (Part D), 126 in `tests/` (Part E), and 1 in `benchmarks/`, found only once
+    `FBT` was selected repo-wide in Step 11 — a scope gap (`benchmarks/` sat outside every part's glob),
+    fixed directly as a trivial single-call-site change.
+
+  Assessed but deliberately left disabled, per the rescoping decision recorded at Task 23's start: `D`
+  (2,284 violations, outside the public `tools.py` surface), `ANN` (475, redundant with `mypy --strict`,
+  already clean), `TC` (165), `PT` (75, test-only) — baseline counts kept for a possible future pass.
+
+  The substantive code change inside the `FBT` sweep is in the SQL kernel: `force_readonly` is now
+  keyword-only across the whole `execute_query` / `_execute_with_connection` override family
+  (`sql/driver.py`, `sql/safety.py`, `multidb.py`, `replicas.py`, `tenancy.py`), so a security-relevant
+  read-only flag can no longer be passed in the wrong positional slot. **No public MCP tool signature or
+  contract snapshot moved anywhere in the sweep** — a `*` marker before each signature's first boolean
+  parameter (never reordered) is transparent to pydantic's JSON-Schema derivation, so `tests/contract/`
+  passes unmodified throughout and both snapshots (`tool_surface.snapshot.json`,
+  `tool_return_shapes.snapshot.json`) regenerate byte-for-byte. Most non-`tools.py` `FBT` hits were
+  invisible to the linter itself (`FBT003` fires only on boolean *literals*, never on a boolean
+  *variable* forwarded positionally), so an AST arity sweep was used instead — and it caught two
+  genuine near-miss bugs the linter alone would have missed: a positionally-mismatched
+  `TenantTimeoutSqlDriver` call in `replicas.py` (would have raised `TypeError` at runtime on the
+  multi-tenant + timeout path), and the mandatory Part D -> Part E test-fake handoff
+  (`tests/unit/_fakes.py`'s three standalone fakes — `FakeDriver`, `FakeRoutingDriver`,
+  `FakeParamRoutingDriver` — plus their 5 positional call sites across 4 test files), verified with
+  `grep -rn "force_readonly" tests/` before and after so no `TypeError` slipped through.
+
+  **Live FBT breakdown:** of the 157 hits that remained once `tools.py`'s 103 were fixed, 26 were in
+  `src/`, 126 in `tests/`, 4 in `tools/` dev scripts, and 1 in `benchmarks/` (the last not discovered
+  until Step 11 selected `FBT` repo-wide). Full per-part, per-file detail — the granular
+  commit-by-commit narrative this entry summarizes — is preserved in
+  `.superpowers/sdd/2026-08-25-audit-remediation/batch-ruff*.md`.
+- Pinned `hatchling>=1.26` as the build-system floor (previously unpinned).
+- HSTS `max-age` default bumped from 31536000 (1 year) to 63072000 (2 years), OWASP's current
+  recommendation — the old value remains the `hstspreload.org` minimum-eligibility floor, not the target.
+- NL→SQL providers (`AnthropicProvider`, `OpenAIProvider`, `GeminiProvider`) now reuse one process-wide
+  `httpx.AsyncClient` instead of opening `async with httpx.AsyncClient(...)` fresh on every
+  `translate_nl_to_sql` call. A new provider instance is still built per call (provider selection can
+  vary per-request via `provider=`), so the client lives at module scope rather than on the instance —
+  closed via `mcpg.nl2sql.aclose_shared_client()`, wired into `make_lifespan`'s existing shutdown path.
+  The OIDC discovery-document fetch similarly moves from a per-fetch client to one held for
+  `OIDCVerifier`'s lifetime (`aclose()` closes it); since the verifier is constructed after
+  `make_lifespan`'s closure already exists, `build_http_app` wraps the ASGI app's own lifespan to close it
+  on shutdown instead. Each avoids paying a fresh TCP/TLS handshake per call/fetch.
 
 ### Security
 
+- **Fixed a SQL injection defect in `describe_graph` and `generate_graph_diagram`.** Both read Apache
+  AGE vertex/edge label names back from `ag_catalog.ag_label` and interpolated them directly into
+  f-string SQL (`FROM "{graph}"."{label}"`) with no identifier validation. Postgres/AGE quoted
+  identifiers can contain arbitrary characters, including embedded double quotes, so a label name
+  created via a prior `run_cypher` write could carry attacker-controlled SQL into that later
+  re-interpolation. Every catalog-derived label name is now identifier-validated
+  (`[A-Za-z_][A-Za-z0-9_]*`) before it reaches a generated SQL string or the diagram's Mermaid output;
+  an invalid name aborts the call with a `GraphError` instead of being silently used, matching the
+  existing `graph_projection` precedent for catalog-derived identifiers. Both tools' backing count/fetch
+  queries also now run under `force_readonly=True`, and `describe_graph` gained the same
+  `Capability.READ` access-mode gate its sibling read tools (`run_cypher`'s read path,
+  `generate_graph_diagram`) already had.
+- **BREAKING: rate limiting (`MCPG_RATE_LIMIT_ENABLED`) now defaults to `true`** (previously `false`).
+  Set it to `false` explicitly to restore the previous unlimited behavior.
+- **BREAKING: the HTTP transport now refuses to start unauthenticated by default.** Previously it started
+  anyway and only logged a warning if neither `MCPG_HTTP_AUTH_TOKEN` nor `MCPG_AUTH_MODE=oidc` was set.
+  Deployments that relied on the unauthenticated default must now either configure auth or set
+  `MCPG_HTTP_ALLOW_UNAUTHENTICATED=true` to explicitly opt back in (loudly logged when set). The default
+  `stdio` transport is unaffected.
 - **Bumped transitive `pip` 26.1.2 → 26.2.1 (PYSEC-2026-3721).**
   `pip-audit`'s own `pip_api` dependency pulled in a `pip` version with
   a known vulnerability, flagged by the local pre-commit hook's
   dependency audit.
+- Added a centralized log-redaction filter (`RedactionFilter`) as a backstop for a log call's message
+  or `%`-style arguments reaching a handler without having explicitly redacted a connection string
+  first — complements, doesn't replace, the existing per-call-site `obfuscate_password()` discipline.
+  Does not cover exception tracebacks attached via `exc_info` (e.g. `logger.exception(...)`) — those
+  are rendered separately by `logging.Formatter.formatException()`, which bypasses this filter.
 
 ## [0.8.0] - 2026-08-19
 

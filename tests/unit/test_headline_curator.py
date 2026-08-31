@@ -13,7 +13,7 @@ from mcpg.headline_curator import (
 )
 
 
-def _audit_present(present: bool) -> dict[str, list[dict[str, object]]]:
+def _audit_present(*, present: bool) -> dict[str, list[dict[str, object]]]:
     return {"to_regclass('mcpg_audit.events')": [{"present": present}]}
 
 
@@ -56,7 +56,7 @@ async def test_rejects_top_n_over_50() -> None:
 
 
 async def test_returns_diagnostic_when_audit_table_missing() -> None:
-    driver = FakeRoutingDriver(_audit_present(False))
+    driver = FakeRoutingDriver(_audit_present(present=False))
     report = await recommend_headline_tools(driver)  # type: ignore[arg-type]
     assert isinstance(report, HeadlineRecommendationReport)
     assert report.audit_table_present is False
@@ -66,7 +66,7 @@ async def test_returns_diagnostic_when_audit_table_missing() -> None:
 
 async def test_idle_window_returns_empty_recommendations_with_table_present() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([]))
     driver = FakeRoutingDriver(routes)
     report = await recommend_headline_tools(driver)  # type: ignore[arg-type]
@@ -86,7 +86,7 @@ async def test_top_n_per_bucket_respects_call_count_ranking() -> None:
     """Three schema_introspection tools at different call counts —
     they land in the schema_introspection bucket in DESC order."""
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(
         _events_route(
             [
@@ -105,7 +105,7 @@ async def test_top_n_per_bucket_respects_call_count_ranking() -> None:
 async def test_top_n_caps_per_bucket() -> None:
     """top_n=2 → only the top two from each bucket reach `recommended`."""
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(
         _events_route(
             [
@@ -123,7 +123,7 @@ async def test_top_n_caps_per_bucket() -> None:
 
 async def test_call_counts_are_propagated_to_recommendation() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([{"tool": "list_tables", "call_count": 42}]))
     driver = FakeRoutingDriver(routes)
     report = await recommend_headline_tools(driver)  # type: ignore[arg-type]
@@ -138,7 +138,7 @@ async def test_call_counts_are_propagated_to_recommendation() -> None:
 
 async def test_newcomers_flag_recommended_not_in_current() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([{"tool": "list_tables", "call_count": 1}]))
     driver = FakeRoutingDriver(routes)
     # Current headline doesn't include list_tables — it should land as a newcomer.
@@ -152,7 +152,7 @@ async def test_newcomers_flag_recommended_not_in_current() -> None:
 
 async def test_departures_flag_current_not_in_recommended() -> None:
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([{"tool": "list_tables", "call_count": 1}]))
     driver = FakeRoutingDriver(routes)
     report = await recommend_headline_tools(  # type: ignore[arg-type]
@@ -174,7 +174,7 @@ async def test_bucket_order_matches_curated_display_order() -> None:
     from mcpg.about import CAPABILITIES
 
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([]))
     driver = FakeRoutingDriver(routes)
     report = await recommend_headline_tools(driver)  # type: ignore[arg-type]
@@ -192,7 +192,7 @@ async def test_query_filters_on_success_status() -> None:
     """The recommender only considers successful events — failures
     shouldn't push a flaky tool into a bucket's headline."""
     routes: dict[str, list[dict[str, object]]] = {}
-    routes.update(_audit_present(True))
+    routes.update(_audit_present(present=True))
     routes.update(_events_route([{"tool": "list_tables", "call_count": 1}]))
     driver = FakeRoutingDriver(routes)
     await recommend_headline_tools(driver)  # type: ignore[arg-type]

@@ -44,6 +44,10 @@ async def test_slow_call_warning_emitted_when_exceeding_threshold(caplog) -> Non
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_SLOW_CALL_THRESHOLD_MS": "100",  # 0.1 seconds
+            # Rate limiting isn't under test here; it defaults to enabled and
+            # would consume extra time.monotonic() calls from the fixed-length
+            # side_effect list below, sized only for the slow-call timing path.
+            "MCPG_RATE_LIMIT_ENABLED": "false",
         }
     )
 
@@ -78,6 +82,8 @@ async def test_slow_call_warning_not_emitted_when_under_threshold(caplog) -> Non
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_SLOW_CALL_THRESHOLD_MS": "100",  # 0.1 seconds
+            # See comment in test_slow_call_warning_emitted_when_exceeding_threshold.
+            "MCPG_RATE_LIMIT_ENABLED": "false",
         }
     )
 
@@ -106,6 +112,8 @@ async def test_slow_call_warning_not_emitted_when_disabled(caplog) -> None:
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_SLOW_CALL_THRESHOLD_MS": "0",  # Disabled
+            # See comment in test_slow_call_warning_emitted_when_exceeding_threshold.
+            "MCPG_RATE_LIMIT_ENABLED": "false",
         }
     )
 
@@ -134,6 +142,8 @@ async def test_slow_call_warning_emitted_on_error_path(caplog) -> None:
         {
             "MCPG_DATABASE_URL": "postgresql://u:p@localhost/db",
             "MCPG_SLOW_CALL_THRESHOLD_MS": "100",  # 0.1 seconds
+            # See comment in test_slow_call_warning_emitted_when_exceeding_threshold.
+            "MCPG_RATE_LIMIT_ENABLED": "false",
         }
     )
 

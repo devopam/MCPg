@@ -70,7 +70,7 @@ async def test_checksums_status_never_raises_on_driver_failure() -> None:
 # --- enable_data_checksums / disable_data_checksums -----------------------
 
 
-def _pg19_database_with_checksums(enabled: bool) -> FakeDatabase:
+def _pg19_database_with_checksums(*, enabled: bool) -> FakeDatabase:
     """Wire a FakeDatabase that reports PG 19 + a given checksum state."""
     driver = FakeDriver()
     # Two consecutive read queries: version + setting. The fake returns

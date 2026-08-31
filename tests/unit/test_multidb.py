@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from typing import Self
 
 import pytest
 from _fakes import FakePool
@@ -74,7 +75,7 @@ class _FakeCursor:
         self._rows = rows
         self.description: object | None = None
 
-    async def __aenter__(self) -> _FakeCursor:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc: object) -> None:

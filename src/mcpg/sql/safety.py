@@ -72,7 +72,15 @@ class SafeSqlDriver(SqlDriver):
         self.sql_driver = sql_driver
         self.timeout = timeout
 
-    def _validate_node(self, node: Node) -> None:
+    # C901 rationale: the recursive pglast AST walker enforcing the
+    # mcpg.sql.allowlist policy. Per this module's own docstring, it is
+    # "re-authored from the vendored crystaldba/postgres-mcp safe_sql.py
+    # (MIT); behaviour is pinned identical by the adversarial suite +
+    # differential parity test" — a security-critical, fuzz-tested,
+    # adversarially-pinned function where restructuring the branching is
+    # pure risk (any behavioural drift is a SQL-safety regression) for no
+    # safety benefit.
+    def _validate_node(self, node: Node) -> None:  # noqa: C901
         """Recursively validate a node and all of its children."""
         if not isinstance(node, tuple(self.ALLOWED_NODE_TYPES)):
             raise ValueError(f"Node type {type(node)} is not allowed")
@@ -111,9 +119,8 @@ class SafeSqlDriver(SqlDriver):
                     raise ValueError("EXPLAIN ANALYZE is not supported")
 
         # CREATE EXTENSION only for allowlisted extensions.
-        if isinstance(node, CreateExtensionStmt):
-            if node.extname not in self.ALLOWED_EXTENSIONS:
-                raise ValueError(f"CREATE EXTENSION {node.extname} is not supported")
+        if isinstance(node, CreateExtensionStmt) and node.extname not in self.ALLOWED_EXTENSIONS:
+            raise ValueError(f"CREATE EXTENSION {node.extname} is not supported")
 
         # Recurse into every child node. pglast's concrete Node subclasses
         # carry their fields in ``__slots__``; the base ``Node`` type (typed
@@ -128,11 +135,7 @@ class SafeSqlDriver(SqlDriver):
             except AttributeError:
                 continue  # normal in pglast
 
-            if isinstance(attr, list):
-                for item in attr:
-                    if isinstance(item, Node):
-                        self._validate_node(item)
-            elif isinstance(attr, tuple):
+            if isinstance(attr, (list, tuple)):
                 for item in attr:
                     if isinstance(item, Node):
                         self._validate_node(item)
@@ -167,9 +170,18 @@ class SafeSqlDriver(SqlDriver):
         self,
         query: LiteralString,
         params: list[Any] | None = None,
+        *,
         force_readonly: bool = True,  # ignored — SafeSqlDriver always forces read-only
+        row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult] | None:
-        """Validate ``query`` is safe, then execute it read-only."""
+        """Validate ``query`` is safe, then execute it read-only.
+
+        ``row_limit``, when given, is threaded through to the wrapped
+        driver so the fetch itself is bounded (``fetchmany``) rather than
+        materializing the full result set before any caller-side
+        truncation runs. ``None`` preserves the historical full-fetch
+        behaviour.
+        """
         self._validate(query)
 
         # Always force read-only regardless of the argument.
@@ -180,6 +192,7 @@ class SafeSqlDriver(SqlDriver):
                         f"/* crystaldba */ {query}",
                         params=params,
                         force_readonly=True,
+                        row_limit=row_limit,
                     )
             except TimeoutError as e:
                 logger.warning("Query execution timed out after %s seconds: %s...", self.timeout, query[:100])
@@ -194,6 +207,7 @@ class SafeSqlDriver(SqlDriver):
             f"/* crystaldba */ {query}",
             params=params,
             force_readonly=True,
+            row_limit=row_limit,
         )
 
     @staticmethod

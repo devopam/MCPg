@@ -170,12 +170,12 @@ def test_admin_preset_is_empty_set_sentinel() -> None:
 def test_always_keep_includes_the_dynamic_meta_tools() -> None:
     from mcpg.session_intent import ALWAYS_KEEP
 
-    assert ALWAYS_KEEP == {
+    assert {
         "describe_self",
         "describe_tool",
         "list_session_intents",
         "enable_session_intent",
-    }
+    } == ALWAYS_KEEP
 
 
 # ---------------------------------------------------------------------------

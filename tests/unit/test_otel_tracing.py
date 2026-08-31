@@ -265,9 +265,8 @@ def test_tool_span_records_error_attributes_on_exception() -> None:
     assert handle is not None
     try:
         exporter = _capture_spans(handle)
-        with pytest.raises(RuntimeError, match="boom"):
-            with tool_span(handle, "run_select", {"sql": "SELECT 1"}):
-                raise RuntimeError("boom")
+        with pytest.raises(RuntimeError, match="boom"), tool_span(handle, "run_select", {"sql": "SELECT 1"}):
+            raise RuntimeError("boom")
 
         spans = exporter.get_finished_spans()
         assert len(spans) == 1
@@ -291,9 +290,8 @@ def test_tool_span_truncates_long_error_messages() -> None:
     try:
         exporter = _capture_spans(handle)
         long_message = "x" * 500
-        with pytest.raises(RuntimeError):
-            with tool_span(handle, "huge_query", {}):
-                raise RuntimeError(long_message)
+        with pytest.raises(RuntimeError), tool_span(handle, "huge_query", {}):
+            raise RuntimeError(long_message)
 
         spans = exporter.get_finished_spans()
         assert spans[0].attributes is not None
@@ -314,9 +312,8 @@ def test_tool_span_redacts_dsn_in_error_message() -> None:
     assert handle is not None
     try:
         exporter = _capture_spans(handle)
-        with pytest.raises(RuntimeError):
-            with tool_span(handle, "run_select", {}):
-                raise RuntimeError("connection failed: postgresql://alice:hunter2@db.example.com:5432/app")
+        with pytest.raises(RuntimeError), tool_span(handle, "run_select", {}):
+            raise RuntimeError("connection failed: postgresql://alice:hunter2@db.example.com:5432/app")
 
         spans = exporter.get_finished_spans()
         attrs = spans[0].attributes
@@ -343,9 +340,8 @@ def test_tool_span_redacts_dsn_before_the_200_char_cap_applies() -> None:
         # Place the DSN at position ~190 (just inside the 200-char cap)
         # and make sure it gets redacted.
         padding = "x" * 180
-        with pytest.raises(RuntimeError):
-            with tool_span(handle, "run_select", {}):
-                raise RuntimeError(f"{padding} postgresql://u:secret_pw@db/app rest")
+        with pytest.raises(RuntimeError), tool_span(handle, "run_select", {}):
+            raise RuntimeError(f"{padding} postgresql://u:secret_pw@db/app rest")
 
         spans = exporter.get_finished_spans()
         attrs = spans[0].attributes

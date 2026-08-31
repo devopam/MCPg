@@ -20,6 +20,7 @@ so an idle server pays nothing for the feature.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 import time
@@ -27,7 +28,9 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from types import TracebackType
-from typing import Any, Protocol
+from typing import Any, Protocol, Self
+
+from mcpg.errors import MCPgError
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +42,7 @@ logger = logging.getLogger(__name__)
 _CHANNEL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class ListenError(Exception):
+class ListenError(MCPgError):
     """Raised when a LISTEN/NOTIFY tool call is rejected or fails."""
 
 
@@ -249,13 +252,11 @@ class ListenManager:
             try:
                 await asyncio.wait_for(conn.close(), timeout=2.0)
             except Exception:
-                pass
+                logger.debug("Best-effort connection close during shutdown failed", exc_info=True)
         if task is not None:
             task.cancel()
-            try:
+            with contextlib.suppress(TimeoutError, asyncio.CancelledError, Exception):
                 await asyncio.wait_for(task, timeout=2.0)
-            except (TimeoutError, asyncio.CancelledError, Exception):
-                pass
 
     # --- internals --------------------------------------------------
 
@@ -361,7 +362,7 @@ class ListenManager:
             self._task = None
             self._needs_resubscribe = True
 
-    async def __aenter__(self) -> ListenManager:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(

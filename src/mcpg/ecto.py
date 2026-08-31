@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 
+from mcpg.errors import MCPgError
 from mcpg.introspection import (
     ColumnInfo,
     ForeignKeyInfo,
@@ -34,7 +35,7 @@ from mcpg.sql import SqlDriver
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class EctoExportError(Exception):
+class EctoExportError(MCPgError):
     """Raised when an Ecto export call is rejected or fails."""
 
 
