@@ -105,6 +105,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   `multidb.py`, `replicas.py`, `tenancy.py`), so a security-relevant read-only flag can no longer be passed
   in the wrong positional slot. **No public MCP tool signature and no snapshot changed** — these are all
   internal helpers and driver methods; `tests/contract/` passes unmodified (51 passed).
+  30 raw `FBT` diagnostics resolved to **20 actual signature changes** — 18 that Ruff flagged, plus 4
+  untyped subclass overrides (`multidb.py`, `replicas.py` ×2, `tenancy.py`) that Ruff can't see but were
+  converted anyway to keep the override family consistent.
   28 call sites were converted to keyword form in total, but **Ruff flagged only 3 of them** (the `FBT003`
   hits in `pitr.py`). `FBT003` fires only on boolean *literals*, never on a boolean *variable* forwarded
   positionally, so the other 25 are structurally invisible to the linter: 9 in the `force_readonly` family
