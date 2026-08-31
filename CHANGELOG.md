@@ -105,12 +105,15 @@ adheres to [Semantic Versioning](https://semver.org/).
   `multidb.py`, `replicas.py`, `tenancy.py`), so a security-relevant read-only flag can no longer be passed
   in the wrong positional slot. **No public MCP tool signature and no snapshot changed** — these are all
   internal helpers and driver methods; `tests/contract/` passes unmodified (51 passed).
-  Also fixed **10 positional boolean-forwarding hazards that Ruff structurally cannot see** (`FBT003` fires
-  only on boolean *literals*, never on a boolean *variable* forwarded positionally): 4 in `replicas.py`
-  routing `force_readonly` into the primary/replica drivers, 4 `super()._execute_with_connection(...)`
-  forwards across `multidb.py`/`replicas.py`/`tenancy.py`, 1 `_execute_with_role(...)` call, and the
-  `indexing.py` aggregator calls. These were found by an AST arity sweep rather than by the linter; one of
-  them (`replicas.py`, `TenantTimeoutSqlDriver`) would otherwise have broken at runtime.
+  28 call sites were converted to keyword form in total, but **Ruff flagged only 3 of them** (the `FBT003`
+  hits in `pitr.py`). `FBT003` fires only on boolean *literals*, never on a boolean *variable* forwarded
+  positionally, so the other 25 are structurally invisible to the linter: 9 in the `force_readonly` family
+  (4 routing calls in `replicas.py`, 4 `super()._execute_with_connection(...)` forwards across
+  `multidb.py`/`replicas.py`/`tenancy.py`, 1 `_execute_with_role(...)` call), 3 `indexing.py` aggregator
+  calls, 8 `_validate_bool(...)` calls, 2 in `tools/`, and 3 further `PitrGate(...)` calls that pass a
+  boolean variable in the slot the 3 flagged ones pass a literal. These were found by an AST arity sweep
+  rather than by the linter; one of them (`replicas.py`, `TenantTimeoutSqlDriver`) would otherwise have
+  broken at runtime on the multi-tenant + timeout path.
 - Fixed all 103 `FBT` (flake8-boolean-trap) violations in `src/mcpg/tools.py` — the `tools.py` half of the
   196-violation `FBT` sweep — by making boolean parameters keyword-only (`*, flag: bool = False`). The 103
   hits (53 `FBT001` + 50 `FBT002`; no `FBT003`) resolved to **53 boolean parameters across 43 functions, all
