@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize]
   workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to enable auto-merge on"
+        required: true
+        type: number
 
 permissions:
   contents: write
@@ -17,113 +22,40 @@ jobs:
     # (confirmed via `gh api users/dependabot%5Bbot%5D` — `type: Bot`); a human account
     # cannot register one, so the `endsWith(github.actor, '[bot]')` clause below
     # doesn't broaden trust beyond the three named bots in practice. Re-verify this
-    # assumption if GitHub's account-namespace rules ever change.
+    # assumption if GitHub's account-namespace rules ever change. A manual
+    # workflow_dispatch run is always allowed through: triggering it at all already
+    # requires write access to this repo, so it carries its own authorization.
     if: |
+      github.event_name == 'workflow_dispatch' ||
       github.actor == 'dependabot[bot]' ||
       github.actor == 'renovate[bot]' ||
       github.actor == 'github-actions[bot]' ||
       endsWith(github.actor, '[bot]')
-    
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Wait for status checks
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const pr = context.payload.pull_request;
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            
-            console.log(`Waiting for status checks on PR #${pr.number}`);
-            
-            // Poll for status checks to complete
-            let attempts = 0;
-            const maxAttempts = 60; // 10 minutes with 10s intervals
-            let allChecksPassed = false;
-            
-            while (attempts < maxAttempts && !allChecksPassed) {
-              const checkRuns = await github.rest.checks.listForRef({
-                owner,
-                repo,
-                ref: pr.head.sha,
-              });
-              
-              const statuses = await github.rest.repos.getCombinedStatusForRef({
-                owner,
-                repo,
-                ref: pr.head.sha,
-              });
-              
-              console.log(`Attempt ${attempts + 1}/${maxAttempts}`);
-              console.log(`Check runs state: ${checkRuns.data.check_runs.length} total`);
-              console.log(`Combined status: ${statuses.data.state}`);
-              
-              // Check if all checks are complete and passed
-              const completedChecks = checkRuns.data.check_runs.filter(
-                c => c.status === 'completed'
-              );
-              
-              const statusPassed = statuses.data.state === 'success' || 
-                                   statuses.data.state === 'pending' || 
-                                   statuses.data.statuses.length === 0;
-              
-              if (completedChecks.length === checkRuns.data.check_runs.length && statusPassed) {
-                allChecksPassed = true;
-                console.log('✓ All checks passed!');
-              } else {
-                console.log(`✗ Waiting... (${completedChecks.length}/${checkRuns.data.check_runs.length} checks complete)`);
-                await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s
-              }
-              
-              attempts++;
-            }
-            
-            if (!allChecksPassed) {
-              throw new Error('Timeout waiting for checks to pass or checks failed');
-            }
-      
-      - name: Merge pull request
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const pr = context.payload.pull_request;
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            
-            console.log(`Merging PR #${pr.number}`);
-            
-            try {
-              const result = await github.rest.pulls.merge({
-                owner,
-                repo,
-                pull_number: pr.number,
-                merge_method: 'squash', // or 'merge' or 'rebase'
-              });
-              
-              console.log(`✓ PR #${pr.number} merged successfully`);
-              console.log(`Merge commit: ${result.data.sha}`);
-            } catch (error) {
-              if (error.status === 405) {
-                console.log('PR cannot be merged (might already be merged or have conflicts)');
-              } else {
-                throw error;
-              }
-            }
-      
-      - name: Handle merge failure
+      # Previously this job hand-rolled a "wait for status checks, then merge"
+      # loop by polling checks.listForRef on a 10-second/60-attempt timer. That
+      # loop counted THIS job's own still-running check run in its "total"
+      # count, so it could never observe 100% completion and always timed out
+      # after ~10 minutes (see #324/#325/#326). GitHub's native auto-merge
+      # (enabled here via `gh pr merge --auto`) delegates the "wait for
+      # required checks, then merge" job to GitHub itself, which has no such
+      # self-referential blind spot and also correctly honors branch
+      # protection's required-checks list instead of waiting on every check
+      # run present on the SHA (many of which aren't actually required).
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          echo "Enabling auto-merge for PR #${PR_NUMBER}"
+          gh pr merge --squash --auto "$PR_NUMBER" --repo "${{ github.repository }}"
+
+      - name: Report failure
         if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const pr = context.payload.pull_request;
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: pr.number,
-              body: '⚠️ Auto-merge workflow failed. Manual review required.',
-            })
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          gh pr comment "$PR_NUMBER" --repo "${{ github.repository }}" \
+            --body "⚠️ Auto-merge workflow failed to enable auto-merge. Manual review required."
