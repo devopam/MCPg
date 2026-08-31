@@ -112,8 +112,10 @@ adheres to [Semantic Versioning](https://semver.org/).
   name, are unaffected.
   Also hardened one cross-module call site while here: `read_pg_wal_stats` now passes `per_record=` to
   `walinspect.read_pg_wal_stats` by keyword instead of positionally, so the pending `FBT` pass over the
-  remaining ~93 violations outside `tools.py` can make that helper's parameter keyword-only without
-  silently breaking this caller.
+  rest of the codebase can make that helper's parameter keyword-only without silently breaking this
+  caller. That remaining count is **157**, not the ~93 originally estimated — commits landed on this
+  branch since the sweep was scoped added roughly 64 new `FBT` hits, almost all in `tests/` (live
+  breakdown: 26 in `src/`, 126 in `tests/`, 5 in `tools/` dev scripts).
 - Fixed all pre-existing violations in four opt-in Ruff lint categories — `PTH` (flake8-use-pathlib, 9),
   `C4` (flake8-comprehensions, 1), `SIM` (flake8-simplify, 48), `PYI` (flake8-pyi, 16) — 74 total, run
   category-by-category with `--select` (not yet added to `pyproject.toml`'s `[tool.ruff.lint] select`
