@@ -95,6 +95,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Fixed the remaining 30 `FBT` (flake8-boolean-trap) violations in production and dev-script code — **26 in
+  `src/` (excluding `src/mcpg/tools.py`, done previously) and 4 in `tools/`** — completing the `FBT` sweep
+  outside `tests/`. Violations in `tests/` are deliberately left for a separate batch and are not covered
+  here. As before, a `*` marker was inserted before each signature's first boolean parameter rather than
+  reordering parameters, and every affected call site was converted to keyword form.
+  The substantive change is in the SQL kernel: `force_readonly` is now keyword-only across the whole
+  `execute_query` / `_execute_with_connection` override family (`sql/driver.py`, `sql/safety.py`,
+  `multidb.py`, `replicas.py`, `tenancy.py`), so a security-relevant read-only flag can no longer be passed
+  in the wrong positional slot. **No public MCP tool signature and no snapshot changed** — these are all
+  internal helpers and driver methods; `tests/contract/` passes unmodified (51 passed).
+  Also fixed **10 positional boolean-forwarding hazards that Ruff structurally cannot see** (`FBT003` fires
+  only on boolean *literals*, never on a boolean *variable* forwarded positionally): 4 in `replicas.py`
+  routing `force_readonly` into the primary/replica drivers, 4 `super()._execute_with_connection(...)`
+  forwards across `multidb.py`/`replicas.py`/`tenancy.py`, 1 `_execute_with_role(...)` call, and the
+  `indexing.py` aggregator calls. These were found by an AST arity sweep rather than by the linter; one of
+  them (`replicas.py`, `TenantTimeoutSqlDriver`) would otherwise have broken at runtime.
 - Fixed all 103 `FBT` (flake8-boolean-trap) violations in `src/mcpg/tools.py` — the `tools.py` half of the
   196-violation `FBT` sweep — by making boolean parameters keyword-only (`*, flag: bool = False`). The 103
   hits (53 `FBT001` + 50 `FBT002`; no `FBT003`) resolved to **53 boolean parameters across 43 functions, all

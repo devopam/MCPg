@@ -174,15 +174,18 @@ class TenantSqlDriver(SqlDriver):
         connection,
         query,
         params,
+        *,
         force_readonly,
         row_limit=None,
     ):
         role = resolve_role(self._default_role)
         if role is None:
             return await super()._execute_with_connection(
-                connection, query, params, force_readonly, row_limit=row_limit
+                connection, query, params, force_readonly=force_readonly, row_limit=row_limit
             )
-        return await _execute_with_role(connection, query, params, force_readonly, role, row_limit=row_limit)
+        return await _execute_with_role(
+            connection, query, params, force_readonly=force_readonly, role=role, row_limit=row_limit
+        )
 
 
 # C901 rationale: multi-tenant RLS execution path -- role validation,
@@ -195,6 +198,7 @@ async def _execute_with_role(  # noqa: C901
     connection: Any,
     query: str,
     params: Any,
+    *,
     force_readonly: bool,
     role: str,
     row_limit: int | None = None,

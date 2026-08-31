@@ -209,6 +209,7 @@ class SqlDriver:
         self,
         query: LiteralString,
         params: list[Any] | None = None,
+        *,
         force_readonly: bool = False,
         row_limit: int | None = None,
     ) -> list[RowResult] | None:
@@ -258,7 +259,7 @@ class SqlDriver:
     # tests/unit/test_sql_kernel_driver.py) -- restructuring it risks a
     # dropped rollback or a credential-leak regression for no benefit.
     async def _execute_with_connection(  # pragma: no cover - real psycopg execution; integration-tested  # noqa: C901
-        self, connection: Any, query: Any, params: Any, force_readonly: bool, row_limit: int | None = None
+        self, connection: Any, query: Any, params: Any, *, force_readonly: bool, row_limit: int | None = None
     ) -> list[RowResult] | None:
         """Execute on a specific connection with read-only + txn handling."""
         transaction_started = False

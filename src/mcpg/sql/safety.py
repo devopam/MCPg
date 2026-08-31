@@ -170,6 +170,7 @@ class SafeSqlDriver(SqlDriver):
         self,
         query: LiteralString,
         params: list[Any] | None = None,
+        *,
         force_readonly: bool = True,  # ignored — SafeSqlDriver always forces read-only
         row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult] | None:

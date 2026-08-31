@@ -179,6 +179,7 @@ class CacheManager:
 
     def __init__(
         self,
+        *,
         enabled: bool = True,
         ttl_seconds: int = 300,
         maxsize: int = 1024,

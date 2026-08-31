@@ -100,6 +100,7 @@ class ReadOnlySqlDriver(SqlDriver):
         self,
         query: Any,
         params: list[Any] | None = None,
+        *,
         force_readonly: bool = False,
         row_limit: int | None = None,
     ) -> list[SqlDriver.RowResult] | None:
@@ -112,6 +113,7 @@ class ReadOnlySqlDriver(SqlDriver):
         connection,
         query,
         params,
+        *,
         force_readonly,
         row_limit=None,
     ):
@@ -122,7 +124,9 @@ class ReadOnlySqlDriver(SqlDriver):
                 )
             with contextlib.suppress(AttributeError):
                 connection._timeouts_configured = True
-        return await super()._execute_with_connection(connection, query, params, force_readonly, row_limit=row_limit)
+        return await super()._execute_with_connection(
+            connection, query, params, force_readonly=force_readonly, row_limit=row_limit
+        )
 
 
 # NOTE: these two return shapes intentionally avoid ``slots=True`` and field
