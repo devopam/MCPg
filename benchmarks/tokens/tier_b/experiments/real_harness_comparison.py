@@ -229,7 +229,7 @@ async def _invoke_claude(  # noqa: C901
 
 
 def _result_to_trial(
-    task_id: str, arm: str, trial: int, raw: dict[str, Any], tool_names: list[str], passed: bool
+    task_id: str, arm: str, trial: int, raw: dict[str, Any], tool_names: list[str], *, passed: bool
 ) -> TrialResult:
     """Map a `claude -p --output-format stream-json` result event onto the shared TrialResult schema.
 
@@ -362,7 +362,7 @@ async def _run(args: argparse.Namespace) -> TierBReport:
                             timeout_seconds=args.invocation_timeout_seconds,
                         )
                         passed = task.grade(str(raw.get("result") or ""))
-                        result = _result_to_trial(task.id, arm, trial, raw, tool_names, passed)
+                        result = _result_to_trial(task.id, arm, trial, raw, tool_names, passed=passed)
                     except Exception as exc:  # record and continue, same as runner.py's pattern
                         result = TrialResult(
                             task_id=task.id,

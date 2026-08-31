@@ -95,6 +95,31 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Task 23 (rescoped ruff sweep) complete.** `pyproject.toml`'s `[tool.ruff.lint] select` list now
+  includes `C90`, `ASYNC`, `C4`, `SIM`, `PTH`, `PYI`, and `FBT` alongside the pre-existing
+  `E`/`F`/`I`/`B`/`W`/`N`/`UP`/`RUF` — every category assessed and driven to zero across Parts A-E is now
+  actually enforced by a bare `ruff check .`, not just spot-checked via `--select`. The `external =
+  ["ASYNC", "C90"]` entry added during Part B (to keep `RUF100` from flagging the mandated `# noqa:
+  ASYNC1xx` / `# noqa: C901` justifications as unused before these categories were selected) is removed —
+  `RUF100` now polices those ~113 noqa comments normally, and none were found stale. No `[tool.ruff.lint.
+  mccabe]` section was added: Part B's 66 `C901` findings (7 refactored, 59 justified-suppressed, including
+  the two extreme outliers `config.load_settings` at complexity 178 and `tools.py::_register_introspection`
+  at complexity 66) were measured against ruff's unconfigured default `max-complexity` of 10 — corroborated
+  by several findings at exactly 11 (`audit_database`, `tenancy._execute_with_role`,
+  `data_movement.dump_database`, `http_runtime.build_http_app`), which a higher threshold would not have
+  caught — so leaving the setting unset preserves the exact bar already assessed. Combined total across
+  Parts A-E: **417 violations addressed** (Part A: PTH/C4/SIM/PYI, 74; Part B: ASYNC/C901, 84 assessed;
+  Part C: FBT in `tools.py`, 103; Part D: FBT in `src/` + `tools/`, 30; Part E: FBT in `tests/`, 126),
+  verified against `.superpowers/sdd/2026-08-25-audit-remediation/progress.md`. One additional `FBT001`
+  hit, in `benchmarks/tokens/tier_b/experiments/real_harness_comparison.py`'s `_result_to_trial` helper,
+  surfaced only once `FBT` was actually selected — a scope gap, not interim drift: the file predates Parts
+  C-E (created 2026-07-30) but sits under `benchmarks/`, which none of those parts' globs (`tools.py`,
+  `src/`+`tools/`, `tests/`) covered. Fixed directly as a trivial, single-call-site change (`passed: bool`
+  to keyword-only) since it is not a registered MCP tool and carries no contract-snapshot exposure.
+  `Assessed but deliberately not enabled`, per the rescoping decision recorded at Task 23's start: `D`
+  (2,284 violations, entirely outside the public `tools.py` surface), `ANN` (475, redundant with `mypy
+  --strict`, which already passes clean), `TC` (165), `PT` (75, test-only) — baseline counts recorded for
+  a possible future dedicated pass.
 - Fixed the remaining 30 `FBT` (flake8-boolean-trap) violations in production and dev-script code — **26 in
   `src/` (excluding `src/mcpg/tools.py`, done previously) and 4 in `tools/`** — completing the `FBT` sweep
   outside `tests/`. Violations in `tests/` are deliberately left for a separate batch and are not covered
