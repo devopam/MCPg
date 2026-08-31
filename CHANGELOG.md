@@ -8,9 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Dev dependencies: `pytest-mock`, `pytest-randomly` (test-order randomization — active by default once
-  installed), `pytest-socket` (available for opt-in per-test network blocking, not globally enabled),
-  `time-machine`, `pytest-rerunfailures`.
+- Dev dependencies: `pytest-mock`, `pytest-randomly`, `pytest-socket`, `time-machine`,
+  `pytest-rerunfailures`. Of these, only `pytest-randomly` is active today — it auto-enables and
+  randomizes test order by default. The other four (`pytest-mock`, `pytest-socket`, `time-machine`,
+  `pytest-rerunfailures`) are staged for planned future test-hygiene work and are not yet wired
+  into any test: no `mocker` fixture, `time_machine` call, `--reruns`/`@pytest.mark.flaky` usage,
+  or `disable_socket`/`socket_enabled` usage exists anywhere in `tests/` as of this writing.
 
 - License enumeration (`pip-licenses`) added to CI as a non-blocking report step.
 
@@ -95,140 +98,57 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **Task 23 (rescoped ruff sweep) complete.** `pyproject.toml`'s `[tool.ruff.lint] select` list now
-  includes `C90`, `ASYNC`, `C4`, `SIM`, `PTH`, `PYI`, and `FBT` alongside the pre-existing
-  `E`/`F`/`I`/`B`/`W`/`N`/`UP`/`RUF` — every category assessed and driven to zero across Parts A-E is now
-  actually enforced by a bare `ruff check .`, not just spot-checked via `--select`. The `external =
-  ["ASYNC", "C90"]` entry added during Part B (to keep `RUF100` from flagging the mandated `# noqa:
-  ASYNC1xx` / `# noqa: C901` justifications as unused before these categories were selected) is removed —
-  `RUF100` now polices those ~113 noqa comments normally, and none were found stale. No `[tool.ruff.lint.
-  mccabe]` section was added: Part B's 66 `C901` findings (7 refactored, 59 justified-suppressed, including
-  the two extreme outliers `config.load_settings` at complexity 178 and `tools.py::_register_introspection`
-  at complexity 66) were measured against ruff's unconfigured default `max-complexity` of 10 — corroborated
-  by several findings at exactly 11 (`audit_database`, `tenancy._execute_with_role`,
-  `data_movement.dump_database`, `http_runtime.build_http_app`), which a higher threshold would not have
-  caught — so leaving the setting unset preserves the exact bar already assessed. Combined total across
-  Parts A-E: **417 violations addressed** (Part A: PTH/C4/SIM/PYI, 74; Part B: ASYNC/C901, 84 assessed;
-  Part C: FBT in `tools.py`, 103; Part D: FBT in `src/` + `tools/`, 30; Part E: FBT in `tests/`, 126),
-  verified against `.superpowers/sdd/2026-08-25-audit-remediation/progress.md`. One additional `FBT001`
-  hit, in `benchmarks/tokens/tier_b/experiments/real_harness_comparison.py`'s `_result_to_trial` helper,
-  surfaced only once `FBT` was actually selected — a scope gap, not interim drift: the file predates Parts
-  C-E (created 2026-07-30) but sits under `benchmarks/`, which none of those parts' globs (`tools.py`,
-  `src/`+`tools/`, `tests/`) covered. Fixed directly as a trivial, single-call-site change (`passed: bool`
-  to keyword-only) since it is not a registered MCP tool and carries no contract-snapshot exposure.
-  `Assessed but deliberately not enabled`, per the rescoping decision recorded at Task 23's start: `D`
-  (2,284 violations, entirely outside the public `tools.py` surface), `ANN` (475, redundant with `mypy
-  --strict`, which already passes clean), `TC` (165), `PT` (75, test-only) — baseline counts recorded for
-  a possible future dedicated pass.
-- Fixed the remaining 30 `FBT` (flake8-boolean-trap) violations in production and dev-script code — **26 in
-  `src/` (excluding `src/mcpg/tools.py`, done previously) and 4 in `tools/`** — completing the `FBT` sweep
-  outside `tests/`. Violations in `tests/` are deliberately left for a separate batch and are not covered
-  here. As before, a `*` marker was inserted before each signature's first boolean parameter rather than
-  reordering parameters, and every affected call site was converted to keyword form.
-  The substantive change is in the SQL kernel: `force_readonly` is now keyword-only across the whole
-  `execute_query` / `_execute_with_connection` override family (`sql/driver.py`, `sql/safety.py`,
-  `multidb.py`, `replicas.py`, `tenancy.py`), so a security-relevant read-only flag can no longer be passed
-  in the wrong positional slot. **No public MCP tool signature and no snapshot changed** — these are all
-  internal helpers and driver methods; `tests/contract/` passes unmodified (51 passed).
-  30 raw `FBT` diagnostics resolved to **20 actual signature changes** — 18 that Ruff flagged, plus 4
-  untyped subclass overrides (`multidb.py`, `replicas.py` ×2, `tenancy.py`) that Ruff can't see but were
-  converted anyway to keep the override family consistent.
-  28 call sites were converted to keyword form in total, but **Ruff flagged only 3 of them** (the `FBT003`
-  hits in `pitr.py`). `FBT003` fires only on boolean *literals*, never on a boolean *variable* forwarded
-  positionally, so the other 25 are structurally invisible to the linter: 9 in the `force_readonly` family
-  (4 routing calls in `replicas.py`, 4 `super()._execute_with_connection(...)` forwards across
-  `multidb.py`/`replicas.py`/`tenancy.py`, 1 `_execute_with_role(...)` call), 3 `indexing.py` aggregator
-  calls, 8 `_validate_bool(...)` calls, 2 in `tools/`, and 3 further `PitrGate(...)` calls that pass a
-  boolean variable in the slot the 3 flagged ones pass a literal. These were found by an AST arity sweep
-  rather than by the linter; one of them (`replicas.py`, `TenantTimeoutSqlDriver`) would otherwise have
-  broken at runtime on the multi-tenant + timeout path.
-- Fixed all 126 `FBT` (flake8-boolean-trap) violations in `tests/` (53 `FBT003` + 41 `FBT001` + 32
-  `FBT002`) — **this completes the entire `FBT` sweep across Parts C+D+E: 103 (`tools.py`) + 30 (`src/` +
-  `tools/`) + 126 (`tests/`) = 259 total violations fixed, `FBT` is now clean repo-wide.** 45 test-helper
-  signatures (fixtures, local fakes, small builder functions) were made keyword-only (`*` inserted before
-  the first boolean parameter, no reordering) and every call site fixed to match; `FBT003` call-site
-  literals were converted to keyword form, including several dataclass constructions
-  (`DomainInfo`/`PublicationInfo`/`SubscriptionInfo`/`ColumnInfo`/`CronJob`) that don't otherwise appear in
-  this sweep's file list. Two calls into `_cached_call`'s `*key_args` (a genuinely variadic-positional
-  cache-key slot with no keyword form) were rewritten to pass a named variable instead of a literal
-  `True`, which is enough to clear `FBT003` without a `noqa` since the rule only fires on boolean
-  *literals*. Zero `noqa` added in this batch.
-  **Completed the Part D handoff exactly as specified:** `tests/unit/_fakes.py`'s three standalone
-  fakes (`FakeDriver`, `FakeRoutingDriver`, `FakeParamRoutingDriver`) had their `force_readonly` parameter
-  made keyword-only, together with all 5 positional `super()`/`self._routing` call sites into them
-  (`test_graph_projection.py` ×2, `test_migration_history.py`, `test_nl2sql.py`,
-  `test_audit_events_migration.py`) fixed to keyword form in this same commit — verified before and after
-  with `grep -rn "force_readonly" tests/`, so no `TypeError` was introduced.
-  One definition could not be made keyword-only without also changing its production caller:
-  `tests/unit/test_database.py`'s `_FakeConnection.set_autocommit` mirrors the real
-  `psycopg.AsyncConnection.set_autocommit(value: bool)` and is called positionally from
-  `src/mcpg/database.py`'s `run_unmanaged` — reaching into `src/` for a test-fake fix is explicitly
-  out of this batch's scope, so instead the fake's `value` parameter had its `bool` type annotation
-  dropped (`FBT001` fires on the annotation, not the position); the fake still accepts the same
-  calling convention as the real connection object it stands in for, `src/mcpg/database.py` is
-  untouched, and no `noqa` was needed.
-  With `FBT` now fully clean, the category is ready for Step 11 (adding `FBT`, `C90`, `ASYNC`, `C4`,
-  `SIM`, `PTH`, `PYI` to `pyproject.toml`'s `[tool.ruff.lint] select` list) — not done here, per the plan's
-  intent to keep that "flip the switch" change its own separate, reviewable commit.
-- Fixed all 103 `FBT` (flake8-boolean-trap) violations in `src/mcpg/tools.py` — the `tools.py` half of the
-  196-violation `FBT` sweep — by making boolean parameters keyword-only (`*, flag: bool = False`). The 103
-  hits (53 `FBT001` + 50 `FBT002`; no `FBT003`) resolved to **53 boolean parameters across 43 functions, all
-  43 of which are registered `@server.tool` MCP tools** — there were no internal-helper hits in this file. A
-  `*` marker was inserted before each signature's first boolean parameter rather than reordering parameters,
-  so declaration order (and therefore JSON-Schema `required` order) is preserved. Boolean tool arguments now
-  can't be passed positionally in Python, which is the point: `create_subscription(..., True, True, True)`
-  was legal and unreadable.
-  **The exposed MCP wire contract is unchanged.** The `mcp` SDK derives each tool's JSON Schema via
-  pydantic, which treats keyword-only and positional-or-keyword parameters identically, so no tool's
-  `inputSchema` moved. Verified two ways: `tests/contract/` passes **without** regenerating anything, and
-  re-running both `MCPG_REGENERATE_TOOL_SNAPSHOT=1` and `MCPG_REGENERATE_TOOL_RETURN_SHAPES=1` reproduces
-  `tool_surface.snapshot.json` and `tool_return_shapes.snapshot.json` byte-for-byte (empty `git diff`).
-  This is a Python calling-convention change only; MCP clients, which always dispatch tool arguments by
-  name, are unaffected.
-  Also hardened one cross-module call site while here: `read_pg_wal_stats` now passes `per_record=` to
-  `walinspect.read_pg_wal_stats` by keyword instead of positionally, so the pending `FBT` pass over the
-  rest of the codebase can make that helper's parameter keyword-only without silently breaking this
-  caller. That remaining count is **157**, not the ~93 originally estimated — commits landed on this
-  branch since the sweep was scoped added roughly 64 new `FBT` hits, almost all in `tests/` (live
-  breakdown: 26 in `src/`, 126 in `tests/`, 5 in `tools/` dev scripts).
-- Fixed all pre-existing violations in four opt-in Ruff lint categories — `PTH` (flake8-use-pathlib, 9),
-  `C4` (flake8-comprehensions, 1), `SIM` (flake8-simplify, 48), `PYI` (flake8-pyi, 16) — 74 total, run
-  category-by-category with `--select` (not yet added to `pyproject.toml`'s `[tool.ruff.lint] select`
-  list; that lands in a later commit once the remaining assessed categories — `C90`, `ASYNC`, `FBT` — are
-  also fixed). `PTH`/`C4` hits and the `SIM` autofixable subset were mechanical (`os.path.*` →
-  `pathlib.Path`, `open()` → `Path.open()`, unnecessary comprehension/literal wrapping, yoda-condition and
-  nested-`with` rewrites); every `PTH` hit and every non-autofixed `SIM`/`PYI` hit (`contextlib.suppress`
-  for `try`/`except`/`pass`, if/else-to-ternary, nested-if collapsing, `__aenter__`/`__enter__` return type
-  → `Self`) was hand-reviewed for behavior preservation, including the security-critical SQL-safety AST
-  walker (`src/mcpg/sql/safety.py`) and the subprocess bin-allowlist symlink check (`src/mcpg/shell.py`).
-- Assessed the remaining two opt-in Ruff categories from the same sweep — `ASYNC` (flake8-async, 18
-  violations) and `C901` (mccabe complexity, 66) — reviewing each individually rather than blanket-fixing
-  or blanket-suppressing (still not added to `pyproject.toml`'s `select` list; only rule-code prefixes were
-  added to a new `[tool.ruff.lint] external` entry so this task's mandated per-violation `# noqa` comments
-  don't trip `RUF100` before a future step formally enables the categories). `ASYNC`: all 18 were
-  justified-suppressed with an inline reason, 0 required a code change — every `ASYNC109`
-  (`timeout`-parameter) hit was a pass-through to a lower layer that already owns real timeout enforcement:
-  httpx's own per-request timeout for the NL→SQL providers; `SafeSqlDriver`'s existing `asyncio.timeout()`
-  (`src/mcpg/sql/safety.py:181`) for `run_select`; or an explicit `asyncio.wait_for(..., timeout=timeout)`
-  at the actual execution boundary for `run_select_tuned` and `explain_query`'s `io=True` path, both of
-  which only use `SafeSqlDriver` for its pglast validator, not for execution, so its `timeout=` is inert on
-  those two paths. The 3 `ASYNC240` + 1 `ASYNC221` blocking-call hits were all test-only or one-off-script
-  call sites, not hot paths. `C901`: 7 functions refactored (cheap, safe,
-  extract-a-helper or if-chain-to-dispatch-table changes — `diesel.py`, `sqlc.py`, `test_row_factory.py`
-  ×2, `test_data.py`, `audit.py`, `diagrams.py` — each re-verified against its own unit test file plus
-  `mypy`/`ruff format`), the remaining 59 justified-suppressed with an individual one-line reason each
-  (grouped by theme in the batch report: security-critical kernel functions including
-  `SafeSqlDriver._validate_node` — per this task's own mandate, suppressed citing the module's existing
-  fuzz-tested/adversarially-pinned rationale, not refactored — plus other identifier-validation /
-  credential-handling / subprocess-sandboxing paths, the `tools.py` MCP-tool-registration functions gated
-  by the frozen 254-tool contract snapshot, numerical algorithms (k-means, MMR re-ranking, ANN recall
-  sweeps) where a refactor risks changing the computed result, and several code-generator functions in the
-  same family as the refactored `diesel.py`/`sqlc.py` but with cross-cutting state that resists the same
-  cheap extraction). Full detail per function:
-  `.superpowers/sdd/2026-08-25-audit-remediation/batch-ruffB-report.md`. `uv run ruff check --select
-  ASYNC,C901 .` → 0; full verification (`ruff check . && ruff format --check . && mypy src/mcpg && pytest
-  -q`, including `tests/contract/` and `tests/integration/`) → clean, 3001 passed / 115 skipped, no
-  failures, no tool-surface or tool-return-shape contract drift.
+- **Task 23 (ruff sweep, Parts A-E + Step 11) complete.** `pyproject.toml`'s `[tool.ruff.lint] select`
+  list now includes `C90`, `ASYNC`, `C4`, `SIM`, `PTH`, `PYI`, and `FBT` alongside the pre-existing
+  `E`/`F`/`I`/`B`/`W`/`N`/`UP`/`RUF`, and `uv run ruff check .` is clean with zero outstanding
+  violations across all 7 categories. The `external = ["ASYNC", "C90"]` workaround added mid-sweep (so
+  `RUF100` wouldn't flag the mandated per-violation `# noqa` justifications as unused before these
+  categories were selected) is removed now that both are enforced; `RUF100` polices those ~113 `noqa`
+  comments normally and none are stale. No `[tool.ruff.lint.mccabe]` section was added — `C901`
+  findings were measured against ruff's unconfigured default `max-complexity` of 10, corroborated by
+  several findings at exactly 11 (`audit_database`, `tenancy._execute_with_role`,
+  `data_movement.dump_database`, `http_runtime.build_http_app`) that a higher threshold would have
+  missed.
+
+  **418 violations addressed in total:**
+  - Part A — 74 mechanical fixes: `PTH` (9), `C4` (1), `SIM` (48), `PYI` (16).
+  - Part B — 84 `ASYNC`/`C901` findings individually assessed: `ASYNC` (18, all justified-suppressed —
+    each is a pass-through `timeout=` parameter already enforced by a lower layer, e.g. httpx's own
+    per-request timeout or `SafeSqlDriver`'s `asyncio.timeout()`); `C901` (66: 7 refactored, 59
+    justified-suppressed, including the security-critical `SafeSqlDriver._validate_node`, suppressed
+    rather than refactored per its existing adversarial/fuzz-pinning rationale).
+  - Parts C+D+E+Step 11 — 260 `FBT` (flake8-boolean-trap) violations, now clean repo-wide: 103 in
+    `src/mcpg/tools.py` (Part C — all 43 affected functions are registered MCP tools), 30 in the rest
+    of `src/` + `tools/` (Part D), 126 in `tests/` (Part E), and 1 in `benchmarks/`, found only once
+    `FBT` was selected repo-wide in Step 11 — a scope gap (`benchmarks/` sat outside every part's glob),
+    fixed directly as a trivial single-call-site change.
+
+  Assessed but deliberately left disabled, per the rescoping decision recorded at Task 23's start: `D`
+  (2,284 violations, outside the public `tools.py` surface), `ANN` (475, redundant with `mypy --strict`,
+  already clean), `TC` (165), `PT` (75, test-only) — baseline counts kept for a possible future pass.
+
+  The substantive code change inside the `FBT` sweep is in the SQL kernel: `force_readonly` is now
+  keyword-only across the whole `execute_query` / `_execute_with_connection` override family
+  (`sql/driver.py`, `sql/safety.py`, `multidb.py`, `replicas.py`, `tenancy.py`), so a security-relevant
+  read-only flag can no longer be passed in the wrong positional slot. **No public MCP tool signature or
+  contract snapshot moved anywhere in the sweep** — a `*` marker before each signature's first boolean
+  parameter (never reordered) is transparent to pydantic's JSON-Schema derivation, so `tests/contract/`
+  passes unmodified throughout and both snapshots (`tool_surface.snapshot.json`,
+  `tool_return_shapes.snapshot.json`) regenerate byte-for-byte. Most non-`tools.py` `FBT` hits were
+  invisible to the linter itself (`FBT003` fires only on boolean *literals*, never on a boolean
+  *variable* forwarded positionally), so an AST arity sweep was used instead — and it caught two
+  genuine near-miss bugs the linter alone would have missed: a positionally-mismatched
+  `TenantTimeoutSqlDriver` call in `replicas.py` (would have raised `TypeError` at runtime on the
+  multi-tenant + timeout path), and the mandatory Part D -> Part E test-fake handoff
+  (`tests/unit/_fakes.py`'s three standalone fakes — `FakeDriver`, `FakeRoutingDriver`,
+  `FakeParamRoutingDriver` — plus their 5 positional call sites across 4 test files), verified with
+  `grep -rn "force_readonly" tests/` before and after so no `TypeError` slipped through.
+
+  **Live FBT breakdown:** of the 157 hits that remained once `tools.py`'s 103 were fixed, 26 were in
+  `src/`, 126 in `tests/`, 4 in `tools/` dev scripts, and 1 in `benchmarks/` (the last not discovered
+  until Step 11 selected `FBT` repo-wide). Full per-part, per-file detail — the granular
+  commit-by-commit narrative this entry summarizes — is preserved in
+  `.superpowers/sdd/2026-08-25-audit-remediation/batch-ruff*.md`.
 - Pinned `hatchling>=1.26` as the build-system floor (previously unpinned).
 - HSTS `max-age` default bumped from 31536000 (1 year) to 63072000 (2 years), OWASP's current
   recommendation — the old value remains the `hstspreload.org` minimum-eligibility floor, not the target.
