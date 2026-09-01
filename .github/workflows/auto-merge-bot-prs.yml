@@ -10,14 +10,19 @@ on:
         required: true
         type: number
 
+# Least privilege at workflow scope. Write scopes live only on the job
+# that enables auto-merge / posts the failure comment (Scorecard
+# Token-Permissions / code-scanning alert #93).
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   auto-merge-bot-prs:
     name: Auto-merge unsigned bot PRs
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     # The `[bot]`-suffix username namespace is reserved for GitHub App identities
     # (confirmed via `gh api users/dependabot%5Bbot%5D` — `type: Bot`); a human account
     # cannot register one, so the `endsWith(github.actor, '[bot]')` clause below

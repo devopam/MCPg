@@ -231,6 +231,9 @@ jobs:
     name: Create GitHub Release
     needs: publish-pypi
     runs-on: ubuntu-latest
+    # contents: write is required to create the release and attach assets.
+    # softprops/action-gh-release is a recognized packaging/release action
+    # for Scorecard Token-Permissions (code-scanning alert #92).
     permissions:
       contents: write
     steps:
@@ -262,33 +265,36 @@ jobs:
           python3 packaging/mcpb/sync_version.py "$VER"
           npx --yes @anthropic-ai/mcpb validate packaging/mcpb/manifest.json
           npx --yes @anthropic-ai/mcpb pack packaging/mcpb "dist/mcpg-${VER}.mcpb"
-      - name: Cut release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract release notes from CHANGELOG
+        # Pull the matching section out of CHANGELOG.md as the
+        # release body. Falls back to a stub if the section is
+        # missing so the release still ships — the maintainer can
+        # edit the body afterwards on the GitHub side.
+        #
+        # NOT an awk range pattern: GNU awk treats a line matching
+        # both endpoints as a single-line range, and "## [X.Y.Z]"
+        # matches both /^## \[X.Y.Z\]/ and /^## \[/ — so the old
+        # range-based extraction returned only the header line and
+        # every release body silently fell back to the stub
+        # (observed on v0.6.7 and all earlier releases). A flag
+        # variable sidesteps that; index() avoids regex-escaping
+        # the dots in the version.
         run: |
           VER="${GITHUB_REF_NAME#v}"
-          # Pull the matching section out of CHANGELOG.md as the
-          # release body. Falls back to a stub if the section is
-          # missing so the release still ships — the maintainer can
-          # edit the body afterwards on the GitHub side.
-          #
-          # NOT an awk range pattern: GNU awk treats a line matching
-          # both endpoints as a single-line range, and "## [X.Y.Z]"
-          # matches both /^## \[X.Y.Z\]/ and /^## \[/ — so the old
-          # range-based extraction returned only the header line and
-          # every release body silently fell back to the stub
-          # (observed on v0.6.7 and all earlier releases). A flag
-          # variable sidesteps that; index() avoids regex-escaping
-          # the dots in the version.
           awk -v ver="$VER" '
             index($0, "## [" ver "]") == 1 { in_section = 1; next }
             in_section && /^## \[/ { exit }
             in_section
           ' CHANGELOG.md > /tmp/notes.md
           [ -s /tmp/notes.md ] || echo "See CHANGELOG.md" > /tmp/notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* sbom/* \
-            --title "MCPg ${GITHUB_REF_NAME}" \
-            --notes-file /tmp/notes.md
+      - name: Cut release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          name: MCPg ${{ github.ref_name }}
+          body_path: /tmp/notes.md
+          files: |
+            dist/*
+            sbom/*
 
   publish-mcp-registry:
     name: Publish to MCP Registry
