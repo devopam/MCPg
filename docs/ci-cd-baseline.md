@@ -2,7 +2,7 @@
 
 **Project:** MCPg
 **Baseline created:** 2026-09-01
-**Last audited:** 2026-09-01 (this invocation — baseline written and first audit run together; no prior `docs/ci-cd-baseline.md` existed)
+**Last audited:** 2026-09-01
 **ci-cd-plumber skill version:** 0.1.0 (from agent-skills repo at audit time)
 **Maturity target:** high-assurance (production, long-lived, multi-channel release)
 
@@ -36,7 +36,7 @@
 ## Security posture (recorded decisions)
 
 - Workflow default `permissions: contents: read` (or `read-all` where appropriate); elevated scopes only on jobs that need them (`id-token`, `attestations`, `security-events`, `packages`, `contents: write` for release)
-- Third-party actions pinned to full commit SHAs with version comments (near-universal; see audit for residual tag pins)
+- Third-party actions pinned to full commit SHAs with version comments (including `github/codeql-action` init/analyze/upload-sarif)
 - `persist-credentials: false` on checkouts
 - step-security/harden-runner on every job (egress-policy: **audit** — progressive rollout toward block)
 - OIDC Trusted Publishing for PyPI / TestPyPI; OIDC for MCP Registry login and attestations
@@ -54,8 +54,8 @@
 
 ## Deliberate exceptions (do not treat as regressions unless intent changes)
 
-1. **zizmor / actionlint in reporting mode** (`continue-on-error` / `fail-on-error: false`) — intentional until baseline triage complete; TODOs in workflow comment to promote to blocking.
-2. **Harden-Runner egress-policy: audit** — intentional progressive rollout; block mode deferred until egress allow-list is written from audit data.
+1. **zizmor / actionlint in reporting mode** (`continue-on-error` / `fail-on-error: false`) — intentional until a current dashboard triage confirms clean High/Medium (or accepted waivers); then promote to blocking. TODOs remain in workflow comments.
+2. **Harden-Runner egress-policy: audit** — intentional progressive rollout; block mode deferred until egress allow-list is written from real publish-run audit data (start with `publish.yml` when ready).
 3. **PG 19 and WarehousePG matrix lanes** — `continue-on-error: true` / experimental; non-gating by design until GA / image stability.
 4. **Parameterized CI Postgres Dockerfile** (`.github/ci-postgres.Dockerfile`) — intentionally not digest-pinned (driven by `PG_MAJOR` matrix); other Dockerfiles use digests where fixed.
 5. **Docker build-push `provenance: false`** on GHCR job — intentional to keep package page as a single clean manifest.
@@ -63,4 +63,5 @@
 
 ## Drift log
 
-- 2026-09-01: Baseline created retroactively by ci-cd-plumber. First full audit run in the same invocation. Findings reported in conversation (scoring tables + severity-ordered remediation suggestions); no bulk auto-fixes applied.
+- 2026-09-01: Baseline created retroactively by ci-cd-plumber. First full audit run in the same invocation. Findings reported in conversation; no bulk auto-fixes applied.
+- 2026-09-01: **M1 remediated** — `github/codeql-action/init` and `analyze` in `.github/workflows/codeql.yml` pinned from mutable `@v4` tags to full SHA `cdf488f595d80d6e07e03d4674febd5ab45fa938` (# v4), matching existing `upload-sarif` pins elsewhere. Residual tag-pin inconsistency from the audit is closed.
