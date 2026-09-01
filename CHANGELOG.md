@@ -53,6 +53,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`auto-merge-bot-prs.yml` could never actually merge a bot PR — it always timed out after ~10
+  minutes.** The workflow polled `checks.listForRef` on the PR's head SHA in a loop, waiting for every
+  check run to report `completed` before merging. That check-run list includes the workflow's *own*
+  currently-running check run, which by definition isn't `completed` while the loop is still polling —
+  a self-referential deadlock that guaranteed "N-1 of N complete" forever, until the loop's own 60-attempt
+  timeout threw (see PRs #324, #325, #326, all of which timed out this way). Replaced the whole hand-rolled
+  wait-then-merge loop with GitHub's native `gh pr merge --squash --auto`, which delegates "wait for the
+  branch's *required* status checks, then merge" to GitHub itself — no self-polling, and it correctly
+  waits only on branch protection's required-checks list rather than every check run present on the SHA.
+  Also made the existing (previously inert) `workflow_dispatch` trigger actually usable by accepting a
+  `pr_number` input.
 - **`run_select` / `run_select_tuned` fully materialized a query's entire result set into Python
   `dict`/`RowResult` objects before truncating to `max_rows`,** rather than bounding the fetch itself —
   a query without its own `LIMIT` against a large table could build millions of row objects into memory
