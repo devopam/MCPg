@@ -54,14 +54,33 @@
 
 ## Deliberate exceptions (do not treat as regressions unless intent changes)
 
-1. **zizmor / actionlint in reporting mode** (`continue-on-error` / `fail-on-error: false`) — intentional until a current dashboard triage confirms clean High/Medium (or accepted waivers); then promote to blocking. TODOs remain in workflow comments.
-2. **Harden-Runner egress-policy: audit** — intentional progressive rollout; block mode deferred until egress allow-list is written from real publish-run audit data (start with `publish.yml` when ready).
+1. **zizmor / actionlint in reporting mode** — see TODO below before promoting to blocking.
+2. **Harden-Runner egress-policy: audit** — see TODO below before block mode on publish.
 3. **PG 19 and WarehousePG matrix lanes** — `continue-on-error: true` / experimental; non-gating by design until GA / image stability.
 4. **Parameterized CI Postgres Dockerfile** (`.github/ci-postgres.Dockerfile`) — intentionally not digest-pinned (driven by `PG_MAJOR` matrix); other Dockerfiles use digests where fixed.
 5. **Docker build-push `provenance: false`** on GHCR job — intentional to keep package page as a single clean manifest.
 6. **Manual tag-based release** rather than release-please — matches documented release-process.md; not a gap unless automation is later desired.
 
+## TODO (deferred from 2026-09-01 ci-cd-plumber audit)
+
+Do **not** treat these as open defects until you choose to schedule them. Order matches increasing operational risk.
+
+1. **[M2] Promote zizmor / actionlint to blocking**
+   - Precondition: confirm Security → Code scanning (zizmor category) is clean, or triage remaining findings / waivers.
+   - Then in `.github/workflows/actions-security.yml`: remove `continue-on-error: true` on the zizmor step; set actionlint `fail-on-error: true`.
+   - Avoid promoting while known open findings remain (otherwise every PR fails for no new value).
+
+2. **[L1] Harden-Runner block mode on `publish.yml` first**
+   - Precondition: review egress audit logs from real publish runs; build an allow-list covering PyPI, TestPyPI, GHCR, MCP registry, uv/npx, attestation endpoints, etc.
+   - Only then switch `egress-policy: block` on publish jobs (not on guesswork — a bad list breaks tagged releases).
+
+3. **Optional (leave unless priorities change)**
+   - **[L2]** Path filters / `paths-ignore` on `ci.yml` for pure-docs changes (trade-off: some doc PRs skip the test matrix).
+   - **[L3]** Re-enable Docker build-push provenance on GHCR if multi-manifest package UI is acceptable.
+   - **[L4]** release-please / similar only if release cadence or contributor count grows enough to justify automation.
+
 ## Drift log
 
 - 2026-09-01: Baseline created retroactively by ci-cd-plumber. First full audit run in the same invocation. Findings reported in conversation; no bulk auto-fixes applied.
-- 2026-09-01: **M1 remediated** — `github/codeql-action/init` and `analyze` in `.github/workflows/codeql.yml` pinned from mutable `@v4` tags to full SHA `cdf488f595d80d6e07e03d4674febd5ab45fa938` (# v4), matching existing `upload-sarif` pins elsewhere. Residual tag-pin inconsistency from the audit is closed.
+- 2026-09-01: **M1 remediated** — `github/codeql-action/init` and `analyze` in `.github/workflows/codeql.yml` pinned from mutable `@v4` tags to full SHA `cdf488f595d80d6e07e03d4674febd5ab45fa938` (# v4), matching existing `upload-sarif` pins elsewhere.
+- 2026-09-01: Remaining audit items (M2, L1, optional L2–L4) recorded under **TODO (deferred…)**; no further changes in this pass.
