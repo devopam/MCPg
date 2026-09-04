@@ -57,7 +57,7 @@ def test_quote_identifier_escapes_embedded_quotes(name: str, expected: str) -> N
     # The escaped form has balanced, even quoting: stripping the outer pair
     # and collapsing doubled quotes recovers the original name exactly.
     inner = quoted[1:-1]
-    assert inner.replace('""', '\x00').count('"') == 0
+    assert inner.replace('""', "\x00").count('"') == 0
     assert inner.replace('""', '"') == name
 
 
