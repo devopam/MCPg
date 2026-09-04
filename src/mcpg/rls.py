@@ -20,14 +20,12 @@ Safe by construction:
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
 from mcpg.errors import MCPgError
+from mcpg.identifiers import IdentifierError, ensure_identifier, quote_identifier
 from mcpg.sql import SqlDriver
-
-_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 DEFAULT_RLS_SAMPLE_SIZE = 25
 
@@ -37,8 +35,13 @@ class RLSError(MCPgError):
 
 
 def _check_identifier(value: str, kind: str) -> None:
-    if not _IDENTIFIER.match(value):
-        raise RLSError(f"invalid {kind} {value!r}; must match [A-Za-z_][A-Za-z0-9_]*")
+    # Accept any addressable identifier (schema / table / role names needing
+    # delimited quoting included); the splice sites quote them safely. Only
+    # empty / NUL / overlong names are refused.
+    try:
+        ensure_identifier(value, kind)
+    except IdentifierError as exc:
+        raise RLSError(str(exc)) from exc
 
 
 @dataclass(frozen=True)
@@ -154,10 +157,11 @@ async def test_rls_for_role(
         for row in policy_rows or []
     ]
 
-    # Now run the count + sample AS the role. Inline the validated
-    # identifiers — they've all been allowlist-checked.
-    qualified = f'"{schema}"."{table}"'
-    quoted_role = f'"{role}"'
+    # Now run the count + sample AS the role. Every identifier is quoted
+    # with embedded quotes doubled, so a name needing delimited quoting
+    # works and cannot break out of its identifier.
+    qualified = f"{quote_identifier(schema, 'schema')}.{quote_identifier(table, 'table')}"
+    quoted_role = quote_identifier(role, "role")
 
     # Count + sample issued as separate queries inside the role
     # context. The driver wraps each call in its own transaction; we

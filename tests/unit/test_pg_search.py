@@ -271,11 +271,10 @@ async def test_get_pg_search_index_metadata_returns_parsed_info() -> None:
 @pytest.mark.parametrize(
     ("schema", "index"),
     [
-        ("public; DROP TABLE x", "docs_bm25_idx"),
-        ("public", "docs_bm25_idx; --"),
         ("", "docs"),
         ("public", ""),
-        ("123bad", "docs"),
+        ("sch\x00ema", "docs"),
+        ("public", "id\x00x"),
     ],
 )
 async def test_get_pg_search_index_metadata_validates_identifiers(schema: str, index: str) -> None:
@@ -534,7 +533,7 @@ async def test_pg_search_run_multi_column_validates_each_identifier() -> None:
             "docs",
             "rust",
             "id",
-            columns=["body", "bad; name"],
+            columns=["body", "bad\x00name"],
             limit=5,
         )
 
@@ -595,12 +594,10 @@ async def test_pg_search_run_limit_validation(bad_limit: object) -> None:
 @pytest.mark.parametrize(
     ("schema", "table", "key_field"),
     [
-        ("public; DROP TABLE x", "docs", "id"),
-        ("public", "docs; --", "id"),
-        ("public", "docs", "id'; DROP"),
         ("", "docs", "id"),
         ("public", "", "id"),
         ("public", "docs", ""),
+        ("sch\x00", "docs", "id"),
     ],
 )
 async def test_pg_search_run_identifier_validation(schema: str, table: str, key_field: str) -> None:
@@ -668,7 +665,7 @@ async def test_pg_search_more_like_this_validates_identifiers() -> None:
 
     with pytest.raises(PgSearchError, match="invalid"):
         await pg_search_more_like_this(  # type: ignore[arg-type]
-            driver, "bad; schema", "docs", 42, "id", limit=10
+            driver, "bad\x00schema", "docs", 42, "id", limit=10
         )
 
 
@@ -1256,10 +1253,10 @@ async def test_hybrid_bm25_vector_search_rejects_bad_k(bad_k: object) -> None:
 @pytest.mark.parametrize(
     ("schema", "table", "key_field", "vector_column"),
     [
-        ("public; --", "docs", "id", "embedding"),
-        ("public", "docs; DROP", "id", "embedding"),
-        ("public", "docs", "id'or'1", "embedding"),
-        ("public", "docs", "id", "embedding); --"),
+        ("", "docs", "id", "embedding"),
+        ("public", "", "id", "embedding"),
+        ("public", "docs", "", "embedding"),
+        ("public", "docs", "id", "emb\x00"),
     ],
 )
 async def test_hybrid_bm25_vector_search_identifier_validation(
@@ -1471,12 +1468,12 @@ async def test_create_pg_search_index_option_validation(kwarg: str, value: objec
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"schema": "public; DROP"},
-        {"table": "docs'; --"},
+        {"schema": "sch\x00ema"},
+        {"table": "d\x00ocs"},
         {"index_name": ""},
-        {"key_field": "id'or'1"},
+        {"key_field": "k\x00ey"},
         {"columns": []},
-        {"columns": ["good", "bad; --"]},
+        {"columns": ["good", "ba\x00d"]},
         {"columns": "id"},  # not a list
     ],
 )
@@ -1568,7 +1565,7 @@ async def test_reindex_pg_search_index_omits_concurrently_when_disabled() -> Non
 async def test_reindex_pg_search_index_rejects_unsafe_identifiers() -> None:
     db = FakeDatabase(FakeRoutingDriver({"pg_extension": [{"present": 1}]}))  # type: ignore[arg-type]
     with pytest.raises(PgSearchError, match="invalid"):
-        await reindex_pg_search_index(db, "public; DROP", "docs_bm25_idx")  # type: ignore[arg-type]
+        await reindex_pg_search_index(db, "sch\x00ema", "docs_bm25_idx")  # type: ignore[arg-type]
 
 
 async def test_create_pg_search_index_wraps_driver_failure_as_pg_search_error() -> None:

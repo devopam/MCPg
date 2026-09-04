@@ -19,7 +19,7 @@ async def test_test_rls_for_role_rejects_unsafe_role_name() -> None:
             FakeRoutingDriver({}),  # type: ignore[arg-type]
             schema="app",
             table="orders",
-            role='"; DROP USER alice',
+            role="ro\x00le",
         )
 
 
@@ -27,7 +27,7 @@ async def test_test_rls_for_role_rejects_unsafe_schema() -> None:
     with pytest.raises(RLSError, match="invalid schema"):
         await run_rls_test(
             FakeRoutingDriver({}),  # type: ignore[arg-type]
-            schema='app"; DROP TABLE x',
+            schema="",
             table="orders",
             role="readonly",
         )

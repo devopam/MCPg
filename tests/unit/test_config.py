@@ -208,9 +208,16 @@ def test_default_role_defaults_to_none_and_parses_when_set() -> None:
     assert settings.default_role == "app_reader"
 
 
-def test_default_role_rejects_unsafe_identifiers() -> None:
+def test_default_role_accepts_delimited_role_names() -> None:
+    # Role names needing delimited quoting are legal in PostgreSQL and are
+    # quoted safely where SET LOCAL ROLE is issued, so config accepts them.
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_DEFAULT_ROLE": "role-with-dash"})
+    assert settings.default_role == "role-with-dash"
+
+
+def test_default_role_rejects_non_addressable_identifiers() -> None:
     with pytest.raises(ConfigError, match="MCPG_DEFAULT_ROLE"):
-        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_DEFAULT_ROLE": '"; DROP USER alice'})
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_DEFAULT_ROLE": "bad\x00role"})
 
 
 def test_default_role_rejects_blank_string() -> None:
@@ -226,9 +233,11 @@ def test_allowed_roles_defaults_to_empty_tuple_and_parses_comma_list() -> None:
     assert settings.allowed_roles == ("tenant_a", "tenant_b", "tenant_c")
 
 
-def test_allowed_roles_rejects_unsafe_identifiers_in_the_list() -> None:
+def test_allowed_roles_accepts_delimited_names_rejects_non_addressable() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOWED_ROLES": "tenant_a, bad-name"})
+    assert settings.allowed_roles == ("tenant_a", "bad-name")
     with pytest.raises(ConfigError, match="MCPG_ALLOWED_ROLES"):
-        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOWED_ROLES": "tenant_a, bad-name"})
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOWED_ROLES": "tenant_a, bad\x00name"})
 
 
 def test_default_role_must_appear_in_allowed_roles_when_both_set() -> None:

@@ -63,7 +63,7 @@ async def test_create_publication_rejects_invalid_publication_name() -> None:
     with pytest.raises(LogicalReplicationError, match="invalid publication"):
         await create_publication(
             db,  # type: ignore[arg-type]
-            name='pub"; DROP TABLE x; --',
+            name="",
             all_tables=True,
         )
 
@@ -78,14 +78,17 @@ async def test_create_publication_rejects_unqualified_table_name() -> None:
         )
 
 
-async def test_create_publication_rejects_injection_in_table_name() -> None:
+async def test_create_publication_safely_escapes_quoted_table_name() -> None:
+    # A table name needing delimited quoting is accepted and double-quoted
+    # (embedded quotes doubled) rather than rejected — it can't break out.
     db = FakeDatabase(FakeDriver())
-    with pytest.raises(LogicalReplicationError, match="invalid"):
-        await create_publication(
-            db,  # type: ignore[arg-type]
-            name="bad",
-            tables=('public.t"; DROP TABLE x; --',),
-        )
+    result = await create_publication(
+        db,  # type: ignore[arg-type]
+        name="bad",
+        tables=('public.wid"get',),
+    )
+    assert '"public"."wid""get"' in result.executed_sql
+    assert 'wid"get' not in result.executed_sql.replace('""', "")
 
 
 async def test_create_publication_surfaces_driver_failure_as_typed_error() -> None:
@@ -140,7 +143,7 @@ async def test_drop_publication_with_if_exists_and_cascade() -> None:
 async def test_drop_publication_rejects_invalid_name() -> None:
     db = FakeDatabase(FakeDriver())
     with pytest.raises(LogicalReplicationError):
-        await drop_publication(db, name="0bad")  # type: ignore[arg-type]
+        await drop_publication(db, name="")  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +222,7 @@ async def test_create_subscription_rejects_invalid_publication_name() -> None:
             db,
             name="x",
             connection_string="host=p",
-            publications=('pub"; DROP TABLE y',),
+            publications=("",),
         )
 
 
@@ -257,7 +260,7 @@ async def test_drop_subscription_if_exists() -> None:
 async def test_drop_subscription_rejects_invalid_name() -> None:
     db = FakeDatabase(FakeDriver())
     with pytest.raises(LogicalReplicationError):
-        await drop_subscription(db, name=" bad name ")  # type: ignore[arg-type]
+        await drop_subscription(db, name="")  # type: ignore[arg-type]
 
 
 async def test_drop_subscription_surfaces_driver_failure() -> None:
