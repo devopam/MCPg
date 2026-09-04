@@ -171,11 +171,26 @@ async def test_export_table_builds_a_safe_select_against_quoted_identifiers() ->
     assert any('"app"."widget"' in sql or "app.widget" in sql for sql in sqls)
 
 
-async def test_export_table_rejects_invalid_identifier_characters() -> None:
+async def test_export_table_safely_escapes_embedded_quotes() -> None:
+    # A name carrying a double quote is no longer rejected — it's escaped
+    # (doubled) so it stays one identifier and can't break out into a
+    # second statement. Issue-#329 class: valid delimited identifiers work.
+    driver = FakeDriver([{"id": 1}])
+    await export_table(driver, 'app"; DROP TABLE x; --', "widget")  # type: ignore[arg-type]
+    sqls = [call[0] for call in driver.calls]
+    # The embedded quote is doubled; the raw break-out sequence (a lone
+    # quote immediately followed by ;) never appears in the emitted SQL.
+    assert any('"app""; DROP TABLE x; --"' in sql for sql in sqls)
+    # The unescaped break-out (a single quote right before `; DROP`) is gone.
+    assert not any('app"; DROP' in sql for sql in sqls)
+
+
+@pytest.mark.parametrize("bad", ["", "\x00", "sch\x00ema"])
+async def test_export_table_rejects_empty_or_nul(bad: str) -> None:
     with pytest.raises(ExportError, match="invalid schema name"):
-        await export_table(FakeDriver(), 'app"; DROP TABLE x; --', "widget")  # type: ignore[arg-type]
+        await export_table(FakeDriver(), bad, "widget")  # type: ignore[arg-type]
     with pytest.raises(ExportError, match="invalid table name"):
-        await export_table(FakeDriver(), "app", "widget; DROP")  # type: ignore[arg-type]
+        await export_table(FakeDriver(), "app", bad)  # type: ignore[arg-type]
 
 
 # --- module exports + tool wiring -----------------------------------------
@@ -711,7 +726,7 @@ async def test_copy_table_pipes_pg_dump_into_pg_restore_with_separate_envs(
     assert dump_call["env"]["PGHOST"] == "srchost"
     assert dump_call["env"]["PGDATABASE"] == "srcdb"
     assert dump_call["env"]["PGPASSWORD"] == "srcpw"
-    assert "--table=app.widget" in dump_call["argv"]
+    assert '--table="app"."widget"' in dump_call["argv"]
     # The archive bytes flow into pg_restore's stdin verbatim.
     assert restore_call["binary"] == "pg_restore"
     assert restore_call["env"]["PGHOST"] == "dsthost"
@@ -787,12 +802,50 @@ async def test_copy_table_rejects_when_neither_schema_nor_data_requested() -> No
         )
 
 
-async def test_copy_table_rejects_unsafe_identifiers() -> None:
+async def test_copy_table_encodes_quoted_names_as_literal_table_patterns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A schema/table needing delimited quoting is encoded as a literal
+    # pg_dump --table pattern (each half double-quoted) rather than being
+    # rejected; metacharacters can't expand and an embedded quote is doubled.
+    captured: list[list[str]] = []
+
+    async def fake_run(binary: str, *argv: str, **kwargs: object) -> SubprocessResult:
+        captured.append(list(argv))
+        return SubprocessResult(
+            binary=binary,
+            argv=list(argv),
+            exit_code=0,
+            stdout=b"",
+            stderr=b"",
+            output_bytes=0,
+            output_truncated=False,
+            timed_out=False,
+            env_redacted={},
+        )
+
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", fake_run)
+    await copy_table_between_databases(
+        "postgresql://u@h/src",
+        "postgresql://u@h/dst",
+        "adm-pgbench",
+        'wid"get',
+        include_schema=True,
+        include_data=True,
+        timeout_sec=10,
+        max_output_bytes=4096,
+    )
+    dump_argv = captured[0]
+    assert '--table="adm-pgbench"."wid""get"' in dump_argv
+
+
+@pytest.mark.parametrize("bad", ["", "\x00"])
+async def test_copy_table_rejects_empty_or_nul_names(bad: str) -> None:
     with pytest.raises(ShellError, match="invalid schema name"):
         await copy_table_between_databases(
             "postgresql://u@h/src",
             "postgresql://u@h/dst",
-            "app; DROP",
+            bad,
             "widget",
             include_schema=True,
             include_data=True,
@@ -804,7 +857,7 @@ async def test_copy_table_rejects_unsafe_identifiers() -> None:
             "postgresql://u@h/src",
             "postgresql://u@h/dst",
             "app",
-            'widget"; --',
+            bad,
             include_schema=True,
             include_data=True,
             timeout_sec=10,
@@ -992,14 +1045,24 @@ async def test_import_csv_rejects_empty_column_list() -> None:
         await import_csv(FakeDatabase(FakeDriver()), "app", "widget", "x\n", columns=[])  # type: ignore[arg-type]
 
 
-async def test_import_csv_rejects_unsafe_identifiers() -> None:
+async def test_import_csv_safely_escapes_quoted_identifiers() -> None:
+    # Names needing delimited quoting (hyphens, spaces, embedded quotes) are
+    # accepted and double-quoted safely in the COPY statement.
+    db = FakeDatabase(FakeDriver())
+    await import_csv(db, "adm-pgbench", 'wid"get', "x\n", columns=["a col"])  # type: ignore[arg-type]
+    copy_sql = db.copy_calls[-1][0]
+    assert 'COPY "adm-pgbench"."wid""get" ("a col")' in copy_sql
+
+
+@pytest.mark.parametrize("bad", ["", "\x00"])
+async def test_import_csv_rejects_empty_or_nul_identifiers(bad: str) -> None:
     db = FakeDatabase(FakeDriver())
     with pytest.raises(ImportDataError, match="invalid schema name"):
-        await import_csv(db, "app; DROP", "widget", "x\n")  # type: ignore[arg-type]
+        await import_csv(db, bad, "widget", "x\n")  # type: ignore[arg-type]
     with pytest.raises(ImportDataError, match="invalid table name"):
-        await import_csv(db, "app", 'widget"; --', "x\n")  # type: ignore[arg-type]
+        await import_csv(db, "app", bad, "x\n")  # type: ignore[arg-type]
     with pytest.raises(ImportDataError, match="invalid column name"):
-        await import_csv(db, "app", "widget", "x\n", columns=["bad name"])  # type: ignore[arg-type]
+        await import_csv(db, "app", "widget", "x\n", columns=[bad])  # type: ignore[arg-type]
 
 
 async def test_import_csv_rejects_dangerous_delimiters() -> None:
@@ -1106,10 +1169,20 @@ async def test_import_json_rejects_non_object_rows() -> None:
         await import_json(db, "app", "widget", json.dumps([[1, 2], [3, 4]]))  # type: ignore[arg-type]
 
 
-async def test_import_json_rejects_unsafe_identifiers() -> None:
+async def test_import_json_safely_escapes_quoted_identifiers() -> None:
+    db = FakeDatabase(FakeDriver())
+    await import_json(db, "adm-pgbench", 'wid"get', json.dumps([{"a-col": 1}]))  # type: ignore[arg-type]
+    insert_sql = db.execute_many_calls[-1][0]
+    assert 'INSERT INTO "adm-pgbench"."wid""get" ("a-col")' in insert_sql
+
+
+@pytest.mark.parametrize("bad", ["", "\x00"])
+async def test_import_json_rejects_empty_or_nul_identifiers(bad: str) -> None:
     db = FakeDatabase(FakeDriver())
     with pytest.raises(ImportDataError, match="invalid schema name"):
-        await import_json(db, "app; DROP", "widget", "[]")  # type: ignore[arg-type]
+        await import_json(db, bad, "widget", "[]")  # type: ignore[arg-type]
+    with pytest.raises(ImportDataError, match="invalid table name"):
+        await import_json(db, "app", bad, "[]")  # type: ignore[arg-type]
 
 
 async def test_import_json_falls_back_to_input_length_when_rowcount_is_negative() -> None:
@@ -1248,10 +1321,18 @@ async def test_import_vectors_rejects_unknown_format() -> None:
         await import_vectors(db, "app", "docs", "embedding", "[]", format="parquet")  # type: ignore[arg-type]
 
 
-async def test_import_vectors_rejects_unsafe_identifiers() -> None:
+async def test_import_vectors_safely_escapes_quoted_identifiers() -> None:
+    db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
+    await import_vectors(db, "adm-pgbench", "docs", "embedding", json.dumps([{"embedding": [0.1, 0.2]}]))  # type: ignore[arg-type]
+    insert_sql = db.execute_many_calls[-1][0]
+    assert 'INSERT INTO "adm-pgbench"."docs" ("embedding")' in insert_sql
+
+
+@pytest.mark.parametrize("bad", ["", "\x00"])
+async def test_import_vectors_rejects_empty_or_nul_identifiers(bad: str) -> None:
     db = FakeDatabase(FakeRoutingDriver(_vector_routes(dimension=2)))
     with pytest.raises(ImportDataError, match="invalid table"):
-        await import_vectors(db, "app", 'docs"; DROP TABLE x', "embedding", "[]")  # type: ignore[arg-type]
+        await import_vectors(db, "app", bad, "embedding", "[]")  # type: ignore[arg-type]
 
 
 async def test_import_vectors_rejects_null_embedding_row() -> None:

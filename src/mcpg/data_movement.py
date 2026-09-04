@@ -23,20 +23,16 @@ from __future__ import annotations
 import csv
 import io
 import json
-import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote, urlparse
 
 from mcpg.database import Database
 from mcpg.errors import MCPgError
+from mcpg.identifiers import IdentifierError, quote_identifier
 from mcpg.query import QueryError, run_select
 from mcpg.shell import ShellError, SubprocessLimits, run_pg_binary
 from mcpg.sql import SqlDriver
-
-# Same identifier allowlist as mcpg.textsearch / mcpg.prisma / mcpg.vector_tuning —
-# refuse names that need delimited-identifier quoting, accept plain ones.
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 EXPORT_FORMATS = frozenset({"csv", "json"})
 
@@ -64,9 +60,11 @@ class ExportResult:
     truncated: bool
 
 
-def _check_identifier(name: str, kind: str) -> None:
-    if not _IDENTIFIER.match(name):
-        raise ExportError(f"invalid {kind} name: {name!r}")
+def _quote_ident_export(name: str, kind: str) -> str:
+    try:
+        return quote_identifier(name, kind)
+    except IdentifierError as exc:
+        raise ExportError(str(exc)) from exc
 
 
 def _csv_cell(value: Any) -> Any:
@@ -151,12 +149,13 @@ async def export_table(
 ) -> ExportResult:
     """Serialise every row in ``schema.table`` (up to ``limit``).
 
-    Schema and table names must match the plain identifier pattern —
-    anything that requires delimited-identifier quoting is rejected.
+    Schema and table names are accepted as actual PostgreSQL identifiers —
+    including names that need delimited-identifier quoting (hyphens, mixed
+    case, spaces) — and safely double-quoted before interpolation, so an
+    embedded quote cannot break out of the identifier.
     """
-    _check_identifier(schema, "schema")
-    _check_identifier(table, "table")
-    sql = f'SELECT * FROM "{schema}"."{table}"'
+    relation = f"{_quote_ident_export(schema, 'schema')}.{_quote_ident_export(table, 'table')}"
+    sql = f"SELECT * FROM {relation}"
     return await export_query(driver, sql, format=format, limit=limit)
 
 
@@ -211,33 +210,32 @@ def _libpq_env_from_url(database_url: str) -> dict[str, str]:
 _PG_DUMP_FORMATS = frozenset({"plain", "custom", "directory", "tar"})
 
 
-def _encode_schema_pattern(name: str) -> str:
-    r"""Encode a literal schema name as a ``pg_dump --schema`` pattern.
+def _encode_schema_pattern(name: str, kind: str = "schema") -> str:
+    r"""Encode a literal name as a ``pg_dump`` object pattern.
 
-    ``pg_dump --schema`` takes a *pattern*, not a literal name: it follows
-    the same rules as psql's ``\d`` commands, where an unquoted ``*`` /
-    ``?`` / ``[`` acts as a wildcard and bare letters are folded to
-    lowercase. Wrapping the whole name in double quotes turns both off —
-    every character inside, pattern metacharacters included, is matched
-    literally and case-sensitively — so an actual schema name like
+    ``pg_dump --schema`` / ``--table`` take a *pattern*, not a literal
+    name: they follow the same rules as psql's ``\d`` commands, where an
+    unquoted ``*`` / ``?`` / ``[`` acts as a wildcard and bare letters are
+    folded to lowercase. Wrapping the whole name in double quotes turns
+    both off — every character inside, pattern metacharacters included, is
+    matched literally and case-sensitively — so an actual schema name like
     ``adm-pgbench`` reaches pg_dump as the exact schema it names rather
     than being rejected or mis-expanded. A literal double quote inside the
     name is written as two double quotes, per the same quoting rules.
 
-    This is a dump-specific encoding, deliberately separate from the
-    plain-identifier allowlist the in-process paths use: those splice
-    names into SQL text where delimited-identifier quoting is the caller's
-    contract, whereas here the name only ever reaches pg_dump's argv (no
-    shell — see :mod:`mcpg.shell`), so quoting the pattern is both
-    necessary and sufficient. The name is never run through a shell, so
-    the only characters that can't survive are an empty string (matches
-    nothing) and an embedded NUL (can't cross the ``execve`` boundary);
-    both are rejected up-front.
+    This is a dump-specific encoding, deliberately separate from the SQL
+    identifier quoting the in-process paths use (:func:`quote_identifier`):
+    those splice names into SQL text, whereas here the name only ever
+    reaches pg_dump's argv (no shell — see :mod:`mcpg.shell`), so quoting
+    the pattern is both necessary and sufficient. The name is never run
+    through a shell, so the only characters that can't survive are an empty
+    string (matches nothing) and an embedded NUL (can't cross the
+    ``execve`` boundary); both are rejected up-front.
     """
     if not name:
-        raise ShellError("invalid schema name: must not be empty")
+        raise ShellError(f"invalid {kind} name: must not be empty")
     if "\x00" in name:
-        raise ShellError(f"invalid schema name: {name!r} contains a NUL byte")
+        raise ShellError(f"invalid {kind} name: {name!r} contains a NUL byte")
     return '"' + name.replace('"', '""') + '"'
 
 
@@ -510,8 +508,6 @@ async def copy_table_between_databases(
     """
     if not include_schema and not include_data:
         raise ShellError("copy_table_between_databases requires include_schema or include_data (or both)")
-    _check_identifier_for_copy(schema, "schema")
-    _check_identifier_for_copy(table, "table")
 
     source_env = _libpq_env_from_url(source_url)
     if "PGDATABASE" not in source_env:
@@ -520,10 +516,12 @@ async def copy_table_between_databases(
     if "PGDATABASE" not in dest_env:
         raise ShellError("dest_url must specify a database name")
 
-    # pg_dump's --table pattern accepts a literal schema-qualified name
-    # since we've already validated both halves against the plain-
-    # identifier allowlist (no wildcard chars).
-    dump_argv = ["--format=custom", f"--table={schema}.{table}"]
+    # pg_dump's --table takes a schema-qualified *pattern*, so both halves
+    # are encoded as literal quoted patterns (see _encode_schema_pattern):
+    # metacharacters can't expand, case is preserved, and an embedded quote
+    # can't break out. This also rejects empty / NUL names up-front.
+    table_pattern = f"{_encode_schema_pattern(schema, 'schema')}.{_encode_schema_pattern(table, 'table')}"
+    dump_argv = ["--format=custom", f"--table={table_pattern}"]
     if not include_data:
         dump_argv.append("--schema-only")
     if not include_schema:
@@ -605,11 +603,6 @@ async def copy_table_between_databases(
     )
 
 
-def _check_identifier_for_copy(name: str, kind: str) -> None:
-    if not _IDENTIFIER.match(name):
-        raise ShellError(f"invalid {kind} name: {name!r}")
-
-
 def _tail(buf: bytes, *, max_bytes: int = 4096) -> str:
     text = buf.decode("utf-8", errors="replace")
     return text if len(text) <= max_bytes else text[-max_bytes:]
@@ -644,22 +637,24 @@ class ImportResult:
 def _build_copy_sql(schema: str, table: str, columns: list[str] | None, *, header: bool, delimiter: str) -> str:
     """Compose a ``COPY ... FROM STDIN`` statement with safe identifiers.
 
-    The schema, table, and (optional) column names are validated against
-    the plain-identifier allowlist before this is called; delimited
-    quoting still applies so reserved words don't break the statement.
-    The delimiter is restricted to a single non-newline character so it
-    can't terminate the COPY options list early.
+    The schema, table, and (optional) column names are checked as
+    addressable identifiers by the caller and safely double-quoted here
+    (embedded quotes doubled), so a name needing delimited quoting works
+    and can't break out of the statement. The delimiter is restricted to a
+    single non-newline character so it can't terminate the COPY options
+    list early.
     """
     column_clause = ""
     if columns:
-        joined = ", ".join(f'"{col}"' for col in columns)
+        joined = ", ".join(quote_identifier(col, "column") for col in columns)
         column_clause = f" ({joined})"
     options = [
         "FORMAT csv",
         f"HEADER {'true' if header else 'false'}",
         f"DELIMITER '{delimiter}'",
     ]
-    return f'COPY "{schema}"."{table}"{column_clause} FROM STDIN WITH ({", ".join(options)})'
+    relation = f"{quote_identifier(schema, 'schema')}.{quote_identifier(table, 'table')}"
+    return f"COPY {relation}{column_clause} FROM STDIN WITH ({', '.join(options)})"
 
 
 async def import_csv(
@@ -762,8 +757,9 @@ async def import_json(
         _check_identifier_for_import(col, "column")
 
     placeholders = ", ".join(["%s"] * len(columns))
-    column_clause = ", ".join(f'"{col}"' for col in columns)
-    sql = f'INSERT INTO "{schema}"."{table}" ({column_clause}) VALUES ({placeholders})'
+    column_clause = ", ".join(quote_identifier(col, "column") for col in columns)
+    relation = f"{quote_identifier(schema, 'schema')}.{quote_identifier(table, 'table')}"
+    sql = f"INSERT INTO {relation} ({column_clause}) VALUES ({placeholders})"
     params_seq = [tuple(_json_cell(row.get(col)) for col in columns) for row in parsed]
     try:
         rowcount = await database.execute_many(sql, params_seq)
@@ -777,8 +773,16 @@ async def import_json(
 
 
 def _check_identifier_for_import(name: str, kind: str) -> None:
-    if not _IDENTIFIER.match(name):
-        raise ImportDataError(f"invalid {kind} name: {name!r}")
+    """Reject only names that aren't addressable identifiers at all.
+
+    A name needing delimited quoting (hyphens, spaces, mixed case) is
+    accepted here; the SQL splice sites double-quote it safely. Only the
+    empty string, an embedded NUL, or an over-63-byte name is rejected.
+    """
+    try:
+        quote_identifier(name, kind)
+    except IdentifierError as exc:
+        raise ImportDataError(str(exc)) from exc
 
 
 def _json_cell(value: Any) -> Any:
@@ -974,9 +978,16 @@ async def import_vectors(
         literals.append((ident, literal) if id_column else (literal,))
 
     if id_column:
-        sql = f'INSERT INTO "{schema}"."{table}" ("{id_column}", "{embedding_column}") VALUES (%s, %s::vector)'
+        sql = (
+            f"INSERT INTO {quote_identifier(schema, 'schema')}.{quote_identifier(table, 'table')} "
+            f"({quote_identifier(id_column, 'column')}, {quote_identifier(embedding_column, 'column')}) "
+            "VALUES (%s, %s::vector)"
+        )
     else:
-        sql = f'INSERT INTO "{schema}"."{table}" ("{embedding_column}") VALUES (%s::vector)'
+        sql = (
+            f"INSERT INTO {quote_identifier(schema, 'schema')}.{quote_identifier(table, 'table')} "
+            f"({quote_identifier(embedding_column, 'column')}) VALUES (%s::vector)"
+        )
 
     try:
         rowcount = await database.execute_many(sql, literals)
