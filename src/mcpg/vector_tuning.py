@@ -45,6 +45,7 @@ _TRUTH_ORDER = {"l2": "ASC", "cosine": "ASC", "inner_product": "DESC"}
 # accidental DoS via a runaway sample_size argument.
 _MAX_SAMPLE_SIZE = 100
 
+
 class VectorTuningError(MCPgError):
     """Raised when a pgvector tuning operation cannot complete."""
 

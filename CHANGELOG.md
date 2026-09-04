@@ -8,23 +8,45 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.8.2] - 2026-09-04
 
+### Added
+
+- **`mcpg.identifiers` — one escape-based SQL identifier quoter (`quote_identifier` / `ensure_identifier`).**
+  It doubles embedded double quotes (`"` → `""`) so any name PostgreSQL accepts as a *delimited*
+  identifier can be spliced safely, and rejects only the values that are not addressable identifiers at
+  all: the empty string, an embedded NUL, and names over PostgreSQL's 63-byte limit (which the server
+  would silently truncate). It replaces the copy-pasted `[A-Za-z_][A-Za-z0-9_]*` regex that ~20 modules
+  each carried, where that regex was doing double duty as both the injection guard *and* (accidentally)
+  a blanket ban on every hyphen / space / mixed-case / quoted name. Covered by an adversarial test suite
+  (`tests/unit/test_identifiers.py`).
+
 ### Fixed
 
-- **`dump_database` rejected valid PostgreSQL schema names that need delimited-identifier quoting**
-  ([#329](https://github.com/devopam/MCPg/issues/329)). The `schemas` parameter was validated against
-  the plain-identifier allowlist (`[A-Za-z_][A-Za-z0-9_]*`), so an actual schema such as `adm-pgbench`
-  failed with `ShellError: invalid schema name: 'adm-pgbench'` before `pg_dump` was ever spawned.
-  `pg_dump --schema` takes a *pattern* (the same rules as psql's `\d` commands), not a literal name:
-  an unquoted `*` / `?` / `[` is a wildcard and bare letters fold to lowercase. Each entry in `schemas`
-  is now encoded as a double-quoted literal `pg_dump` pattern (`_encode_schema_pattern`) instead of
-  being validated against the shared allowlist — every character, pattern metacharacters included, is
-  matched literally and case-sensitively, so the named schema is dumped and no wildcard can accidentally
-  expand. Callers still pass the bare name (no SQL or shell quoting); only an empty name or an embedded
-  NUL is rejected. This is a dump-specific encoding, deliberately left separate from the plain-identifier
-  validator the in-process SQL paths (`export_table`, `import_csv`/`import_json`/`import_vectors`,
-  `copy_table_between_databases`) still rely on. The access-mode requirement is unchanged
-  (`unrestricted` + `MCPG_ALLOW_SHELL=true`), as is the `DumpResult` contract. Regression tests cover
-  hyphens, spaces, mixed case, embedded double quotes, and pattern metacharacters.
+- **Tools rejected valid PostgreSQL object names that need delimited-identifier quoting**
+  ([#329](https://github.com/devopam/MCPg/issues/329)). The reported case was `dump_database`: a real
+  schema such as `adm-pgbench` failed with `ShellError: invalid schema name: 'adm-pgbench'` before
+  `pg_dump` was ever spawned. `pg_dump --schema` takes a *pattern* (psql `\d` rules) — an unquoted
+  `*` / `?` / `[` is a wildcard and bare letters fold to lowercase — so each `schemas` entry is now
+  encoded as a double-quoted literal pattern (`_encode_schema_pattern`); `copy_table_between_databases`
+  encodes its `--table` the same way. The access-mode requirement (`unrestricted` + `MCPG_ALLOW_SHELL`)
+  and the `DumpResult` contract are unchanged.
+
+  A sweep fixed the same class of over-restriction across the in-process SQL tools, which now quote
+  via `mcpg.identifiers` instead of validating against the plain-identifier allowlist:
+  `export_table` / `import_csv` / `import_json` / `import_vectors` (data movement), the pgvector suites
+  (`vector_ops`, `vector_tuning`, `rag_efficiency`, `pg_search`, `turboquant`), `textsearch`,
+  `composite`, `rls` and `tenancy` / `config` roles (`SET LOCAL ROLE`), `logical_replication`,
+  `migrations`, `test_data` / `test_row_factory`, `redis_fdw`, `listen` (LISTEN/NOTIFY channels), and
+  `timescaledb` (whose `create_hypertable` / policy calls take the relation as a `regclass` *text*
+  argument, so the quoted relation is wrapped in a single-quoted literal with both layers escaped).
+  Hyphens, spaces, mixed case, and embedded quotes now work and are safely escaped everywhere; only
+  empty / NUL / overlong names are rejected.
+
+  Left deliberately strict, because the name is not being used as a PostgreSQL identifier there:
+  the Apache AGE graph tools (`graph`, `graph_projection`, `cypher`, `graph_diagram`), where labels
+  follow AGE's own naming rules; the ORM/query-builder code generators (`prisma`, `drizzle`, `diesel`,
+  `ecto`, `ent`, `jooq`, `sqlc`, `sqlalchemy_export`), where the name becomes an identifier in generated
+  Go/Rust/Elixir/Python source; and SQL/PGQ property-graph names (`pgq`). `textsearch` also keeps the
+  strict allowlist for the one value it embeds in a string literal (a `regconfig` name).
 
 ## [0.8.1] - 2026-09-01
 
