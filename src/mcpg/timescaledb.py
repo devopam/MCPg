@@ -20,9 +20,10 @@ from dataclasses import dataclass
 
 from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
+from mcpg.identifiers import IdentifierError, ensure_identifier
+from mcpg.identifiers import quote_identifier as _qi
 from mcpg.sql import SqlDriver
 
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 # A whitelist of intervals we'll inline into SQL. Validated against this
 # pattern then passed as a SQL literal (TimescaleDB takes interval
 # expressions as positional args, not bound params).
@@ -36,8 +37,29 @@ class TimescaleError(MCPgError):
 
 
 def _check_identifier(name: str, kind: str) -> None:
-    if not _IDENTIFIER.match(name):
-        raise TimescaleError(f"invalid {kind} name: {name!r}")
+    # Accept any addressable identifier; it is quoted (and, where it lands
+    # inside a string literal, single-quote-escaped) at each splice site.
+    # Only empty / NUL / overlong names are rejected.
+    try:
+        ensure_identifier(name, kind)
+    except IdentifierError as exc:
+        raise TimescaleError(str(exc)) from exc
+
+
+def _sql_str_literal(text: str) -> str:
+    """Return ``text`` as a single-quoted SQL string literal (quotes doubled)."""
+    return "'" + text.replace("'", "''") + "'"
+
+
+def _regclass_literal(schema: str, table: str) -> str:
+    """Return ``'"schema"."table"'`` — a quoted relation inside a string literal.
+
+    TimescaleDB's ``create_hypertable`` / ``add_*_policy`` take the relation
+    as a ``regclass`` *text* argument, so the double-quoted identifier is
+    itself wrapped in a single-quoted literal; both layers are escaped
+    (``"`` doubled by :func:`quote_identifier`, ``'`` doubled here).
+    """
+    return _sql_str_literal(f"{_qi(schema)}.{_qi(table)}")
 
 
 def _check_interval(value: str) -> None:
@@ -198,7 +220,7 @@ async def create_hypertable(
     # name reaches regclass with its case preserved — unquoted identifiers
     # passed to functions that cast to regclass are folded to lowercase.
     sql = (
-        f"SELECT create_hypertable('\"{schema}\".\"{table}\"', '{time_column}', "
+        f"SELECT create_hypertable({_regclass_literal(schema, table)}, {_sql_str_literal(time_column)}, "
         f"chunk_time_interval => INTERVAL '{chunk_time_interval}', "
         f"if_not_exists => {inex}) AS result"
     )
@@ -228,9 +250,9 @@ async def add_compression_policy(
         return TimescaleWriteResult(
             available=False, function="add_compression_policy", details="timescaledb extension is not installed"
         )
-    await driver.execute_query(f'ALTER TABLE "{schema}"."{table}" SET (timescaledb.compress = TRUE)')
+    await driver.execute_query(f"ALTER TABLE {_qi(schema)}.{_qi(table)} SET (timescaledb.compress = TRUE)")
     rows = await driver.execute_query(
-        f"SELECT add_compression_policy('\"{schema}\".\"{table}\"', INTERVAL '{compress_after}') AS job_id"
+        f"SELECT add_compression_policy({_regclass_literal(schema, table)}, INTERVAL '{compress_after}') AS job_id"
     )
     detail = f"job_id={rows[0].cells['job_id']}" if rows else "policy added"
     return TimescaleWriteResult(available=True, function="add_compression_policy", details=detail)
@@ -252,7 +274,7 @@ async def add_retention_policy(
             available=False, function="add_retention_policy", details="timescaledb extension is not installed"
         )
     rows = await driver.execute_query(
-        f"SELECT add_retention_policy('\"{schema}\".\"{table}\"', INTERVAL '{drop_after}') AS job_id"
+        f"SELECT add_retention_policy({_regclass_literal(schema, table)}, INTERVAL '{drop_after}') AS job_id"
     )
     detail = f"job_id={rows[0].cells['job_id']}" if rows else "policy added"
     return TimescaleWriteResult(available=True, function="add_retention_policy", details=detail)

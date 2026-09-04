@@ -140,10 +140,12 @@ async def test_second_subscribe_on_same_channel_does_not_re_listen() -> None:
 async def test_subscribe_rejects_unsafe_channel_names() -> None:
     manager, _ = _manager_with_fake_conn()
     try:
+        # Channel names needing delimited quoting are accepted (quoted
+        # safely in LISTEN); only empty / NUL / overlong names are rejected.
         with pytest.raises(ListenError, match="invalid channel name"):
-            await manager.subscribe('orders"; DROP TABLE x; --')
+            await manager.subscribe("")
         with pytest.raises(ListenError, match="invalid channel name"):
-            await manager.subscribe("with space")
+            await manager.subscribe("with\x00nul")
     finally:
         await manager.close()
 

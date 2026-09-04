@@ -33,12 +33,13 @@ passed explicitly.
 from __future__ import annotations
 
 import ipaddress
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
+from mcpg.identifiers import IdentifierError, ensure_identifier
+from mcpg.identifiers import quote_identifier as _qi
 from mcpg.introspection import _parse_options
 from mcpg.secrets import SecretsProvider
 from mcpg.sql import SqlDriver
@@ -54,14 +55,6 @@ _VALID_KEY_TYPES = frozenset({"hash", "list", "string", "set", "zset"})
 # Loopback families: TLS may be disabled here without the explicit
 # ``allow_insecure_tls`` flag. Everything else must pass through TLS.
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-
-# Identifier validator — Postgres unquoted identifier shape. We use this
-# pattern (vs psycopg's Identifier escaping) because foreign-server /
-# user-mapping DDL is built up out of identifiers we trust *after this
-# check*; rejecting hostile inputs at the boundary is simpler than
-# escape-correctness everywhere downstream.
-_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
 
 class RedisFdwError(MCPgError):
     """Raised when a redis_fdw operation cannot complete."""
@@ -340,15 +333,18 @@ async def get_redis_cache_stats(driver: SqlDriver, server: str) -> RedisCacheSta
 
 
 def _validate_identifier(label: str, value: str) -> str:
-    """Reject everything outside the ``[A-Za-z_][A-Za-z0-9_]*`` shape.
+    """Return ``value`` if it is an addressable identifier; raise otherwise.
 
     ``CREATE SERVER`` / ``CREATE USER MAPPING`` / ``CREATE FOREIGN TABLE``
-    DDL is built up of identifiers we can't bind. The allowlist is the
-    injection guard.
+    DDL is built up of identifiers we can't bind, so each is double-quoted
+    (embedded quotes doubled) at the splice site via :func:`_qi`. Any name
+    PostgreSQL supports through delimited quoting is accepted here; only the
+    empty string, an embedded NUL, or an over-63-byte name is rejected.
     """
-    if not _IDENT_RE.match(value):
-        raise RedisFdwError(f"{label} {value!r} is not a valid unquoted SQL identifier")
-    return value
+    try:
+        return ensure_identifier(value, label)
+    except IdentifierError as exc:
+        raise RedisFdwError(str(exc)) from exc
 
 
 def _validate_address(address: str) -> str:
@@ -401,7 +397,7 @@ async def create_redis_cache_server(
         raise RedisFdwError("redis_fdw extension is not installed; call enable_extension('redis_fdw') first")
     options = f"address '{address}', port '{port}', database '{database}', tls '{'true' if tls else 'false'}'"
     await driver.execute_query(
-        f'CREATE SERVER IF NOT EXISTS "{name}" FOREIGN DATA WRAPPER redis_fdw OPTIONS ({options})',
+        f"CREATE SERVER IF NOT EXISTS {_qi(name)} FOREIGN DATA WRAPPER redis_fdw OPTIONS ({options})",
         force_readonly=False,
     )
     return CreateRedisServerResult(
@@ -438,7 +434,7 @@ async def create_redis_user_mapping(
         user_clause = "PUBLIC"
     else:
         _validate_identifier("user name", user)
-        user_clause = f'"{user}"'
+        user_clause = _qi(user)
     if not secret_ref or not secret_ref.strip():
         raise RedisFdwError("secret_ref must reference a name in the configured secrets backend")
     password = secrets.get(secret_ref)
@@ -510,7 +506,7 @@ async def create_redis_cache_table(
         raise RedisFdwError("ttl_seconds must be a non-negative integer")
     if not await extension_installed(driver, _REDIS_FDW_NAME):
         raise RedisFdwError("redis_fdw extension is not installed; call enable_extension('redis_fdw') first")
-    columns_sql = ", ".join(f'"{n}" {t}' for n, t in decls)
+    columns_sql = ", ".join(f"{_qi(n)} {t}" for n, t in decls)
     options_parts = [f"tabletype '{key_type}'"]
     if key_prefix is not None:
         if any(ch in key_prefix for ch in "'\";\\\n\r"):
@@ -520,8 +516,8 @@ async def create_redis_cache_table(
         options_parts.append(f"ttl '{ttl_seconds}'")
     options_sql = ", ".join(options_parts)
     await driver.execute_query(
-        f'CREATE FOREIGN TABLE IF NOT EXISTS "{schema}"."{name}" ({columns_sql}) '
-        f'SERVER "{server}" OPTIONS ({options_sql})',
+        f"CREATE FOREIGN TABLE IF NOT EXISTS {_qi(schema)}.{_qi(name)} ({columns_sql}) "
+        f"SERVER {_qi(server)} OPTIONS ({options_sql})",
         force_readonly=False,
     )
     return CreateRedisCacheTableResult(
@@ -613,10 +609,10 @@ async def recommend_redis_cache_targets(
         table = row.cells["table_name"]
         stub = (
             f"-- redis_fdw cache stub for {schema}.{table}\n"
-            f'CREATE FOREIGN TABLE IF NOT EXISTS "{schema}"."{table}_cache" (\n'
+            f"CREATE FOREIGN TABLE IF NOT EXISTS {_qi(schema)}.{_qi(table + '_cache')} (\n"
             f"    key text,\n"
             f"    value text\n"
-            f') SERVER "{target_server}" OPTIONS (\n'
+            f") SERVER {_qi(target_server)} OPTIONS (\n"
             f"    tabletype 'hash',\n"
             f"    keyprefix '{schema}:{table}:'\n"
             f");"

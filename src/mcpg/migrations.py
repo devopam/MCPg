@@ -28,13 +28,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from mcpg.errors import MCPgError
+from mcpg.identifiers import IdentifierError, ensure_identifier
+from mcpg.identifiers import quote_identifier as _qi
 from mcpg.introspection import describe_table, list_constraints, list_indexes, list_tables
 from mcpg.schema_diff import SchemaDiff, compare_schemas
 from mcpg.sql import SqlDriver
 
 logger = logging.getLogger(__name__)
 
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _SHADOW_PREFIX = "mcpg_shadow_"
 _NAME_SUFFIX_RE = re.compile(r"[^A-Za-z0-9_]")
 
@@ -174,8 +175,15 @@ async def _ensure_state_table(driver: SqlDriver) -> None:
 
 
 def _check_identifier(name: str, kind: str) -> None:
-    if not _IDENTIFIER.match(name):
-        raise MigrationError(f"invalid {kind} name: {name!r}")
+    # Accept any addressable identifier (delimited target/reference schema
+    # and catalog table names included); every SQL splice quotes it via _qi
+    # (embedded quotes doubled). Only empty / NUL / overlong names are
+    # rejected. The generated shadow-schema name is always a plain
+    # identifier (see _make_migration_id), so it needs no relaxation.
+    try:
+        ensure_identifier(name, kind)
+    except IdentifierError as exc:
+        raise MigrationError(str(exc)) from exc
 
 
 def _make_migration_id(name: str) -> str:
@@ -233,7 +241,7 @@ async def _replay_target_into_shadow(driver: SqlDriver, target_schema: str, shad
         if not columns:
             continue
         column_clauses = [_column_clause(col) for col in columns]
-        ddl = f'CREATE TABLE "{shadow_schema}"."{table.name}" ({", ".join(column_clauses)})'
+        ddl = f'CREATE TABLE "{shadow_schema}".{_qi(table.name)} ({", ".join(column_clauses)})'
         await driver.execute_query(ddl)
 
     # 2. Add constraints + indexes. PK first so unique-constraint /
@@ -252,7 +260,7 @@ async def _replay_target_into_shadow(driver: SqlDriver, target_schema: str, shad
             else:
                 definition = con.definition
             await driver.execute_query(
-                f'ALTER TABLE "{shadow_schema}"."{table.name}" ADD CONSTRAINT "{con.name}" {definition}'
+                f'ALTER TABLE "{shadow_schema}".{_qi(table.name)} ADD CONSTRAINT {_qi(con.name)} {definition}'
             )
         indexes = await list_indexes(driver, target_schema, table.name)
         for idx in indexes:
@@ -270,7 +278,7 @@ def _column_clause(column: Any) -> str:
     """Build a CREATE TABLE column clause from a ``ColumnInfo``-like object."""
     nullable = "" if column.nullable else " NOT NULL"
     default = f" DEFAULT {column.default}" if column.default is not None else ""
-    return f'"{column.name}" {column.data_type}{nullable}{default}'
+    return f"{_qi(column.name)} {column.data_type}{nullable}{default}"
 
 
 _CONSTRAINT_ORDER = {"primary_key": 0, "unique": 1, "check": 2, "foreign_key": 3, "exclusion": 4}
@@ -503,12 +511,12 @@ async def _execute_in_schema(driver: SqlDriver, schema: str, sql: str) -> None:
     if not getattr(driver, "is_pool", False):
         # Direct-connection mode is a test/edge path; run SET + SQL on it.
         async with driver.conn.cursor() as cur:
-            await cur.execute(f'SET LOCAL search_path TO "{schema}", public')
+            await cur.execute(f"SET LOCAL search_path TO {_qi(schema)}, public")
             await cur.execute(sql)
         return
     pool_obj = await driver.conn.pool_connect()
     async with pool_obj.connection() as conn, conn.cursor() as cur:
-        await cur.execute(f'SET LOCAL search_path TO "{schema}", public')
+        await cur.execute(f"SET LOCAL search_path TO {_qi(schema)}, public")
         await cur.execute(sql)
 
 
@@ -561,7 +569,7 @@ async def _count_rows(driver: SqlDriver, schema: str, table: str) -> int:
     pre-validated by the caller (no untrusted identifier reaches this
     function), so the inline interpolation is safe."""
     rows = await driver.execute_query(
-        f'SELECT COUNT(*) AS n FROM "{schema}"."{table}"',
+        f"SELECT COUNT(*) AS n FROM {_qi(schema)}.{_qi(table)}",
         force_readonly=True,
     )
     if not rows:
@@ -634,8 +642,8 @@ async def validate_migration(
             # validation continues.
             with contextlib.suppress(Exception):
                 await driver.execute_query(
-                    f'INSERT INTO "{shadow_schema}"."{table.name}" '
-                    f'SELECT * FROM "{target_schema}"."{table.name}" LIMIT %s',
+                    f'INSERT INTO "{shadow_schema}".{_qi(table.name)} '
+                    f"SELECT * FROM {_qi(target_schema)}.{_qi(table.name)} LIMIT %s",
                     params=[sample_rows_per_table],
                 )
 

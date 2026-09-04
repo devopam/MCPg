@@ -26,17 +26,16 @@ Scope:
 from __future__ import annotations
 
 import random
-import re
 import string
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from mcpg.errors import MCPgError
+from mcpg.identifiers import IdentifierError, ensure_identifier
+from mcpg.identifiers import quote_identifier as _qi
 from mcpg.introspection import ColumnInfo, describe_table
 from mcpg.sql import SqlDriver
-
-_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 DEFAULT_ROW_COUNT = 10
 HARD_ROW_CAP = 10_000
@@ -70,8 +69,12 @@ class GeneratedDataset:
 
 
 def _check_identifier(value: str, kind: str) -> None:
-    if not _IDENTIFIER.match(value):
-        raise TestDataError(f"invalid {kind} {value!r}; must match [A-Za-z_][A-Za-z0-9_]*")
+    # Accept any addressable identifier; splices quote it via _qi. Only
+    # empty / NUL / overlong names are rejected.
+    try:
+        ensure_identifier(value, kind)
+    except IdentifierError as exc:
+        raise TestDataError(str(exc)) from exc
 
 
 def _quote_literal(value: object) -> str:
@@ -207,11 +210,11 @@ async def generate_test_data(
             f"no columns of {schema}.{table!r} have generator support; skipped types: " + ", ".join(skipped)
         )
 
-    column_list = ", ".join(f'"{c.name}"' for c in target_columns)
+    column_list = ", ".join(_qi(c.name) for c in target_columns)
     statements: list[str] = []
     for _ in range(rows):
         values = [_format_column_value(col, rng) for col in target_columns]
-        statements.append(f'INSERT INTO "{schema}"."{table}" ({column_list}) VALUES ({", ".join(values)})')
+        statements.append(f"INSERT INTO {_qi(schema)}.{_qi(table)} ({column_list}) VALUES ({', '.join(values)})")
 
     return GeneratedDataset(
         schema=schema,

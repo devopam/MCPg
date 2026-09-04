@@ -29,7 +29,7 @@ async def test_generate_test_data_rejects_unsafe_schema() -> None:
     with pytest.raises(TestDataError, match="invalid schema"):
         await generate_test_data(
             FakeRoutingDriver({}),  # type: ignore[arg-type]
-            schema='public"; DROP TABLE x',
+            schema="pub\x00lic",
             table="widget",
         )
 

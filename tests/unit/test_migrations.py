@@ -33,13 +33,16 @@ def test_check_identifier_accepts_plain_names() -> None:
     _check_identifier("a1b2c3", "table")
 
 
-def test_check_identifier_rejects_quoted_or_unsafe_names() -> None:
+def test_check_identifier_accepts_delimited_names_rejects_non_addressable() -> None:
+    # Names needing delimited quoting are accepted (splices quote them via
+    # _qi); only empty / NUL / overlong names are rejected.
+    _check_identifier('w"; DROP', "table")
+    _check_identifier("with space", "schema")
+    _check_identifier("1starts_with_digit", "schema")
     with pytest.raises(MigrationError, match="invalid table"):
-        _check_identifier('w"; DROP', "table")
+        _check_identifier("", "table")
     with pytest.raises(MigrationError, match="invalid schema"):
-        _check_identifier("with space", "schema")
-    with pytest.raises(MigrationError, match="invalid schema"):
-        _check_identifier("1starts_with_digit", "schema")
+        _check_identifier("with\x00nul", "schema")
 
 
 def test_make_migration_id_strips_unsafe_chars_and_appends_timestamp() -> None:
@@ -189,7 +192,7 @@ async def test_prepare_migration_rejects_unsafe_target_schema() -> None:
         await prepare_migration(
             FakeDriver(),  # type: ignore[arg-type]
             name="bad",
-            target_schema='app"; DROP TABLE x; --',
+            target_schema="app\x00evil",
             candidate_sql="ALTER TABLE w ADD c int",
         )
 
@@ -273,7 +276,7 @@ async def test_validate_migration_rejects_unsafe_target_schema() -> None:
     with pytest.raises(MigrationError, match="invalid target_schema"):
         await validate_migration(
             FakeDriver(),  # type: ignore[arg-type]
-            target_schema='app"; DROP TABLE x; --',
+            target_schema="app\x00evil",
             candidate_sql="ALTER TABLE w ADD c int",
         )
 
@@ -330,7 +333,7 @@ async def test_validate_migration_schema_rejects_unsafe_target_schema() -> None:
     with pytest.raises(MigrationError, match="invalid target_schema"):
         await validate_migration_schema(
             FakeDriver(),  # type: ignore[arg-type]
-            target_schema='app"; DROP TABLE x; --',
+            target_schema="app\x00evil",
             reference_schema="ref",
             candidate_sql="ALTER TABLE w ADD c int",
         )
@@ -343,6 +346,6 @@ async def test_validate_migration_schema_rejects_unsafe_reference_schema() -> No
         await validate_migration_schema(
             FakeDriver(),  # type: ignore[arg-type]
             target_schema="app",
-            reference_schema='ref"; DROP TABLE x; --',
+            reference_schema="ref\x00evil",
             candidate_sql="ALTER TABLE w ADD c int",
         )

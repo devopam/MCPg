@@ -52,7 +52,6 @@ Security posture
 from __future__ import annotations
 
 import random
-import re
 import string
 import uuid
 from collections.abc import Callable
@@ -60,10 +59,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from mcpg.errors import MCPgError
+from mcpg.identifiers import IdentifierError, ensure_identifier
+from mcpg.identifiers import quote_identifier as _qi
 from mcpg.introspection import ColumnInfo, describe_table
 from mcpg.sql import SqlDriver
-
-_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 class TestRowFactoryError(MCPgError):
@@ -116,8 +115,12 @@ class GeneratedTestRow:
 
 
 def _check_identifier(value: str, kind: str) -> None:
-    if not _IDENTIFIER.match(value):
-        raise TestRowFactoryError(f"invalid {kind} {value!r}; must match [A-Za-z_][A-Za-z0-9_]*")
+    # Accept any addressable identifier; splices quote it via _qi. Only
+    # empty / NUL / overlong names are rejected.
+    try:
+        ensure_identifier(value, kind)
+    except IdentifierError as exc:
+        raise TestRowFactoryError(str(exc)) from exc
 
 
 def _quote_literal(value: object) -> str:
@@ -353,9 +356,9 @@ async def _sample_fk_row(
     mapping each referenced column to its sampled cell value.
     """
     # Identifiers were validated by the caller — safe to interpolate.
-    col_list = ", ".join(f'"{c}"' for c in ref_columns)
+    col_list = ", ".join(_qi(c) for c in ref_columns)
     rows = await driver.execute_query(
-        f'SELECT {col_list} FROM "{ref_schema}"."{ref_table}" LIMIT 1',
+        f"SELECT {col_list} FROM {_qi(ref_schema)}.{_qi(ref_table)} LIMIT 1",
         force_readonly=True,
     )
     if not rows:
@@ -476,7 +479,7 @@ async def generate_test_row_for(  # noqa: C901
                             heuristic=f"fk → {ref_schema}.{ref_table} empty, column nullable",
                         )
                     )
-                    insert_cols.append(f'"{col.name}"')
+                    insert_cols.append(_qi(col.name))
                     insert_vals.append("NULL")
                     continue
                 raise TestRowFactoryError(
@@ -491,7 +494,7 @@ async def generate_test_row_for(  # noqa: C901
                     heuristic=f"fk → {ref_schema}.{ref_table}.{ref_column} sampled",
                 )
             )
-            insert_cols.append(f'"{col.name}"')
+            insert_cols.append(_qi(col.name))
             insert_vals.append(literal)
             continue
 
@@ -510,7 +513,7 @@ async def generate_test_row_for(  # noqa: C901
                 column_fills.append(
                     ColumnFill(name=col.name, sql_literal="NULL", heuristic="unsupported type, column nullable")
                 )
-                insert_cols.append(f'"{col.name}"')
+                insert_cols.append(_qi(col.name))
                 insert_vals.append("NULL")
                 continue
             raise TestRowFactoryError(
@@ -519,16 +522,17 @@ async def generate_test_row_for(  # noqa: C901
         value, heuristic = synth
         literal = _quote_literal(value)
         column_fills.append(ColumnFill(name=col.name, sql_literal=literal, heuristic=heuristic))
-        insert_cols.append(f'"{col.name}"')
+        insert_cols.append(_qi(col.name))
         insert_vals.append(literal)
 
     if not insert_cols:
         # Every column was skipped (entirely generated table). Emit
         # the DEFAULT VALUES form rather than a syntactically-bad
         # empty INSERT.
-        insert_sql = f'INSERT INTO "{schema}"."{table}" DEFAULT VALUES'
+        insert_sql = f"INSERT INTO {_qi(schema)}.{_qi(table)} DEFAULT VALUES"
     else:
-        insert_sql = f'INSERT INTO "{schema}"."{table}" ({", ".join(insert_cols)}) VALUES ({", ".join(insert_vals)})'
+        relation = f"{_qi(schema)}.{_qi(table)}"
+        insert_sql = f"INSERT INTO {relation} ({', '.join(insert_cols)}) VALUES ({', '.join(insert_vals)})"
 
     return GeneratedTestRow(schema=schema, table=table, columns=column_fills, insert_sql=insert_sql)
 
