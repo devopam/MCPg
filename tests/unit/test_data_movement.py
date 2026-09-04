@@ -351,8 +351,10 @@ async def test_dump_database_schemas_emits_one_schema_flag_per_entry(
 
     argv = captured["argv"]
     assert isinstance(argv, list)
-    assert "--schema=public" in argv
-    assert "--schema=app" in argv
+    # Each schema name is encoded as a double-quoted literal pg_dump pattern
+    # so metacharacters can't expand and case is preserved.
+    assert '--schema="public"' in argv
+    assert '--schema="app"' in argv
 
 
 async def test_dump_database_default_schemas_none_emits_no_schema_flag(
@@ -387,8 +389,28 @@ async def test_dump_database_default_schemas_none_emits_no_schema_flag(
     assert not any(a.startswith("--schema=") for a in argv)
 
 
-async def test_dump_database_rejects_invalid_schema_name_without_running_pg_dump(
+def _fake_run_capturing(captured: dict[str, object]):
+    async def fake_run(binary: str, *argv: str, **kwargs: object) -> SubprocessResult:
+        captured["argv"] = list(argv)
+        return SubprocessResult(
+            binary=binary,
+            argv=list(argv),
+            exit_code=0,
+            stdout=b"-- PostgreSQL database dump\n",
+            stderr=b"",
+            output_bytes=29,
+            output_truncated=False,
+            timed_out=False,
+            env_redacted={},
+        )
+
+    return fake_run
+
+
+@pytest.mark.parametrize("bad_name", ["", "\x00", "sch\x00ema"])
+async def test_dump_database_rejects_empty_or_nul_schema_name_without_running_pg_dump(
     monkeypatch: pytest.MonkeyPatch,
+    bad_name: str,
 ) -> None:
     called = False
 
@@ -404,9 +426,52 @@ async def test_dump_database_rejects_invalid_schema_name_without_running_pg_dump
             "postgresql://u:p@h:5432/db",
             timeout_sec=10,
             max_output_bytes=1024,
-            schemas=["public", "bad;name"],
+            schemas=["public", bad_name],
         )
     assert called is False
+
+
+@pytest.mark.parametrize(
+    ("schema_name", "expected_flag"),
+    [
+        # A hyphenated schema name — the case from issue #329 — must reach
+        # pg_dump quoted rather than being rejected up-front.
+        ("adm-pgbench", '--schema="adm-pgbench"'),
+        # Spaces and mixed case are legal quoted identifiers; quoting also
+        # preserves case (an unquoted pg_dump pattern folds to lowercase).
+        ("My Schema", '--schema="My Schema"'),
+        ("MixedCase", '--schema="MixedCase"'),
+        # An embedded double quote is doubled per pg_dump's pattern-quoting
+        # rules, so it matches the literal quote in the schema name.
+        ('weird"name', '--schema="weird""name"'),
+        # Pattern metacharacters are neutralised by the surrounding quotes —
+        # they must match literally, never expand as wildcards / classes.
+        ("wild*card", '--schema="wild*card"'),
+        ("q?mark", '--schema="q?mark"'),
+        ("class[abc]", '--schema="class[abc]"'),
+        # A semicolon is harmless in argv (no shell) and now accepted as a
+        # literal schema-name character.
+        ("bad;name", '--schema="bad;name"'),
+    ],
+)
+async def test_dump_database_encodes_quoted_schema_names_as_literal_patterns(
+    monkeypatch: pytest.MonkeyPatch,
+    schema_name: str,
+    expected_flag: str,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr("mcpg.data_movement.run_pg_binary", _fake_run_capturing(captured))
+
+    await dump_database(
+        "postgresql://u:p@h:5432/db",
+        timeout_sec=10,
+        max_output_bytes=1024,
+        schemas=[schema_name],
+    )
+
+    argv = captured["argv"]
+    assert isinstance(argv, list)
+    assert expected_flag in argv
 
 
 # --- tool wiring: dump_database is shell-gated ----------------------------

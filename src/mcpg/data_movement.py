@@ -211,13 +211,42 @@ def _libpq_env_from_url(database_url: str) -> dict[str, str]:
 _PG_DUMP_FORMATS = frozenset({"plain", "custom", "directory", "tar"})
 
 
-# C901 rationale: pg_dump argv construction (format validation, schema-name
-# identifier validation, credential-via-env-not-argv handling) plus
-# format-dependent output decoding -- the validation branches are exactly
-# what keeps this shell-out safe (identifiers checked before reaching argv,
-# unsupported formats rejected before spawn); splitting them apart doesn't
-# reduce risk, just relocates it.
-async def dump_database(  # noqa: C901
+def _encode_schema_pattern(name: str) -> str:
+    r"""Encode a literal schema name as a ``pg_dump --schema`` pattern.
+
+    ``pg_dump --schema`` takes a *pattern*, not a literal name: it follows
+    the same rules as psql's ``\d`` commands, where an unquoted ``*`` /
+    ``?`` / ``[`` acts as a wildcard and bare letters are folded to
+    lowercase. Wrapping the whole name in double quotes turns both off —
+    every character inside, pattern metacharacters included, is matched
+    literally and case-sensitively — so an actual schema name like
+    ``adm-pgbench`` reaches pg_dump as the exact schema it names rather
+    than being rejected or mis-expanded. A literal double quote inside the
+    name is written as two double quotes, per the same quoting rules.
+
+    This is a dump-specific encoding, deliberately separate from the
+    plain-identifier allowlist the in-process paths use: those splice
+    names into SQL text where delimited-identifier quoting is the caller's
+    contract, whereas here the name only ever reaches pg_dump's argv (no
+    shell — see :mod:`mcpg.shell`), so quoting the pattern is both
+    necessary and sufficient. The name is never run through a shell, so
+    the only characters that can't survive are an empty string (matches
+    nothing) and an embedded NUL (can't cross the ``execve`` boundary);
+    both are rejected up-front.
+    """
+    if not name:
+        raise ShellError("invalid schema name: must not be empty")
+    if "\x00" in name:
+        raise ShellError(f"invalid schema name: {name!r} contains a NUL byte")
+    return '"' + name.replace('"', '""') + '"'
+
+
+# pg_dump argv construction: format validation and schema-name pattern
+# encoding both happen before spawn, and credentials travel via env vars
+# (never argv) -- the checks here are what keep this shell-out safe (schema
+# names encoded as literal patterns before reaching argv, unsupported
+# formats rejected before spawn).
+async def dump_database(
     database_url: str,
     *,
     timeout_sec: int,
@@ -238,29 +267,31 @@ async def dump_database(  # noqa: C901
     dump to specific schemas (one ``--schema=NAME`` flag per entry)
     instead of the whole database — useful to re-run with a narrower
     scope, or to sidestep schemas the caller doesn't want captured
-    (e.g. an MPP catalog schema like WarehousePG's ``gp_toolkit``).
+    (e.g. an MPP catalog schema like WarehousePG's ``gp_toolkit``). Each
+    entry is treated as an actual schema name — any valid PostgreSQL
+    schema name is accepted, including one needing delimited-identifier
+    quoting (hyphens, spaces, mixed case) — and encoded as a literal
+    ``pg_dump`` pattern so wildcard / pattern metacharacters never expand
+    (see :func:`_encode_schema_pattern`). Callers pass the bare name; no
+    SQL or shell quoting is required.
 
     Raises:
         ShellError: ``pg_dump`` is not on the allowlist or PATH, the
             URL is unparseable, the format is not supported, a name in
-            ``schemas`` is not a valid identifier, or the subprocess
-            fails to spawn.
+            ``schemas`` is empty or contains a NUL byte, or the
+            subprocess fails to spawn.
     """
     if format not in _PG_DUMP_FORMATS:
         raise ShellError(f"unsupported pg_dump format {format!r}; expected one of {sorted(_PG_DUMP_FORMATS)}")
     env = _libpq_env_from_url(database_url)
     if "PGDATABASE" not in env:
         raise ShellError("database_url must specify a database name")
-    if schemas is not None:
-        for name in schemas:
-            if not _IDENTIFIER.match(name):
-                raise ShellError(f"invalid schema name: {name!r}")
 
     argv = [f"--format={format}"]
     if schema_only:
         argv.append("--schema-only")
     if schemas is not None:
-        argv.extend(f"--schema={name}" for name in schemas)
+        argv.extend(f"--schema={_encode_schema_pattern(name)}" for name in schemas)
     # Always pipe to stdout (the default for plain/custom/tar; directory
     # writes to disk and isn't supported in v1).
     if format == "directory":
