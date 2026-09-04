@@ -22,12 +22,16 @@ from mcpg.server import create_server
 _SETTINGS = load_settings({"MCPG_DATABASE_URL": "postgresql://u:p@localhost/db"})
 
 
-def test_check_identifier_rejects_unsafe_names() -> None:
+def test_check_identifier_accepts_delimited_names_rejects_empty_and_nul() -> None:
+    # Names needing delimited quoting now pass the check (the splice site
+    # quotes them safely); only empty / NUL / overlong names are refused.
     _check_identifier("widget", "table")
+    _check_identifier('w"; DROP', "table")
+    _check_identifier("with space", "schema")
     with pytest.raises(CompositeError, match="invalid table"):
-        _check_identifier('w"; DROP', "table")
+        _check_identifier("", "table")
     with pytest.raises(CompositeError, match="invalid schema"):
-        _check_identifier("with space", "schema")
+        _check_identifier("with\x00nul", "schema")
 
 
 def test_pk_columns_extracts_from_primary_key_definition() -> None:
@@ -145,11 +149,13 @@ async def test_cache_hit_ratio_handles_null_aggregates() -> None:
 # --- summarize_table --------------------------------------------------
 
 
-async def test_summarize_table_rejects_unsafe_identifiers() -> None:
+async def test_summarize_table_rejects_empty_or_nul_identifiers() -> None:
     driver = FakeRoutingDriver({})
 
     with pytest.raises(CompositeError, match="invalid"):
-        await summarize_table(driver, 'app"; DROP', "widget")  # type: ignore[arg-type]
+        await summarize_table(driver, "", "widget")  # type: ignore[arg-type]
+    with pytest.raises(CompositeError, match="invalid"):
+        await summarize_table(driver, "app", "wid\x00get")  # type: ignore[arg-type]
 
 
 async def test_summarize_table_rejects_negative_sample_rows() -> None:

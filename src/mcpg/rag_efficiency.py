@@ -44,18 +44,14 @@ function — see ``docs/plans/rag-efficiency-suite.md``.
 from __future__ import annotations
 
 import math
-import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
+from mcpg.identifiers import IdentifierError, ensure_identifier, quote_identifier
 from mcpg.sql import SqlDriver
-
-# Reused from vector_tuning's identifier convention — refuse anything
-# that would require delimited quoting.
-_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 # Reused cap from vector_tuning. Each sample run triggers
 # 1 + len(multipliers) queries, so even at the cap a run with the
@@ -108,12 +104,16 @@ class VectorEfficiencyError(MCPgError):
 
 
 def _validate_identifier(name: str, kind: str) -> None:
-    if not _IDENTIFIER.match(name):
-        raise VectorEfficiencyError(f"invalid {kind} name: {name!r}")
+    # Accept any addressable identifier (delimited names included); _quoted
+    # escapes it safely. Only empty / NUL / overlong names are refused.
+    try:
+        ensure_identifier(name, kind)
+    except IdentifierError as exc:
+        raise VectorEfficiencyError(str(exc)) from exc
 
 
 def _quoted(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
+    return quote_identifier(name)
 
 
 # --- statistical helpers (pure Python) -------------------------------------

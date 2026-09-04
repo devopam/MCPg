@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mcpg.errors import MCPgError
+from mcpg.identifiers import IdentifierError, ensure_identifier, quote_identifier
 from mcpg.introspection import (
     ColumnInfo,
     ConstraintInfo,
@@ -39,16 +40,18 @@ from mcpg.liveops import list_active_queries
 from mcpg.query import analyze_query_plan, explain_query
 from mcpg.sql import SqlDriver
 
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-
 
 class CompositeError(MCPgError):
     """Raised when a composite tool's inputs are invalid."""
 
 
 def _check_identifier(name: str, kind: str) -> None:
-    if not _IDENTIFIER.match(name):
-        raise CompositeError(f"invalid {kind} name: {name!r}")
+    # Accept any addressable PostgreSQL identifier; the splice site quotes
+    # it safely via _quoted. Only empty / NUL / overlong names are refused.
+    try:
+        ensure_identifier(name, kind)
+    except IdentifierError as exc:
+        raise CompositeError(str(exc)) from exc
 
 
 # --- summarize_table -------------------------------------------------
@@ -94,7 +97,7 @@ class TableSummary:
 
 
 def _quoted(name: str) -> str:
-    return f'"{name}"'
+    return quote_identifier(name)
 
 
 def _pk_columns(constraints: list[ConstraintInfo]) -> list[str]:

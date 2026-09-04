@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import math
 import random
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
@@ -26,9 +25,8 @@ from typing import Any
 from mcpg import introspection
 from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
+from mcpg.identifiers import IdentifierError, ensure_identifier, quote_identifier
 from mcpg.sql import SqlDriver
-
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 # Default sample size when the caller doesn't pass one. Chosen so the
 # tool is cheap on big tables (a few MB of vectors) while still giving
@@ -110,13 +108,19 @@ class DistanceMetricRecommendation:
 
 
 def _checked(name: str, kind: str) -> str:
-    if not _IDENTIFIER.match(name):
-        raise VectorOpsError(f"invalid {kind} name: {name!r}")
-    return name
+    # Accept any addressable identifier (delimited names included); the
+    # splice sites quote it via _quoted. Only empty / NUL / overlong refused.
+    try:
+        return ensure_identifier(name, kind)
+    except IdentifierError as exc:
+        raise VectorOpsError(str(exc)) from exc
 
 
 def _quoted(name: str, kind: str) -> str:
-    return f'"{_checked(name, kind)}"'
+    try:
+        return quote_identifier(name, kind)
+    except IdentifierError as exc:
+        raise VectorOpsError(str(exc)) from exc
 
 
 # pgvector distance operators, shared across the analytics tools so the
