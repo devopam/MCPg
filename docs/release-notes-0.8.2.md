@@ -54,12 +54,15 @@ necessary and sufficient; there is no shell-injection surface to widen.
 
 ### Scope, deliberately narrow
 
-- **Dump-specific.** The new `_encode_schema_pattern` helper lives in
-  `data_movement.py` and is used *only* by `dump_database`. The
-  plain-identifier validator that the in-process SQL paths rely on
-  (`export_table`, `import_csv` / `import_json` / `import_vectors`,
-  `copy_table_between_databases`) is unchanged — those splice names into
-  SQL text, a different contract, so relaxing them was explicitly avoided.
+- **Two encodings, one for each contract.** The new `_encode_schema_pattern`
+  helper lives in `data_movement.py` and is used by the two tools that drive
+  `pg_dump` / `pg_restore` via argv patterns: `dump_database` (`--schema`)
+  and `copy_table_between_databases` (`--schema` **and** `--table`). The
+  in-process SQL tools — `export_table`, `import_csv` / `import_json` /
+  `import_vectors`, and the ~20 others below — splice names into SQL text
+  instead, a different contract, so they're migrated separately to
+  `mcpg.identifiers.quote_identifier` rather than to this helper; see
+  "The sweep" below for that list.
 - **Access mode unchanged.** `dump_database` still requires `unrestricted`
   mode **and** `MCPG_ALLOW_SHELL=true`.
 - **Contract unchanged.** `DumpResult` is identical, including SQL text in
