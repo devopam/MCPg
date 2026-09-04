@@ -47,13 +47,13 @@ def _full_routes(
 async def test_rejects_invalid_schema_name() -> None:
     driver = FakeRoutingDriver({})
     with pytest.raises(TestRowFactoryError, match="schema"):
-        await generate_test_row_for(driver, "bad; DROP", "t")  # type: ignore[arg-type]
+        await generate_test_row_for(driver, "bad\x00schema", "t")  # type: ignore[arg-type]
 
 
 async def test_rejects_invalid_table_name() -> None:
     driver = FakeRoutingDriver({})
     with pytest.raises(TestRowFactoryError, match="table"):
-        await generate_test_row_for(driver, "public", '"; DROP TABLE x; --')  # type: ignore[arg-type]
+        await generate_test_row_for(driver, "public", "")  # type: ignore[arg-type]
 
 
 async def test_errors_when_table_has_no_columns() -> None:

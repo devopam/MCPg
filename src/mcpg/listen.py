@@ -22,7 +22,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -31,15 +30,10 @@ from types import TracebackType
 from typing import Any, Protocol, Self
 
 from mcpg.errors import MCPgError
+from mcpg.identifiers import IdentifierError, ensure_identifier
+from mcpg.identifiers import quote_identifier as _qi
 
 logger = logging.getLogger(__name__)
-
-# PostgreSQL identifier policy for channel names. Matches the rest of
-# MCPg's identifier allowlist (introspection / data_movement / etc).
-# Channels go through SQL as ``LISTEN "name"`` so the double-quoted form
-# survives reserved words, but the allowlist still refuses anything
-# that would need escape handling.
-_CHANNEL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 class ListenError(MCPgError):
@@ -137,9 +131,10 @@ class ListenManager:
     async def subscribe(self, channel: str) -> str:
         """Register a subscription on ``channel`` and return its id.
 
-        The channel name must match ``[A-Za-z_][A-Za-z0-9_]*`` so the
-        ``LISTEN "name"`` statement is safe under double-quoting.
-        Multiple subscriptions on the same channel share a single
+        The channel name is quoted (embedded quotes doubled) in the
+        ``LISTEN "name"`` statement, so any name PostgreSQL accepts as a
+        delimited identifier works; empty / NUL / overlong names are
+        rejected. Multiple subscriptions on the same channel share a single
         underlying ``LISTEN``; each gets its own queue.
 
         Raises:
@@ -309,20 +304,20 @@ class ListenManager:
         # register.
         if self._needs_resubscribe:
             for channel in self._channels:
-                await self._conn.execute(f'LISTEN "{channel}"')
+                await self._conn.execute(f"LISTEN {_qi(channel)}")
             self._needs_resubscribe = False
         self._task = asyncio.create_task(self._reader_loop(), name="mcpg-listen-reader")
         return self._conn
 
     async def _listen(self, channel: str) -> None:
         conn = await self._ensure_connection()
-        await conn.execute(f'LISTEN "{channel}"')
+        await conn.execute(f"LISTEN {_qi(channel)}")
 
     async def _unlisten(self, channel: str) -> None:
         if self._conn is None:
             return
         try:
-            await self._conn.execute(f'UNLISTEN "{channel}"')
+            await self._conn.execute(f"UNLISTEN {_qi(channel)}")
         except Exception:
             # The connection may have died between subscribe and
             # unsubscribe; don't let cleanup raise.
@@ -375,5 +370,10 @@ class ListenManager:
 
 
 def _check_channel(channel: str) -> None:
-    if not _CHANNEL_NAME.match(channel):
-        raise ListenError(f"invalid channel name: {channel!r}")
+    # A channel name needing delimited quoting is legal (LISTEN "my-chan")
+    # and is quoted safely at the splice site. Only empty / NUL / overlong
+    # names are rejected.
+    try:
+        ensure_identifier(channel, "channel")
+    except IdentifierError as exc:
+        raise ListenError(str(exc)) from exc

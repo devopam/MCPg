@@ -20,10 +20,15 @@ from mcpg.timescaledb import (
 )
 
 
-def test_check_identifier_rejects_unsafe_names() -> None:
+def test_check_identifier_accepts_delimited_names_rejects_non_addressable() -> None:
+    # Delimited names are accepted (quoted safely at the splice); only
+    # empty / NUL / overlong names are rejected.
     _check_identifier("widget", "table")
+    _check_identifier('w"; DROP', "table")
     with pytest.raises(TimescaleError, match="invalid table"):
-        _check_identifier('w"; DROP', "table")
+        _check_identifier("", "table")
+    with pytest.raises(TimescaleError, match="invalid table"):
+        _check_identifier("w\x00t", "table")
 
 
 def test_check_interval_accepts_common_timescaledb_intervals() -> None:
@@ -94,7 +99,7 @@ async def test_list_chunks_rejects_unsafe_identifiers() -> None:
     driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
 
     with pytest.raises(TimescaleError, match="invalid"):
-        await list_chunks(driver, 'app"; DROP', "metrics")  # type: ignore[arg-type]
+        await list_chunks(driver, "app\x00evil", "metrics")  # type: ignore[arg-type]
 
 
 async def test_create_hypertable_reports_unavailable_without_timescaledb() -> None:
@@ -111,9 +116,9 @@ async def test_create_hypertable_validates_inputs() -> None:
     driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
 
     with pytest.raises(TimescaleError, match="invalid table"):
-        await create_hypertable(driver, "public", 'm"; DROP', "time")  # type: ignore[arg-type]
+        await create_hypertable(driver, "public", "m\x00t", "time")  # type: ignore[arg-type]
     with pytest.raises(TimescaleError, match="invalid time_column"):
-        await create_hypertable(driver, "public", "metrics", 'tcol"; DROP')  # type: ignore[arg-type]
+        await create_hypertable(driver, "public", "metrics", "tc\x00ol")  # type: ignore[arg-type]
     with pytest.raises(TimescaleError, match="invalid interval"):
         await create_hypertable(
             driver,  # type: ignore[arg-type]

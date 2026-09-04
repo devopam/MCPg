@@ -168,8 +168,10 @@ async def test_create_server_emits_create_server_with_options() -> None:
 
 async def test_create_server_rejects_bad_identifier() -> None:
     driver = FakeRoutingDriver({"FROM pg_extension WHERE extname": [{"present": 1}]})
-    with pytest.raises(RedisFdwError, match="not a valid unquoted SQL identifier"):
-        await create_redis_cache_server(driver, name="redis; DROP", address="redis.internal")  # type: ignore[arg-type]
+    # A name needing delimited quoting is accepted and quoted safely; only
+    # empty / NUL / overlong names are rejected.
+    with pytest.raises(RedisFdwError, match="invalid"):
+        await create_redis_cache_server(driver, name="redis\x00drop", address="redis.internal")  # type: ignore[arg-type]
 
 
 async def test_create_server_rejects_address_with_quotes() -> None:
@@ -267,7 +269,7 @@ async def test_create_user_mapping_validates_user_identifier() -> None:
         await create_redis_user_mapping(
             driver,  # type: ignore[arg-type]
             server="redis_primary",
-            user="bad; user",
+            user="bad\x00user",
             secret_ref="P",
             secrets=secrets,  # type: ignore[arg-type]
         )
