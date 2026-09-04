@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-09-04
+
+### Fixed
+
+- **`dump_database` rejected valid PostgreSQL schema names that need delimited-identifier quoting**
+  ([#329](https://github.com/devopam/MCPg/issues/329)). The `schemas` parameter was validated against
+  the plain-identifier allowlist (`[A-Za-z_][A-Za-z0-9_]*`), so an actual schema such as `adm-pgbench`
+  failed with `ShellError: invalid schema name: 'adm-pgbench'` before `pg_dump` was ever spawned.
+  `pg_dump --schema` takes a *pattern* (the same rules as psql's `\d` commands), not a literal name:
+  an unquoted `*` / `?` / `[` is a wildcard and bare letters fold to lowercase. Each entry in `schemas`
+  is now encoded as a double-quoted literal `pg_dump` pattern (`_encode_schema_pattern`) instead of
+  being validated against the shared allowlist — every character, pattern metacharacters included, is
+  matched literally and case-sensitively, so the named schema is dumped and no wildcard can accidentally
+  expand. Callers still pass the bare name (no SQL or shell quoting); only an empty name or an embedded
+  NUL is rejected. This is a dump-specific encoding, deliberately left separate from the plain-identifier
+  validator the in-process SQL paths (`export_table`, `import_csv`/`import_json`/`import_vectors`,
+  `copy_table_between_databases`) still rely on. The access-mode requirement is unchanged
+  (`unrestricted` + `MCPG_ALLOW_SHELL=true`), as is the `DumpResult` contract. Regression tests cover
+  hyphens, spaces, mixed case, embedded double quotes, and pattern metacharacters.
+
 ## [0.8.1] - 2026-09-01
 
 ### Added
