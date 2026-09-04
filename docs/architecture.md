@@ -64,7 +64,7 @@ flowchart TD
 ---
 
 <!-- BEGIN generated: module-map (python tools/generate_doc_tables.py --modules) -->
-## Module map (106 modules)
+## Module map (107 modules)
 
 Every `mcpg.*` module and what it owns, alphabetical. The layered
 request path through these lives in the [Overview](#overview) diagram;
@@ -109,6 +109,7 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.headline_curator` | Dynamic `headline_tools` recommender — empirical curation from the audit log. |
 | `mcpg.health` | Database health checks. |
 | `mcpg.http_runtime` | HTTP-transport extensions: bearer-token auth + Prometheus /metrics. |
+| `mcpg.identifiers` | Safe SQL identifier quoting — the shared, escape-based replacement for the per-module `[A-Za-z_][A-Za-z0-9_]*` allowlists. |
 | `mcpg.indexing` | Index recommendations from table scan statistics and column types. |
 | `mcpg.introspection` | Schema-introspection queries against the PostgreSQL catalog. |
 | `mcpg.io_stats` | I/O stats reader — wraps `pg_stat_io` (PostgreSQL 16+). |

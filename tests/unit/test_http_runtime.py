@@ -437,10 +437,13 @@ def test_tenant_role_middleware_returns_403_when_role_has_invalid_characters() -
         sent_messages.append(message)
 
     middleware = _TenantRoleMiddleware(inner)
+    # A NUL byte is not an addressable identifier, so the role header is
+    # rejected. (A role needing delimited quoting, e.g. "my-role", is now
+    # accepted and quoted safely at the SET LOCAL ROLE splice.)
     scope = {
         "type": "http",
         "path": "/",
-        "headers": [(b"x-mcpg-role", b'"; DROP USER alice; --')],
+        "headers": [(b"x-mcpg-role", b"ro\x00le")],
     }
 
     import asyncio
@@ -956,7 +959,7 @@ async def test_oidc_middleware_sets_and_resets_role_from_claim() -> None:
 async def test_oidc_middleware_rejects_unsafe_role_identifier() -> None:
     from mcpg.http_runtime import _OIDCAuthMiddleware
 
-    mw = _OIDCAuthMiddleware(None, verifier=_FakeVerifier(role='"; DROP USER alice; --'))  # type: ignore[arg-type]
+    mw = _OIDCAuthMiddleware(None, verifier=_FakeVerifier(role="ro\x00le"))  # type: ignore[arg-type]
     sent = await _drive_get(mw, auth=b"Bearer tok")
 
     starts = [m for m in sent if m["type"] == "http.response.start"]

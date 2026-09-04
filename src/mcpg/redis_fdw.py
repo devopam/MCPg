@@ -56,6 +56,7 @@ _VALID_KEY_TYPES = frozenset({"hash", "list", "string", "set", "zset"})
 # ``allow_insecure_tls`` flag. Everything else must pass through TLS.
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
+
 class RedisFdwError(MCPgError):
     """Raised when a redis_fdw operation cannot complete."""
 
