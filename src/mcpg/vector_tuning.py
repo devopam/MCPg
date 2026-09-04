@@ -16,11 +16,11 @@ when it is absent.
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass
 
 from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
+from mcpg.identifiers import IdentifierError, quote_identifier
 from mcpg.introspection import describe_table
 from mcpg.sql import SqlDriver
 
@@ -45,22 +45,22 @@ _TRUTH_ORDER = {"l2": "ASC", "cosine": "ASC", "inner_product": "DESC"}
 # accidental DoS via a runaway sample_size argument.
 _MAX_SAMPLE_SIZE = 100
 
-# Plain unquoted PostgreSQL identifier — letters, digits, underscores,
-# starting with a letter or underscore. We refuse anything that requires
-# quoting at the catalog level (delimited identifiers, case-sensitive
-# names) rather than try to parse them out of an agent's string.
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-
-
 class VectorTuningError(MCPgError):
     """Raised when a pgvector tuning operation cannot complete."""
 
 
 def _quoted(name: str, kind: str) -> str:
-    """Validate a SQL identifier against the allowlist and return it double-quoted."""
-    if not _IDENTIFIER.match(name):
-        raise VectorTuningError(f"invalid {kind} name: {name!r}")
-    return f'"{name}"'
+    """Return a SQL identifier safely double-quoted.
+
+    Accepts any actual PostgreSQL identifier — including names that need
+    delimited quoting (hyphens, mixed case) — and doubles embedded quotes
+    so the value can't break out. Only empty / NUL / over-63-byte names are
+    rejected. See :func:`mcpg.identifiers.quote_identifier`.
+    """
+    try:
+        return quote_identifier(name, kind)
+    except IdentifierError as exc:
+        raise VectorTuningError(str(exc)) from exc
 
 
 @dataclass(frozen=True)

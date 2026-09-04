@@ -340,7 +340,10 @@ async def test_analyze_rejects_unsafe_identifiers(field: str) -> None:
         "column": "embedding",
         "id_column": "id",
     }
-    kwargs[field] = "bad; DROP"
+    # A name needing delimited quoting (e.g. "bad; DROP") is now accepted and
+    # safely quoted; only names that aren't addressable identifiers at all —
+    # the empty string / an embedded NUL — are rejected.
+    kwargs[field] = ""
     with pytest.raises(VectorEfficiencyError, match="invalid"):
         await analyze_vector_search_efficiency(driver, **kwargs)  # type: ignore[arg-type]
 

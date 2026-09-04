@@ -21,6 +21,7 @@ from typing import Any
 
 from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
+from mcpg.identifiers import IdentifierError, ensure_identifier, quote_identifier
 from mcpg.sql import SqlDriver
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
@@ -141,15 +142,38 @@ class GeoSearchResult:
 
 
 def _checked(name: str, kind: str) -> str:
-    """Validate a SQL identifier and return it unchanged, or raise."""
+    """Validate a value against the strict plain-identifier allowlist.
+
+    Kept strict on purpose: its remaining caller embeds the value inside a
+    single-quoted SQL *string literal* (a ``regconfig`` name passed to
+    ``to_tsvector('<config>', …)``), where the plain-identifier allowlist —
+    which forbids the ``'`` that could close the literal — is the safety
+    boundary. Identifier arguments do not go through here; they are quoted
+    by :func:`_quoted`.
+    """
     if not _IDENTIFIER.match(name):
         raise SearchError(f"invalid {kind} name: {name!r}")
     return name
 
 
+def _ensure_identifier(name: str, kind: str) -> str:
+    """Pre-validate an identifier leniently, returning it unchanged.
+
+    Accepts any addressable PostgreSQL identifier (delimited names
+    included); the actual SQL splice quotes it via :func:`_quoted`.
+    """
+    try:
+        return ensure_identifier(name, kind)
+    except IdentifierError as exc:
+        raise SearchError(str(exc)) from exc
+
+
 def _quoted(name: str, kind: str) -> str:
-    """Validate a SQL identifier and return it double-quoted."""
-    return f'"{_checked(name, kind)}"'
+    """Return a SQL identifier safely double-quoted (embedded quotes doubled)."""
+    try:
+        return quote_identifier(name, kind)
+    except IdentifierError as exc:
+        raise SearchError(str(exc)) from exc
 
 
 async def fuzzy_search(
@@ -848,10 +872,10 @@ async def recommend_vector_quantization(
     doesn't justify the migration.
 
     Requires ``vector`` (pgvector) installed; when absent, returns
-    an empty list. Schema name is validated; only plain identifiers
-    accepted.
+    an empty list. The schema name is accepted as any addressable
+    identifier and quoted safely where it reaches SQL.
     """
-    _checked(schema, "schema")
+    _ensure_identifier(schema, "schema")
     if not await extension_installed(driver, "vector"):
         return []
 

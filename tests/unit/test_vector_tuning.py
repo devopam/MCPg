@@ -278,8 +278,8 @@ async def test_vector_recall_at_k_caps_sample_size_to_prevent_dos() -> None:
 
 
 async def test_tune_vector_index_rejects_invalid_identifier_characters() -> None:
-    # Identifier injection guard — anything not matching the [A-Za-z_][...]
-    # allowlist is rejected before the SQL is built.
+    # Names needing delimited quoting are accepted and safely quoted; only
+    # empty / NUL / overlong names are rejected before the SQL is built.
     driver = FakeRoutingDriver(
         {
             "pg_extension": [{"present": 1}],
@@ -288,13 +288,13 @@ async def test_tune_vector_index_rejects_invalid_identifier_characters() -> None
         }
     )
     with pytest.raises(VectorTuningError, match="invalid schema name"):
-        await tune_vector_index(driver, 'app"; DROP TABLE x; --', "docs", "embedding")  # type: ignore[arg-type]
+        await tune_vector_index(driver, "", "docs", "embedding")  # type: ignore[arg-type]
 
 
 async def test_vector_recall_at_k_rejects_invalid_identifier_characters() -> None:
     driver = FakeRoutingDriver({"pg_extension": [{"present": 1}], "WHERE": []})
     with pytest.raises(VectorTuningError, match="invalid id_column name"):
-        await vector_recall_at_k(driver, "app", "docs", "embedding", 'id"; DROP TABLE x; --')  # type: ignore[arg-type]
+        await vector_recall_at_k(driver, "app", "docs", "embedding", "id\x00col")  # type: ignore[arg-type]
 
 
 # --- tool wiring -----------------------------------------------------------
@@ -486,7 +486,7 @@ async def test_migrate_vector_to_halfvec_with_no_indexes_emits_only_alter() -> N
 async def test_migrate_vector_to_halfvec_rejects_unsafe_identifiers() -> None:
     driver = FakeRoutingDriver(_halfvec_routes())
     with pytest.raises(VectorTuningError, match="invalid schema name"):
-        await migrate_vector_to_halfvec(driver, 'app"; DROP TABLE x; --', "docs", "embedding")  # type: ignore[arg-type]
+        await migrate_vector_to_halfvec(driver, "", "docs", "embedding")  # type: ignore[arg-type]
 
 
 async def test_migrate_vector_to_halfvec_tool_is_callable_from_a_client() -> None:
