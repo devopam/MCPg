@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
@@ -44,13 +43,11 @@ from mcp.server.context import CallNext, HandlerResult, ServerMiddleware, Server
 from psycopg.rows import dict_row
 
 from mcpg.errors import MCPgError
+from mcpg.identifiers import IdentifierError, ensure_identifier, quote_identifier
 from mcpg.sql import SqlDriver
 
 logger = logging.getLogger(__name__)
 
-# Mirrors the validator in mcpg.config — duplicated here so this
-# module has no import-cycle on Settings.
-_ROLE_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 # Per-request override, set once per inbound request by
 # TenantRoleContextMiddleware (stdio: never set, so it stays at its default
@@ -71,10 +68,17 @@ class TenancyError(MCPgError, ValueError):
 
 
 def validate_role(role: str) -> str:
-    """Return ``role`` unchanged if safe; raise otherwise."""
-    if not _ROLE_IDENTIFIER.match(role):
-        raise TenancyError(f"role name {role!r} must match [A-Za-z_][A-Za-z0-9_]*")
-    return role
+    """Return ``role`` unchanged if it is an addressable identifier; raise otherwise.
+
+    Accepts any role name PostgreSQL supports through delimited quoting
+    (hyphens, spaces, mixed case); the ``SET LOCAL ROLE`` splice quotes it
+    with embedded quotes doubled, so it cannot break out. Only the empty
+    string, an embedded NUL, or an over-63-byte name is rejected.
+    """
+    try:
+        return ensure_identifier(role, "role")
+    except IdentifierError as exc:
+        raise TenancyError(str(exc)) from exc
 
 
 def resolve_role(default: str | None) -> str | None:
@@ -212,7 +216,7 @@ async def _execute_with_role(  # noqa: C901
     """
     # Defence-in-depth — role is already validated at config / middleware,
     # but a misconfigured caller could still pass an unvalidated string.
-    validate_role(role)
+    quoted_role = quote_identifier(validate_role(role), "role")
     transaction_started = False
     try:
         async with connection.cursor(row_factory=dict_row) as cursor:
@@ -222,7 +226,7 @@ async def _execute_with_role(  # noqa: C901
                 await cursor.execute("BEGIN")
             transaction_started = True
 
-            await cursor.execute(f'SET LOCAL ROLE "{role}"')
+            await cursor.execute(f"SET LOCAL ROLE {quoted_role}")
 
             if params:
                 await cursor.execute(query, params)

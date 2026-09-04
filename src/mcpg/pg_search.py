@@ -61,7 +61,6 @@ from __future__ import annotations
 import datetime as _datetime
 import json
 import math
-import re
 import time as _time
 from dataclasses import dataclass, field
 from typing import Any
@@ -69,12 +68,8 @@ from typing import Any
 from mcpg.database import Database
 from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
+from mcpg.identifiers import IdentifierError, ensure_identifier
 from mcpg.sql import SqlDriver
-
-# Plain unquoted PostgreSQL identifier — same rule as turboquant /
-# vector_tuning. Anything that would require delimited quoting is
-# refused rather than parsed out of an agent string.
-_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 class PgSearchError(MCPgError):
@@ -82,8 +77,12 @@ class PgSearchError(MCPgError):
 
 
 def _validate_identifier(name: str, kind: str) -> None:
-    if not _IDENTIFIER.match(name):
-        raise PgSearchError(f"invalid {kind} name: {name!r}")
+    # Accept any addressable identifier; _pg_quote_ident escapes it safely.
+    # Only empty / NUL / overlong names are refused.
+    try:
+        ensure_identifier(name, kind)
+    except IdentifierError as exc:
+        raise PgSearchError(str(exc)) from exc
 
 
 # Per §2.2 of the BM-0 investigation checkpoint, the ``bm25`` AM

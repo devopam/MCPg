@@ -248,12 +248,10 @@ async def test_get_turboquant_index_metadata_raises_when_no_match() -> None:
 @pytest.mark.parametrize(
     ("schema", "index"),
     [
-        ("public; DROP", "idx"),
-        ("public", "idx; DROP"),
         ("", "idx"),
         ("public", ""),
-        ("public.embeddings", "idx"),
-        ("public", "idx-name"),
+        ("sch\x00ema", "idx"),
+        ("public", "id\x00x"),
     ],
 )
 async def test_get_turboquant_index_metadata_rejects_unsafe_identifiers(schema: str, index: str) -> None:
@@ -328,7 +326,7 @@ async def test_get_turboquant_heap_stats_falls_back_to_alternate_key() -> None:
 
 @pytest.mark.parametrize(
     ("schema", "index"),
-    [("public", "idx; DROP"), ("../etc/passwd", "idx")],
+    [("", "idx"), ("public", "id\x00x")],
 )
 async def test_get_turboquant_heap_stats_rejects_unsafe_identifiers(schema: str, index: str) -> None:
     driver = FakeRoutingDriver({"pg_extension": [{"present": 1}]})
@@ -654,12 +652,10 @@ async def test_maintain_turboquant_index_raises_when_index_is_not_turboquant() -
 @pytest.mark.parametrize(
     ("schema", "index"),
     [
-        ("public; DROP", "idx"),
-        ("public", "idx; DROP"),
         ("", "idx"),
         ("public", ""),
-        ("public.embeddings", "idx"),
-        ("public", "idx-name"),
+        ("sch\x00ema", "idx"),
+        ("public", "id\x00x"),
     ],
 )
 async def test_maintain_turboquant_index_rejects_unsafe_identifiers(schema: str, index: str) -> None:
@@ -798,7 +794,7 @@ async def test_create_turboquant_index_rejects_unsafe_identifiers(field: str) ->
         "index_name": "idx",
         "metric": "cosine",
     }
-    kwargs[field] = "bad; DROP TABLE x"
+    kwargs[field] = ""
     with pytest.raises(TurboQuantError, match="invalid"):
         await create_turboquant_index(db, **kwargs)  # type: ignore[arg-type]
 
@@ -1046,7 +1042,7 @@ async def test_turboquant_approx_candidates_rejects_unsafe_identifiers(field: st
         "metric": "cosine",
         "candidate_limit": 10,
     }
-    kwargs[field] = "bad; DROP"
+    kwargs[field] = ""
     with pytest.raises(TurboQuantError, match="invalid"):
         await turboquant_approx_candidates(driver, **kwargs)  # type: ignore[arg-type]
 

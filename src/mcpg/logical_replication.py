@@ -53,12 +53,7 @@ from dataclasses import dataclass
 
 from mcpg.database import Database
 from mcpg.errors import MCPgError
-
-# Unquoted PostgreSQL identifier: starts with letter / underscore,
-# then letters / digits / underscores. Same shape as
-# `mcpg.pg_search._IDENTIFIER`; duplicated here to keep modules
-# independent rather than importing across feature boundaries.
-_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
+from mcpg.identifiers import IdentifierError, ensure_identifier
 
 
 class LogicalReplicationError(MCPgError):
@@ -66,8 +61,12 @@ class LogicalReplicationError(MCPgError):
 
 
 def _validate_identifier(name: str, kind: str) -> None:
-    if not _IDENTIFIER.match(name):
-        raise LogicalReplicationError(f"invalid {kind} name: {name!r}")
+    # Accept any addressable identifier; _pg_quote_ident escapes it safely.
+    # Only empty / NUL / overlong names are refused.
+    try:
+        ensure_identifier(name, kind)
+    except IdentifierError as exc:
+        raise LogicalReplicationError(str(exc)) from exc
 
 
 def _pg_quote_ident(name: str) -> str:

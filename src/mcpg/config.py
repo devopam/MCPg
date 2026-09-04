@@ -16,14 +16,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from mcpg.errors import MCPgError
+from mcpg.identifiers import IdentifierError, ensure_identifier
 from mcpg.nl2sql import AUTO_PICK_ORDER, VENDOR_ENV_VAR_HINT, VENDOR_KEY_ENV_VARS
 from mcpg.secrets import SecretsError, build_secrets_provider
 from mcpg.sql import obfuscate_password
-
-# PG role names must be safe identifiers — we inline them into
-# ``SET ROLE "<name>"`` so anything outside ``[A-Za-z_][A-Za-z0-9_]*``
-# is rejected up front rather than allowed to inject.
-_ROLE_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 # Secondary-database ids are inlined into tool descriptions and used as dict
 # keys; we pin them to a conservative, lowercase, simple-identifier shape so
@@ -450,8 +446,14 @@ def _require_tls_or_loopback(var: str, dsn: str) -> None:
 
 
 def _validate_role_identifier(var: str, value: str) -> None:
-    if not _ROLE_IDENTIFIER.match(value):
-        raise ConfigError(f"{var} role name {value!r} must match [A-Za-z_][A-Za-z0-9_]* (no quotes / spaces / dashes)")
+    # A configured role is quoted (with embedded quotes doubled) where it is
+    # spliced into ``SET LOCAL ROLE`` (see mcpg.tenancy), so any role name
+    # PostgreSQL supports through delimited quoting is accepted here. Only an
+    # empty string, an embedded NUL, or an over-63-byte name is rejected.
+    try:
+        ensure_identifier(value, f"{var} role")
+    except IdentifierError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def _parse_enum[E: StrEnum](var: str, raw: str, enum: type[E]) -> E:

@@ -53,7 +53,6 @@ from __future__ import annotations
 
 import datetime
 import json
-import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -61,12 +60,8 @@ from typing import Any
 from mcpg.database import Database
 from mcpg.errors import MCPgError
 from mcpg.extensions import extension_installed
+from mcpg.identifiers import IdentifierError, ensure_identifier
 from mcpg.sql import SqlDriver
-
-# Plain unquoted PostgreSQL identifier — matches the rule used by
-# vector_tuning. Anything that would require delimited quoting at the
-# catalog level is refused rather than parsed out of an agent string.
-_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 class TurboQuantError(MCPgError):
@@ -74,8 +69,12 @@ class TurboQuantError(MCPgError):
 
 
 def _validate_identifier(name: str, kind: str) -> None:
-    if not _IDENTIFIER.match(name):
-        raise TurboQuantError(f"invalid {kind} name: {name!r}")
+    # Accept any addressable identifier; _pg_quote_ident escapes it safely.
+    # Only empty / NUL / overlong names are refused.
+    try:
+        ensure_identifier(name, kind)
+    except IdentifierError as exc:
+        raise TurboQuantError(str(exc)) from exc
 
 
 def _pg_quote_ident(name: str) -> str:
@@ -454,8 +453,9 @@ async def list_turboquant_indexes(driver: SqlDriver) -> list[TurboQuantIndexInfo
 async def get_turboquant_index_metadata(driver: SqlDriver, schema: str, index: str) -> TurboQuantIndexInfo:
     """Fetch the metadata payload for a single turboquant index.
 
-    Identifier validation (``_IDENTIFIER``) runs before any SQL is built,
-    so the schema / index strings cannot drive arbitrary catalog lookups.
+    Identifier validation runs before any SQL is built and every name is
+    quoted via ``_pg_quote_ident``, so the schema / index strings cannot
+    drive arbitrary catalog lookups.
 
     Raises:
         TurboQuantError: extension is not installed, the schema / index

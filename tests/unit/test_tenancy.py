@@ -24,18 +24,25 @@ def test_validate_role_accepts_safe_identifiers() -> None:
 
 
 @pytest.mark.parametrize(
-    "bad",
+    "role",
     [
-        "",
-        '"; DROP USER alice',
+        # Roles needing delimited quoting are legal in PostgreSQL and are now
+        # accepted — validate_role returns them unchanged; the SET LOCAL ROLE
+        # splice quotes them (embedded quotes doubled) so they can't inject.
         "role-with-dash",
         "role with space",
         "1starts_with_digit",
         "weird$char",
         "role; DROP USER alice",
+        '"; DROP USER alice',
     ],
 )
-def test_validate_role_rejects_unsafe_identifiers(bad: str) -> None:
+def test_validate_role_accepts_delimited_role_names(role: str) -> None:
+    assert validate_role(role) == role
+
+
+@pytest.mark.parametrize("bad", ["", "\x00", "role\x00x", "a" * 64])
+def test_validate_role_rejects_non_addressable_names(bad: str) -> None:
     with pytest.raises(TenancyError):
         validate_role(bad)
 
