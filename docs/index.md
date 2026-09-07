@@ -29,6 +29,9 @@ them" — pick the section that matches what you're trying to do.
 
 - [**Tools**](tools.md) — every MCP tool MCPg exposes, including
   the capability gates that need to be on.
+- [**Identifier policy**](identifier-policy.md) — which names SQL tools
+  accept (including hyphens and other delimited identifiers) versus
+  plain-identifier-only sinks (ORM exporters, AGE labels, shell paths).
 - [**Architecture**](architecture.md) — how the pieces fit together
   (server, drivers, replicas, cursors, audit, transports).
 - [**Scaling guide**](scaling.md) — pool sizing, replica fan-out,
