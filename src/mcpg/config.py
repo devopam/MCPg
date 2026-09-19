@@ -131,7 +131,8 @@ class Settings:
     # query when set. HTTP requests can override per-request by sending
     # ``X-MCPG-Role: <role>``; when ``allowed_roles`` is set the header
     # value must appear in it (otherwise a 403 is returned). Role names
-    # are validated against ``[A-Za-z_][A-Za-z0-9_]*`` regardless.
+    # must be addressable identifiers (non-empty, no NUL, <= 63 bytes);
+    # delimited names (hyphens, spaces, mixed case) are quoted safely.
     default_role: str | None = None
     allowed_roles: tuple[str, ...] = ()
     # Read-replica routing. When ``replica_urls`` is non-empty, every
