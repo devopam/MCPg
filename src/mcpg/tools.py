@@ -2913,7 +2913,7 @@ def _register_listen(server: MCPServer[AppContext]) -> None:
         description=(
             "Open a PostgreSQL LISTEN on `channel` and return a subscription "
             "id. Notifications buffer in process memory; poll for them via "
-            "poll_notifications. Channel name must match [A-Za-z_][A-Za-z0-9_]*. "
+            "poll_notifications. Channel names needing delimited quoting are accepted. "
             "Subscriptions are lost on server restart. Requires unrestricted "
             "mode + MCPG_ALLOW_LISTEN."
         ),
