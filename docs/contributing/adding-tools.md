@@ -78,20 +78,21 @@ async def list_<thing>(driver: SqlDriver) -> list[<Thing>]:
 
 
 # ---------------------------------------------------------------------------
-# DDL/write helpers — validate identifiers, then parameter-bind.
+# DDL/write helpers — quote identifiers, then parameter-bind.
 # ---------------------------------------------------------------------------
 
-def _validate_identifier(label: str, value: str) -> str:
-    if not _IDENT_RE.match(value):
-        raise <Feature>Error(f"{label} {value!r} is not a valid unquoted SQL identifier")
-    return value
+def _quote(kind: str, value: str) -> str:
+    try:
+        return quote_identifier(value, kind)  # from mcpg.identifiers
+    except IdentifierError as exc:
+        raise <Feature>Error(str(exc)) from exc
 
 async def create_<thing>(driver: SqlDriver, *, name: str, ...) -> CreateResult:
-    _validate_identifier("name", name)
+    quoted = _quote("name", name)
     if not await extension_installed(driver, "<extension_name>"):
         raise <Feature>Error("<extension> is not installed; call enable_extension('<extension>') first")
     await driver.execute_query(
-        f'CREATE ... "{name}" ...',
+        f"CREATE ... {quoted} ...",
         force_readonly=False,
     )
     return CreateResult(name=name, ..., created=True)
@@ -123,7 +124,7 @@ __all__ = [
 
 - **Every public return shape is a `@dataclass(frozen=True, slots=True)`** — never raw dicts. The tool layer calls `asdict()` on the dataclass to produce the MCP response.
 - **Reads return empty + are silent when the extension is absent**; writes raise a descriptive `<Feature>Error` saying to call `enable_extension('<name>')` first.
-- **Parameter-bind every value** (`%s` placeholders). Where an identifier can't be bound (e.g. `CREATE SERVER name`, `CREATE EXTENSION name`), validate against an allowlist or `^[A-Za-z_][A-Za-z0-9_]*$` regex first — that's the injection guard.
+- **Parameter-bind every value** (`%s` placeholders). Where an identifier can't be bound (e.g. `CREATE SERVER name`, `CREATE EXTENSION name`), quote it with `mcpg.identifiers.quote_identifier` (or validate against an allowlist) first — that's the injection guard. See [`docs/identifier-policy.md`](../identifier-policy.md).
 - **Never f-string a value into a SQL string** unless you've already validated against an allowlist. bandit B608 will flag it; the validator at the boundary is the answer.
 - **Secrets are always indirection**: write tools that need a password / token take a `secret_ref` arg and resolve it through `mcpg.secrets.build_secrets_provider(env)`. Never accept the raw value at the tool boundary.
 
@@ -132,7 +133,7 @@ __all__ = [
 Where a value can be bound: use `%s`.
 
 Where it can't (DDL identifier slots):
-- Validate against `_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")` for names.
+- Quote names with `mcpg.identifiers.quote_identifier` (doubles embedded `"`; rejects only empty / NUL / over-63-byte names). Keep a plain `^[A-Za-z_][A-Za-z0-9_]*$` check only when the name leaves SQL-identifier position — generated source code, a string literal, a shell argument — and record the sink in [`docs/identifier-policy.md`](../identifier-policy.md).
 - Validate against `frozenset({"a", "b", ...})` for enum-like fields (modes, key types, etc).
 - For string options inside `OPTIONS (...)`: reject `'`, `"`, `;`, `\`, `\n`, `\r` at the boundary, then double-escape `'` -> `''`.
 - For schema-filter parameters that can be NULL: use `(%s::text IS NULL OR n.nspname = %s)` not f-string concatenation. Keeps bandit happy.
@@ -366,8 +367,8 @@ async def test_create_emits_expected_ddl() -> None:
 
 async def test_create_rejects_bad_identifier() -> None:
     driver = FakeRoutingDriver({"FROM pg_extension WHERE extname": [{"present": 1}]})
-    with pytest.raises(<Feature>Error, match="identifier"):
-        await create_<thing>(driver, name="bad; DROP")  # type: ignore[arg-type]
+    with pytest.raises(<Feature>Error, match="invalid"):
+        await create_<thing>(driver, name="")  # type: ignore[arg-type]
 
 
 async def test_recommend_classifies_correctly() -> None:

@@ -29,6 +29,9 @@ them" — pick the section that matches what you're trying to do.
 
 - [**Tools**](tools.md) — every MCP tool MCPg exposes, including
   the capability gates that need to be on.
+- [**Identifier policy**](identifier-policy.md) — which names SQL tools
+  accept (including hyphens and other delimited identifiers) versus
+  plain-identifier-only sinks (ORM exporters, AGE labels, shell paths).
 - [**Architecture**](architecture.md) — how the pieces fit together
   (server, drivers, replicas, cursors, audit, transports).
 - [**Scaling guide**](scaling.md) — pool sizing, replica fan-out,
@@ -86,3 +89,6 @@ them" — pick the section that matches what you're trying to do.
 
 For the project source, issue tracker, and contribution guidelines,
 head to [github.com/devopam/MCPg](https://github.com/devopam/MCPg).
+Community conduct is governed by the
+[Code of Conduct](https://github.com/devopam/MCPg/blob/main/CODE_OF_CONDUCT.md)
+(Contributor Covenant 2.1).

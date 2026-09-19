@@ -2,6 +2,9 @@
 
 Thanks for your interest in MCPg. This document covers how we work.
 
+By participating you agree to abide by our
+[Code of Conduct](CODE_OF_CONDUCT.md) (Contributor Covenant 2.1).
+
 ## Project model
 
 - The plan and roadmap live in [`PLAN.md`](PLAN.md); current progress and the

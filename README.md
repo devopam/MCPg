@@ -47,9 +47,9 @@ graph queries, data movement, live ops, and more.
 
 - **Safe by default.** Read-only access mode. Every user-supplied SQL
   statement parses through a validated AST allowlist before execution.
-  Identifier interpolation flows through a strict
-  `[A-Za-z_][A-Za-z0-9_]*` regex — a design constraint that means
-  user input never reaches the database through string concatenation.
+  Names that reach PostgreSQL as SQL identifiers are encoded with
+  delimited-identifier quoting (see [Identifier policy](docs/identifier-policy.md)),
+  not rejected merely for containing hyphens or other legal characters.
   Capabilities like DDL, shell, and `LISTEN/NOTIFY` are off until you
   opt in. Every tool publishes MCP `ToolAnnotations` (`readOnlyHint`,
   `openWorldHint`) derived from those same gates, so clients can
@@ -606,7 +606,9 @@ page for downloadable artifacts.
 
 Pull requests welcome — see [`CONTRIBUTING.md`](https://github.com/devopam/MCPg/blob/main/CONTRIBUTING.md) for
 the dev-loop setup, test conventions, and the per-PR review
-checklist.
+checklist. Participation is governed by the
+[Code of Conduct](https://github.com/devopam/MCPg/blob/main/CODE_OF_CONDUCT.md)
+(Contributor Covenant 2.1).
 
 ---
 
