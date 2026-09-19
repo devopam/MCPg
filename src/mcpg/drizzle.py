@@ -40,7 +40,12 @@ class DrizzleError(MCPgError):
 
 def _check_identifier(name: str, kind: str) -> None:
     if not _IDENTIFIER.match(name):
-        raise DrizzleError(f"invalid {kind} name: {name!r}")
+        raise DrizzleError(
+            f"invalid {kind} name {name!r}; this exporter only accepts plain "
+            f"identifiers [A-Za-z_][A-Za-z0-9_]* because the name becomes a source "
+            f"identifier in generated code. SQL tools (export_table, dump_database, …) "
+            f"accept delimited names via quoting — see docs/identifier-policy.md."
+        )
 
 
 _SNAKE_BOUNDARY = re.compile(r"_+([a-z0-9])")

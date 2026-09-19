@@ -97,7 +97,12 @@ class PrismaError(MCPgError):
 
 def _check_identifier(name: str, kind: str) -> None:
     if not _IDENTIFIER.match(name):
-        raise PrismaError(f"invalid {kind} name {name!r}; Prisma export requires plain SQL identifiers")
+        raise PrismaError(
+            f"invalid {kind} name {name!r}; generate_prisma_schema only accepts plain "
+            f"identifiers [A-Za-z_][A-Za-z0-9_]* because the name becomes a source "
+            f"identifier in generated Prisma schema. SQL tools (export_table, "
+            f"dump_database, …) accept delimited names via quoting — see docs/identifier-policy.md."
+        )
 
 
 def _parse_pk_columns(definition: str) -> list[str]:
