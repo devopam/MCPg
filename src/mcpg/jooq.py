@@ -54,7 +54,12 @@ class JooqExportError(MCPgError):
 
 def _check_identifier(name: str, kind: str) -> None:
     if not _IDENTIFIER.match(name):
-        raise JooqExportError(f"invalid {kind} name: {name!r}")
+        raise JooqExportError(
+            f"invalid {kind} name {name!r}; this exporter only accepts plain "
+            f"identifiers [A-Za-z_][A-Za-z0-9_]* because the name becomes a source "
+            f"identifier in generated code. SQL tools (export_table, dump_database, …) "
+            f"accept delimited names via quoting — see docs/identifier-policy.md."
+        )
 
 
 def _strip_type_params(data_type: str) -> str:

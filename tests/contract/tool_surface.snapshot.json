@@ -2642,7 +2642,7 @@
       "name": "fuzzy_search"
     },
     {
-      "description": "Read a PostgreSQL schema and emit a Diesel ORM (Rust) schema.rs. One `table!` macro per table with column SQL types, `Nullable<T>` for nullable columns, plus `joinable!` declarations for single-column intra-schema FKs and an `allow_tables_to_appear_in_same_query!` macro so multi-table joins type-check. Enum types are emitted as Text-backed wrapper enums in a `pg_enum` module so the output works without `diesel_derive_enum`. Composite FKs are a documented v1 gap.",
+      "description": "Read a PostgreSQL schema and emit a Diesel ORM (Rust) schema.rs. One `table!` macro per table with column SQL types, `Nullable<T>` for nullable columns, plus `joinable!` declarations for single-column intra-schema FKs and an `allow_tables_to_appear_in_same_query!` macro so multi-table joins type-check. Enum types are emitted as Text-backed wrapper enums in a `pg_enum` module so the output works without `diesel_derive_enum`. Composite FKs are a documented v1 gap. Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); delimited names (hyphens, spaces, mixed-case-only) are not supported here because they become source identifiers in generated code — use SQL tools (`export_table`, `dump_database`) for those objects. See docs/identifier-policy.md.",
       "inputSchema": {
         "properties": {
           "database": {
@@ -2672,7 +2672,7 @@
       "name": "generate_diesel_schema"
     },
     {
-      "description": "Read a PostgreSQL schema and emit a Drizzle ORM TypeScript schema string (drizzle-orm/pg-core). Covers tables, columns with PG-native types, primary/foreign keys, unique constraints, indexes, defaults, and enums. Single-column FKs emit column-level .references(); composite FKs are a documented v1 gap. Views, foreign tables, partitions, triggers, and functions are out of scope. Returns the rendered TypeScript `schema.ts` source as a single string.",
+      "description": "Read a PostgreSQL schema and emit a Drizzle ORM TypeScript schema string (drizzle-orm/pg-core). Covers tables, columns with PG-native types, primary/foreign keys, unique constraints, indexes, defaults, and enums. Single-column FKs emit column-level .references(); composite FKs are a documented v1 gap. Views, foreign tables, partitions, triggers, and functions are out of scope. Returns the rendered TypeScript `schema.ts` source as a single string. Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); delimited names (hyphens, spaces, mixed-case-only) are not supported here because they become source identifiers in generated code — use SQL tools (`export_table`, `dump_database`) for those objects. See docs/identifier-policy.md.",
       "inputSchema": {
         "properties": {
           "database": {
@@ -2702,7 +2702,7 @@
       "name": "generate_drizzle_schema"
     },
     {
-      "description": "Read a PostgreSQL schema and emit Ecto (Elixir) schema modules — one .ex file per table, named after the singularised table. Each module uses Ecto.Schema with field declarations, belongs_to for single-column intra-schema FKs, and timestamps() when both inserted_at and updated_at exist. The Elixir top-level module is configurable via app_module (default MyApp). Returns a JSON object {filename: source} so the agent can write each file.",
+      "description": "Read a PostgreSQL schema and emit Ecto (Elixir) schema modules — one .ex file per table, named after the singularised table. Each module uses Ecto.Schema with field declarations, belongs_to for single-column intra-schema FKs, and timestamps() when both inserted_at and updated_at exist. The Elixir top-level module is configurable via app_module (default MyApp). Returns a JSON object {filename: source} so the agent can write each file. Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); delimited names (hyphens, spaces, mixed-case-only) are not supported here because they become source identifiers in generated code — use SQL tools (`export_table`, `dump_database`) for those objects. See docs/identifier-policy.md.",
       "inputSchema": {
         "properties": {
           "app_module": {
@@ -2737,7 +2737,7 @@
       "name": "generate_ecto_schemas"
     },
     {
-      "description": "Read a PostgreSQL schema and emit Ent (Go) Schema struct files — one .go file per table. Each file exports a struct that lists field.X(...) calls for every column, edge.To(...) for single-column intra-schema FKs, and field.Enum().Values() for enum-typed columns. Composite FKs are a documented v1 gap. Returns a JSON object {filename: source} so the agent can write each file.",
+      "description": "Read a PostgreSQL schema and emit Ent (Go) Schema struct files — one .go file per table. Each file exports a struct that lists field.X(...) calls for every column, edge.To(...) for single-column intra-schema FKs, and field.Enum().Values() for enum-typed columns. Composite FKs are a documented v1 gap. Returns a JSON object {filename: source} so the agent can write each file. Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); delimited names (hyphens, spaces, mixed-case-only) are not supported here because they become source identifiers in generated code — use SQL tools (`export_table`, `dump_database`) for those objects. See docs/identifier-policy.md.",
       "inputSchema": {
         "properties": {
           "database": {
@@ -2879,7 +2879,7 @@
       "name": "generate_graph_projection"
     },
     {
-      "description": "Read a PostgreSQL schema and emit a jooq-codegen configuration XML pointing at it. Unlike the other exporters, jOOQ generates Java code itself from a live database — the artefact here is the configuration file the user feeds to mvn jooq-codegen:generate (or the Gradle task). The XML lists every base table explicitly via an <includes> regex, excludes MCPg's bookkeeping tables, and emits a <forcedType> for every json / jsonb column so they map to org.jooq.JSON / org.jooq.JSONB out of the box. Default Java package is com.example.jooq; override via the target_package arg.",
+      "description": "Read a PostgreSQL schema and emit a jooq-codegen configuration XML pointing at it. Unlike the other exporters, jOOQ generates Java code itself from a live database — the artefact here is the configuration file the user feeds to mvn jooq-codegen:generate (or the Gradle task). The XML lists every base table explicitly via an <includes> regex, excludes MCPg's bookkeeping tables, and emits a <forcedType> for every json / jsonb column so they map to org.jooq.JSON / org.jooq.JSONB out of the box. Default Java package is com.example.jooq; override via the target_package arg. Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); delimited names (hyphens, spaces, mixed-case-only) are not supported here because they become source identifiers in generated code — use SQL tools (`export_table`, `dump_database`) for those objects. See docs/identifier-policy.md.",
       "inputSchema": {
         "properties": {
           "database": {
@@ -2919,7 +2919,7 @@
       "name": "generate_jooq_config"
     },
     {
-      "description": "Read a PostgreSQL schema and emit a valid Prisma `.prisma` schema string (mirrors `prisma db pull`). Covers tables, columns, primary/foreign keys, unique constraints, indexes, and enums. Views, foreign tables, partitions, triggers, functions, and policies are out of scope; unmappable types fall back to `Unsupported(\"...\")`. Returns the rendered `schema.prisma` source as a single string.",
+      "description": "Read a PostgreSQL schema and emit a valid Prisma `.prisma` schema string (mirrors `prisma db pull`). Covers tables, columns, primary/foreign keys, unique constraints, indexes, and enums. Views, foreign tables, partitions, triggers, functions, and policies are out of scope; unmappable types fall back to `Unsupported(\"...\")`. Returns the rendered `schema.prisma` source as a single string. Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); delimited names (hyphens, spaces, mixed-case-only) are not supported here because they become source identifiers in generated code — use SQL tools (`export_table`, `dump_database`) for those objects. See docs/identifier-policy.md.",
       "inputSchema": {
         "properties": {
           "database": {
@@ -3019,7 +3019,7 @@
       "name": "generate_schema_docs"
     },
     {
-      "description": "Read a PostgreSQL schema and emit a SQLAlchemy 2.0 declarative models file (DeclarativeBase + Mapped[T] + mapped_column). Covers tables, columns with PG-native types (incl. jsonb via sqlalchemy.dialects.postgresql.JSONB), primary keys, single-column FKs via ForeignKey(), unique constraints (column-level + composite via __table_args__), defaults, and enums (emitted as Python enum.Enum classes). Composite FKs are a documented v1 gap. Returns the rendered Python `models.py` source as a single string.",
+      "description": "Read a PostgreSQL schema and emit a SQLAlchemy 2.0 declarative models file (DeclarativeBase + Mapped[T] + mapped_column). Covers tables, columns with PG-native types (incl. jsonb via sqlalchemy.dialects.postgresql.JSONB), primary keys, single-column FKs via ForeignKey(), unique constraints (column-level + composite via __table_args__), defaults, and enums (emitted as Python enum.Enum classes). Composite FKs are a documented v1 gap. Returns the rendered Python `models.py` source as a single string. Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); delimited names (hyphens, spaces, mixed-case-only) are not supported here because they become source identifiers in generated code — use SQL tools (`export_table`, `dump_database`) for those objects. See docs/identifier-policy.md.",
       "inputSchema": {
         "properties": {
           "database": {
@@ -3049,7 +3049,7 @@
       "name": "generate_sqlalchemy_models"
     },
     {
-      "description": "Read a PostgreSQL schema and emit a sqlc-friendly schema.sql (plain DDL). Order: CREATE SCHEMA, CREATE TYPE for each enum, CREATE TABLE statements (columns only), ALTER TABLE ADD CONSTRAINT (PK / unique / check / foreign key in that order), then CREATE INDEX for non-constraint indexes. The file replays cleanly against an empty database so FKs land after all referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed. Returns the rendered `schema.sql` text as a single string.",
+      "description": "Read a PostgreSQL schema and emit a sqlc-friendly schema.sql (plain DDL). Order: CREATE SCHEMA, CREATE TYPE for each enum, CREATE TABLE statements (columns only), ALTER TABLE ADD CONSTRAINT (PK / unique / check / foreign key in that order), then CREATE INDEX for non-constraint indexes. The file replays cleanly against an empty database so FKs land after all referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed. Returns the rendered `schema.sql` text as a single string. Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); delimited names (hyphens, spaces, mixed-case-only) are not supported here because they become source identifiers in generated code — use SQL tools (`export_table`, `dump_database`) for those objects. See docs/identifier-policy.md.",
       "inputSchema": {
         "properties": {
           "database": {

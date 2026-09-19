@@ -1867,6 +1867,10 @@ def _register_prisma(server: MCPServer[AppContext]) -> None:
             "triggers, functions, and policies are out of scope; unmappable types fall "
             'back to `Unsupported("...")`. '
             "Returns the rendered `schema.prisma` source as a single string."
+            " Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); "
+            "delimited names (hyphens, spaces, mixed-case-only) are not supported here because "
+            "they become source identifiers in generated code — use SQL tools (`export_table`, "
+            "`dump_database`) for those objects. See docs/identifier-policy.md."
         ),
     )
     async def generate_prisma_schema(ctx: _Ctx, schema: str, database: _DatabaseArg = None) -> str:
@@ -1882,6 +1886,10 @@ def _register_prisma(server: MCPServer[AppContext]) -> None:
             "composite FKs are a documented v1 gap. Views, foreign tables, "
             "partitions, triggers, and functions are out of scope. "
             "Returns the rendered TypeScript `schema.ts` source as a single string."
+            " Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); "
+            "delimited names (hyphens, spaces, mixed-case-only) are not supported here because "
+            "they become source identifiers in generated code — use SQL tools (`export_table`, "
+            "`dump_database`) for those objects. See docs/identifier-policy.md."
         ),
     )
     async def generate_drizzle_schema(ctx: _Ctx, schema: str, database: _DatabaseArg = None) -> str:
@@ -1898,6 +1906,10 @@ def _register_prisma(server: MCPServer[AppContext]) -> None:
             "Text-backed wrapper enums in a `pg_enum` module so the output "
             "works without `diesel_derive_enum`. Composite FKs are a "
             "documented v1 gap."
+            " Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); "
+            "delimited names (hyphens, spaces, mixed-case-only) are not supported here because "
+            "they become source identifiers in generated code — use SQL tools (`export_table`, "
+            "`dump_database`) for those objects. See docs/identifier-policy.md."
         ),
     )
     async def generate_diesel_schema(ctx: _Ctx, schema: str, database: _DatabaseArg = None) -> str:
@@ -1915,6 +1927,10 @@ def _register_prisma(server: MCPServer[AppContext]) -> None:
             "emits a <forcedType> for every json / jsonb column so they map "
             "to org.jooq.JSON / org.jooq.JSONB out of the box. Default Java "
             "package is com.example.jooq; override via the target_package arg."
+            " Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); "
+            "delimited names (hyphens, spaces, mixed-case-only) are not supported here because "
+            "they become source identifiers in generated code — use SQL tools (`export_table`, "
+            "`dump_database`) for those objects. See docs/identifier-policy.md."
         ),
     )
     async def generate_jooq_config(
@@ -1940,6 +1956,10 @@ def _register_prisma(server: MCPServer[AppContext]) -> None:
             "column intra-schema FKs, and field.Enum().Values() for enum-typed "
             "columns. Composite FKs are a documented v1 gap. Returns a JSON "
             "object {filename: source} so the agent can write each file."
+            " Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); "
+            "delimited names (hyphens, spaces, mixed-case-only) are not supported here because "
+            "they become source identifiers in generated code — use SQL tools (`export_table`, "
+            "`dump_database`) for those objects. See docs/identifier-policy.md."
         ),
     )
     async def generate_ent_schemas(ctx: _Ctx, schema: str, database: _DatabaseArg = None) -> dict[str, str]:
@@ -1955,6 +1975,10 @@ def _register_prisma(server: MCPServer[AppContext]) -> None:
             "inserted_at and updated_at exist. The Elixir top-level module is "
             "configurable via app_module (default MyApp). Returns a JSON "
             "object {filename: source} so the agent can write each file."
+            " Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); "
+            "delimited names (hyphens, spaces, mixed-case-only) are not supported here because "
+            "they become source identifiers in generated code — use SQL tools (`export_table`, "
+            "`dump_database`) for those objects. See docs/identifier-policy.md."
         ),
     )
     async def generate_ecto_schemas(
@@ -1973,6 +1997,10 @@ def _register_prisma(server: MCPServer[AppContext]) -> None:
             "via __table_args__), defaults, and enums (emitted as Python "
             "enum.Enum classes). Composite FKs are a documented v1 gap. "
             "Returns the rendered Python `models.py` source as a single string."
+            " Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); "
+            "delimited names (hyphens, spaces, mixed-case-only) are not supported here because "
+            "they become source identifiers in generated code — use SQL tools (`export_table`, "
+            "`dump_database`) for those objects. See docs/identifier-policy.md."
         ),
     )
     async def generate_sqlalchemy_models(ctx: _Ctx, schema: str, database: _DatabaseArg = None) -> str:
@@ -1989,6 +2017,10 @@ def _register_prisma(server: MCPServer[AppContext]) -> None:
             "cleanly against an empty database so FKs land after all "
             "referenced tables exist. In-process — no MCPG_ALLOW_SHELL needed. "
             "Returns the rendered `schema.sql` text as a single string."
+            " Schema/table/column names must be plain identifiers (`[A-Za-z_][A-Za-z0-9_]*`); "
+            "delimited names (hyphens, spaces, mixed-case-only) are not supported here because "
+            "they become source identifiers in generated code — use SQL tools (`export_table`, "
+            "`dump_database`) for those objects. See docs/identifier-policy.md."
         ),
     )
     async def generate_sqlc_schema(ctx: _Ctx, schema: str, database: _DatabaseArg = None) -> str:
