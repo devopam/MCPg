@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **ORM exporters explain why they reject delimited names.** `generate_prisma_schema` and the Drizzle,
+  SQLAlchemy, sqlc, Diesel, jOOQ, Ent and Ecto exporters still accept only plain `[A-Za-z_][A-Za-z0-9_]*`
+  names (the name becomes an identifier in generated source), but their errors and tool descriptions now
+  say so and point at the SQL tools that accept delimited names.
+
+### Documentation
+
+- New [`docs/identifier-policy.md`](docs/identifier-policy.md): which names SQL tools accept
+  (delimited identifiers via `quote_identifier`) versus the plain-identifier-only sinks and why.
+- README "Safe by default" no longer claims identifiers go through a strict regex; `adding-tools.md`
+  now recommends `quote_identifier`; the `subscribe_channel` description and a `config.py` comment no
+  longer claim plain-identifier-only names.
+- `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1) is now linked from the README, `CONTRIBUTING.md` and
+  the docs index.
+
 ## [0.8.2] - 2026-09-04
 
 ### Added
