@@ -80,14 +80,14 @@ def _make_jwt(
     return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": kid})
 
 
-# C901 rationale: test-only mock-response builder patching both httpx (our
-# code) and urllib.request (PyJWKClient's internal transport) with several
-# small nested fake classes -- test infrastructure, not production logic.
-def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):  # noqa: C901
+# Test-only mock-response builder: patches httpx (our discovery fetch) and
+# pyjwt's PyJWKClient.fetch_data (the JWKS fetch) with small fake classes --
+# test infrastructure, not production logic.
+def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):
     """Patch httpx.AsyncClient.get to return either the discovery or JWKS doc.
 
-    The PyJWKClient uses ``urllib.request`` rather than httpx for the
-    JWKS fetch, so we patch BOTH paths.
+    The PyJWKClient fetches the JWKS itself (not via httpx), so we patch
+    its ``fetch_data`` boundary too.
     """
 
     class _AsyncResponse:
@@ -116,28 +116,20 @@ def _mock_httpx_responses(*, discovery: dict[str, Any], jwks: dict[str, Any]):  
                 return _AsyncResponse(discovery)
             return _AsyncResponse(jwks)
 
-    # PyJWKClient under the hood goes via urllib.request.urlopen for
-    # the JWKS fetch — patch that to return the JSON we want.
-    class _UrllibResponse:
-        def __init__(self, body: dict[str, Any]) -> None:
-            self._body = json.dumps(body).encode()
-
-        def read(self) -> bytes:
-            return self._body
-
-        def __enter__(self) -> Self:
-            return self
-
-        def __exit__(self, *exc_info: object) -> None:
-            return None
-
-    def _urlopen(_url: Any, *args: Any, **kwargs: Any) -> _UrllibResponse:
-        return _UrllibResponse(jwks)
+    # PyJWKClient (pyjwt >= 2.15) fetches the JWKS through its own
+    # ``urllib.request.build_opener(...).open()`` — an SSRF-hardening change
+    # from the older module-level ``urlopen`` the test used to patch. Mock at
+    # pyjwt's library boundary instead: patch ``PyJWKClient.fetch_data`` to
+    # return the JWKS dict directly, so the real signing-key extraction +
+    # signature verification still run and a future transport change can't
+    # silently re-break this (the fetch would escape the mock and hit the net).
+    def _fetch_data(_self: Any, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return jwks
 
     return patch.multiple(
         "mcpg.oidc",
         httpx=type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError}),
-    ), patch("urllib.request.urlopen", _urlopen)
+    ), patch("jwt.PyJWKClient.fetch_data", _fetch_data)
 
 
 # --- tests ---------------------------------------------------------------
@@ -396,21 +388,11 @@ async def test_verifier_uses_explicit_jwks_url_when_provided() -> None:
             discovery_calls.append(url)
             raise httpx.ConnectError("would fail", request=None)
 
-    class _UrllibResponse:
-        def read(self) -> bytes:
-            return json.dumps({"keys": [jwk]}).encode()
-
-        def __enter__(self) -> Self:
-            return self
-
-        def __exit__(self, *exc_info: object) -> None:
-            return None
-
     token = _make_jwt(private_key, kid, issuer=issuer, audience=audience)
 
     with (
         patch("mcpg.oidc.httpx", type("S", (), {"AsyncClient": _AsyncClient, "HTTPError": httpx.HTTPError})),
-        patch("urllib.request.urlopen", lambda *a, **k: _UrllibResponse()),
+        patch("jwt.PyJWKClient.fetch_data", lambda *a, **k: {"keys": [jwk]}),
     ):
         verifier = OIDCVerifier(issuer=issuer, audience=audience, jwks_url=explicit_jwks)
         verified = await verifier.verify(token)
