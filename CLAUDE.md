@@ -85,6 +85,17 @@ bar.
 
 ## Future work (pinned)
 
+- **mcpgrade.dev false-positive cleanup (deferred, low priority).** Reword
+  the `src/mcpg/otel_tracing.py` comment that names "Datadog" as an example
+  OTLP backend (→ generic "any OTLP-compatible backend") so mcpgrade's static
+  scan stops raising its false-positive *"sends telemetry to Datadog"*
+  Transport finding. Comment-only, zero functional impact. Context: mcpgrade
+  graded v0.8.0 a "D" on static analysis alone, with several false positives
+  (this one, a non-existent "build-script network call", NL→SQL endpoints read
+  as "BCC destinations") and an unscored 25% "Injection Surface — unscannable"
+  (it can't enumerate the dynamic `@server.tool` surface); a dispute was
+  drafted. Don't contort functionality to chase that grade.
+
 - **Roadmap 18.1 — de-vendor the SQL-safety kernel.** Replace the
   vendored `crystaldba/postgres-mcp` core with a first-party
   implementation, removing the last third-party runtime dependency.
