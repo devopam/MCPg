@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Bumped `pyjwt` to ≥ 2.15.0 (2.15.1 resolved)** to clear the October 2026
+  advisory cascade against 2.13.0 — thirteen `PYSEC-2026-414x` findings plus
+  `CVE-2026-102275`, all flagged by `pip-audit --strict` and fixed in
+  2.14.0 / 2.15.0. 2.15's `PyJWKClient` hardened its JWKS fetch against SSRF
+  (own `build_opener`/no-redirect handler instead of the module-level
+  `urllib.request.urlopen`); the OIDC verifier uses the stable public API so
+  no source change was needed, but the `test_oidc.py` JWKS mock now patches
+  pyjwt's `PyJWKClient.fetch_data` boundary rather than urllib internals.
+
 ### Changed
 
 - **ORM exporters explain why they reject delimited names.** `generate_prisma_schema` and the Drizzle,

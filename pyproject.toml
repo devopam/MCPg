@@ -62,8 +62,10 @@ dependencies = [
     # mcpg.dynamic_session_intent has a guaranteed surface.
     "mcp-types>=2.0.0",
     # JWT validation for the OIDC auth path. ``[crypto]`` pulls in
-    # ``cryptography`` so RS256 / ES256 signature checks work.
-    "pyjwt[crypto]>=2.8",
+    # ``cryptography`` so RS256 / ES256 signature checks work. Floor raised
+    # to 2.15.0 to clear the 2026 pyjwt advisories (PYSEC-2026-414x +
+    # CVE-2026-102275), all fixed in 2.14.0 / 2.15.0.
+    "pyjwt[crypto]>=2.15.0",
     "circuitbreaker>=2.1.3",
     "tenacity>=9.1.4",
 ]
