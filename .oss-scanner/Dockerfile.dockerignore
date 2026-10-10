@@ -1,0 +1,18 @@
+# Ignore rules for the OSS Scanner build ONLY (BuildKit uses a
+# `<dockerfile>.dockerignore` next to the Dockerfile in preference to the
+# repo-root `.dockerignore`). The product image's root `.dockerignore`
+# strips `tests/` to stay lean, but the scanner is explicitly pointed at the
+# adversarial SQL-kernel suites (see threat_model.md "How to exercise it"),
+# so this build keeps tests/ and src/ while still dropping VCS, the local
+# venv, caches, and the heavy benchmark datasets.
+.git
+.github
+.venv
+benchmarks
+.ruff_cache
+.mypy_cache
+.pytest_cache
+__pycache__
+*.pyc
+.coverage
+htmlcov
