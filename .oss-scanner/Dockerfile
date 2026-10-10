@@ -22,12 +22,18 @@ RUN pip install --no-cache-dir uv
 
 # git for the agent; build-essential covers the rare transitive sdist that
 # needs a C extension at install time (psycopg[binary], pglast, cryptography
-# all ship wheels, so this is usually unused).
+# all ship wheels, so this is usually unused); postgresql-client provides the
+# psql / pg_dump / pg_restore binaries MCPg's shell tools resolve on PATH
+# (src/mcpg/shell.py:run_pg_binary, which rejects a tool whose binary can't be
+# found), so the scanner can exercise that command-execution surface.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git build-essential \
+    && apt-get install -y --no-install-recommends git build-essential postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Scanner contract: the checkout lives at /src.
+# Scanner contract: the checkout lives at /src. This build uses its own ignore
+# rules (.oss-scanner/Dockerfile.dockerignore) in preference to the product
+# image's root .dockerignore, so tests/ — the adversarial SQL-kernel suites the
+# threat model points the scanner at — is present in /src.
 COPY . /src
 WORKDIR /src
 
