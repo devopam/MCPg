@@ -1,0 +1,12 @@
+# Enrollment manifest for Anthropic's OSS Scanner.
+#
+# This file is NOT consumed by MCPg. It is the content to submit as
+# `projects/mcpg/project.yaml` in an enrollment pull request to
+# https://github.com/anthropics/oss-scanner (see README.md in this
+# directory for the steps). It is kept here, version-controlled, so the
+# enrollment stays reproducible and reviewable alongside the code.
+repo: https://github.com/devopam/MCPg
+primary_contact: devopam@gmail.com
+homepage: https://devopam.github.io/MCPg/
+dockerfile: .oss-scanner/Dockerfile
+threat_model: .oss-scanner/threat_model.md
