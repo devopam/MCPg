@@ -361,6 +361,19 @@ grow its own view of the surface without a restart (Layer 2).
 
 ---
 
+## 23. Continuous fuzzing — OSS-Fuzz
+
+The SQL-safety kernel (`mcpg.sql.safety`, parsing via the C-based `pglast`)
+is the project's security-critical surface. It is fuzzed in CI by
+ClusterFuzzLite (`.clusterfuzzlite/`); this section tracks making that
+fuzzing effective and enrolling the project in Google's OSS-Fuzz for
+continuous, long-running fuzzing with managed bug reports.
+
+| # | Item | Effort | Value | Notes |
+|---|---|---|---|---|
+| 23.1 | ✅ **Shipped.** Fixed the `sql_safety_fuzzer` harness: it decoded input with `FuzzedDataProvider.ConsumeUnicodeNoSurrogates`, which mangles ASCII into garbage code points, so `pglast` rejected nearly every input at the first token (coverage flat at `cov: 4` over 1M+ execs, even with valid-SQL seeds). Now decodes bytes directly and ships a 22-file seed corpus (`.clusterfuzzlite/seeds/`) plus a SQL dictionary; a 60 s run reaches `cov: 277 ft: 850` with no crashes. | S | High | Prior ClusterFuzzLite runs were effectively blind to the validator. |
+| 23.2 | **OSS-Fuzz enrollment.** PR to `google/oss-fuzz` adding `projects/mcpg/` (`project.yaml`, `Dockerfile`, `build.sh` delegating to `.clusterfuzzlite/build.sh`). Acceptance is at the OSS-Fuzz maintainers' discretion (they look for a significant user base / critical infrastructure); if declined, re-attempt once adoption evidence grows. | S | Medium | Build verified locally with `infra/helper.py`-equivalent flow (address sanitizer). |
+
 ## Currently deferred (no commitments)
 
 - **Multi-database support beyond read-only secondaries** — 13.1 ships

@@ -24,6 +24,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   names (the name becomes an identifier in generated source), but their errors and tool descriptions now
   say so and point at the SQL tools that accept delimited names.
 
+### Fixed
+
+- **SQL-safety fuzz harness now actually explores the validator.** `sql_safety_fuzzer` decoded its input
+  with `ConsumeUnicodeNoSurrogates`, which turns ASCII SQL into garbage code points, so `pglast` rejected
+  nearly every input at the first token and coverage never grew. It now decodes bytes directly and ships a
+  seed corpus and SQL dictionary (`.clusterfuzzlite/`); a 60 s run goes from `cov: 4` to `cov: 277`. Roadmap 23.1.
+
 ### Documentation
 
 - New [`docs/identifier-policy.md`](docs/identifier-policy.md): which names SQL tools accept
