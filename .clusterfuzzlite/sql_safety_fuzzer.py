@@ -11,12 +11,13 @@ this complements (that doc covers the adversarial *unit* test suite —
 known-shape attacks; this harness covers unknown-shape inputs).
 """
 
-import contextlib
 import sys
 
 import atheris
 
 with atheris.instrument_imports():
+    from pglast.parser import ParseError
+
     from mcpg.sql.safety import SafeSqlDriver
 
 # _validate() only reads the class-level ALLOWED_* policy aliases; the
@@ -33,8 +34,18 @@ def test_one_input(data: bytes) -> None:
     # error path (observed: flat cov with valid-SQL seeds). A plain decode
     # keeps seeds and dictionary tokens meaningful to the mutator.
     query = data.decode("utf-8", errors="replace")
-    with contextlib.suppress(ValueError):  # expected: malformed or policy-disallowed SQL is rejected
+    try:
         _driver._validate(query)  # fuzzing the private validator directly
+    except ValueError as exc:
+        # Expected: malformed or policy-disallowed SQL is rejected. But
+        # _validate wraps *any* exception from its AST walker in a bare
+        # ValueError, so a walker bug (AttributeError, RecursionError, ...)
+        # would be indistinguishable from a normal rejection. Genuine
+        # rejections chain a ValueError (policy) or ParseError (syntax) as
+        # __cause__ (or none at all); anything else is a bug — re-raise.
+        cause = exc.__cause__
+        if cause is not None and not isinstance(cause, (ValueError, ParseError)):
+            raise
 
 
 atheris.Setup(sys.argv, test_one_input)
