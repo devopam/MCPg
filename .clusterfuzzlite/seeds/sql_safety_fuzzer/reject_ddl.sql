@@ -1,0 +1,1 @@
+CREATE TABLE x (id int); ALTER TABLE x ADD COLUMN y text

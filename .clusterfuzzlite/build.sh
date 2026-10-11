@@ -46,4 +46,17 @@ LD_PRELOAD=\$this_dir/sanitizer_with_fuzzer.so \
 ASAN_OPTIONS=\$ASAN_OPTIONS:symbolize=1:external_symbolizer_path=\$this_dir/llvm-symbolizer:detect_leaks=0 \
 \$this_dir/$fuzzer_package \$@" > "$OUT/$fuzzer_basename"
   chmod +x "$OUT/$fuzzer_basename"
+
+  # Seed corpus + dictionary, picked up by name next to the target
+  # (<target>_seed_corpus.zip, <target>.dict). Without valid-SQL seeds the
+  # mutator starts from nothing and spends most of its time below the
+  # parser's first-token error path.
+  seed_dir="$SRC/mcpg/.clusterfuzzlite/seeds/$fuzzer_basename"
+  if [ -d "$seed_dir" ]; then
+    (cd "$seed_dir" && zip -q -j "$OUT/${fuzzer_basename}_seed_corpus.zip" ./*)
+  fi
+  dict_file="$SRC/mcpg/.clusterfuzzlite/$fuzzer_basename.dict"
+  if [ -f "$dict_file" ]; then
+    cp "$dict_file" "$OUT/$fuzzer_basename.dict"
+  fi
 done

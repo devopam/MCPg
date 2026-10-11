@@ -1,0 +1,1 @@
+SELECT * INTO newt FROM t

@@ -1,0 +1,1 @@
+WITH r AS (SELECT id, sum(v) AS s FROM t GROUP BY id) SELECT * FROM r WHERE s > 10
