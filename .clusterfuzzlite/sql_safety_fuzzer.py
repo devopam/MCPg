@@ -26,8 +26,13 @@ _driver = SafeSqlDriver(sql_driver=None)  # type: ignore[arg-type]
 
 
 def test_one_input(data: bytes) -> None:
-    fdp = atheris.FuzzedDataProvider(data)
-    query = fdp.ConsumeUnicodeNoSurrogates(fdp.remaining_bytes())
+    # Decode the raw bytes directly. FuzzedDataProvider.ConsumeUnicode*
+    # reads bytes as variable-width code points, which turns ASCII SQL
+    # keywords into garbage characters — pglast then rejects nearly every
+    # input at the first token and coverage never leaves the parser's
+    # error path (observed: flat cov with valid-SQL seeds). A plain decode
+    # keeps seeds and dictionary tokens meaningful to the mutator.
+    query = data.decode("utf-8", errors="replace")
     with contextlib.suppress(ValueError):  # expected: malformed or policy-disallowed SQL is rejected
         _driver._validate(query)  # fuzzing the private validator directly
 
