@@ -64,7 +64,7 @@ flowchart TD
 ---
 
 <!-- BEGIN generated: module-map (python tools/generate_doc_tables.py --modules) -->
-## Module map (107 modules)
+## Module map (109 modules)
 
 Every `mcpg.*` module and what it owns, alphabetical. The layered
 request path through these lives in the [Overview](#overview) diagram;
@@ -106,6 +106,8 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.graph_diagram` | Apache AGE Graph Schema Visualisation. |
 | `mcpg.graph_mgmt` | Apache AGE Graph Management. |
 | `mcpg.graph_projection` | Relational → Apache AGE graph projection generator (emit-don't-execute). |
+| `mcpg.guc` | Persistent GUC changes via `ALTER SYSTEM` (MCP tools, not `run_ddl`). |
+| `mcpg.guc_tools` | MCP tool registration for ALTER SYSTEM / GUC helpers. |
 | `mcpg.headline_curator` | Dynamic `headline_tools` recommender — empirical curation from the audit log. |
 | `mcpg.health` | Database health checks. |
 | `mcpg.http_runtime` | HTTP-transport extensions: bearer-token auth + Prometheus /metrics. |

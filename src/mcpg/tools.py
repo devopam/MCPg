@@ -39,6 +39,7 @@ from mcpg import (
     graph_diagram,
     graph_mgmt,
     graph_projection,
+    guc_tools,
     health,
     indexing,
     introspection,
@@ -92,7 +93,7 @@ from mcpg import (
     workload,
     write,
 )
-from mcpg.config import Settings
+from mcpg.config import AccessMode, Settings
 from mcpg.context import AppContext
 from mcpg.policy import Capability, is_permitted
 from mcpg.sql import SqlDriver
@@ -7214,6 +7215,7 @@ def register_tools(  # noqa: C901
         _register_rag_telemetry_efficiency_read(server)
         _register_prisma(server)
         _register_advisors(server)
+        guc_tools.register_guc_reads(server)
         _register_composite(server)
         _register_data_movement(server)
         _register_audit_trail(server)
@@ -7253,6 +7255,8 @@ def register_tools(  # noqa: C901
         _register_pg_prewarm_writes(server)
         _register_repack_writes(server)
         _register_pg19_runtime_writes(server)
+    if settings.access_mode == AccessMode.UNRESTRICTED and settings.allow_alter_system:
+        guc_tools.register_guc_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_logical_replication_writes(server)
