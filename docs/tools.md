@@ -76,6 +76,9 @@ need `unrestricted` **plus** the matching `MCPG_ALLOW_*` opt-in (see
 | **Migration history** | read | `read_migration_history` |
 | **ORM-DSL exporters** | read | `generate_prisma_schema`, `generate_drizzle_schema`, `generate_diesel_schema`, `generate_jooq_config`, `generate_ent_schemas`, `generate_ecto_schemas`, `generate_sqlalchemy_models`, `generate_sqlc_schema` |
 | **TimescaleDB hypertables** | read / **DDL** writes | `list_hypertables`, `list_chunks`, `create_hypertable`, `add_compression_policy`, `add_retention_policy` |
+| **TimescaleDB — stats, jobs & telemetry** | read | `get_hypertable_stats`, `list_timescale_jobs`, `list_continuous_aggregates`, `get_timescaledb_telemetry_report` |
+| **TimescaleDB — dimensions & policies** | **DDL** | `add_dimension`, `set_chunk_time_interval`, `add_continuous_aggregate_policy`, `add_reorder_policy`, `remove_retention_policy`, `remove_compression_policy`, `remove_continuous_aggregate_policy`, `remove_reorder_policy` |
+| **TimescaleDB — chunk & job admin** | **DDL** + `MCPG_ALLOW_TIMESCALEDB_ADMIN` | `drop_chunks`, `compress_chunk`, `decompress_chunk`, `reorder_chunk`, `merge_chunks`, `refresh_continuous_aggregate`, `run_job`, `alter_job`, `delete_job` |
 | **pg_partman** | **DDL** | `partman_create_parent`, `partman_run_maintenance`, `partman_drop_partition` |
 | **pg_prewarm** | read / **WRITE** | `get_prewarm_extension_status`, `list_prewarmed_relations`, `recommend_prewarm_targets`, `list_autowarm_jobs`, `prewarm_relation`, `prewarm_recommended`, `schedule_autowarm`, `unschedule_autowarm` |
 | **pg_repack** | read / **WRITE** (`repack_table`) | `get_repack_status`, `repack_table` |

@@ -258,3 +258,45 @@ jobs:
         env:
           MCPG_TEST_DATABASE_URL: postgresql://${{ env.DB_USER }}:postgres@localhost:5432/mcpg_test
         run: uv run pytest -q --cov
+
+  # TimescaleDB tool family (docs/plans/timescaledb-tools.md). The main matrix
+  # images do not ship the extension, so tests/integration/test_timescaledb_integration.py
+  # skips there; this job runs it against the official TimescaleDB image.
+  # Experimental (continue-on-error) like the PG 19 / WarehousePG lanes: the
+  # image tag is unpinned, so upstream churn must not block merges.
+  timescaledb:
+    name: Tests (TimescaleDB)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mcpg_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked
+      # No --cov here: the coverage gate is enforced by the main matrix.
+      - name: pytest (TimescaleDB integration)
+        env:
+          MCPG_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mcpg_test
+        run: uv run pytest -q tests/integration/test_timescaledb_integration.py

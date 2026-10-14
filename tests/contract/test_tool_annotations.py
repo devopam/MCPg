@@ -43,7 +43,12 @@ def _build_server(access_mode: str, *, dynamic_session_intent: bool = False) -> 
             "MCPG_DATABASE_URL": _FIXTURE_DB_URL,
             "MCPG_ACCESS_MODE": access_mode,
             **(
-                {"MCPG_ALLOW_DDL": "true", "MCPG_ALLOW_SHELL": "true", "MCPG_ALLOW_LISTEN": "true"}
+                {
+                    "MCPG_ALLOW_DDL": "true",
+                    "MCPG_ALLOW_SHELL": "true",
+                    "MCPG_ALLOW_LISTEN": "true",
+                    "MCPG_ALLOW_TIMESCALEDB_ADMIN": "true",
+                }
                 if access_mode == "unrestricted"
                 else {}
             ),

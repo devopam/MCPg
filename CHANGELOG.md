@@ -12,6 +12,17 @@ adheres to [Semantic Versioning](https://semver.org/).
   `reload_config` behind unrestricted mode + `MCPG_ALLOW_ALTER_SYSTEM`. Runs on an autocommit connection,
   requires an explicit `confirm=true` after a structured warning, and blocks connectivity/preload GUCs by
   default (`MCPG_ALTER_SYSTEM_ALLOWLIST` / `MCPG_ALTER_SYSTEM_DENYLIST`). See `docs/alter-system.md`. (PR #352)
+- **TimescaleDB read-only functions are now allowed in the SQL-safety kernel** (#353): `time_bucket`, `time_bucket_gapfill`,
+  `first`/`last`, `locf`, `interpolate`, `histogram`, the `hypertable_*_size` / `*_compression_stats` / `*_columnstore_stats`
+  family, `show_chunks`, `by_range`/`by_hash`, the uuidv7 helpers and `timescaledb_experimental.show_policies`. Mutating
+  functions, procedures, `timescaledb_pre/post_restore` and `get_telemetry_report` stay blocked.
+- **TimescaleDB tool family** (design: `docs/plans/timescaledb-tools.md`, reference: `docs/timescaledb.md`): reads
+  `get_hypertable_stats`, `list_timescale_jobs`, `list_continuous_aggregates`, `get_timescaledb_telemetry_report`;
+  additive DDL `add_dimension`, `set_chunk_time_interval`, `add_continuous_aggregate_policy`, `add_reorder_policy` and four
+  `remove_*_policy` tools; and, behind the new `MCPG_ALLOW_TIMESCALEDB_ADMIN` flag with a `dry_run` / `confirm` +
+  `confirmation_token` flow, `drop_chunks`, `compress_chunk`, `decompress_chunk`, `reorder_chunk`, `merge_chunks`,
+  `refresh_continuous_aggregate`, `run_job`, `alter_job`, `delete_job`. Behaviour was verified on TimescaleDB 2.30.2, and a
+  new experimental `TimescaleDB` CI job runs the integration tests.
 
 ### Security
 
