@@ -191,6 +191,68 @@
     ]
   },
   {
+    "name": "alter_system",
+    "description": "Persist a PostgreSQL setting with ALTER SYSTEM (writes postgresql.auto.conf). NOT transactional \u2014 cannot ROLLBACK. Structured args only (no free-form SQL): name is the GUC, value is the new setting or null to RESET that name. reload is none|if_needed|always (default if_needed). dry_run=true validates and returns a plan without writing. Without confirm=true the tool returns status=confirmation_required with a warning and a confirmation_token \u2014 show the warning to the user, then call again with confirm=true and that exact confirmation_token (bound to this statement) to apply. Postmaster-context GUCs need a restart; sighup-class GUCs can use pg_reload_conf(). A built-in denylist blocks connectivity/preload foot-guns. Requires MCPG_ACCESS_MODE=unrestricted and MCPG_ALLOW_ALTER_SYSTEM=true. Does not extend run_ddl. The DB connection user must be a superuser (or otherwise allowed to ALTER SYSTEM).",
+    "arguments": [
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "desc": "Name"
+      },
+      {
+        "name": "reload",
+        "type": "string",
+        "desc": "Reload"
+      },
+      {
+        "name": "value",
+        "type": "string",
+        "desc": "Value"
+      }
+    ]
+  },
+  {
+    "name": "alter_system_reset_all",
+    "description": "ALTER SYSTEM RESET ALL \u2014 clears every setting previously written via ALTER SYSTEM (postgresql.auto.conf), not postgresql.conf and not session SET. Instance-wide and NOT transactional. Without confirm=true returns confirmation_required + a warning and a confirmation_token (covers the current override set); call again with confirm=true and that token to apply. The allow/deny policy is enforced against every current override. reload defaults to if_needed. Requires unrestricted mode and MCPG_ALLOW_ALTER_SYSTEM. The DB connection user must be a superuser.",
+    "arguments": [
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
+      },
+      {
+        "name": "reload",
+        "type": "string",
+        "desc": "Reload"
+      }
+    ]
+  },
+  {
     "name": "analyze_distance_metric",
     "description": "Recommend a pgvector distance metric (cosine | l2 | inner_product) from the embedding-magnitude distribution. Samples up to `sample_size` non-NULL rows of schema.table.column, computes each embedding's L2 norm, and applies a small heuristic: pre-normalised (CV < 5% and mean \u2248 1.0) \u2192 inner_product; nearly-constant magnitude but not unit-norm \u2192 cosine (same ranking as L2, safer default); variable magnitude \u2192 cosine (normalises out heterogeneous sources). Returns the metric + a rationale + the underlying distribution stats. Reports available=false if the pgvector extension is not installed.",
     "arguments": [
@@ -5057,6 +5119,11 @@
         "desc": "Schema"
       }
     ]
+  },
+  {
+    "name": "reload_config",
+    "description": "Call pg_reload_conf() so sighup-class settings written with ALTER SYSTEM (or edit of config files) take effect without a full restart. Returns whether reload succeeded and any settings still marked pending_restart. Requires unrestricted mode and MCPG_ALLOW_ALTER_SYSTEM.",
+    "arguments": []
   },
   {
     "name": "remove_compression_policy",

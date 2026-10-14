@@ -39,7 +39,7 @@ first time, skim it as a reference after.
 ## What MCPg is
 
 MCPg is an MCP server that exposes a PostgreSQL database to an AI
-agent through a fixed, audited set of **254 tools** (read-only mode exposes ~186). The agent never
+agent through a fixed, audited set of **279 tools** (read-only mode exposes ~191). The agent never
 gets a raw database connection — it can only call the tools MCPg
 registers, every call is validated, and every call is logged. MCPg
 runs as a single async process and ships as both a PyPI package
@@ -100,8 +100,8 @@ declares two further tool names, `run_ddl` and `run_write`, that only
 materialize under `MCPG_ACCESS_MODE=unrestricted` — a separate,
 pre-existing access-mode gate that `session_intent` filtering doesn't
 touch; under `unrestricted` with every gate on, `core` resolves to 14
-tools instead of 12. The full catalogue tops out at 254 tools at that
-same maximal ceiling — 186 is what a real default deployment sees.)
+tools instead of 12. The full catalogue tops out at 279 tools at that
+same maximal ceiling — 191 is what a real default deployment sees.)
 
 ### Growing the surface at runtime: `MCPG_DYNAMIC_SESSION_INTENT`
 
@@ -140,7 +140,7 @@ export MCPG_DYNAMIC_SESSION_INTENT=true  # opt-in: sessions can grow past it
   header; stdio sessions share one implicit key since stdio is
   inherently single-session-per-process).
 - The two meta-tools add to the ceiling: the full maximal surface
-  (every `MCPG_ALLOW_*` gate on) is 254 tools without this flag, 256
+  (every `MCPG_ALLOW_*` gate on) is 279 tools without this flag, 281
   once `MCPG_DYNAMIC_SESSION_INTENT=1` is also on.
 
 ### Security note: visibility, not authorization

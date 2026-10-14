@@ -44,6 +44,7 @@ async def _registered_tool_names() -> list[str]:
             "MCPG_ALLOW_SHELL": "true",
             "MCPG_ALLOW_LISTEN": "true",
             "MCPG_ALLOW_TIMESCALEDB_ADMIN": "true",
+            "MCPG_ALLOW_ALTER_SYSTEM": "true",
             "MCPG_DYNAMIC_SESSION_INTENT": "true",
         }
     )

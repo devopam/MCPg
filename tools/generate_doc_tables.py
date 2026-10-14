@@ -56,7 +56,11 @@ _TOOL_ROWS: list[tuple[str, list[str], str]] = [
         ["@health_rest", "@advisors_rest", "_register_composite"],
         "read",
     ),
-    ("Configuration (GUC)", ["inspect_guc"], "read"),
+    (
+        "Configuration (GUC)",
+        ["inspect_guc", "alter_system", "alter_system_reset_all", "reload_config"],
+        "read / **unrestricted** + `MCPG_ALLOW_ALTER_SYSTEM` (writes)",
+    ),
     ("Search", ["@search"], "read"),
     (
         "Test-data factory",

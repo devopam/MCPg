@@ -6,7 +6,7 @@
 
 **A production-grade [Model Context Protocol](https://modelcontextprotocol.io)
 server for PostgreSQL.** It lets AI agents safely inspect, query, operate, and
-tune a Postgres database — 254 tools spanning catalog introspection,
+tune a Postgres database — 279 tools spanning catalog introspection,
 query intelligence, natural-language SQL, structural diffs, hybrid search,
 graph queries, data movement, live ops, and more.
 

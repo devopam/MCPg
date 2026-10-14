@@ -6,12 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-14
+
+A feature release by content (new tools and opt-in flags, nothing removed or renamed), shipped as a patch per the maintainer's call: the default tool surface only gains five read-only tools, and every new write or admin tool needs an explicit `MCPG_ALLOW_*` flag. See [release notes](docs/release-notes-0.8.3.md).
+
 ### Added
 
 - **`ALTER SYSTEM` GUC tools.** `inspect_guc` (read), plus `alter_system`, `alter_system_reset_all` and
   `reload_config` behind unrestricted mode + `MCPG_ALLOW_ALTER_SYSTEM`. Runs on an autocommit connection,
-  requires an explicit `confirm=true` after a structured warning, and blocks connectivity/preload GUCs by
-  default (`MCPG_ALTER_SYSTEM_ALLOWLIST` / `MCPG_ALTER_SYSTEM_DENYLIST`). See `docs/alter-system.md`. (PR #352)
+  requires `confirm=true` plus a per-statement `confirmation_token`, and blocks connectivity/preload GUCs and
+  settings that run OS commands or hold credentials (`archive_command`, `restore_command`, `primary_conninfo`, …) by
+  default (`MCPG_ALTER_SYSTEM_ALLOWLIST` / `MCPG_ALTER_SYSTEM_DENYLIST`). `RESET ALL` enforces that policy on every
+  current override, `inspect_guc` redacts secret-bearing values, and the write tools refuse to run under
+  `MCPG_DEFAULT_ROLE` / `MCPG_ALLOWED_ROLES`. See `docs/alter-system.md`. (PR #352)
 - **TimescaleDB read-only functions are now allowed in the SQL-safety kernel** (#353): `time_bucket`, `time_bucket_gapfill`,
   `first`/`last`, `locf`, `interpolate`, `histogram`, the `hypertable_*_size` / `*_compression_stats` / `*_columnstore_stats`
   family, `show_chunks`, `by_range`/`by_hash`, the uuidv7 helpers and `timescaledb_experimental.show_policies`. Mutating
@@ -37,6 +44,9 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`pglast` 8.4 → 8.5** (PR #350; `uv.lock` updated). The SQL-safety kernel's adversarial and fuzz suites pass on 8.5.
+- **The contract fixtures now enable `MCPG_ALLOW_ALTER_SYSTEM` and `MCPG_ALLOW_TIMESCALEDB_ADMIN`**, so the tool-surface
+  snapshot (now 281 tools), annotations and return-shape contracts cover the ALTER SYSTEM and TimescaleDB admin tools.
 - **ORM exporters explain why they reject delimited names.** `generate_prisma_schema` and the Drizzle,
   SQLAlchemy, sqlc, Diesel, jOOQ, Ent and Ecto exporters still accept only plain `[A-Za-z_][A-Za-z0-9_]*`
   names (the name becomes an identifier in generated source), but their errors and tool descriptions now
@@ -44,6 +54,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `docs/tools.md` tool-index heading and the hand-written tool counts (README, tour, user guide) were stale; regenerated.
 - **SQL-safety fuzz harness now actually explores the validator.** `sql_safety_fuzzer` decoded its input
   with `ConsumeUnicodeNoSurrogates`, which turns ASCII SQL into garbage code points, so `pglast` rejected
   nearly every input at the first token and coverage never grew. It now decodes bytes directly and ships a

@@ -37,7 +37,7 @@ plumbing:
 | `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config — 22 built-in providers + custom (`MCPG_NL2SQL_CUSTOM_PROVIDERS`). |
 
 <!-- BEGIN generated: tool-index (python tools/generate_doc_tables.py --tools) -->
-## Tool index (257 tools)
+## Tool index (281 tools)
 
 Grouped by feature area. The **Gate** column shows the capability
 each tool needs — plain `read` tools are available in every access
@@ -54,7 +54,7 @@ need `unrestricted` **plus** the matching `MCPG_ALLOW_*` opt-in (see
 | **Visualisation & structural diff** | read | `generate_schema_diagram`, `generate_fk_cascade_graph`, `generate_schema_docs`, `compare_schemas` |
 | **Query & cursors** | read | `run_select`, `run_select_tuned`, `run_select_parallel`, `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql`, `run_analytical_query` |
 | **Health, tuning & advisors** | read | `check_database_health`, `analyze_table_bloat`, `list_databases`, `audit_database`, `analyze_workload`, `detect_n_plus_one`, `read_autovacuum_priority`, `recommend_indexes`, `recommend_index_drops`, `run_advisors`, `find_unused_objects`, `find_sensitive_columns`, `lint_naming_conventions`, `test_rls_for_role`, `analyze_session_cost`, `recommend_headline_tools`, `audit_sequences`, `audit_settings`, `recommend_postgres_conf`, `optimize_query`, `summarize_table`, `why_is_this_slow` |
-| **Configuration (GUC)** | read | `inspect_guc` |
+| **Configuration (GUC)** | read / **unrestricted** + `MCPG_ALLOW_ALTER_SYSTEM` (writes) | `inspect_guc`, `alter_system`, `alter_system_reset_all`, `reload_config` |
 | **Search** | read | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `mmr_search`, `hybrid_search`, `geo_search` |
 | **Test-data factory** | read / **WRITE** (`seed_table_with_sample_data`) | `generate_test_data`, `generate_test_row_for`, `seed_table_with_sample_data` |
 | **Locks & blocking chains** | read | `list_locks`, `find_blocking_chains`, `walk_blocking_chains`, `read_pg_stat_lock`, `analyze_lock_hotspots` |

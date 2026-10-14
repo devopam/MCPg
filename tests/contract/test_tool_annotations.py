@@ -48,6 +48,7 @@ def _build_server(access_mode: str, *, dynamic_session_intent: bool = False) -> 
                     "MCPG_ALLOW_SHELL": "true",
                     "MCPG_ALLOW_LISTEN": "true",
                     "MCPG_ALLOW_TIMESCALEDB_ADMIN": "true",
+                    "MCPG_ALLOW_ALTER_SYSTEM": "true",
                 }
                 if access_mode == "unrestricted"
                 else {}
