@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 278
+    "tool_count": 281
   },
   "tools": [
     {
@@ -300,6 +300,99 @@
         "type": "object"
       },
       "name": "alter_job"
+    },
+    {
+      "description": "Persist a PostgreSQL setting with ALTER SYSTEM (writes postgresql.auto.conf). NOT transactional — cannot ROLLBACK. Structured args only (no free-form SQL): name is the GUC, value is the new setting or null to RESET that name. reload is none|if_needed|always (default if_needed). dry_run=true validates and returns a plan without writing. Without confirm=true the tool returns status=confirmation_required with a warning and a confirmation_token — show the warning to the user, then call again with confirm=true and that exact confirmation_token (bound to this statement) to apply. Postmaster-context GUCs need a restart; sighup-class GUCs can use pg_reload_conf(). A built-in denylist blocks connectivity/preload foot-guns. Requires MCPG_ACCESS_MODE=unrestricted and MCPG_ALLOW_ALTER_SYSTEM=true. Does not extend run_ddl. The DB connection user must be a superuser (or otherwise allowed to ALTER SYSTEM).",
+      "inputSchema": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "confirmation_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Confirmation Token"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reload": {
+            "default": "if_needed",
+            "title": "Reload",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "alter_systemArguments",
+        "type": "object"
+      },
+      "name": "alter_system"
+    },
+    {
+      "description": "ALTER SYSTEM RESET ALL — clears every setting previously written via ALTER SYSTEM (postgresql.auto.conf), not postgresql.conf and not session SET. Instance-wide and NOT transactional. Without confirm=true returns confirmation_required + a warning and a confirmation_token (covers the current override set); call again with confirm=true and that token to apply. The allow/deny policy is enforced against every current override. reload defaults to if_needed. Requires unrestricted mode and MCPG_ALLOW_ALTER_SYSTEM. The DB connection user must be a superuser.",
+      "inputSchema": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "confirmation_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Confirmation Token"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "reload": {
+            "default": "if_needed",
+            "title": "Reload",
+            "type": "string"
+          }
+        },
+        "title": "alter_system_reset_allArguments",
+        "type": "object"
+      },
+      "name": "alter_system_reset_all"
     },
     {
       "description": "Recommend a pgvector distance metric (cosine | l2 | inner_product) from the embedding-magnitude distribution. Samples up to `sample_size` non-NULL rows of schema.table.column, computes each embedding's L2 norm, and applies a small heuristic: pre-normalised (CV < 5% and mean ≈ 1.0) → inner_product; nearly-constant magnitude but not unit-norm → cosine (same ranking as L2, safer default); variable magnitude → cosine (normalises out heterogeneous sources). Returns the metric + a rationale + the underlying distribution stats. Reports available=false if the pgvector extension is not installed.",
@@ -8318,6 +8411,15 @@
         "type": "object"
       },
       "name": "reindex_turboquant_index"
+    },
+    {
+      "description": "Call pg_reload_conf() so sighup-class settings written with ALTER SYSTEM (or edit of config files) take effect without a full restart. Returns whether reload succeeded and any settings still marked pending_restart. Requires unrestricted mode and MCPG_ALLOW_ALTER_SYSTEM.",
+      "inputSchema": {
+        "properties": {},
+        "title": "reload_configArguments",
+        "type": "object"
+      },
+      "name": "reload_config"
     },
     {
       "description": "Remove a hypertable's compression policy (no-op if none). Already-compressed chunks stay compressed. Requires unrestricted mode + MCPG_ALLOW_DDL.",

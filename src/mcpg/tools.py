@@ -7011,6 +7011,8 @@ _DESTRUCTIVE_TOOLS = frozenset(
         "partman_run_maintenance",  # applies retention config: may detach/drop old partitions
         "prune_audit_events",
         "add_retention_policy",  # schedules future data deletion
+        "alter_system",  # persists cluster configuration (postgresql.auto.conf)
+        "alter_system_reset_all",  # clears every ALTER SYSTEM override
         # TimescaleDB admin / policy removal (docs/plans/timescaledb-tools.md).
         "drop_chunks",  # permanently deletes chunks
         "delete_job",
@@ -7031,6 +7033,7 @@ _NON_DESTRUCTIVE_WRITE_TOOLS = frozenset(
     {
         # Additive object creation (fails on conflict, destroys nothing).
         "add_compression_policy",
+        "reload_config",  # pg_reload_conf(): re-reads config files, changes no data
         # TimescaleDB additive / maintenance tools.
         "add_dimension",
         "set_chunk_time_interval",

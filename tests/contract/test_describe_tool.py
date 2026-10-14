@@ -32,6 +32,7 @@ def _build_maximal_server() -> MCPServer:
             "MCPG_ALLOW_SHELL": "true",
             "MCPG_ALLOW_LISTEN": "true",
             "MCPG_ALLOW_TIMESCALEDB_ADMIN": "true",
+            "MCPG_ALLOW_ALTER_SYSTEM": "true",
         }
     )
     server: MCPServer = MCPServer("mcpg-describe-tool-fixture")
