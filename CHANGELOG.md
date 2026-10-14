@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **TimescaleDB read-only functions are now allowed in the SQL-safety kernel** (#353): `time_bucket`, `time_bucket_gapfill`,
+  `first`/`last`, `locf`, `interpolate`, `histogram`, the `hypertable_*_size` / `*_compression_stats` / `*_columnstore_stats`
+  family, `show_chunks`, `by_range`/`by_hash`, the uuidv7 helpers and `timescaledb_experimental.show_policies`. Mutating
+  functions, procedures, `timescaledb_pre/post_restore` and `get_telemetry_report` stay blocked.
+
 ### Security
 
 - **Bumped `pyjwt` to ≥ 2.15.0 (2.15.1 resolved)** to clear the October 2026
