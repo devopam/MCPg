@@ -39,6 +39,7 @@ from mcpg import (
     graph_diagram,
     graph_mgmt,
     graph_projection,
+    guc_tools,
     health,
     indexing,
     introspection,
@@ -81,6 +82,7 @@ from mcpg import (
     test_row_factory,
     textsearch,
     timescaledb,
+    timescaledb_tools,
     turboquant,
     vector_ops,
     vector_tuner_advanced,
@@ -92,7 +94,7 @@ from mcpg import (
     workload,
     write,
 )
-from mcpg.config import Settings
+from mcpg.config import AccessMode, Settings
 from mcpg.context import AppContext
 from mcpg.policy import Capability, is_permitted
 from mcpg.sql import SqlDriver
@@ -7009,6 +7011,16 @@ _DESTRUCTIVE_TOOLS = frozenset(
         "partman_run_maintenance",  # applies retention config: may detach/drop old partitions
         "prune_audit_events",
         "add_retention_policy",  # schedules future data deletion
+        # TimescaleDB admin / policy removal (docs/plans/timescaledb-tools.md).
+        "drop_chunks",  # permanently deletes chunks
+        "delete_job",
+        "run_job",  # a retention job run drops chunks immediately
+        "alter_job",  # overwrites schedule / retry settings
+        "remove_retention_policy",
+        "remove_compression_policy",
+        "remove_continuous_aggregate_policy",
+        "remove_reorder_policy",
+        "merge_chunks",  # rewrites several chunks into one
         "disable_data_checksums",  # removes a cluster integrity property
         # Structural rewrites of existing partitions.
         "merge_partitions",
@@ -7019,6 +7031,15 @@ _NON_DESTRUCTIVE_WRITE_TOOLS = frozenset(
     {
         # Additive object creation (fails on conflict, destroys nothing).
         "add_compression_policy",
+        # TimescaleDB additive / maintenance tools.
+        "add_dimension",
+        "set_chunk_time_interval",
+        "add_continuous_aggregate_policy",
+        "add_reorder_policy",
+        "compress_chunk",
+        "decompress_chunk",
+        "reorder_chunk",
+        "refresh_continuous_aggregate",
         "partman_create_parent",
         "create_graph",
         "create_hypertable",
@@ -7214,6 +7235,7 @@ def register_tools(  # noqa: C901
         _register_rag_telemetry_efficiency_read(server)
         _register_prisma(server)
         _register_advisors(server)
+        guc_tools.register_guc_reads(server)
         _register_composite(server)
         _register_data_movement(server)
         _register_audit_trail(server)
@@ -7225,6 +7247,7 @@ def register_tools(  # noqa: C901
         _register_turboquant_reads(server)
         _register_pg_search_reads(server)
         _register_timescaledb_reads(server)
+        timescaledb_tools.register_timescaledb_reads(server)
         _register_graphs_reads(server)
         _register_redis_fdw_reads(server)
         _register_pg_prewarm_reads(server)
@@ -7253,6 +7276,8 @@ def register_tools(  # noqa: C901
         _register_pg_prewarm_writes(server)
         _register_repack_writes(server)
         _register_pg19_runtime_writes(server)
+    if settings.access_mode == AccessMode.UNRESTRICTED and settings.allow_alter_system:
+        guc_tools.register_guc_writes(server)
     if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl:
         _register_ddl(server)
         _register_logical_replication_writes(server)
@@ -7263,9 +7288,12 @@ def register_tools(  # noqa: C901
         _register_pg_search_ddl(server)
         _register_rag_telemetry_ddl(server)
         _register_timescaledb_writes(server)
+        timescaledb_tools.register_timescaledb_ddl(server)
         _register_graphs_writes(server)
         _register_redis_fdw_ddl(server)
         _register_pgq_ddl(server)
+    if is_permitted(settings.access_mode, Capability.DDL) and settings.allow_ddl and settings.allow_timescaledb_admin:
+        timescaledb_tools.register_timescaledb_admin(server)
     if is_permitted(settings.access_mode, Capability.MIGRATE) and settings.allow_ddl:
         _register_migrations(server)
     if is_permitted(settings.access_mode, Capability.SHELL) and settings.allow_shell:

@@ -260,6 +260,8 @@ are one-shot commands, not configuration). The only required one is
 |---|---|---|
 | `MCPG_ALLOW_DDL` | `false` | Expose DDL tools (`run_ddl`, `create_graph`, `drop_graph`, hypertable tools, migration tools). Requires `MCPG_ACCESS_MODE=unrestricted`. |
 | `MCPG_ALLOW_SHELL` | `false` | Expose subprocess-backed tools (`dump_database`, `restore_database`, `run_pg_binary`). Required PG client binaries must be on `PATH`. |
+| `MCPG_ALLOW_TIMESCALEDB_ADMIN` | `false` | With unrestricted mode + `MCPG_ALLOW_DDL`, expose the destructive / heavy TimescaleDB tools (`drop_chunks`, `compress_chunk`, `decompress_chunk`, `reorder_chunk`, `merge_chunks`, `refresh_continuous_aggregate`, `run_job`, `alter_job`, `delete_job`); each needs `dry_run` then `confirm=true` + `confirmation_token`. See [docs/timescaledb.md](docs/timescaledb.md). |
+| `MCPG_ALLOW_ALTER_SYSTEM` | `false` | Expose `alter_system`, `alter_system_reset_all`, `reload_config` (unrestricted mode only; two-step `confirm=true` flow — see [docs/alter-system.md](docs/alter-system.md)). `MCPG_ALTER_SYSTEM_ALLOWLIST` / `MCPG_ALTER_SYSTEM_DENYLIST` (comma-separated GUC names) narrow or extend the built-in denylist. |
 | `MCPG_ALLOW_LISTEN` | `false` | Expose `LISTEN/NOTIFY` tools (`subscribe_channel`, `poll_notifications`, `unsubscribe_channel`, `list_notification_subscriptions`). |
 
 #### Authentication (HTTP transports only)
@@ -544,9 +546,11 @@ Compact category list. For the full, current tool reference see
 - **Server-side cursors** — `open_cursor`, `fetch_cursor`,
   `close_cursor`, `list_cursors` for pageable reads over millions
   of rows.
-- **TimescaleDB** — `list_hypertables`, `list_chunks`,
-  `create_hypertable`, `add_compression_policy`,
-  `add_retention_policy`.
+- **TimescaleDB** — hypertable / chunk / job / continuous-aggregate
+  introspection and stats, policy and dimension management, and gated
+  chunk / job administration (`drop_chunks`, `compress_chunk`,
+  `refresh_continuous_aggregate`, `run_job`, …). See
+  [docs/timescaledb.md](docs/timescaledb.md).
 - **ORM schema exporters** — Prisma, Drizzle, SQLAlchemy, sqlc,
   Diesel, jOOQ, Ent, Ecto.
 - **Event streams** — `subscribe_channel`, `poll_notifications`,

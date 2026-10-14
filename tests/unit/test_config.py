@@ -142,6 +142,31 @@ def test_allow_listen_defaults_to_false_and_parses_booleans() -> None:
         load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_LISTEN": "maybe"})
 
 
+def test_allow_timescaledb_admin() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).allow_timescaledb_admin is False
+    on = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_TIMESCALEDB_ADMIN": "true"})
+    assert on.allow_timescaledb_admin is True
+    with pytest.raises(ConfigError, match="MCPG_ALLOW_TIMESCALEDB_ADMIN"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_TIMESCALEDB_ADMIN": "maybe"})
+
+
+def test_alter_system_settings() -> None:
+    s = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert s.allow_alter_system is False
+    assert s.alter_system_allowlist == () and s.alter_system_denylist == ()
+    s = load_settings(
+        {
+            "MCPG_DATABASE_URL": _DB_URL,
+            "MCPG_ALLOW_ALTER_SYSTEM": "true",
+            "MCPG_ALTER_SYSTEM_ALLOWLIST": "Work_Mem, shared_buffers",
+            "MCPG_ALTER_SYSTEM_DENYLIST": "log_statement",
+        }
+    )
+    assert s.allow_alter_system is True
+    assert s.alter_system_allowlist == ("work_mem", "shared_buffers")
+    assert s.alter_system_denylist == ("log_statement",)
+
+
 def test_elicit_confirm_writes_defaults_to_false_and_parses() -> None:
     assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).elicit_confirm_writes is False
 

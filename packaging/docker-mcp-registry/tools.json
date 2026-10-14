@@ -21,6 +21,104 @@
     ]
   },
   {
+    "name": "add_continuous_aggregate_policy",
+    "description": "Schedule automatic refresh of a continuous aggregate. start_offset / end_offset are intervals back from now (e.g. '3 days', '1 hour'; null = unbounded on that side); schedule_interval is how often it runs. Requires unrestricted mode + MCPG_ALLOW_DDL.",
+    "arguments": [
+      {
+        "name": "end_offset",
+        "type": "string",
+        "desc": "End Offset"
+      },
+      {
+        "name": "if_not_exists",
+        "type": "boolean",
+        "desc": "If Not Exists"
+      },
+      {
+        "name": "schedule_interval",
+        "type": "string",
+        "desc": "Schedule Interval"
+      },
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
+      },
+      {
+        "name": "start_offset",
+        "type": "string",
+        "desc": "Start Offset"
+      },
+      {
+        "name": "view",
+        "type": "string",
+        "desc": "View"
+      }
+    ]
+  },
+  {
+    "name": "add_dimension",
+    "description": "Add a dimension to a TimescaleDB hypertable: pass number_partitions for a hash (space) dimension, or chunk_time_interval (e.g. '1 day') for an additional range dimension - exactly one. Requires unrestricted mode + MCPG_ALLOW_DDL.",
+    "arguments": [
+      {
+        "name": "chunk_time_interval",
+        "type": "string",
+        "desc": "Chunk Time Interval"
+      },
+      {
+        "name": "column",
+        "type": "string",
+        "desc": "Column"
+      },
+      {
+        "name": "if_not_exists",
+        "type": "boolean",
+        "desc": "If Not Exists"
+      },
+      {
+        "name": "number_partitions",
+        "type": "integer",
+        "desc": "Number Partitions"
+      },
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
+      },
+      {
+        "name": "table",
+        "type": "string",
+        "desc": "Table"
+      }
+    ]
+  },
+  {
+    "name": "add_reorder_policy",
+    "description": "Schedule background reordering of a hypertable's chunks along an existing index. Requires unrestricted mode + MCPG_ALLOW_DDL.",
+    "arguments": [
+      {
+        "name": "if_not_exists",
+        "type": "boolean",
+        "desc": "If Not Exists"
+      },
+      {
+        "name": "index_name",
+        "type": "string",
+        "desc": "Index Name"
+      },
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
+      },
+      {
+        "name": "table",
+        "type": "string",
+        "desc": "Table"
+      }
+    ]
+  },
+  {
     "name": "add_retention_policy",
     "description": "Schedule a TimescaleDB retention policy that drops hypertable chunks older than `drop_after` (e.g. '30 days'). Requires unrestricted mode + MCPG_ALLOW_DDL.",
     "arguments": [
@@ -38,6 +136,57 @@
         "name": "table",
         "type": "string",
         "desc": "Table"
+      }
+    ]
+  },
+  {
+    "name": "alter_job",
+    "description": "Change a TimescaleDB user/policy job's schedule_interval, max_runtime, max_retries, retry_period or scheduled flag (at least one). The job's config and procedure cannot be changed. Destructive/heavy: call with dry_run=true first (returns the plan, affected objects and a confirmation_token); show the warning to the user; then call with confirm=true and that exact confirmation_token to execute. Requires unrestricted mode + MCPG_ALLOW_DDL + MCPG_ALLOW_TIMESCALEDB_ADMIN.",
+    "arguments": [
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
+      },
+      {
+        "name": "job_id",
+        "type": "integer",
+        "desc": "Job Id"
+      },
+      {
+        "name": "max_retries",
+        "type": "integer",
+        "desc": "Max Retries"
+      },
+      {
+        "name": "max_runtime",
+        "type": "string",
+        "desc": "Max Runtime"
+      },
+      {
+        "name": "retry_period",
+        "type": "string",
+        "desc": "Retry Period"
+      },
+      {
+        "name": "schedule_interval",
+        "type": "string",
+        "desc": "Schedule Interval"
+      },
+      {
+        "name": "scheduled",
+        "type": "boolean",
+        "desc": "Scheduled"
       }
     ]
   },
@@ -622,6 +771,37 @@
     ]
   },
   {
+    "name": "compress_chunk",
+    "description": "Compress one chunk now (chunk_schema is usually _timescaledb_internal; find names with list_chunks). Rewrites the chunk and locks it. Destructive/heavy: call with dry_run=true first (returns the plan, affected objects and a confirmation_token); show the warning to the user; then call with confirm=true and that exact confirmation_token to execute. Requires unrestricted mode + MCPG_ALLOW_DDL + MCPG_ALLOW_TIMESCALEDB_ADMIN.",
+    "arguments": [
+      {
+        "name": "chunk_name",
+        "type": "string",
+        "desc": "Chunk Name"
+      },
+      {
+        "name": "chunk_schema",
+        "type": "string",
+        "desc": "Chunk Schema"
+      },
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
+      }
+    ]
+  },
+  {
     "name": "copy_table_between_databases",
     "description": "Copy a single table from one database to another by piping pg_dump (source) into pg_restore (destination). The source URL is the caller-supplied source_url; the destination is the configured database URL. Specify at least one of include_schema / include_data. Credentials pass through libpq env vars on each leg, never on the command line. If the captured pg_dump archive would exceed MCPG_SHELL_MAX_OUTPUT_BYTES, the tool errors BEFORE pg_restore runs (a truncated custom-format archive cannot be safely restored). Performs subprocess execution \u2014 requires unrestricted mode + MCPG_ALLOW_SHELL.",
     "arguments": [
@@ -1094,6 +1274,63 @@
     ]
   },
   {
+    "name": "decompress_chunk",
+    "description": "Decompress one chunk (needs free disk for the uncompressed data; locks the chunk). Destructive/heavy: call with dry_run=true first (returns the plan, affected objects and a confirmation_token); show the warning to the user; then call with confirm=true and that exact confirmation_token to execute. Requires unrestricted mode + MCPG_ALLOW_DDL + MCPG_ALLOW_TIMESCALEDB_ADMIN.",
+    "arguments": [
+      {
+        "name": "chunk_name",
+        "type": "string",
+        "desc": "Chunk Name"
+      },
+      {
+        "name": "chunk_schema",
+        "type": "string",
+        "desc": "Chunk Schema"
+      },
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
+      }
+    ]
+  },
+  {
+    "name": "delete_job",
+    "description": "Delete a TimescaleDB user/policy job (job ids >= 1000). For policy jobs prefer the matching remove_*_policy tool. Destructive/heavy: call with dry_run=true first (returns the plan, affected objects and a confirmation_token); show the warning to the user; then call with confirm=true and that exact confirmation_token to execute. Requires unrestricted mode + MCPG_ALLOW_DDL + MCPG_ALLOW_TIMESCALEDB_ADMIN.",
+    "arguments": [
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
+      },
+      {
+        "name": "job_id",
+        "type": "integer",
+        "desc": "Job Id"
+      }
+    ]
+  },
+  {
     "name": "describe_ao_table",
     "description": "Describe append-optimized (AO) / append-optimized columnar (AO/CO) storage metadata for one table: row vs column orientation, `compression_type`, `compression_level`, `block_size`, `checksum`. Reads `pg_appendonly`. Returns `is_ao=false` cleanly when the table is a regular heap. Read-only. On vanilla PG returns `available=false`.\n\nExample: `describe_ao_table(schema='public', table='events_ao')`",
     "arguments": [
@@ -1310,6 +1547,57 @@
     "name": "disable_data_checksums",
     "description": "Turn `data_checksums` off without restarting the cluster. Calls PG 19's `pg_disable_data_checksums()` SQL function. No-op (`changed=false`) when checksums are already off. Requires PG 19+. Returns an object with `was_enabled`, `now_enabled` (`false`), `changed`, and `toggle_sql`.\n\nExample: `disable_data_checksums()`",
     "arguments": []
+  },
+  {
+    "name": "drop_chunks",
+    "description": "Permanently delete whole chunks of a hypertable by age: older_than / newer_than (intervals such as '30 days', relative to now) or created_before / created_after (chunk creation time; cannot be combined with the others). At least one bound is required. dry_run lists the chunks that would be dropped. DATA LOSS. Destructive/heavy: call with dry_run=true first (returns the plan, affected objects and a confirmation_token); show the warning to the user; then call with confirm=true and that exact confirmation_token to execute. Requires unrestricted mode + MCPG_ALLOW_DDL + MCPG_ALLOW_TIMESCALEDB_ADMIN.",
+    "arguments": [
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "created_after",
+        "type": "string",
+        "desc": "Created After"
+      },
+      {
+        "name": "created_before",
+        "type": "string",
+        "desc": "Created Before"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
+      },
+      {
+        "name": "newer_than",
+        "type": "string",
+        "desc": "Newer Than"
+      },
+      {
+        "name": "older_than",
+        "type": "string",
+        "desc": "Older Than"
+      },
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
+      },
+      {
+        "name": "table",
+        "type": "string",
+        "desc": "Table"
+      }
+    ]
   },
   {
     "name": "drop_graph",
@@ -2115,6 +2403,27 @@
     ]
   },
   {
+    "name": "get_hypertable_stats",
+    "description": "Size and compression statistics for one TimescaleDB hypertable: total/compressed chunk counts, approximate row count, table/index/toast/total bytes, and bytes before/after compression. Errors if the table is not a hypertable; available=false when the timescaledb extension is not installed.",
+    "arguments": [
+      {
+        "name": "database",
+        "type": "string",
+        "desc": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids."
+      },
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
+      },
+      {
+        "name": "table",
+        "type": "string",
+        "desc": "Table"
+      }
+    ]
+  },
+  {
     "name": "get_logical_replication_status",
     "description": "Report whether PG 19's on-demand wal_level flip is usable, plus the configured `wal_level`, the new PG 19 `effective_wal_level` preset GUC, and `max_replication_slots`. When configured and effective diverge the agent can tell that an `ALTER SYSTEM` has been done but a reload is still pending. Never raises. Returns an object with `available` (bool), `server_version_num`, `server_version`, `wal_level`, `effective_wal_level`, `max_replication_slots`, and `detail`.\n\nExample: `get_logical_replication_status()`",
     "arguments": [
@@ -2278,6 +2587,17 @@
         "name": "tablespace_name",
         "type": "string",
         "desc": "Tablespace Name"
+      }
+    ]
+  },
+  {
+    "name": "get_timescaledb_telemetry_report",
+    "description": "Return the usage report TimescaleDB builds about this database (get_telemetry_report()): versions, relation counts and sizes, feature usage. It is generated locally from catalog data and nothing is sent by this call (the periodic upload is a separate background job governed by timescaledb.telemetry_level). Contains instance metadata such as the database UUID, so treat it as sensitive.",
+    "arguments": [
+      {
+        "name": "database",
+        "type": "string",
+        "desc": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids."
       }
     ]
   },
@@ -2603,6 +2923,17 @@
     ]
   },
   {
+    "name": "inspect_guc",
+    "description": "Inspect one PostgreSQL GUC via pg_settings: live value, unit, context (postmaster/sighup/user/\u2026), pending_restart, vartype, and whether ALTER SYSTEM can change it. Use this before alter_system to see whether a reload or restart is required. Read-only.",
+    "arguments": [
+      {
+        "name": "name",
+        "type": "string",
+        "desc": "Name"
+      }
+    ]
+  },
+  {
     "name": "lint_naming_conventions",
     "description": "Lint table / column / index naming in a schema. Detects the majority case style (snake_case / camelCase / PascalCase / SCREAMING_SNAKE) per schema and per table, then flags outliers. Also flags indexes whose names do not start with a conventional prefix (idx_, ix_, pk_, uq_, fk_ by default). Findings carry the offender's style and the detected majority \u2014 agents can use the style field to filter for renames vs accept-as-is. Pure read. Returns an object with `schema_style` (detected majority), `findings` (list of style outliers), and `index_prefix_findings` (indexes with non-conventional prefixes).",
     "arguments": [
@@ -2732,6 +3063,17 @@
         "name": "table",
         "type": "string",
         "desc": "Table"
+      }
+    ]
+  },
+  {
+    "name": "list_continuous_aggregates",
+    "description": "List TimescaleDB continuous aggregates with their source hypertable, materialized_only flag and compression flag.",
+    "arguments": [
+      {
+        "name": "database",
+        "type": "string",
+        "desc": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids."
       }
     ]
   },
@@ -3199,6 +3541,17 @@
     ]
   },
   {
+    "name": "list_timescale_jobs",
+    "description": "List TimescaleDB background jobs (retention / compression / refresh / reorder policies and user jobs) with schedule, next start, last run status and run/failure counts. Job ids below 1000 are TimescaleDB system jobs.",
+    "arguments": [
+      {
+        "name": "database",
+        "type": "string",
+        "desc": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids."
+      }
+    ]
+  },
+  {
     "name": "list_triggers",
     "description": "List the user-defined triggers on a table. Returns a list of objects with `name`, `function` (the called function's qualified name), and `definition` (the CREATE TRIGGER SQL).",
     "arguments": [
@@ -3357,6 +3710,42 @@
         "name": "schema",
         "type": "string",
         "desc": "Schema"
+      }
+    ]
+  },
+  {
+    "name": "merge_chunks",
+    "description": "Merge two or more adjacent, uncompressed chunks (all in chunk_schema) into one. concurrently=true uses merge_chunks_concurrently (lighter locks; runs on an autocommit connection and is unavailable when MCPG_DEFAULT_ROLE / MCPG_ALLOWED_ROLES is set). Destructive/heavy: call with dry_run=true first (returns the plan, affected objects and a confirmation_token); show the warning to the user; then call with confirm=true and that exact confirmation_token to execute. Requires unrestricted mode + MCPG_ALLOW_DDL + MCPG_ALLOW_TIMESCALEDB_ADMIN.",
+    "arguments": [
+      {
+        "name": "chunk_names",
+        "type": "array",
+        "desc": "Chunk Names"
+      },
+      {
+        "name": "chunk_schema",
+        "type": "string",
+        "desc": "Chunk Schema"
+      },
+      {
+        "name": "concurrently",
+        "type": "boolean",
+        "desc": "Concurrently"
+      },
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
       }
     ]
   },
@@ -4582,6 +4971,52 @@
     ]
   },
   {
+    "name": "refresh_continuous_aggregate",
+    "description": "Refresh a continuous aggregate now over [window_start, window_end) (ISO timestamps; null = unbounded). force=true recomputes buckets even if already refreshed. Cannot run in a transaction, so it runs on an autocommit connection in batches (a failure can leave the window partly refreshed) and is unavailable when MCPG_DEFAULT_ROLE / MCPG_ALLOWED_ROLES is set. Destructive/heavy: call with dry_run=true first (returns the plan, affected objects and a confirmation_token); show the warning to the user; then call with confirm=true and that exact confirmation_token to execute. Requires unrestricted mode + MCPG_ALLOW_DDL + MCPG_ALLOW_TIMESCALEDB_ADMIN.",
+    "arguments": [
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
+      },
+      {
+        "name": "force",
+        "type": "boolean",
+        "desc": "Force"
+      },
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
+      },
+      {
+        "name": "view",
+        "type": "string",
+        "desc": "View"
+      },
+      {
+        "name": "window_end",
+        "type": "string",
+        "desc": "Window End"
+      },
+      {
+        "name": "window_start",
+        "type": "string",
+        "desc": "Window Start"
+      }
+    ]
+  },
+  {
     "name": "reindex_pg_search_index",
     "description": "REINDEX a pg_search BM25 index. Pre-flight confirms the named index actually uses the bm25 access method (catalog lookup on pg_am) before running. ``concurrently=True`` is the default and runs on autocommit since REINDEX CONCURRENTLY can't run inside a transaction. Performs DDL \u2014 requires unrestricted mode + MCPG_ALLOW_DDL; pg_search installed. Returns an object with `schema`, `index`, `concurrently` (bool), and `reindex_sql` (the rendered REINDEX statement that ran).",
     "arguments": [
@@ -4620,6 +5055,111 @@
         "name": "schema",
         "type": "string",
         "desc": "Schema"
+      }
+    ]
+  },
+  {
+    "name": "remove_compression_policy",
+    "description": "Remove a hypertable's compression policy (no-op if none). Already-compressed chunks stay compressed. Requires unrestricted mode + MCPG_ALLOW_DDL.",
+    "arguments": [
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
+      },
+      {
+        "name": "table",
+        "type": "string",
+        "desc": "Table"
+      }
+    ]
+  },
+  {
+    "name": "remove_continuous_aggregate_policy",
+    "description": "Remove a continuous aggregate's refresh policy (no-op if none). Requires unrestricted mode + MCPG_ALLOW_DDL.",
+    "arguments": [
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
+      },
+      {
+        "name": "view",
+        "type": "string",
+        "desc": "View"
+      }
+    ]
+  },
+  {
+    "name": "remove_reorder_policy",
+    "description": "Remove a hypertable's reorder policy (no-op if none). Requires unrestricted mode + MCPG_ALLOW_DDL.",
+    "arguments": [
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
+      },
+      {
+        "name": "table",
+        "type": "string",
+        "desc": "Table"
+      }
+    ]
+  },
+  {
+    "name": "remove_retention_policy",
+    "description": "Remove a hypertable's retention policy (no-op if none). Requires unrestricted mode + MCPG_ALLOW_DDL.",
+    "arguments": [
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
+      },
+      {
+        "name": "table",
+        "type": "string",
+        "desc": "Table"
+      }
+    ]
+  },
+  {
+    "name": "reorder_chunk",
+    "description": "Physically reorder one chunk along an index. Cannot run in a transaction, so it runs on an autocommit connection (not rolled back on failure) and is unavailable when MCPG_DEFAULT_ROLE / MCPG_ALLOWED_ROLES is set. Destructive/heavy: call with dry_run=true first (returns the plan, affected objects and a confirmation_token); show the warning to the user; then call with confirm=true and that exact confirmation_token to execute. Requires unrestricted mode + MCPG_ALLOW_DDL + MCPG_ALLOW_TIMESCALEDB_ADMIN.",
+    "arguments": [
+      {
+        "name": "chunk_name",
+        "type": "string",
+        "desc": "Chunk Name"
+      },
+      {
+        "name": "chunk_schema",
+        "type": "string",
+        "desc": "Chunk Schema"
+      },
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
+      },
+      {
+        "name": "index_name",
+        "type": "string",
+        "desc": "Index Name"
+      },
+      {
+        "name": "index_schema",
+        "type": "string",
+        "desc": "Index Schema"
       }
     ]
   },
@@ -4792,6 +5332,32 @@
         "name": "table",
         "type": "string",
         "desc": "Table"
+      }
+    ]
+  },
+  {
+    "name": "run_job",
+    "description": "Run a TimescaleDB user/policy job immediately (job ids >= 1000; system jobs are refused). A retention policy job drops chunks right away. Destructive/heavy: call with dry_run=true first (returns the plan, affected objects and a confirmation_token); show the warning to the user; then call with confirm=true and that exact confirmation_token to execute. Requires unrestricted mode + MCPG_ALLOW_DDL + MCPG_ALLOW_TIMESCALEDB_ADMIN.",
+    "arguments": [
+      {
+        "name": "confirm",
+        "type": "boolean",
+        "desc": "Confirm"
+      },
+      {
+        "name": "confirmation_token",
+        "type": "string",
+        "desc": "Confirmation Token"
+      },
+      {
+        "name": "dry_run",
+        "type": "boolean",
+        "desc": "Dry Run"
+      },
+      {
+        "name": "job_id",
+        "type": "integer",
+        "desc": "Job Id"
       }
     ]
   },
@@ -5052,6 +5618,27 @@
         "name": "seed",
         "type": "integer",
         "desc": "Seed"
+      },
+      {
+        "name": "table",
+        "type": "string",
+        "desc": "Table"
+      }
+    ]
+  },
+  {
+    "name": "set_chunk_time_interval",
+    "description": "Change a hypertable's chunk interval (e.g. '1 day'). Applies only to chunks created from now on; existing chunks are unchanged. Requires unrestricted mode + MCPG_ALLOW_DDL.",
+    "arguments": [
+      {
+        "name": "chunk_time_interval",
+        "type": "string",
+        "desc": "Chunk Time Interval"
+      },
+      {
+        "name": "schema",
+        "type": "string",
+        "desc": "Schema"
       },
       {
         "name": "table",

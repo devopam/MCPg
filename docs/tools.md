@@ -37,7 +37,7 @@ plumbing:
 | `MCPG_NL2SQL_PROVIDER` / `MCPG_NL2SQL_API_KEY` / `MCPG_NL2SQL_MODEL` / `MCPG_NL2SQL_BASE_URL` / `MCPG_NL2SQL_MAX_TOKENS` | `translate_nl_to_sql` provider config — 22 built-in providers + custom (`MCPG_NL2SQL_CUSTOM_PROVIDERS`). |
 
 <!-- BEGIN generated: tool-index (python tools/generate_doc_tables.py --tools) -->
-## Tool index (256 tools)
+## Tool index (257 tools)
 
 Grouped by feature area. The **Gate** column shows the capability
 each tool needs — plain `read` tools are available in every access
@@ -54,6 +54,7 @@ need `unrestricted` **plus** the matching `MCPG_ALLOW_*` opt-in (see
 | **Visualisation & structural diff** | read | `generate_schema_diagram`, `generate_fk_cascade_graph`, `generate_schema_docs`, `compare_schemas` |
 | **Query & cursors** | read | `run_select`, `run_select_tuned`, `run_select_parallel`, `open_cursor`, `fetch_cursor`, `close_cursor`, `list_cursors`, `explain_query`, `analyze_query_plan`, `translate_nl_to_sql`, `run_analytical_query` |
 | **Health, tuning & advisors** | read | `check_database_health`, `analyze_table_bloat`, `list_databases`, `audit_database`, `analyze_workload`, `detect_n_plus_one`, `read_autovacuum_priority`, `recommend_indexes`, `recommend_index_drops`, `run_advisors`, `find_unused_objects`, `find_sensitive_columns`, `lint_naming_conventions`, `test_rls_for_role`, `analyze_session_cost`, `recommend_headline_tools`, `audit_sequences`, `audit_settings`, `recommend_postgres_conf`, `optimize_query`, `summarize_table`, `why_is_this_slow` |
+| **Configuration (GUC)** | read | `inspect_guc` |
 | **Search** | read | `fuzzy_search`, `full_text_search`, `vector_search`, `vector_range_search`, `mmr_search`, `hybrid_search`, `geo_search` |
 | **Test-data factory** | read / **WRITE** (`seed_table_with_sample_data`) | `generate_test_data`, `generate_test_row_for`, `seed_table_with_sample_data` |
 | **Locks & blocking chains** | read | `list_locks`, `find_blocking_chains`, `walk_blocking_chains`, `read_pg_stat_lock`, `analyze_lock_hotspots` |
@@ -75,6 +76,9 @@ need `unrestricted` **plus** the matching `MCPG_ALLOW_*` opt-in (see
 | **Migration history** | read | `read_migration_history` |
 | **ORM-DSL exporters** | read | `generate_prisma_schema`, `generate_drizzle_schema`, `generate_diesel_schema`, `generate_jooq_config`, `generate_ent_schemas`, `generate_ecto_schemas`, `generate_sqlalchemy_models`, `generate_sqlc_schema` |
 | **TimescaleDB hypertables** | read / **DDL** writes | `list_hypertables`, `list_chunks`, `create_hypertable`, `add_compression_policy`, `add_retention_policy` |
+| **TimescaleDB — stats, jobs & telemetry** | read | `get_hypertable_stats`, `list_timescale_jobs`, `list_continuous_aggregates`, `get_timescaledb_telemetry_report` |
+| **TimescaleDB — dimensions & policies** | **DDL** | `add_dimension`, `set_chunk_time_interval`, `add_continuous_aggregate_policy`, `add_reorder_policy`, `remove_retention_policy`, `remove_compression_policy`, `remove_continuous_aggregate_policy`, `remove_reorder_policy` |
+| **TimescaleDB — chunk & job admin** | **DDL** + `MCPG_ALLOW_TIMESCALEDB_ADMIN` | `drop_chunks`, `compress_chunk`, `decompress_chunk`, `reorder_chunk`, `merge_chunks`, `refresh_continuous_aggregate`, `run_job`, `alter_job`, `delete_job` |
 | **pg_partman** | **DDL** | `partman_create_parent`, `partman_run_maintenance`, `partman_drop_partition` |
 | **pg_prewarm** | read / **WRITE** | `get_prewarm_extension_status`, `list_prewarmed_relations`, `recommend_prewarm_targets`, `list_autowarm_jobs`, `prewarm_relation`, `prewarm_recommended`, `schedule_autowarm`, `unschedule_autowarm` |
 | **pg_repack** | read / **WRITE** (`repack_table`) | `get_repack_status`, `repack_table` |

@@ -253,7 +253,11 @@ CAPABILITIES: tuple[Capability, ...] = (
         detail=(
             "If TimescaleDB is installed: `create_hypertable`, "
             "`add_compression_policy`, `add_retention_policy`, `list_hypertables`, "
-            "`list_chunks`. For PostgreSQL native partitioning managed by "
+            "`list_chunks`, `get_hypertable_stats`, `list_timescale_jobs`, "
+            "`list_continuous_aggregates`, dimension / policy management, and "
+            "(with `MCPG_ALLOW_TIMESCALEDB_ADMIN`) `drop_chunks`, chunk compression / "
+            "merge / reorder, continuous-aggregate refresh and job control. "
+            "For PostgreSQL native partitioning managed by "
             "pg_partman: `partman_create_parent`, `partman_run_maintenance`, "
             "`partman_drop_partition`, `list_partitions`. Both backends are "
             "first-class for the audit / RAG telemetry tables (see PR-4 / PR-5 "
@@ -540,6 +544,28 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     # list_hypertables / list_chunks / list_partitions are time-series.
     "list_hypertables": "timeseries_partitioning",
     "list_chunks": "timeseries_partitioning",
+    # TimescaleDB stats / jobs / policies / chunk + job admin (docs/plans/timescaledb-tools.md).
+    "get_hypertable_stats": "timeseries_partitioning",
+    "list_timescale_jobs": "timeseries_partitioning",
+    "list_continuous_aggregates": "timeseries_partitioning",
+    "get_timescaledb_telemetry_report": "timeseries_partitioning",
+    "add_dimension": "timeseries_partitioning",
+    "set_chunk_time_interval": "timeseries_partitioning",
+    "add_continuous_aggregate_policy": "timeseries_partitioning",
+    "add_reorder_policy": "timeseries_partitioning",
+    "remove_retention_policy": "timeseries_partitioning",
+    "remove_compression_policy": "timeseries_partitioning",
+    "remove_continuous_aggregate_policy": "timeseries_partitioning",
+    "remove_reorder_policy": "timeseries_partitioning",
+    "drop_chunks": "timeseries_partitioning",
+    "compress_chunk": "timeseries_partitioning",
+    "decompress_chunk": "timeseries_partitioning",
+    "reorder_chunk": "timeseries_partitioning",
+    "merge_chunks": "timeseries_partitioning",
+    "refresh_continuous_aggregate": "timeseries_partitioning",
+    "run_job": "timeseries_partitioning",
+    "alter_job": "timeseries_partitioning",
+    "delete_job": "timeseries_partitioning",
     "list_partitions": "timeseries_partitioning",
     # list_turboquant_indexes / list_pg_search_indexes are search-bucket.
     "list_turboquant_indexes": "vector_search",
@@ -711,6 +737,11 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "drop_property_graph": "property_graph_queries",
     # PG 19 in-server REPACK — operational maintenance, sits next to
     # run_maintenance / check_database_health.
+    # inspect_guc / alter_system family (ALTER SYSTEM tools, docs/alter-system.md).
+    "inspect_guc": "operations_and_health",
+    "alter_system": "operations_and_health",
+    "alter_system_reset_all": "operations_and_health",
+    "reload_config": "operations_and_health",
     "get_repack_status": "operations_and_health",
     "repack_table": "operations_and_health",
     # PG 19 async-I/O subsystem — observability + advisor; sits in the
