@@ -515,7 +515,7 @@ async def test_e2e_enable_session_intent_grows_the_real_tools_list() -> None:
     """The full round trip the bug hid: enabling an intent through a real
     `enable_session_intent` tool call must actually change a subsequent real
     `tools/list` response. Before the Finding-1 fix this stayed flat at the
-    unfiltered count (187 observed against this fixture) instead of 14 -> 71.
+    unfiltered count (188 observed against this fixture) instead of 14 -> 72.
 
     Note on semantics: `enabled_intents` unions whatever a session
     explicitly enables (`monitor` here) with its starting `default_intent`
@@ -547,7 +547,7 @@ async def test_e2e_enable_session_intent_grows_the_real_tools_list() -> None:
         after_names = {t.name for t in after.tools}
 
     assert len(before_names) == 14
-    assert len(after_names) == 71, f"expected 71 tools after enabling monitor, got {len(after_names)}"
+    assert len(after_names) == 72, f"expected 72 tools after enabling monitor, got {len(after_names)}"
     assert before_names < after_names  # strict growth: every core/always-kept tool survives, nothing lost
     assert before_names >= ALWAYS_KEEP
     assert after_names >= ALWAYS_KEEP

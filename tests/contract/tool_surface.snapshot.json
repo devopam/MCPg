@@ -1,7 +1,7 @@
 {
   "_meta": {
     "schema_version": 1,
-    "tool_count": 256
+    "tool_count": 257
   },
   "tools": [
     {
@@ -4190,6 +4190,23 @@
         "type": "object"
       },
       "name": "import_vectors"
+    },
+    {
+      "description": "Inspect one PostgreSQL GUC via pg_settings: live value, unit, context (postmaster/sighup/user/…), pending_restart, vartype, and whether ALTER SYSTEM can change it. Use this before alter_system to see whether a reload or restart is required. Read-only.",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "inspect_gucArguments",
+        "type": "object"
+      },
+      "name": "inspect_guc"
     },
     {
       "description": "Lint table / column / index naming in a schema. Detects the majority case style (snake_case / camelCase / PascalCase / SCREAMING_SNAKE) per schema and per table, then flags outliers. Also flags indexes whose names do not start with a conventional prefix (idx_, ix_, pk_, uq_, fk_ by default). Findings carry the offender's style and the detected majority — agents can use the style field to filter for renames vs accept-as-is. Pure read. Returns an object with `schema_style` (detected majority), `findings` (list of style outliers), and `index_prefix_findings` (indexes with non-conventional prefixes).",

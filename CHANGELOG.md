@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`ALTER SYSTEM` GUC tools.** `inspect_guc` (read), plus `alter_system`, `alter_system_reset_all` and
+  `reload_config` behind unrestricted mode + `MCPG_ALLOW_ALTER_SYSTEM`. Runs on an autocommit connection,
+  requires an explicit `confirm=true` after a structured warning, and blocks connectivity/preload GUCs by
+  default (`MCPG_ALTER_SYSTEM_ALLOWLIST` / `MCPG_ALTER_SYSTEM_DENYLIST`). See `docs/alter-system.md`. (PR #352)
+
 ### Security
 
 - **Bumped `pyjwt` to ≥ 2.15.0 (2.15.1 resolved)** to clear the October 2026
