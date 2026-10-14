@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`ALTER SYSTEM` GUC tools.** `inspect_guc` (read), plus `alter_system`, `alter_system_reset_all` and
+  `reload_config` behind unrestricted mode + `MCPG_ALLOW_ALTER_SYSTEM`. Runs on an autocommit connection,
+  requires an explicit `confirm=true` after a structured warning, and blocks connectivity/preload GUCs by
+  default (`MCPG_ALTER_SYSTEM_ALLOWLIST` / `MCPG_ALTER_SYSTEM_DENYLIST`). See `docs/alter-system.md`. (PR #352)
 - **TimescaleDB read-only functions are now allowed in the SQL-safety kernel** (#353): `time_bucket`, `time_bucket_gapfill`,
   `first`/`last`, `locf`, `interpolate`, `histogram`, the `hypertable_*_size` / `*_compression_stats` / `*_columnstore_stats`
   family, `show_chunks`, `by_range`/`by_hash`, the uuidv7 helpers and `timescaledb_experimental.show_policies`. Mutating

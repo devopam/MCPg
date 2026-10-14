@@ -737,6 +737,11 @@ _TOOL_TO_BUCKET_OVERRIDES: dict[str, str] = {
     "drop_property_graph": "property_graph_queries",
     # PG 19 in-server REPACK — operational maintenance, sits next to
     # run_maintenance / check_database_health.
+    # inspect_guc / alter_system family (ALTER SYSTEM tools, docs/alter-system.md).
+    "inspect_guc": "operations_and_health",
+    "alter_system": "operations_and_health",
+    "alter_system_reset_all": "operations_and_health",
+    "reload_config": "operations_and_health",
     "get_repack_status": "operations_and_health",
     "repack_table": "operations_and_health",
     # PG 19 async-I/O subsystem — observability + advisor; sits in the

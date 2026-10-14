@@ -56,6 +56,7 @@ _TOOL_ROWS: list[tuple[str, list[str], str]] = [
         ["@health_rest", "@advisors_rest", "_register_composite"],
         "read",
     ),
+    ("Configuration (GUC)", ["inspect_guc"], "read"),
     ("Search", ["@search"], "read"),
     (
         "Test-data factory",
