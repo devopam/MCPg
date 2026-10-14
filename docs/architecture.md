@@ -64,7 +64,7 @@ flowchart TD
 ---
 
 <!-- BEGIN generated: module-map (python tools/generate_doc_tables.py --modules) -->
-## Module map (107 modules)
+## Module map (109 modules)
 
 Every `mcpg.*` module and what it owns, alphabetical. The layered
 request path through these lives in the [Overview](#overview) diagram;
@@ -168,6 +168,8 @@ this table is the exhaustive index. Regenerate with
 | `mcpg.test_row_factory` | Realistic single-row factory — one row per call, catalogue-aware. |
 | `mcpg.textsearch` | Search tools: trigram fuzzy, full-text, pgvector k-NN, and PostGIS geo. |
 | `mcpg.timescaledb` | TimescaleDB hypertable + compression + retention helpers. |
+| `mcpg.timescaledb_admin` | TimescaleDB destructive / heavy administration tools ("tier B"). |
+| `mcpg.timescaledb_tools` | MCP tool registration for the extended TimescaleDB tool family. |
 | `mcpg.tool_introspection` | Per-tool introspection — payload for the `describe_tool` MCP tool. |
 | `mcpg.tools` | MCP tool definitions for MCPg. |
 | `mcpg.turboquant` | pg_turboquant integration: observability + advisor + write + DDL + query. |

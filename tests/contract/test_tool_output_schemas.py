@@ -788,6 +788,7 @@ def _build_maximal_server() -> MCPServer:
             "MCPG_ALLOW_DDL": "true",
             "MCPG_ALLOW_SHELL": "true",
             "MCPG_ALLOW_LISTEN": "true",
+            "MCPG_ALLOW_TIMESCALEDB_ADMIN": "true",
         }
     )
     server: MCPServer = MCPServer("mcpg-output-schemas-fixture")

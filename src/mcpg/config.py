@@ -66,6 +66,7 @@ class Settings:
     allow_ddl: bool = False
     allow_shell: bool = False
     allow_listen: bool = False
+    allow_timescaledb_admin: bool = False
     elicit_confirm_writes: bool = False
     shell_timeout_sec: int = 60
     shell_max_output_bytes: int = 64 * 1024 * 1024
@@ -315,6 +316,7 @@ class Settings:
             f"allow_ddl={self.allow_ddl}, "
             f"allow_shell={self.allow_shell}, "
             f"allow_listen={self.allow_listen}, "
+            f"allow_timescaledb_admin={self.allow_timescaledb_admin}, "
             f"elicit_confirm_writes={self.elicit_confirm_writes}, "
             f"shell_timeout_sec={self.shell_timeout_sec}, "
             f"shell_max_output_bytes={self.shell_max_output_bytes}, "
@@ -553,6 +555,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:  # noqa: C9
     allow_ddl = False
     if (raw := env.get("MCPG_ALLOW_DDL")) is not None:
         allow_ddl = _parse_bool("MCPG_ALLOW_DDL", raw)
+
+    allow_timescaledb_admin = False
+    if (raw := env.get("MCPG_ALLOW_TIMESCALEDB_ADMIN")) is not None:
+        allow_timescaledb_admin = _parse_bool("MCPG_ALLOW_TIMESCALEDB_ADMIN", raw)
 
     allow_shell = False
     if (raw := env.get("MCPG_ALLOW_SHELL")) is not None:
@@ -1280,6 +1286,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:  # noqa: C9
         allow_ddl=allow_ddl,
         allow_shell=allow_shell,
         allow_listen=allow_listen,
+        allow_timescaledb_admin=allow_timescaledb_admin,
         elicit_confirm_writes=elicit_confirm_writes,
         shell_timeout_sec=shell_timeout_sec,
         shell_max_output_bytes=shell_max_output_bytes,

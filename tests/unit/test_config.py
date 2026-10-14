@@ -142,6 +142,14 @@ def test_allow_listen_defaults_to_false_and_parses_booleans() -> None:
         load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_LISTEN": "maybe"})
 
 
+def test_allow_timescaledb_admin() -> None:
+    assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).allow_timescaledb_admin is False
+    on = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_TIMESCALEDB_ADMIN": "true"})
+    assert on.allow_timescaledb_admin is True
+    with pytest.raises(ConfigError, match="MCPG_ALLOW_TIMESCALEDB_ADMIN"):
+        load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_ALLOW_TIMESCALEDB_ADMIN": "maybe"})
+
+
 def test_elicit_confirm_writes_defaults_to_false_and_parses() -> None:
     assert load_settings({"MCPG_DATABASE_URL": _DB_URL}).elicit_confirm_writes is False
 

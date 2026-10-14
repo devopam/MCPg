@@ -554,7 +554,7 @@ async def test_default_settings_tool_surface_is_unchanged() -> None:
     names = {t.name for t in await server.list_tools()}
     assert "list_session_intents" not in names
     assert "enable_session_intent" not in names
-    assert len(names) == 186
+    assert len(names) == 190
 
 
 async def test_maximal_settings_tool_surface_is_unchanged_with_dynamic_flag_off() -> None:
@@ -574,6 +574,7 @@ async def test_maximal_settings_tool_surface_is_unchanged_with_dynamic_flag_off(
             "MCPG_ALLOW_DDL": "true",
             "MCPG_ALLOW_SHELL": "true",
             "MCPG_ALLOW_LISTEN": "true",
+            "MCPG_ALLOW_TIMESCALEDB_ADMIN": "true",
         }
     )
     server: MCPServer = MCPServer("mcpg-maximal-parity-fixture")
@@ -581,7 +582,7 @@ async def test_maximal_settings_tool_surface_is_unchanged_with_dynamic_flag_off(
     names = {t.name for t in await server.list_tools()}
     assert "list_session_intents" not in names
     assert "enable_session_intent" not in names
-    assert len(names) == 254
+    assert len(names) == 275
 
 
 async def test_static_session_intent_only_is_unchanged() -> None:

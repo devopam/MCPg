@@ -1,7 +1,8 @@
 # TimescaleDB tool family — design
 
-Status: **draft for review** (2026-10-14). Spawned by issue #353 and the
-ALTER SYSTEM tools (PR #352). No code is written against this yet.
+Status: **implemented** in the PR for issue #353 (2026-10-14); the open
+questions below were answered by the Phase 0 spike (see "Phase 0 results").
+Spawned by issue #353 and the ALTER SYSTEM tools (PR #352).
 
 ## Why now
 
@@ -140,3 +141,26 @@ both contract snapshots, doc tables regenerated, CHANGELOG
 - `drop_chunks` and retention interplay with continuous aggregates can
   silently lose raw data that aggregates still depend on; warnings must say so.
 - Tool-count growth (each phase adds tools); keep names/buckets disciplined.
+
+## Phase 0 results (TimescaleDB 2.30.2, PG 17, official image)
+
+Run against a throwaway container, not from the vendor docs:
+
+| Question | Result |
+|---|---|
+| Procedures in a transaction block? | **Cannot**: `refresh_continuous_aggregate`, `merge_chunks_concurrently`, and the function `reorder_chunk` fail with "cannot run inside a transaction block". **Can**: `run_job`, `convert_to_rowstore`/`columnstore`, `merge_chunks`, `detach_chunk`, `split_chunk`, `drop_chunks` (rolls back cleanly), `compress_chunk`, `alter_job`, `delete_job`, `add_job`, `add_dimension`, `set_chunk_time_interval`, the `add_*_policy` functions. |
+| `get_telemetry_report()` sends data? | No. It returns the locally built report with the server's network disconnected. Uploading is the separate `policy_telemetry` job (job 1), governed by `timescaledb.telemetry_level` (default `basic`). The report includes `db_uuid`. |
+| `*_columnstore_*` on 2.30.2? | Present, alongside the `*_compression_*` names; the stats functions return **no row** for a hypertable without compression enabled. |
+| Privileges | A table owner (non-superuser) can create hypertables, add/alter policies, `run_job`, `drop_chunks` and read `get_telemetry_report()` for their own tables; another owner's hypertable gives "must be owner"; deleting another owner's job gives "insufficient permissions". `pg_file_settings` is superuser-only (relevant to ALTER SYSTEM `RESET ALL`, which fails closed). |
+| Other findings | `enable_chunk_skipping` errors unless `timescaledb.enable_chunk_skipping` is on; `recompress_chunk` is deprecated in favour of `compress_chunk`; user/policy job ids start at 1000, system jobs are below; `continuous_aggregates.finalized` does not exist in 2.30.2. |
+
+## Final scope
+
+- Reads: `get_hypertable_stats`, `list_timescale_jobs`, `list_continuous_aggregates`, `get_timescaledb_telemetry_report`.
+- Additive DDL (`MCPG_ALLOW_DDL`): `add_dimension`, `set_chunk_time_interval`, `add_continuous_aggregate_policy`, `add_reorder_policy`, four `remove_*_policy` tools.
+- Admin (`MCPG_ALLOW_TIMESCALEDB_ADMIN`, decided: separate flag): `drop_chunks`, `compress_chunk`, `decompress_chunk`, `reorder_chunk`, `merge_chunks` (`concurrently` option), `refresh_continuous_aggregate`, `run_job`, `alter_job`, `delete_job`. Autocommit paths (`run_unmanaged`) only where the spike showed they are required, and they are refused under tenancy.
+- Telemetry is a normal read tool (verified local-only).
+- Excluded: `enable_chunk_skipping`, `move_chunk`, `split_chunk`, `attach_chunk`/`detach_chunk`, `convert_to_*`, `add_columnstore_policy`, `add_job` (lets an agent schedule an arbitrary procedure), `recompress_chunk` (deprecated), `timescaledb_pre/post_restore`.
+- CI: a `TimescaleDB` job (experimental) runs `tests/integration/test_timescaledb_integration.py` against `timescale/timescaledb:latest-pg17`.
+
+User-facing reference: [docs/timescaledb.md](../timescaledb.md).
