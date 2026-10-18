@@ -47,3 +47,7 @@ jobs:
           llm-api-key: ${{ secrets.LLM_API_KEY }}
           llm-base-url: ${{ secrets.LLM_BASE_URL }}
           model: ${{ secrets.LLM_MODEL }}
+          # The reusable workflow sent false when its input was left out; the action's
+          # own default is true (a high finding would post REQUEST_CHANGES). Keep the
+          # comment-only review mode.
+          request-changes: false
