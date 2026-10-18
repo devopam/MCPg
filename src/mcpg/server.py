@@ -25,6 +25,7 @@ from mcpg.config import Settings, Transport
 from mcpg.context import AppContext
 from mcpg.cursors import CursorManager
 from mcpg.database import Database
+from mcpg.errors import MCPgError
 from mcpg.listen import ListenManager
 from mcpg.middleware.rate_limit import RateLimiter
 from mcpg.observability import get_metrics
@@ -204,6 +205,18 @@ class AuditedMCPServer(MCPServer[AppContext]):
                     )
                     metrics.record_call(name, "error", duration, bucket=bucket)
                     raise friendly_exc from exc
+                # Since mcp 2.2.0 the SDK wraps any exception that is not a
+                # ToolError in UnexpectedToolError("Error executing tool <name>")
+                # and drops its message (unexpected errors can leak internals).
+                # MCPgError messages are written for the client ("provider
+                # 'openai' is not configured ...; set OPENAI_API_KEY"), so they
+                # go back as a ToolError, and the audit log gets the real text.
+                domain_error = exc if isinstance(exc, MCPgError) else exc.__cause__
+                if isinstance(domain_error, MCPgError):
+                    tool_exc = ToolError(str(domain_error))
+                    audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(tool_exc)))
+                    metrics.record_call(name, "error", duration, bucket=bucket)
+                    raise tool_exc from domain_error
                 audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(exc)))
                 metrics.record_call(name, "error", duration, bucket=bucket)
                 raise

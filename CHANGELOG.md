@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **`mcp` 2.0.0 → 2.2.0** (GHSA-84m7-p3x7-pcfv, CVE-2026-59951: unbounded session accumulation in the StreamableHTTP
+  transport). (Dependabot #356)
+
+### Fixed
+
+- **Tool error messages survive `mcp` 2.2.0.** The SDK now replaces the message of any exception that is not a
+  `ToolError` with a generic "Error executing tool <name>". MCPg's own errors (`MCPgError` subclasses, e.g. an
+  unconfigured NL→SQL provider that names the env var to set) are re-raised as `ToolError` by the call wrapper, and the
+  audit log records their text; the heavy-diagnostics gate raises `ToolError`. Unexpected exceptions keep the SDK's
+  generic message.
+
 ## [0.8.3] - 2026-10-14
 
 A feature release by content (new tools and opt-in flags, nothing removed or renamed), shipped as a patch per the maintainer's call: the default tool surface only gains five read-only tools, and every new write or admin tool needs an explicit `MCPG_ALLOW_*` flag. See [release notes](docs/release-notes-0.8.3.md).
