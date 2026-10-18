@@ -529,7 +529,16 @@ async def test_call_tool_surfaces_mcpg_error_found_only_in_exception_context() -
         except MCPgError:
             raise UnexpectedToolError(f"Error executing tool {name}")  # noqa: B904 - context only
 
-    with patch.object(MCPServer, "call_tool", boom), pytest.raises(ToolError) as exc_info:
+    events: list[Any] = []
+    with (
+        patch.object(MCPServer, "call_tool", boom),
+        patch.object(server_mod.audit, "record", side_effect=events.append),
+        pytest.raises(ToolError) as exc_info,
+    ):
         await server.call_tool("some_tool", {})
     assert "is not configured" in str(exc_info.value)
     assert "Error executing tool" not in str(exc_info.value)
+    # the audit record carries the domain message, not the SDK's generic text
+    assert [e.status for e in events] == ["error"]
+    assert "is not configured" in events[0].error
+    assert "Error executing tool" not in events[0].error
