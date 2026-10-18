@@ -1,5 +1,13 @@
 name: Robin
 
+# Hardening (2026-10-18): the review job of antongulin/robin's reusable workflow
+# (.github/workflows/review.yml at v2.12.0, fc0bf915) is copied here, because that
+# workflow calls `antongulin/robin@main` and hands it the LLM_* secrets -- pinning the
+# reusable workflow alone would still run unreviewed code with them. The action is
+# pinned to the same release commit; update it on purpose. The job condition is
+# upstream's: a comment starts it only on a pull request, only for the repo owner, a
+# member or a collaborator, and only for a Robin command. Inputs not listed keep
+# the action's defaults.
 on:
   pull_request:
     types: [opened, reopened, ready_for_review]
@@ -7,14 +15,39 @@ on:
     types: [created]
 
 permissions:
-  actions: read
+  actions: read # lets Robin detect when a cancelled run was superseded by a newer one
   contents: read
   pull-requests: write
 
 jobs:
   review:
-    uses: antongulin/robin/.github/workflows/review.yml@main
-    secrets:
-      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
-      LLM_MODEL: ${{ secrets.LLM_MODEL }}
+    if: |
+      github.event_name == 'pull_request' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+        (
+          startsWith(github.event.comment.body, '/review') ||
+          startsWith(github.event.comment.body, '/robin') ||
+          startsWith(github.event.comment.body, '/summary') ||
+          startsWith(github.event.comment.body, '/help')
+        )
+      )
+    concurrency:
+      group: robin-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.workflow }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Robin
+        uses: antongulin/robin@fc0bf915b634bf2f8b88ff1392acefdfb54e28d9 # v2.12.0
+        with:
+          github-token: ${{ github.token }}
+          llm-api-key: ${{ secrets.LLM_API_KEY }}
+          llm-base-url: ${{ secrets.LLM_BASE_URL }}
+          model: ${{ secrets.LLM_MODEL }}
+          # The reusable workflow sent false when its input was left out; the action's
+          # own default is true (a high finding would post REQUEST_CHANGES). Keep the
+          # comment-only review mode.
+          request-changes: false
