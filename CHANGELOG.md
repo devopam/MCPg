@@ -17,7 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   `ToolError` with a generic "Error executing tool <name>". MCPg's own errors (`MCPgError` subclasses, e.g. an
   unconfigured NL→SQL provider that names the env var to set) are re-raised as `ToolError` by the call wrapper, and the
   audit log records their text; the heavy-diagnostics gate raises `ToolError`. Unexpected exceptions keep the SDK's
-  generic message.
+  generic message. The wrapper reads the `MCPgError` from the exception's `__cause__` or, failing that, its `__context__`
+  (CodeRabbit on #356).
 
 ## [0.8.3] - 2026-10-14
 
