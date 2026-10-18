@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 from typing import Annotated, Any, TypeVar, cast
 
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -245,10 +246,14 @@ async def _cached_call(  # noqa: UP047
 
 
 def _check_heavy_diagnostics(ctx: _Ctx, tool_name: str) -> None:
-    """Raise a RuntimeError if heavy diagnostics are disabled by settings."""
+    """Raise a ToolError if heavy diagnostics are disabled by settings.
+
+    A ToolError, not a RuntimeError: since mcp 2.2.0 the SDK replaces the message
+    of any other exception with a generic "Error executing tool ..." text, and this
+    message is meant for the client."""
     settings = ctx.request_context.lifespan_context.settings
     if not settings.enable_heavy_diagnostics:
-        raise RuntimeError(
+        raise ToolError(
             f"The tool {tool_name!r} has been disabled by the server administrator "
             "(MCPG_ENABLE_HEAVY_DIAGNOSTICS is set to false)."
         )
