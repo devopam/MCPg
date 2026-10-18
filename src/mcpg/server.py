@@ -211,7 +211,7 @@ class AuditedMCPServer(MCPServer[AppContext]):
                 # MCPgError messages are written for the client ("provider
                 # 'openai' is not configured ...; set OPENAI_API_KEY"), so they
                 # go back as a ToolError, and the audit log gets the real text.
-                domain_error = exc if isinstance(exc, MCPgError) else exc.__cause__
+                domain_error = exc if isinstance(exc, MCPgError) else (exc.__cause__ or exc.__context__)
                 if isinstance(domain_error, MCPgError):
                     tool_exc = ToolError(str(domain_error))
                     audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(tool_exc)))

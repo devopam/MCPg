@@ -511,3 +511,25 @@ def test_dynamic_session_intent_middleware_absent_by_default() -> None:
     server = create_server(settings)
 
     assert not any(isinstance(m, DynamicSessionIntentMiddleware) for m in server._lowlevel_server.middleware)
+
+
+async def test_call_tool_surfaces_mcpg_error_found_only_in_exception_context() -> None:
+    """An MCPgError reached through ``__context__`` (an implicit raise inside an
+    except block, no ``from``) is surfaced like one reached through ``__cause__``:
+    the client gets its message as a ToolError, not the SDK's generic text."""
+    from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
+
+    from mcpg.errors import MCPgError
+
+    server = create_server(_SETTINGS)
+
+    async def boom(self: Any, name: str, arguments: dict[str, Any], context: Any = None) -> Any:
+        try:
+            raise MCPgError("provider 'x' is not configured; set X_API_KEY")
+        except MCPgError:
+            raise UnexpectedToolError(f"Error executing tool {name}")  # noqa: B904 - context only
+
+    with patch.object(MCPServer, "call_tool", boom), pytest.raises(ToolError) as exc_info:
+        await server.call_tool("some_tool", {})
+    assert "is not configured" in str(exc_info.value)
+    assert "Error executing tool" not in str(exc_info.value)
