@@ -1,0 +1,28 @@
+name: Qodo PR-Agent Reviewer
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  pr_agent_job:
+    # Only run on public repos / ensure it triggers correctly
+    if: ${{ github.event.issue.pull_request || github.event.pull_request }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run PR-Agent
+        uses: The-PR-Agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Set options to optimize for Python, Rust, and SQL
+          PR_DESCRIPTION.PUBLISH_DESCRIPTION_AS_COMMENT: "true"
+          PR_REVIEW.REQUIRE_SECURITY_REVIEW: "true"
+          PR_REVIEW.REQUIRE_TESTS_REVIEW: "true"
