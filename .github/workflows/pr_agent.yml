@@ -1,5 +1,14 @@
 name: Qodo PR-Agent Reviewer
 
+# Hardening (2026-10-18):
+# - The runtime image is pinned by digest. The PR-Agent action is only a wrapper
+#   that builds `FROM pragent/pr-agent:github_action`, a rolling tag, so pinning the
+#   action commit does not pin the code that gets OPENAI_API_KEY and GITHUB_TOKEN.
+#   Upstream's own action.yaml recommends docker://pragent/pr-agent@sha256:<digest>.
+#   Update the digest on purpose (Docker Hub tag `<version>-github_action`).
+# - A comment starts the job only on a pull request and only when its author is the
+#   repo owner, a member or a collaborator: on a public repo any GitHub user can
+#   comment, and each comment run spends the API key.
 on:
   pull_request:
     types: [opened, reopened, synchronize]
@@ -13,12 +22,16 @@ permissions:
 
 jobs:
   pr_agent_job:
-    # Only run on public repos / ensure it triggers correctly
-    if: ${{ github.event.issue.pull_request || github.event.pull_request }}
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     runs-on: ubuntu-latest
     steps:
       - name: Run PR-Agent
-        uses: The-PR-Agent/pr-agent@main
+        # pragent/pr-agent:0.48.0-github_action
+        uses: docker://pragent/pr-agent@sha256:80edef71baa3df28c129d858d4b53784abfc14704c235efb32b6c461d5399a6d
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
