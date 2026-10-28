@@ -2,7 +2,7 @@
   "mcpServers": {
     "mcpg": {
       "command": "uvx",
-      "args": ["mcpg"],
+      "args": ["mcpg@0.8.3"],
       "env": {
         "MCPG_DATABASE_URL": "${MCPG_DATABASE_URL}",
         "MCPG_ACCESS_MODE": "${MCPG_ACCESS_MODE}"

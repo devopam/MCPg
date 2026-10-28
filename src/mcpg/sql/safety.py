@@ -152,13 +152,13 @@ class SafeSqlDriver(SqlDriver):
                         if not isinstance(stmt.stmt, tuple(self.ALLOWED_STMT_TYPES)):
                             raise ValueError(
                                 "Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW and other read-only "
-                                "statements are allowed. Received raw statement: " + str(stmt.stmt)
+                                "statements are allowed."
                             )
                     else:
                         if not isinstance(stmt, tuple(self.ALLOWED_STMT_TYPES)):
                             raise ValueError(
                                 "Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW and other read-only "
-                                "statements are allowed. Received: " + str(stmt)
+                                "statements are allowed."
                             )
                     self._validate_node(stmt)
             except Exception as e:

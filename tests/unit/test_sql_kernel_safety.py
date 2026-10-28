@@ -66,6 +66,18 @@ async def test_update_statement(safe_driver):
 
 
 @pytest.mark.asyncio
+async def test_disallowed_statement_error_omits_ast_dump(safe_driver) -> None:
+    """pglast ``str(stmt)`` can render ``sval='...'`` (passwords in literals)."""
+    query = "INSERT INTO t VALUES ('supersecretpassword')"
+    with pytest.raises(ValueError) as excinfo:
+        await safe_driver.execute_query(query)
+    msg = str(excinfo.value)
+    assert "Received raw statement" not in msg
+    assert "sval=" not in msg
+    assert "Only SELECT" in msg
+
+
+@pytest.mark.asyncio
 async def test_select_with_join(safe_driver, mock_sql_driver):
     """Test that SELECT with JOIN is allowed"""
     query = """

@@ -21,20 +21,26 @@ assert _SPEC is not None and _SPEC.loader is not None
 _SYNC = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_SYNC)
 plugin_json_path = _SYNC.plugin_json_path
+mcp_json_path = _SYNC.mcp_json_path
 sync = _SYNC.sync
 
 _MANIFEST = plugin_json_path(_ROOT)
-_MCP_JSON = _PLUGIN_DIR / "mcp.json"
+_MCP_JSON = mcp_json_path(_ROOT)
 
 
 def test_sync_version_patches_the_manifest(tmp_path: Path) -> None:
-    scratch = tmp_path / "plugin.json"
-    shutil.copy(_MANIFEST, scratch)
+    scratch = tmp_path / "repo"
+    (scratch / ".cursor-plugin").mkdir(parents=True)
+    (scratch / "packaging" / "cursor").mkdir(parents=True)
+    shutil.copy(_MANIFEST, plugin_json_path(scratch))
+    shutil.copy(_MCP_JSON, mcp_json_path(scratch))
 
     sync(scratch, "9.9.9")
 
-    manifest = json.loads(scratch.read_text(encoding="utf-8"))
+    manifest = json.loads(plugin_json_path(scratch).read_text(encoding="utf-8"))
     assert manifest["version"] == "9.9.9"
+    config = json.loads(mcp_json_path(scratch).read_text(encoding="utf-8"))
+    assert config["mcpServers"]["mcpg"]["args"] == ["mcpg@9.9.9"]
 
 
 def test_plugin_json_pins_the_current_release() -> None:
@@ -79,8 +85,10 @@ def test_plugin_manifest_invariants() -> None:
 def test_mcp_json_uses_placeholders_not_secrets() -> None:
     config = json.loads(_MCP_JSON.read_text(encoding="utf-8"))
     server = config["mcpServers"]["mcpg"]
+    from mcpg import __version__
+
     assert server["command"] == "uvx"
-    assert server["args"] == ["mcpg"]
+    assert server["args"] == [f"mcpg@{__version__}"]
     env = server["env"]
     assert env["MCPG_DATABASE_URL"] == "${MCPG_DATABASE_URL}"
     assert env["MCPG_ACCESS_MODE"] == "${MCPG_ACCESS_MODE}"

@@ -853,15 +853,15 @@ Sources (do not hand-edit the version — use the sync script in §4.2):
 
 - `.cursor-plugin/plugin.json` — Cursor Plugin manifest, including the
   `variables` schema for `MCPG_DATABASE_URL` / `MCPG_ACCESS_MODE`.
-- `packaging/cursor/mcp.json` — `uvx mcpg` launch config with `${VAR}`
-  placeholders only (no DSNs).
+- `packaging/cursor/mcp.json` — `uvx mcpg@X.Y.Z` launch config with `${VAR}`
+  placeholders only (no DSNs). The pin is rewritten by the same sync script.
 
 Until Cursor approves the listing, the supported Cursor install remains
 the [Add to Cursor](https://cursor.com/install-mcp) deeplink in
 `docs/integrations.md`. After a listing exists, request a re-index when
 the plugin manifest, MCP launch config, or user-visible description
-changes; patch releases that only bump PyPI (the plugin still runs
-`uvx mcpg`) do not need a re-index.
+changes. A version bump rewrites those files, so every release needs a
+re-index once the plugin is listed.
 
 Local test before submitting: copy this repository into
 `~/.cursor/plugins/local/mcpg` so `.cursor-plugin/plugin.json` and

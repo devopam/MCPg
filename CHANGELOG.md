@@ -11,7 +11,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 - **MCP ServerList tutorial badge** next to the existing listing badge in the README
   ([mcp-serverlist.com/mcp/mcpg](https://mcp-serverlist.com/mcp/mcpg); GH #365).
 - **Cursor Marketplace plugin sources.** `.cursor-plugin/plugin.json` plus
-  `packaging/cursor/mcp.json` package MCPg as a Cursor plugin (`uvx mcpg`, DSN
+  `packaging/cursor/mcp.json` package MCPg as a Cursor plugin (`uvx mcpg@X.Y.Z`, DSN
   and access mode as `${VAR}` placeholders). Version is synced by
   `packaging/cursor/sync_plugin_version.py` and guarded by `tests/unit/test_cursor_plugin.py`.
   Submit the public repo at [cursor.com/marketplace/publish](https://cursor.com/marketplace/publish);
@@ -40,7 +40,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   (CodeRabbit on #356).
 - **`run_select` keeps the validator's inner verdict** (GH #364). `Error validating query: <sql>` now includes the
   cause (`Function pg_read_file is not allowed`, …) so mcp 2.x `ToolError` wrapping does not leave the client with
-  only the SQL text. Client-session tests cover a disallowed function and an undefined-column error.
+  only the SQL text. Client-session tests cover a disallowed function and an undefined-column error. Disallowed-statement
+  messages no longer append `str(stmt)` AST dumps (those can render literal passwords).
 
 ### Changed
 
