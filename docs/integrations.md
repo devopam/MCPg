@@ -38,8 +38,10 @@ claude mcp add mcpg --env MCPG_DATABASE_URL=postgresql://user:pass@localhost:543
 The manifest is `.cursor-plugin/plugin.json`; the MCP launch config is
 `packaging/cursor/mcp.json` (`uvx mcpg`). Users set `MCPG_DATABASE_URL`
 (and optionally `MCPG_ACCESS_MODE`) under Plugins → Configure — never
-commit a real DSN. Local test: copy those files into
-`~/.cursor/plugins/local/mcpg` and reload the window. To apply for a
+commit a real DSN. Local test: copy this repository (or at least
+`.cursor-plugin/plugin.json` plus `packaging/cursor/mcp.json` under the
+same relative paths) into `~/.cursor/plugins/local/mcpg` and reload the
+window — the manifest's `mcpServers` path is repo-relative. To apply for a
 listing, submit the public repository URL at
 [cursor.com/marketplace/publish](https://cursor.com/marketplace/publish).
 Cursor reviews the plugin and every later update; after a material

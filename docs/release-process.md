@@ -863,8 +863,9 @@ the plugin manifest, MCP launch config, or user-visible description
 changes; patch releases that only bump PyPI (the plugin still runs
 `uvx mcpg`) do not need a re-index.
 
-Local test before submitting: copy the plugin into
-`~/.cursor/plugins/local/mcpg` (manifest + `mcp.json`), reload the
+Local test before submitting: copy this repository into
+`~/.cursor/plugins/local/mcpg` so `.cursor-plugin/plugin.json` and
+`packaging/cursor/mcp.json` keep their repo-relative layout, reload the
 window, and confirm it appears under Customize.
 
 ---
