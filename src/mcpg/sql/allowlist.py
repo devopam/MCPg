@@ -343,6 +343,10 @@ ALLOWED_FUNCTIONS: set[str] = {
     "jsonb_extract_path_text",
     "json_object_keys",
     "jsonb_object_keys",
+    # Function spellings of the jsonb existence operators ``?`` / ``?|`` / ``?&``.
+    "jsonb_exists",
+    "jsonb_exists_any",
+    "jsonb_exists_all",
     "json_array_elements",
     "jsonb_array_elements",
     "json_array_elements_text",

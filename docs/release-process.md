@@ -268,13 +268,14 @@ hatchling reads it from that file, so **bump `__init__.py` and nothing
 else** — the PyPI metadata, `mcpg --version`, and the MCP `serverInfo`
 handshake all derive from that one line and can't drift apart.
 
-Two other checked-in files carry their own copy of the version and
-need syncing in the same commit — both are scripted, not hand-edited,
-and both are guarded by a unit test that fails CI if you forget:
+Three other checked-in files carry their own copy of the version and
+need syncing in the same commit — all are scripted, not hand-edited,
+and each is guarded by a unit test that fails CI if you forget:
 
 ```bash
-python3 packaging/mcpb/sync_version.py X.Y.Z    # .mcpb bundle — test_mcpb_bundle.py
-python3 tools/sync_server_json_version.py X.Y.Z  # MCP registry manifest — test_server_json.py
+python3 packaging/mcpb/sync_version.py X.Y.Z      # .mcpb bundle — test_mcpb_bundle.py
+python3 tools/sync_server_json_version.py X.Y.Z   # MCP registry manifest — test_server_json.py
+python3 packaging/cursor/sync_plugin_version.py X.Y.Z  # Cursor plugin — test_cursor_plugin.py
 ```
 
 (The `publish-mcp-registry` CI job re-runs the second script against
@@ -394,9 +395,10 @@ when running locally.
       /tmp/r.txt` reports no known CVEs.
 - [ ] `__version__` in `src/mcpg/__init__.py` is bumped to the release
       (this is the single source; `pyproject.toml` derives it dynamically).
-- [ ] `.mcpb` bundle + `server.json` re-synced to the release version
-      (§4.2's two `sync_*.py` commands — `tests/unit/test_mcpb_bundle.py`
-      and `tests/unit/test_server_json.py` fail loudly if skipped, so
+- [ ] `.mcpb` bundle + `server.json` + Cursor plugin re-synced to the
+      release version (§4.2's three `sync_*.py` commands —
+      `tests/unit/test_mcpb_bundle.py`, `tests/unit/test_server_json.py`
+      and `tests/unit/test_cursor_plugin.py` fail loudly if skipped, so
       this is covered by the unit-suite gate above, but run it explicitly
       rather than relying on CI to notice).
 - [ ] `CHANGELOG.md` rolls `[Unreleased]` into the new dated section,
@@ -727,6 +729,7 @@ every machine-updatable surface.
 | **Smithery** (`devopam/mcpg`) | `publish-smithery` job (opt-in) | Automatic *once enabled* — see below |
 | **Hosted demo** (HF Space `devopam/mcpg-demo`) | `publish-hf-space` job (opt-in) | Automatic *once enabled* — see below |
 | **Claude connectors directory** | Review portal, no API | **Manual** — see below |
+| **Cursor Marketplace** | Reviewed plugin, no publish API | **Manual** — see below |
 
 ### Copy that lives in `server.json` (drives the registry-fed listings)
 
@@ -835,6 +838,37 @@ policy's explicit requirements:
   accesses Claude's own memory, conversation history, or uploaded
   files — only the Postgres database and (for the opt-in
   `translate_nl_to_sql` tool) the NL→SQL provider the user configured.
+
+### The reviewed submission: Cursor Marketplace
+
+The [Cursor Marketplace](https://cursor.com/marketplace) is a **reviewed**
+plugin catalog with no publish API. Application form:
+[cursor.com/marketplace/publish](https://cursor.com/marketplace/publish)
+(submit the public GitHub repo URL). Publisher terms:
+[cursor.com/marketplace-publisher-terms](https://cursor.com/marketplace-publisher-terms).
+Plugins must be open source and free; Cursor reviews identity plus code
+on first listing and on every later update.
+
+Sources (do not hand-edit the version — use the sync script in §4.2):
+
+- `.cursor-plugin/plugin.json` — Cursor Plugin manifest, including the
+  `variables` schema for `MCPG_DATABASE_URL` / `MCPG_ACCESS_MODE`.
+- `packaging/cursor/mcp.json` — `uvx mcpg@X.Y.Z` launch config with `${VAR}`
+  placeholders only (no DSNs). The pin is rewritten by the same sync script.
+
+Until Cursor approves the listing, the supported Cursor install remains
+the [Add to Cursor](https://cursor.com/install-mcp) deeplink in
+`docs/integrations.md`. After a listing exists, request a re-index when
+the plugin manifest, MCP launch config, or user-visible description
+changes. A version bump rewrites those files, so every release needs a
+re-index once the plugin is listed.
+
+Local test before submitting: copy this repository into
+`~/.cursor/plugins/local/mcpg` so `.cursor-plugin/plugin.json` and
+`packaging/cursor/mcp.json` keep their repo-relative layout, reload the
+window, and confirm it appears under Customize. Enterprise workspaces skip
+that folder unless **Allow Local Plugin Imports** is on (Dashboard →
+Settings → Security & Identity → Marketplace and Plugins; off by default).
 
 ---
 

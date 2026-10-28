@@ -26,8 +26,11 @@ a read-only HF Spaces demo.
 - **Version:** `src/mcpg/__init__.py` `__version__`. `pyproject.toml`
   reads it dynamically via hatchling (`dynamic = ["version"]`). The MCPB
   bundle pins are synced by `packaging/mcpb/sync_version.py`;
-  `tests/unit/test_mcpb_bundle.py` enforces the match. A release bumps
-  exactly one line.
+  `tests/unit/test_mcpb_bundle.py` enforces the match. The Cursor plugin
+  version in `.cursor-plugin/plugin.json` and the `uvx mcpg@X.Y.Z` pin
+  in `packaging/cursor/mcp.json` are synced by
+  `packaging/cursor/sync_plugin_version.py` (`tests/unit/test_cursor_plugin.py`).
+  A release bumps exactly one line, then runs the sync scripts.
 - **Tool surface:** `tests/contract/tool_surface.snapshot.json` (281
   tools) is the contract. `about.py`'s `tool_count = len(tool_names)`.
   Two contract snapshots (surface + return shapes) — regenerate with

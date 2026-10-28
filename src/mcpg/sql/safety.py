@@ -152,17 +152,22 @@ class SafeSqlDriver(SqlDriver):
                         if not isinstance(stmt.stmt, tuple(self.ALLOWED_STMT_TYPES)):
                             raise ValueError(
                                 "Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW and other read-only "
-                                "statements are allowed. Received raw statement: " + str(stmt.stmt)
+                                "statements are allowed."
                             )
                     else:
                         if not isinstance(stmt, tuple(self.ALLOWED_STMT_TYPES)):
                             raise ValueError(
                                 "Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW and other read-only "
-                                "statements are allowed. Received: " + str(stmt)
+                                "statements are allowed."
                             )
                     self._validate_node(stmt)
             except Exception as e:
-                raise ValueError(f"Error validating query: {query}") from e
+                # Keep the original query AND the inner verdict (e.g.
+                # ``Function jsonb_exists is not allowed``). mcp 2.x only
+                # forwards ToolError / QueryError text to the client, so
+                # burying the cause here would leave agents with just
+                # ``Error validating query: <sql>`` (GH #364).
+                raise ValueError(f"Error validating query: {query}: {e}") from e
         except pglast.parser.ParseError as e:
             raise ValueError("Failed to parse SQL statement") from e
 

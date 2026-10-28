@@ -34,6 +34,22 @@ claude mcp add mcpg --env MCPG_DATABASE_URL=postgresql://user:pass@localhost:543
 **One-click**: [Add to Cursor](https://cursor.com/install-mcp?name=mcpg&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJtY3BnIl0sImVudiI6eyJNQ1BHX0RBVEFCQVNFX1VSTCI6InBvc3RncmVzcWw6Ly91c2VyOnBhc3NAbG9jYWxob3N0OjU0MzIvbXlkYiJ9fQ%3D%3D)
 (then edit the placeholder connection URL under Settings → MCP).
 
+**Marketplace plugin** (reviewed listing): this repo is a Cursor Plugin.
+The manifest is `.cursor-plugin/plugin.json`; the MCP launch config is
+`packaging/cursor/mcp.json` (`uvx mcpg@<release>`). Users set `MCPG_DATABASE_URL`
+(and optionally `MCPG_ACCESS_MODE`) under Plugins → Configure — never
+commit a real DSN. Local test: copy this repository (or at least
+`.cursor-plugin/plugin.json` plus `packaging/cursor/mcp.json` under the
+same relative paths) into `~/.cursor/plugins/local/mcpg` and reload the
+window — the manifest's `mcpServers` path is repo-relative. Enterprise
+workspaces need **Allow Local Plugin Imports** enabled first (off by default). To apply for a
+listing, submit the public repository URL at
+[cursor.com/marketplace/publish](https://cursor.com/marketplace/publish).
+Cursor reviews the plugin and every later update; after a material
+change, request a re-index (see `docs/release-process.md` §8b).
+The deeplink above remains the supported install until the listing is
+approved.
+
 Manual — `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (per-project):
 
 ```json

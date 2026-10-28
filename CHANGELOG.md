@@ -6,10 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **MCP ServerList tutorial badge** next to the existing listing badge in the README
+  ([mcp-serverlist.com/mcp/mcpg](https://mcp-serverlist.com/mcp/mcpg); GH #365).
+- **Cursor Marketplace plugin sources.** `.cursor-plugin/plugin.json` plus
+  `packaging/cursor/mcp.json` package MCPg as a Cursor plugin (`uvx mcpg@X.Y.Z`, DSN
+  and access mode as `${VAR}` placeholders). Version is synced by
+  `packaging/cursor/sync_plugin_version.py` and guarded by `tests/unit/test_cursor_plugin.py`.
+  Submit the public repo at [cursor.com/marketplace/publish](https://cursor.com/marketplace/publish);
+  listing is a manual Cursor review, not a publish-workflow step.
+
 ### Security
 
 - **`mcp` 2.0.0 → 2.2.0** (GHSA-84m7-p3x7-pcfv, CVE-2026-59951: unbounded session accumulation in the StreamableHTTP
   transport). (Dependabot #356)
+- **`certifi` ≥ 2026.10.19** (GHSA-6q48-6c7w-9gw2 / PYSEC-2026-4320: bundled emSign roots with compromised
+  intermediate CA keys). Floor declared next to `httpx`.
+- **OpenTelemetry `api`/`sdk`/`exporter-otlp-proto-http` ≥ 1.45.1** (GHSA-xcq7-p3pf-p88h: unbounded tracestate
+  parsing in `opentelemetry-api`).
+- **`virtualenv` ≥ 21.14.9** (dev extra; pre-commit's dependency) to clear CVE-2026-113716–113776
+  (activation scripts, symlink-following file creation).
+- **`filelock` ≥ 4.2.1** (dev; CVE-2026-112940 and Windows ReadWriteLock / oplock GHSAs) and
+  **`msgpack` ≥ 1.2.3** (dev; CVE-2026-114613).
 
 ### Fixed
 
@@ -19,6 +38,15 @@ adheres to [Semantic Versioning](https://semver.org/).
   audit log records their text; the heavy-diagnostics gate raises `ToolError`. Unexpected exceptions keep the SDK's
   generic message. The wrapper reads the `MCPgError` from the exception's `__cause__` or, failing that, its `__context__`
   (CodeRabbit on #356).
+- **`run_select` keeps the validator's inner verdict** (GH #364). `Error validating query: <sql>` now includes the
+  cause (`Function pg_read_file is not allowed`, …) so mcp 2.x `ToolError` wrapping does not leave the client with
+  only the SQL text. Client-session tests cover a disallowed function and an undefined-column error. Disallowed-statement
+  messages no longer append `str(stmt)` AST dumps (those can render literal passwords).
+
+### Changed
+
+- **SQL allowlist: `jsonb_exists`, `jsonb_exists_any`, `jsonb_exists_all`.** These are the function spellings of the
+  already-allowed jsonb operators `?` / `?|` / `?&` (GH #364).
 
 ## [0.8.3] - 2026-10-14
 

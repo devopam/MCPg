@@ -139,6 +139,57 @@ async def test_run_select_tool_is_callable_from_a_client() -> None:
     assert result.structured_content["truncated"] is False
 
 
+def _client_error_text(result: Any) -> str:
+    return "\n".join(block.text for block in result.content if hasattr(block, "text"))
+
+
+async def test_run_select_tool_surfaces_disallowed_function_to_the_client() -> None:
+    """GH #364: mcp 2.x must not replace the validator's message with a generic
+    ``Error executing tool run_select``. ``pg_read_file`` stays off the
+    allowlist; ``jsonb_exists`` is permitted separately."""
+    server = create_server(_SETTINGS, database=FakeDatabase(FakeDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool(
+            "run_select",
+            {"sql": "SELECT pg_read_file('/etc/passwd')"},
+        )
+
+    assert result.is_error is True
+    msg = _client_error_text(result)
+    assert "pg_read_file" in msg
+    assert "not allowed" in msg
+    assert "Error executing tool" not in msg
+
+
+async def test_run_select_tool_surfaces_postgres_column_error_to_the_client() -> None:
+    """GH #364: a PostgreSQL undefined-column error must reach the client."""
+
+    class _UndefinedColumnDriver(FakeDriver):
+        async def execute_query(
+            self,
+            query: str,
+            params: list[Any] | None = None,
+            *,
+            force_readonly: bool = False,
+            row_limit: int | None = None,
+        ) -> list[SqlDriver.RowResult]:
+            raise RuntimeError('column "title" does not exist')
+
+    server = create_server(_SETTINGS, database=FakeDatabase(_UndefinedColumnDriver()))  # type: ignore[arg-type]
+
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool(
+            "run_select",
+            {"sql": "SELECT title FROM pg_class LIMIT 1"},
+        )
+
+    assert result.is_error is True
+    msg = _client_error_text(result)
+    assert 'column "title" does not exist' in msg
+    assert "Error executing tool" not in msg
+
+
 # --- run_select_tuned (roadmap 2.9) ----------------------------------------
 
 
