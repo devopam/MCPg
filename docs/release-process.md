@@ -866,7 +866,9 @@ re-index once the plugin is listed.
 Local test before submitting: copy this repository into
 `~/.cursor/plugins/local/mcpg` so `.cursor-plugin/plugin.json` and
 `packaging/cursor/mcp.json` keep their repo-relative layout, reload the
-window, and confirm it appears under Customize.
+window, and confirm it appears under Customize. Enterprise workspaces skip
+that folder unless **Allow Local Plugin Imports** is on (Dashboard →
+Settings → Security & Identity → Marketplace and Plugins; off by default).
 
 ---
 

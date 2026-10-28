@@ -41,7 +41,8 @@ The manifest is `.cursor-plugin/plugin.json`; the MCP launch config is
 commit a real DSN. Local test: copy this repository (or at least
 `.cursor-plugin/plugin.json` plus `packaging/cursor/mcp.json` under the
 same relative paths) into `~/.cursor/plugins/local/mcpg` and reload the
-window — the manifest's `mcpServers` path is repo-relative. To apply for a
+window — the manifest's `mcpServers` path is repo-relative. Enterprise
+workspaces need **Allow Local Plugin Imports** enabled first (off by default). To apply for a
 listing, submit the public repository URL at
 [cursor.com/marketplace/publish](https://cursor.com/marketplace/publish).
 Cursor reviews the plugin and every later update; after a material
