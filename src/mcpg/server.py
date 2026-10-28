@@ -52,6 +52,21 @@ def _friendly_validation_error(tool_name: str, error: ValidationError) -> str:
     return f"{tool_name}: {details}"
 
 
+def _anticipated_tool_failure(exc: BaseException) -> BaseException | None:
+    """Return the client-facing ``MCPgError``, or ``None`` for a true crash.
+
+    Since mcp 2.2.0 the SDK replaces any non-``ToolError`` message with
+    ``Error executing tool <name>``. ``MCPgError`` (``QueryError``,
+    ``ConfigError``, …) is the anticipated-failure type; ``ValueError`` from
+    the SQL validator is wrapped as ``QueryError`` before it gets here.
+    ``ValidationError`` is rewritten separately above.
+    """
+    for candidate in (exc, exc.__cause__, exc.__context__):
+        if isinstance(candidate, MCPgError):
+            return candidate
+    return None
+
+
 SERVER_NAME = "mcpg"
 SERVER_INSTRUCTIONS = (
     "MCPg: a PostgreSQL MCP server for inspecting, querying, operating, and tuning a Postgres database."
@@ -211,8 +226,8 @@ class AuditedMCPServer(MCPServer[AppContext]):
                 # MCPgError messages are written for the client ("provider
                 # 'openai' is not configured ...; set OPENAI_API_KEY"), so they
                 # go back as a ToolError, and the audit log gets the real text.
-                domain_error = exc if isinstance(exc, MCPgError) else (exc.__cause__ or exc.__context__)
-                if isinstance(domain_error, MCPgError):
+                domain_error = _anticipated_tool_failure(exc)
+                if domain_error is not None:
                     tool_exc = ToolError(str(domain_error))
                     audit.record(audit.AuditEvent(tool=name, arguments=arguments, status="error", error=str(tool_exc)))
                     metrics.record_call(name, "error", duration, bucket=bucket)

@@ -27,6 +27,23 @@ async def safe_driver(mock_sql_driver):
     return SafeSqlDriver(mock_sql_driver)
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT jsonb_exists('{\"a\":1}'::jsonb, 'a')",
+        "SELECT jsonb_exists_any('{\"a\":1}'::jsonb, ARRAY['a'])",
+        "SELECT jsonb_exists_all('{\"a\":1}'::jsonb, ARRAY['a'])",
+        "SELECT '{\"a\":1}'::jsonb ? 'a'",
+    ],
+)
+@pytest.mark.asyncio
+async def test_jsonb_exists_family_is_allowed(safe_driver, mock_sql_driver, query: str) -> None:
+    """``?`` / ``?|`` / ``?&`` were already allowed; the function spellings
+    behind them (GH #364) must parse the same way."""
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once()
+
+
 @pytest.mark.asyncio
 async def test_select_statement(safe_driver, mock_sql_driver):
     """Test that simple SELECT statements are allowed"""

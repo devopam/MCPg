@@ -36,6 +36,14 @@ adheres to [Semantic Versioning](https://semver.org/).
   audit log records their text; the heavy-diagnostics gate raises `ToolError`. Unexpected exceptions keep the SDK's
   generic message. The wrapper reads the `MCPgError` from the exception's `__cause__` or, failing that, its `__context__`
   (CodeRabbit on #356).
+- **`run_select` keeps the validator's inner verdict** (GH #364). `Error validating query: <sql>` now includes the
+  cause (`Function pg_read_file is not allowed`, …) so mcp 2.x `ToolError` wrapping does not leave the client with
+  only the SQL text. Client-session tests cover a disallowed function and an undefined-column error.
+
+### Changed
+
+- **SQL allowlist: `jsonb_exists`, `jsonb_exists_any`, `jsonb_exists_all`.** These are the function spellings of the
+  already-allowed jsonb operators `?` / `?|` / `?&` (GH #364).
 
 ## [0.8.3] - 2026-10-14
 
