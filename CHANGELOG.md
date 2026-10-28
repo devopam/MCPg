@@ -8,6 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **MCP ServerList tutorial badge** next to the existing listing badge in the README
+  ([mcp-serverlist.com/mcp/mcpg](https://mcp-serverlist.com/mcp/mcpg); GH #365).
 - **Cursor Marketplace plugin sources.** `.cursor-plugin/plugin.json` plus
   `packaging/cursor/mcp.json` package MCPg as a Cursor plugin (`uvx mcpg`, DSN
   and access mode as `${VAR}` placeholders). Version is synced by
