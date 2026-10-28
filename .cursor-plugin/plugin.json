@@ -1,0 +1,40 @@
+{
+  "name": "mcpg",
+  "version": "0.8.3",
+  "description": "Production-grade PostgreSQL MCP server: query, tune, and operate Postgres — read-only by default.",
+  "author": {
+    "name": "Devopam Mittra",
+    "email": "devopam@gmail.com"
+  },
+  "homepage": "https://github.com/devopam/MCPg",
+  "repository": "https://github.com/devopam/MCPg",
+  "license": "MIT",
+  "keywords": [
+    "postgresql",
+    "postgres",
+    "database",
+    "sql",
+    "mcp",
+    "pgvector"
+  ],
+  "logo": "docs/assets/logo-400.png",
+  "mcpServers": "packaging/cursor/mcp.json",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "MCPG_DATABASE_URL": {
+        "type": "string",
+        "title": "PostgreSQL connection URL",
+        "description": "e.g. postgresql://user:password@localhost:5432/mydb — remote hosts need ?sslmode=require."
+      },
+      "MCPG_ACCESS_MODE": {
+        "type": "string",
+        "title": "Access mode",
+        "description": "read-only (default, safe) | restricted (allows write tools) | unrestricted (DBA surface; pair with MCPG_ALLOW_DDL etc.).",
+        "default": "read-only",
+        "enum": ["read-only", "restricted", "unrestricted"]
+      }
+    },
+    "required": ["MCPG_DATABASE_URL"]
+  }
+}
