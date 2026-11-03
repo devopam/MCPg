@@ -50,7 +50,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "mcp[cli]>=2.0.0",
+    "mcp[cli]>=2.2.0",
     "psycopg[binary]>=3.3.2",
     "psycopg-pool>=3.3.0",
     "pglast==8.5",
@@ -93,7 +93,10 @@ otel = [
 # selected a backend but forgot the extra.
 vault = ["hvac>=1.0"]
 aws = ["boto3>=1.28"]
-gcp = ["google-cloud-secret-manager>=2.16"]
+# pyasn1 arrives via google-auth -> pyasn1-modules; floor 0.6.5 clears the
+# quadratic-time DoS advisories (GHSA-9m75-vc3g-4x39, GHSA-mm57-4v3p-rchx,
+# GHSA-fm9c-5rcf-2q5p, GHSA-2qm8-x737-gmw5).
+gcp = ["google-cloud-secret-manager>=2.16", "pyasn1>=0.6.5"]
 
 # Powers the "Project links" sidebar on https://pypi.org/project/mcpg/.
 # Order is preserved on the page; first entry doubles as the page header
