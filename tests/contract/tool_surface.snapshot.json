@@ -412,7 +412,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "sample_size": {
@@ -457,7 +457,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "k": {
@@ -518,7 +518,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -541,7 +541,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "sql": {
@@ -571,7 +571,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "io": {
@@ -606,7 +606,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "days": {
@@ -663,7 +663,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "days": {
@@ -720,7 +720,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "days": {
@@ -772,7 +772,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "hot_threshold": {
@@ -805,7 +805,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -845,7 +845,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "days": {
@@ -921,7 +921,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "id_column": {
@@ -989,7 +989,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -1017,7 +1017,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "fresh": {
@@ -1069,7 +1069,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "warning_pct": {
@@ -1097,7 +1097,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "total_ram_mb": {
@@ -1166,7 +1166,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -1189,7 +1189,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -1212,7 +1212,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -1261,7 +1261,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "embedding_column": {
@@ -1338,7 +1338,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "left_schema": {
@@ -2073,7 +2073,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "k": {
@@ -2230,7 +2230,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -2282,7 +2282,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "name": {
@@ -2317,7 +2317,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -2361,7 +2361,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "fresh": {
@@ -2418,7 +2418,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -2461,7 +2461,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "embedding_column": {
@@ -2865,7 +2865,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "io": {
@@ -2900,7 +2900,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "format": {
@@ -2940,7 +2940,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "format": {
@@ -3007,7 +3007,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -3035,7 +3035,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3065,7 +3065,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3104,7 +3104,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -3154,7 +3154,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -3210,7 +3210,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3240,7 +3240,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3275,7 +3275,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3305,7 +3305,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3335,7 +3335,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "include_all": {
@@ -3392,7 +3392,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "graph_name": {
@@ -3447,7 +3447,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3487,7 +3487,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3517,7 +3517,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "include_partitions": {
@@ -3552,7 +3552,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "include_samples": {
@@ -3587,7 +3587,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3617,7 +3617,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3647,7 +3647,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "rows": {
@@ -3699,7 +3699,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "follow_foreign_keys": {
@@ -3755,7 +3755,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "latitude": {
@@ -3806,7 +3806,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -3829,7 +3829,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "fresh": {
@@ -3864,7 +3864,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -3887,7 +3887,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -3910,7 +3910,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "database_name": {
@@ -3940,7 +3940,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -3975,7 +3975,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4007,7 +4007,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4030,7 +4030,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4053,7 +4053,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4076,7 +4076,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "index": {
@@ -4111,7 +4111,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4134,7 +4134,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4157,7 +4157,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "server": {
@@ -4187,7 +4187,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4210,7 +4210,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "role_name": {
@@ -4249,7 +4249,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4272,7 +4272,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "tablespace_name": {
@@ -4302,7 +4302,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4325,7 +4325,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "index": {
@@ -4360,7 +4360,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "index": {
@@ -4395,7 +4395,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4418,7 +4418,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4441,7 +4441,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4464,7 +4464,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4507,7 +4507,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "distance_op": {
@@ -4602,7 +4602,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -4835,7 +4835,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -4865,7 +4865,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4888,7 +4888,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -4928,7 +4928,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4951,7 +4951,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -4974,7 +4974,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5009,7 +5009,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5039,7 +5039,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "fresh": {
@@ -5079,7 +5079,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5102,7 +5102,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5143,7 +5143,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5178,7 +5178,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5208,7 +5208,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5238,7 +5238,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5261,7 +5261,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5284,7 +5284,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "fresh": {
@@ -5319,7 +5319,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5342,7 +5342,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5372,7 +5372,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5402,7 +5402,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5432,7 +5432,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5476,7 +5476,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5499,7 +5499,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "fresh": {
@@ -5539,7 +5539,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -5576,7 +5576,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5620,7 +5620,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5643,7 +5643,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5678,7 +5678,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -5718,7 +5718,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5741,7 +5741,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5764,7 +5764,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5796,7 +5796,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5819,7 +5819,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "include_system": {
@@ -5847,7 +5847,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "include_system": {
@@ -5875,7 +5875,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5914,7 +5914,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5937,7 +5937,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -5967,7 +5967,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -5990,7 +5990,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -6025,7 +6025,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -6082,7 +6082,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -6105,7 +6105,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -6343,7 +6343,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -6383,7 +6383,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "fetch_k": {
@@ -6470,7 +6470,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "drift_threshold": {
@@ -6529,7 +6529,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -6552,7 +6552,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "sql": {
@@ -6582,7 +6582,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "sql": {
@@ -6705,7 +6705,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "document_id": {
@@ -6859,7 +6859,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "lenient": {
@@ -6909,7 +6909,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "key_field": {
@@ -7129,7 +7129,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -7157,7 +7157,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -7192,7 +7192,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -7232,7 +7232,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -7255,7 +7255,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -7278,7 +7278,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -7301,7 +7301,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -7324,7 +7324,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "end_lsn": {
@@ -7371,7 +7371,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "end_lsn": {
@@ -7430,7 +7430,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "days": {
@@ -7482,7 +7482,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "lookback_days": {
@@ -7519,7 +7519,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "k": {
@@ -7575,7 +7575,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "low_scan_ratio": {
@@ -7620,7 +7620,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "fresh": {
@@ -7653,7 +7653,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -7680,7 +7680,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "k": {
@@ -7736,7 +7736,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -7803,7 +7803,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -7846,7 +7846,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -7869,7 +7869,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -7924,7 +7924,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -7959,7 +7959,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "days": {
@@ -7999,7 +7999,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "max_leading_ndv": {
@@ -8027,7 +8027,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -8054,7 +8054,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "filter_selectivity": {
@@ -8128,7 +8128,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -8626,7 +8626,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "embedding_column": {
@@ -8699,7 +8699,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "schema": {
@@ -8904,7 +8904,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "max_rows": {
@@ -8939,7 +8939,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "max_rows": {
@@ -8974,7 +8974,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "max_rows": {
@@ -9017,7 +9017,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "maintenance_work_mem": {
@@ -9349,7 +9349,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "sample_rows": {
@@ -9406,7 +9406,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "role": {
@@ -9451,7 +9451,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "execute": {
@@ -9532,7 +9532,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "index_type": {
@@ -9582,7 +9582,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "embedding_column": {
@@ -9681,7 +9681,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "embedding_column": {
@@ -9915,7 +9915,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -9978,7 +9978,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "id_column": {
@@ -10038,7 +10038,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -10092,7 +10092,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -10115,7 +10115,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           }
         },
@@ -10138,7 +10138,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "lsn": {
@@ -10173,7 +10173,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "limit": {
@@ -10201,7 +10201,7 @@
               }
             ],
             "default": null,
-            "description": "Optional: target a configured secondary (read-only) database by name; omit for the primary. Call list_databases to see the configured ids.",
+            "description": "Optional: a database id from list_databases, to target a configured secondary (read-only) database; omit for the primary. Database names that are not configured ids are rejected.",
             "title": "Database"
           },
           "sql": {

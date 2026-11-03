@@ -26,8 +26,8 @@ from mcpg.sql import SqlDriver
 _Ctx = Context[AppContext, Any]
 
 _DB_DESC = (
-    "Optional: target a configured secondary (read-only) database by name; "
-    "omit for the primary. Call list_databases to see the configured ids."
+    "Optional: a database id from list_databases, to target a configured secondary (read-only) "
+    "database; omit for the primary. Database names that are not configured ids are rejected."
 )
 _DatabaseArg = Annotated[str | None, Field(description=_DB_DESC)]
 

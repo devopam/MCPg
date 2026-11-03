@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Unknown `database` id errors are actionable** (GH #367). The error lists the valid ids, says when no secondary
+  databases are configured (naming `MCPG_SECONDARY_DATABASE_URLS`), and states that a server database name is not an id
+  unless configured. The `database` parameter text now says to use an id and that unconfigured names are rejected.
+
 ## [0.8.4] - 2026-11-03
 
 A patch release: no tool added, removed or renamed (tool surface unchanged). It carries the `mcp` 2.2.0 security bump, tool-error-message fixes for `mcp` 2.x, and the Cursor Marketplace plugin sources. See [release notes](docs/release-notes-0.8.4.md).
