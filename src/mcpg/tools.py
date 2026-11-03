@@ -274,8 +274,8 @@ def _driver(ctx: _Ctx, database: str | None = None) -> SqlDriver:
 # ``database: _DatabaseArg = None`` argument to ``_driver`` so an agent can
 # target a configured read-only secondary; omitting it keeps the primary.
 _DATABASE_PARAM_DESC = (
-    "Optional: target a configured secondary (read-only) database by name; "
-    "omit for the primary. Call list_databases to see the configured ids."
+    "Optional: a database id from list_databases, to target a configured secondary (read-only) "
+    "database; omit for the primary. Database names that are not configured ids are rejected."
 )
 _DatabaseArg = Annotated[str | None, Field(description=_DATABASE_PARAM_DESC)]
 

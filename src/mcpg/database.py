@@ -181,7 +181,15 @@ class Database:
         if database_id is not None and database_id not in (PRIMARY_DATABASE_ID, self._primary_id):
             pool = self._secondary_pools.get(database_id)
             if pool is None:
-                raise DatabaseError(f"unknown database id {database_id!r}; valid ids: {', '.join(self.database_ids())}")
+                hint = (
+                    "no secondary databases are configured (see MCPG_SECONDARY_DATABASE_URLS)"
+                    if not self._secondary_pools
+                    else "call list_databases to see them"
+                )
+                raise DatabaseError(
+                    f"unknown database id {database_id!r}; valid ids: {', '.join(self.database_ids())} "
+                    f"({hint}). A database name on the server is not an id unless it is configured."
+                )
             return make_read_only_driver(
                 pool,
                 statement_timeout_ms=self._settings.statement_timeout_ms,
