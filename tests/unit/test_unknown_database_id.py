@@ -43,4 +43,4 @@ async def test_unknown_database_id_lists_secondaries_when_configured() -> None:
     text = await _call_with_database({"MCPG_SECONDARY_DATABASE_URLS": "analytics=postgresql://u:p@localhost/a"}, "nope")
     assert "valid ids: episteme, analytics" in text
     assert "no secondary databases are configured" not in text
-    assert "list_databases" in text
+    assert "not an id unless it is configured" in text
