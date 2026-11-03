@@ -322,7 +322,7 @@ API, redesigns per-request tenancy onto `mcp`'s new `ServerMiddleware` model
 
 ## 21. Docker MCP Registry submission
 
-MCPg ships to PyPI, GHCR, the official MCP registry, Smithery, and an HF
+MCPg ships to PyPI, GHCR, the official MCP registry, and an HF
 Spaces demo, but not [Docker's MCP Catalog](https://github.com/docker/mcp-registry)
 — the registry backing Docker Desktop's MCP Toolkit and `docker mcp`
 CLI. A 2026-08-14 eligibility check found no existing general-purpose

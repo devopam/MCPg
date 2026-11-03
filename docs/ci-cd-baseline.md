@@ -29,7 +29,7 @@
    - build sdist+wheel → version-tag sanity check → CycloneDX SBOM → build-provenance attestation
    - TestPyPI (OIDC) → smoke install (hash-pinned, simple-index poll) → human-gated PyPI (OIDC environment protection)
    - GitHub Release (notes from CHANGELOG.md section) + attach dist + SBOM + `.mcpb`
-   - MCP Registry (OIDC), GHCR image (`:version` + `:latest`), optional Smithery / HF Space refresh
+   - MCP Registry (OIDC), GHCR image (`:version` + `:latest`), optional HF Space refresh
 4. **Docs site** — `pages.yml`
 5. **Dependency automation** — Dependabot (pip + github-actions + docker), weekly, grouped minor/patch; Conventional Commit prefixes
 

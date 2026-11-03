@@ -484,8 +484,8 @@ Land this once at `.github/workflows/publish.yml`. After it's on
 > drifted — do NOT copy it verbatim.** The live workflow
 > [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) is
 > authoritative: it adds a tag↔`mcpg.__version__` sanity-check step, the
-> `.mcpb` build, and the `publish-mcp-registry` / `publish-ghcr` /
-> `publish-smithery` jobs (8 jobs total, not 5), and uses current action
+> `.mcpb` build, and the `publish-mcp-registry` / `publish-ghcr`
+> jobs (8 jobs total, not 5), and uses current action
 > pins (checkout@v7, setup-uv@v7, Python 3.14). Read the real file.
 
 ```yaml
@@ -663,7 +663,7 @@ If it succeeds, post the new-release announcement to:
 - The repo's GitHub Release page (the workflow already created it).
 - The README's "What's new" line / hero badge.
 
-> The official MCP registry, PyPI, GHCR, and Smithery are published
+> The official MCP registry, PyPI, and GHCR are published
 > **automatically** by the tagged release (see §8b) — no manual PR or
 > upload. The old "file a PR against `modelcontextprotocol/servers`"
 > step is obsolete; MCPg publishes its own `server.json` via the
@@ -726,7 +726,6 @@ every machine-updatable surface.
 | **Official MCP Registry** | `publish-mcp-registry` job (`server.json`, version-synced) | Automatic |
 | **PulseMCP** | Ingests the MCP Registry daily | Automatic (transitive) |
 | **mcp.so / mcpservers.org / Glama** | Scrape GitHub + the registry | Automatic (transitive) |
-| **Smithery** (`devopam/mcpg`) | `publish-smithery` job (opt-in) | Automatic *once enabled* — see below |
 | **Hosted demo** (HF Space `devopam/mcpg-demo`) | `publish-hf-space` job (opt-in) | Automatic *once enabled* — see below |
 | **Claude connectors directory** | Review portal, no API | **Manual** — see below |
 | **Cursor Marketplace** | Reviewed plugin, no publish API | **Manual** — see below |
@@ -739,27 +738,12 @@ enforced by the registry schema). It is **not** auto-generated, so when
 the tool count or positioning changes, edit `server.json` and it
 propagates on the next release.
 
-### Enabling the Smithery auto-publish
+### Smithery (retired)
 
-The `publish-smithery` job is inert until you switch it on:
-
-1. Create a Smithery API key at **smithery.ai** → account → API Keys.
-2. Add it as a repo **secret** named `SMITHERY_API_KEY`
-   (`Settings → Secrets and variables → Actions → Secrets`).
-3. Add a repo **variable** `PUBLISH_SMITHERY` = `true`
-   (same page → Variables).
-
-The job derives a Smithery-compatible bundle from `packaging/mcpb` via
-`packaging/smithery/build.py` (Smithery doesn't understand the canonical
-bundle's `uv` server type, so the variant uses `python` + a direct
-`uvx mcpg` launch) and publishes it. Because the listing launches
-`uvx mcpg` (always latest), it already tracks PyPI between releases —
-the job just keeps the declared version and metadata current.
-
-> **First-time Smithery listing** is done by hand (`smithery mcp publish`);
-> the job maintains it thereafter. The listing's **description and icon**
-> aren't set by bundle-publish — set those once in Smithery's web
-> server-card settings (they persist across re-publishes).
+The `publish-smithery` job and `packaging/smithery/` were removed after Smithery
+rejected updates (`403: Updating servers has been removed`) on the v0.8.4 release.
+The listing is no longer maintained; delist it in Smithery's web UI. Delete the
+unused `SMITHERY_API_KEY` secret and `PUBLISH_SMITHERY` variable from the repo settings.
 
 ### Refreshing the hosted demo (HF Space)
 
@@ -909,9 +893,6 @@ publishing surface healthy:
   When you do change a default, mirror it in the provider table in
   `docs/user-guide.md` (or leave the vague "recent … " wording for the
   frontier models, which is intentionally staleness-proof).
-- **Rotate the `SMITHERY_API_KEY`** secret if it's ever been exposed
-  (e.g. pasted into a chat/issue); regenerate at smithery.ai and update
-  the repo secret.
 
 ---
 

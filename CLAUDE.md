@@ -7,7 +7,7 @@ stays true; verify anything here against the code before relying on it.
 
 A production-grade PostgreSQL MCP server. Single-process, async
 (`asyncio`), Python 3.12–3.14. **279 MCP tools** (read-only mode exposes
-a subset). Ships to PyPI (`mcpg`), GHCR, the MCP registry, Smithery, and
+a subset). Ships to PyPI (`mcpg`), GHCR, the MCP registry, and
 a read-only HF Spaces demo.
 
 ## Golden rules

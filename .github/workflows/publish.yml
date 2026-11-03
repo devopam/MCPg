@@ -385,48 +385,6 @@ jobs:
           # shows a single clean manifest rather than an unknown/unknown pair.
           provenance: false
 
-  publish-smithery:
-    name: Publish → Smithery
-    # Opt-in: inert until the maintainer adds a SMITHERY_API_KEY repo
-    # secret. Smithery lists MCPg as a local stdio server that launches
-    # via `uvx mcpg`, so the listing already tracks the latest PyPI
-    # release regardless — re-publishing here keeps the listing's
-    # declared version/metadata current with each release. Non-gating.
-    needs: publish-pypi
-    if: ${{ vars.PUBLISH_SMITHERY == 'true' }}
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: "3.14"
-      - name: Build the Smithery bundle
-        # Smithery's bundle parser doesn't understand the canonical
-        # bundle's `uv` server type, so we derive a python/uvx variant
-        # from the same source of truth (packaging/mcpb) — see
-        # packaging/smithery/build.py. Sync the version first, exactly
-        # like the .mcpb and server.json steps.
-        run: |
-          VER="${GITHUB_REF_NAME#v}"
-          python packaging/mcpb/sync_version.py "$VER"
-          python packaging/smithery/build.py smithery-bundle
-          npx --yes @anthropic-ai/mcpb validate smithery-bundle/manifest.json
-          npx --yes @anthropic-ai/mcpb pack smithery-bundle "mcpg-${VER}-smithery.mcpb"
-      - name: Publish to Smithery
-        env:
-          SMITHERY_API_KEY: ${{ secrets.SMITHERY_API_KEY }}
-        run: |
-          VER="${GITHUB_REF_NAME#v}"
-          npx --yes @smithery/cli@latest namespace use devopam
-          npx --yes @smithery/cli@latest mcp publish "mcpg-${VER}-smithery.mcpb" -n devopam/mcpg
-
   publish-hf-space:
     name: Refresh HF demo Space
     # Opt-in: inert until the maintainer adds an HF_TOKEN repo secret

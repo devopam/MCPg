@@ -13,7 +13,7 @@
   with a first-party AST-validated SQL-safety kernel.
 - **Team size at incubation:** solo / small team (single primary author + CODEOWNERS; user-confirmed)
 - **Expected scale / lifespan:** production, long-lived (user-confirmed) — corroborated by the repo itself:
-  PyPI/GHCR/MCP-registry/Smithery releases, an active CI/CD and release pipeline, and multiple dated
+  PyPI/GHCR/MCP-registry releases, an active CI/CD and release pipeline, and multiple dated
   security-review documents.
 - **Compliance / regulatory constraints:** none stated in the repo (no PCI/HIPAA/GDPR references found in
   README, SECURITY.md, or docs/) — not independently verified beyond a repo-content search.
