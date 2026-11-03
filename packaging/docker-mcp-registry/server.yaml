@@ -12,7 +12,7 @@ meta:
 about:
   title: PostgreSQL
   description: >-
-    MCPg — a production-grade PostgreSQL server with 254 tools spanning
+    MCPg — a production-grade PostgreSQL server with 279 tools spanning
     schema introspection, query execution and EXPLAIN analysis,
     index/vacuum/config advisors, vector (pgvector) and full-text
     (pg_search) search, audited DDL/DML, migrations, and multi-database
