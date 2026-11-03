@@ -1,7 +1,7 @@
 {
   "name": "mcpg",
-  "version": "0.8.3",
-  "description": "Production-grade PostgreSQL MCP server: query, tune, and operate Postgres — read-only by default.",
+  "version": "0.8.4",
+  "description": "Production-grade PostgreSQL MCP server: query, tune, and operate Postgres \u2014 read-only by default.",
   "author": {
     "name": "Devopam Mittra",
     "email": "devopam@gmail.com"
@@ -25,16 +25,22 @@
       "MCPG_DATABASE_URL": {
         "type": "string",
         "title": "PostgreSQL connection URL",
-        "description": "e.g. postgresql://user:password@localhost:5432/mydb — remote hosts need ?sslmode=require."
+        "description": "e.g. postgresql://user:password@localhost:5432/mydb \u2014 remote hosts need ?sslmode=require."
       },
       "MCPG_ACCESS_MODE": {
         "type": "string",
         "title": "Access mode",
         "description": "read-only (default, safe) | restricted (allows write tools) | unrestricted (DBA surface; pair with MCPG_ALLOW_DDL etc.).",
         "default": "read-only",
-        "enum": ["read-only", "restricted", "unrestricted"]
+        "enum": [
+          "read-only",
+          "restricted",
+          "unrestricted"
+        ]
       }
     },
-    "required": ["MCPG_DATABASE_URL"]
+    "required": [
+      "MCPG_DATABASE_URL"
+    ]
   }
 }
