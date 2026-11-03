@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-11-03
+
+A patch release: no tool added, removed or renamed (tool surface unchanged). It carries the `mcp` 2.2.0 security bump, tool-error-message fixes for `mcp` 2.x, and the Cursor Marketplace plugin sources. See [release notes](docs/release-notes-0.8.4.md).
+
 ### Added
 
 - **MCP ServerList tutorial badge** next to the existing listing badge in the README
@@ -19,6 +23,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **`pyasn1` ≥ 0.6.5** (`gcp` extra, via google-auth; GHSA-9m75-vc3g-4x39, GHSA-mm57-4v3p-rchx, GHSA-fm9c-5rcf-2q5p,
+  GHSA-2qm8-x737-gmw5: quadratic-time DoS in BER/CER/DER decoding).
 - **`mcp` 2.0.0 → 2.2.0** (GHSA-84m7-p3x7-pcfv, CVE-2026-59951: unbounded session accumulation in the StreamableHTTP
   transport). (Dependabot #356)
 - **`certifi` ≥ 2026.10.19** (GHSA-6q48-6c7w-9gw2 / PYSEC-2026-4320: bundled emSign roots with compromised

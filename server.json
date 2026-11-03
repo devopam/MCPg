@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.devopam/mcpg",
-  "version": "0.8.3",
-  "description": "Production-grade PostgreSQL MCP server \u2014 254 tools for query, tuning & ops, read-only by default.",
+  "version": "0.8.4",
+  "description": "Production-grade PostgreSQL MCP server \u2014 279 tools for query, tuning & ops, read-only by default.",
   "websiteUrl": "https://devopam.github.io/MCPg/",
   "repository": {
     "url": "https://github.com/devopam/MCPg",
@@ -13,7 +13,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "mcpg",
-      "version": "0.8.3",
+      "version": "0.8.4",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
