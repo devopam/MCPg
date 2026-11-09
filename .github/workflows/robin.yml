@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Robin
-        uses: antongulin/robin@fc0bf915b634bf2f8b88ff1392acefdfb54e28d9 # v2.12.0
+        uses: antongulin/robin@c96f54a4abd07090f37aefa3f9654b489808389c # v2.13.2
         with:
           github-token: ${{ github.token }}
           llm-api-key: ${{ secrets.LLM_API_KEY }}
