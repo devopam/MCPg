@@ -305,6 +305,15 @@ class Settings:
     # at startup: "env" (default) or "file". Recorded for observability;
     # the actual values never appear here.
     secrets_backend: str = "env"
+    # When True (default), the connection pool runs a health check on every
+    # checkout (``AsyncConnectionPool.check_connection``). A dead connection
+    # (e.g. after a PostgreSQL restart) is discarded and replaced before the
+    # tool call proceeds. Set ``MCPG_POOL_CHECK_CONNECTIONS=false`` to skip
+    # the extra round-trip when the operator accepts the risk of a one-time
+    # failure after a server restart.
+    # Appended at the end of the dataclass so existing positional callers
+    # of ``Settings(...)`` keep their argument indexes stable.
+    pool_check_connections: bool = True
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
@@ -339,6 +348,7 @@ class Settings:
             f"rag_telemetry_retention_days={self.rag_telemetry_retention_days}, "
             f"rag_telemetry_rls={self.rag_telemetry_rls}, "
             f"pool_min_size={self.pool_min_size}, pool_max_size={self.pool_max_size}, "
+            f"pool_check_connections={self.pool_check_connections}, "
             f"http_auth_token={http_auth_token_repr!r}, "
             f"auth_mode={self.auth_mode!r}, "
             f"oidc_issuer={self.oidc_issuer!r}, "
@@ -717,6 +727,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:  # noqa: C9
 
     if pool_max_size < pool_min_size:
         raise ConfigError(f"MCPG_POOL_MAX_SIZE ({pool_max_size}) must be >= MCPG_POOL_MIN_SIZE ({pool_min_size})")
+
+    pool_check_connections = True
+    if (raw := env.get("MCPG_POOL_CHECK_CONNECTIONS")) is not None:
+        pool_check_connections = _parse_bool("MCPG_POOL_CHECK_CONNECTIONS", raw)
 
     http_auth_token: str | None = None
     if (raw := secrets.get("MCPG_HTTP_AUTH_TOKEN")) is not None:
@@ -1327,6 +1341,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:  # noqa: C9
         rag_telemetry_reader_role=rag_telemetry_reader_role,
         pool_min_size=pool_min_size,
         pool_max_size=pool_max_size,
+        pool_check_connections=pool_check_connections,
         http_auth_token=http_auth_token,
         http_allow_unauthenticated=http_allow_unauthenticated,
         auth_mode=auth_mode,

@@ -102,10 +102,18 @@ class DbConnPool:
     defaults (1 / 5) reproduce the original hardcoded behaviour.
     """
 
-    def __init__(self, connection_url: str | None = None, min_size: int = 1, max_size: int = 5) -> None:
+    def __init__(
+        self,
+        connection_url: str | None = None,
+        min_size: int = 1,
+        max_size: int = 5,
+        *,
+        check_connections: bool = True,
+    ) -> None:
         self.connection_url = connection_url
         self.min_size = min_size
         self.max_size = max_size
+        self.check_connections = check_connections
         self.pool: AsyncConnectionPool | None = None
         self._is_valid = False
         self._last_error: str | None = None
@@ -130,6 +138,7 @@ class DbConnPool:
                 conninfo=url,
                 min_size=self.min_size,
                 max_size=self.max_size,
+                check=AsyncConnectionPool.check_connection if self.check_connections else None,
                 open=False,  # open explicitly below
             )
             await self.pool.open()

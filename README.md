@@ -310,6 +310,7 @@ are one-shot commands, not configuration). The only required one is
 |---|---|---|
 | `MCPG_POOL_MIN_SIZE` | `1` | Minimum pool connections. |
 | `MCPG_POOL_MAX_SIZE` | `5` | Maximum pool connections. Must be ≥ `MCPG_POOL_MIN_SIZE`. |
+| `MCPG_POOL_CHECK_CONNECTIONS` | `true` | Run a health check on every connection checkout. Discards a dead connection (e.g. after a PostgreSQL restart) before the tool call. Set `false` to skip the extra round-trip. |
 | `MCPG_STATEMENT_TIMEOUT_MS` | `30000` | Per-session `statement_timeout` set on connection checkout. Runaway queries self-terminate. |
 | `MCPG_LOCK_TIMEOUT_MS` | `5000` | Per-session `lock_timeout`. Hanging lock waits self-terminate. |
 | `MCPG_ENABLE_ANALYTICAL_QUERIES` | `true` | Expose `run_analytical_query` (long-running reads on an isolated pool). Set `false` to withdraw the tool. |

@@ -44,6 +44,7 @@ class Database:
                 settings.database_url,
                 min_size=settings.pool_min_size,
                 max_size=settings.pool_max_size,
+                check_connections=settings.pool_check_connections,
             )
         )
         # Read-replica routing — opt-in via MCPG_REPLICA_URLS. The
@@ -56,6 +57,7 @@ class Database:
                 settings.replica_urls,
                 pool_min_size=settings.pool_min_size,
                 pool_max_size=settings.pool_max_size,
+                check_connections=settings.pool_check_connections,
             )
         else:
             self._replica_pool = None
@@ -73,6 +75,7 @@ class Database:
                     dsn,
                     min_size=settings.pool_min_size,
                     max_size=settings.pool_max_size,
+                    check_connections=settings.pool_check_connections,
                 )
                 for name, dsn in settings.secondary_database_urls
             }
