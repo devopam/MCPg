@@ -107,13 +107,6 @@ class Settings:
     rag_telemetry_reader_role: str | None = None
     pool_min_size: int = 1
     pool_max_size: int = 5
-    # When True (default), the connection pool runs a health check on every
-    # checkout (``AsyncConnectionPool.check_connection``). A dead connection
-    # (e.g. after a PostgreSQL restart) is discarded and replaced before the
-    # tool call proceeds. Set ``MCPG_POOL_CHECK_CONNECTIONS=false`` to skip
-    # the extra round-trip when the operator accepts the risk of a one-time
-    # failure after a server restart.
-    pool_check_connections: bool = True
     # HTTP-transport bearer token. When set and the active transport is
     # streamable-http or sse, every request must carry
     # ``Authorization: Bearer <token>``; missing/wrong token returns 401.
@@ -312,6 +305,15 @@ class Settings:
     # at startup: "env" (default) or "file". Recorded for observability;
     # the actual values never appear here.
     secrets_backend: str = "env"
+    # When True (default), the connection pool runs a health check on every
+    # checkout (``AsyncConnectionPool.check_connection``). A dead connection
+    # (e.g. after a PostgreSQL restart) is discarded and replaced before the
+    # tool call proceeds. Set ``MCPG_POOL_CHECK_CONNECTIONS=false`` to skip
+    # the extra round-trip when the operator accepts the risk of a one-time
+    # failure after a server restart.
+    # Appended at the end of the dataclass so existing positional callers
+    # of ``Settings(...)`` keep their argument indexes stable.
+    pool_check_connections: bool = True
 
     def __repr__(self) -> str:
         # Never let credentials reach logs or tracebacks.
