@@ -107,6 +107,7 @@ class DbConnPool:
         connection_url: str | None = None,
         min_size: int = 1,
         max_size: int = 5,
+        *,
         check_connections: bool = True,
     ) -> None:
         self.connection_url = connection_url
