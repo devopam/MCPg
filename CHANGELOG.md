@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+
+### Added
+- **Connection-pool health check on checkout** (`MCPG_POOL_CHECK_CONNECTIONS`, default `true`).
+  The pool now runs `AsyncConnectionPool.check_connection` before handing a connection to a tool call.
+  A connection that died with the server (e.g. after a PostgreSQL restart) is discarded and replaced
+  transparently. Set `MCPG_POOL_CHECK_CONNECTIONS=false` to disable the extra round-trip.
+
+
 ### Fixed
 
 - **Unknown `database` id errors are actionable** (GH #367). The error lists the valid ids, says when no secondary
