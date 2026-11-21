@@ -23,6 +23,7 @@ graph queries, data movement, live ops, and more.
 [![MCPVault: claimed](https://mcpvault.io/badge/mcpg.svg?theme=dark)](https://mcpvault.io/servers/mcpg/health?utm_source=external_badge&utm_medium=referral&utm_campaign=mcp_health_report)
 [![Listed on MCP ServerList](https://mcp-serverlist.com/api/badge/mcpg)](https://mcp-serverlist.com/mcp/mcpg)
 [![MCP Tutorial](https://mcp-serverlist.com/api/badge/mcpg/tutorial)](https://mcp-serverlist.com/mcp/mcpg/tutorial)
+[![mcp.market](https://mcp.market/badge/devopam-mcpg.svg)](https://mcp.market/server/devopam-mcpg)
 
 > **Try it live:** point an MCP client — or the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) — at the hosted, read-only demo endpoint `https://devopam-mcpg-demo.hf.space/mcp`. It serves read tools against throwaway demo data; for real use, run MCPg next to your own database (see [Quick start](#quick-start)).
 
@@ -33,6 +34,7 @@ graph queries, data movement, live ops, and more.
 - **[mcpservers.org](https://mcpservers.org/servers/devopam/mcpg)**
 - **[Glama](https://glama.ai/mcp/servers/devopam/MCPg)**
 - **[MCP ServerList](https://mcp-serverlist.com/mcp/mcpg)**
+- **[MCP Market](https://mcp.market/server/devopam-mcpg)**
 
 ---
 
