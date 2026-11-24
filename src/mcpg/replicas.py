@@ -98,6 +98,7 @@ class ReplicaPool:
         *,
         pool_min_size: int,
         pool_max_size: int,
+        check_connections: bool = True,
         degraded_retry_seconds: float = DEFAULT_DEGRADED_RETRY_SECONDS,
     ) -> None:
         if not dsns:
@@ -106,7 +107,12 @@ class ReplicaPool:
             _ReplicaState(
                 index=i,
                 dsn=dsn,
-                pool=DbConnPool(dsn, min_size=pool_min_size, max_size=pool_max_size),
+                pool=DbConnPool(
+                    dsn,
+                    min_size=pool_min_size,
+                    max_size=pool_max_size,
+                    check_connections=check_connections,
+                ),
             )
             for i, dsn in enumerate(dsns)
         ]

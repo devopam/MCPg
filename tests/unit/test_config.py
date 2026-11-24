@@ -1140,3 +1140,19 @@ def test_rate_limit_enabled_can_still_be_disabled_explicitly() -> None:
         }
     )
     assert settings.rate_limit_enabled is False
+
+
+def test_pool_check_connections_defaults_true() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL})
+    assert settings.pool_check_connections is True
+
+
+def test_pool_check_connections_can_be_disabled() -> None:
+    settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_POOL_CHECK_CONNECTIONS": "false"})
+    assert settings.pool_check_connections is False
+
+
+def test_pool_check_connections_accepts_true_values() -> None:
+    for raw in ("true", "1", "yes", "on"):
+        settings = load_settings({"MCPG_DATABASE_URL": _DB_URL, "MCPG_POOL_CHECK_CONNECTIONS": raw})
+        assert settings.pool_check_connections is True, raw
